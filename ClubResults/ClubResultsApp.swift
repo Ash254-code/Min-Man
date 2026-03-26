@@ -1,32 +1,60 @@
-//
-//  ClubResultsApp.swift
-//  ClubResults
-//
-//  Created by Ashley Williams on 11/2/2026.
-//
-
 import SwiftUI
 import SwiftData
 
 @main
 struct ClubResultsApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @State private var showSplash = true
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ZStack {
+                // ✅ FORCE premium background at the absolute root
+                ClubTheme.bgGradient
+                    .ignoresSafeArea()
+
+                // subtle glow layers (same as AppScreenStyle)
+                RadialGradient(
+                    gradient: Gradient(colors: [Color.white.opacity(0.12), Color.clear]),
+                    center: .topTrailing,
+                    startRadius: 40,
+                    endRadius: 380
+                )
+                .ignoresSafeArea()
+
+                RadialGradient(
+                    gradient: Gradient(colors: [Color.white.opacity(0.08), Color.clear]),
+                    center: .bottomLeading,
+                    startRadius: 40,
+                    endRadius: 420
+                )
+                .ignoresSafeArea()
+
+                // Your app content
+                ZStack {
+                    ContentView()
+                        .opacity(showSplash ? 0 : 1)
+
+                    if showSplash {
+                        SplashView()
+                            .transition(.opacity)
+                    }
+                }
+            }
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    withAnimation(.easeOut(duration: 0.5)) {
+                        showSplash = false
+                    }
+                }
+            }
         }
-        .modelContainer(sharedModelContainer)
+        .modelContainer(for: [
+            Player.self,
+            Game.self,
+            Grade.self,
+            StaffMember.self,   // ✅ Staff list for pickers
+            StaffDefault.self   // ✅ Default per grade + role
+        ])
     }
 }

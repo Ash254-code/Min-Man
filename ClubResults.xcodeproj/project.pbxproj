@@ -24,9 +24,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		5EE0D3782F3C2FB000AA9C37 /* ClubResults.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClubResults.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		5EE0D3892F3C2FB300AA9C37 /* ClubResultsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClubResultsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		5EE0D3932F3C2FB300AA9C37 /* ClubResultsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClubResultsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5E1961772F3D41780040620A /* ClubResultsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClubResultsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5E1961782F3D41780040620A /* ClubResultsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClubResultsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5EE0D3CF2F3CB26700AA9C37 /* ClubResults.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClubResults.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -91,18 +91,10 @@
 				5EE0D37A2F3C2FB000AA9C37 /* ClubResults */,
 				5EE0D38C2F3C2FB300AA9C37 /* ClubResultsTests */,
 				5EE0D3962F3C2FB300AA9C37 /* ClubResultsUITests */,
-				5EE0D3792F3C2FB000AA9C37 /* Products */,
+				5EE0D3CF2F3CB26700AA9C37 /* ClubResults.app */,
+				5E1961772F3D41780040620A /* ClubResultsTests.xctest */,
+				5E1961782F3D41780040620A /* ClubResultsUITests.xctest */,
 			);
-			sourceTree = "<group>";
-		};
-		5EE0D3792F3C2FB000AA9C37 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				5EE0D3782F3C2FB000AA9C37 /* ClubResults.app */,
-				5EE0D3892F3C2FB300AA9C37 /* ClubResultsTests.xctest */,
-				5EE0D3932F3C2FB300AA9C37 /* ClubResultsUITests.xctest */,
-			);
-			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -127,7 +119,7 @@
 			packageProductDependencies = (
 			);
 			productName = ClubResults;
-			productReference = 5EE0D3782F3C2FB000AA9C37 /* ClubResults.app */;
+			productReference = 5EE0D3CF2F3CB26700AA9C37 /* ClubResults.app */;
 			productType = "com.apple.product-type.application";
 		};
 		5EE0D3882F3C2FB300AA9C37 /* ClubResultsTests */ = {
@@ -150,7 +142,7 @@
 			packageProductDependencies = (
 			);
 			productName = ClubResultsTests;
-			productReference = 5EE0D3892F3C2FB300AA9C37 /* ClubResultsTests.xctest */;
+			productReference = 5E1961772F3D41780040620A /* ClubResultsTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		5EE0D3922F3C2FB300AA9C37 /* ClubResultsUITests */ = {
@@ -173,7 +165,7 @@
 			packageProductDependencies = (
 			);
 			productName = ClubResultsUITests;
-			productReference = 5EE0D3932F3C2FB300AA9C37 /* ClubResultsUITests.xctest */;
+			productReference = 5E1961782F3D41780040620A /* ClubResultsUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -209,7 +201,7 @@
 			mainGroup = 5EE0D36F2F3C2FB000AA9C37;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 5EE0D3792F3C2FB000AA9C37 /* Products */;
+			productRefGroup = 5EE0D36F2F3C2FB000AA9C37;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -287,15 +279,20 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = ClubResults/ClubResults.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UX6Z4ZY692;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClubResults/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIStatusBarStyle = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -320,15 +317,20 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = ClubResults/ClubResults.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UX6Z4ZY692;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClubResults/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIStatusBarStyle = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
