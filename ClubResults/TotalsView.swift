@@ -10,9 +10,9 @@ struct TotalsView: View {
     @State private var selectedGradeID: UUID?
 
     private var orderedGrades: [Grade] {
-        LockedGradeSeed.orderedGradeNames.compactMap { name in
-            grades.first(where: { $0.name == name && $0.isActive })
-        }
+        grades
+            .filter { $0.isActive }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private var defaultGradeID: UUID? {

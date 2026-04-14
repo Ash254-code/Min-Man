@@ -12,17 +12,9 @@ struct GamesView: View {
 
     // MARK: - Ordered grades (your seeded order + remaining A→Z)
     private var orderedGrades: [Grade] {
-        let active = grades.filter { $0.isActive }
-        let nameToGrade = Dictionary(uniqueKeysWithValues: active.map { ($0.name, $0) })
-
-        var result: [Grade] = LockedGradeSeed.orderedGradeNames.compactMap { nameToGrade[$0] }
-
-        let remaining = active
-            .filter { !LockedGradeSeed.orderedGradeNames.contains($0.name) }
+        grades
+            .filter { $0.isActive }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-
-        result.append(contentsOf: remaining)
-        return result
     }
 
     private var gradeNameByID: [UUID: String] {

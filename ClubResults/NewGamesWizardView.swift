@@ -131,26 +131,9 @@ struct NewGameWizardView: View {
 
     // MARK: Ordering helpers
     private var orderedGrades: [Grade] {
-        let active = grades.filter { $0.isActive }
-        let nameToGrade = Dictionary(uniqueKeysWithValues: active.map { (normalizeGradeName($0.name), $0) })
-
-        var result: [Grade] = LockedGradeSeed.orderedGradeNames.compactMap {
-            nameToGrade[normalizeGradeName($0)]
-        }
-
-        let inSeedSet = Set(LockedGradeSeed.orderedGradeNames.map { normalizeGradeName($0) })
-        let remaining = active.filter { !inSeedSet.contains(normalizeGradeName($0.name)) }
+        grades
+            .filter { $0.isActive }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-
-        result.append(contentsOf: remaining)
-        return result
-    }
-
-    private func normalizeGradeName(_ name: String) -> String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lowered = trimmed.lowercased()
-        let collapsed = lowered.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return collapsed
     }
 
     private var eligiblePlayers: [Player] {

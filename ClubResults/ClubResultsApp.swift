@@ -5,6 +5,15 @@ import SwiftData
 struct ClubResultsApp: App {
 
     @State private var showSplash = true
+    @AppStorage("appAppearance") private var appAppearance = AppAppearance.system.rawValue
+
+    private var preferredScheme: ColorScheme? {
+        switch AppAppearance(rawValue: appAppearance) ?? .system {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -41,6 +50,7 @@ struct ClubResultsApp: App {
                     }
                 }
             }
+            .preferredColorScheme(preferredScheme)
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     withAnimation(.easeOut(duration: 0.5)) {
@@ -53,6 +63,7 @@ struct ClubResultsApp: App {
             Player.self,
             Game.self,
             Grade.self,
+            ReportRouting.self,
             StaffMember.self,   // ✅ Staff list for pickers
             StaffDefault.self   // ✅ Default per grade + role
         ])
