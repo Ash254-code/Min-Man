@@ -385,7 +385,7 @@ struct NewGameWizardView: View {
                             .contentShape(Rectangle())
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 10)
 
                     Divider().opacity(0.6)
 
@@ -411,7 +411,7 @@ struct NewGameWizardView: View {
                             .contentShape(Rectangle())
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 10)
 
                     if boundaryUmpire1ID != nil, boundaryUmpire1ID == boundaryUmpire2ID {
                         Text("Boundary Umpire 1 and 2 can’t be the same.")
@@ -693,7 +693,7 @@ struct NewGameWizardView: View {
         @ViewBuilder var content: Content
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image(systemName: systemImage)
                         .font(.system(size: 14, weight: .semibold))
@@ -704,7 +704,7 @@ struct NewGameWizardView: View {
                 }
                 .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 16) {
                     content
                 }
                 .padding(12)

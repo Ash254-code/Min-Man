@@ -26,8 +26,9 @@ struct StaffPickerField: View {
 
     var body: some View {
 
-        HStack {
+        HStack(spacing: 12) {
             Text(title)
+                .font(.system(size: 16, weight: .regular))
             Spacer()
 
             Menu {
@@ -47,6 +48,7 @@ struct StaffPickerField: View {
                     .foregroundStyle(value.isEmpty ? .secondary : .primary)
             }
         }
+        .padding(.vertical, 4)
         .sheet(isPresented: $showAdd) {
             NavigationStack {
                 Form {
