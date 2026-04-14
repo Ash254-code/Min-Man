@@ -23,7 +23,7 @@ struct NewGameWizardView: View {
     @Query private var staffDefaults: [StaffDefault]
 
     // ✅ UPDATED: first screen is Setup (grade + date + opponent + venue)
-    enum Step: Int, CaseIterable { case setup, staff, score, goals, best, review }
+    enum Step: Int, CaseIterable { case setup, staff, medical, score, goals, best, review }
     @State private var step: Step = .setup
 
     // MARK: Setup
@@ -158,17 +158,16 @@ struct NewGameWizardView: View {
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
     }
 
-    // MARK: - Required styling helpers for Boundary rows
-    private func requiredLabel(_ title: String, isMissing: Bool) -> some View {
+    // MARK: - Uniform row styling
+    private func rowLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(isMissing ? Color.red : Color.primary)
+            .font(.system(size: 16, weight: .regular))
     }
 
-    private func requiredValue(_ text: String, isMissing: Bool) -> some View {
+    private func rowValue(_ text: String) -> some View {
         Text(text.isEmpty ? "Select…" : text)
-            .font(.system(size: 16, weight: isMissing ? .regular : .semibold))
-            .foregroundStyle(isMissing ? Color.red : Color.accentColor)
+            .font(.system(size: 16, weight: .regular))
+            .foregroundStyle(text.isEmpty ? .secondary : .primary)
     }
 
     // MARK: Goal allocation helpers
@@ -202,6 +201,9 @@ struct NewGameWizardView: View {
                 boundaryUmpire1ID != boundaryUmpire2ID
 
             return coachingOK && officialsOK
+
+        case .medical:
+            return true
 
         case .score:
             return true
@@ -237,6 +239,7 @@ struct NewGameWizardView: View {
                     switch step {
                     case .setup: setupStep
                     case .staff: staffStep
+                    case .medical: medicalStep
                     case .score: scoreStep
                     case .goals: goalsStep
                     case .best: bestStep
@@ -365,7 +368,7 @@ struct NewGameWizardView: View {
 
                     // ✅ Boundary Umpire 1
                     HStack(spacing: 12) {
-                        requiredLabel("Boundary Umpire 1", isMissing: boundaryUmpire1ID == nil)
+                        rowLabel("Boundary Umpire 1")
                         Spacer()
                         Menu {
                             Button("Select…") { boundaryUmpire1ID = nil }
@@ -377,7 +380,7 @@ struct NewGameWizardView: View {
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                requiredValue(playerName(for: boundaryUmpire1ID), isMissing: boundaryUmpire1ID == nil)
+                                rowValue(playerName(for: boundaryUmpire1ID))
                                 Image(systemName: "chevron.up.chevron.down")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.secondary)
@@ -385,13 +388,11 @@ struct NewGameWizardView: View {
                             .contentShape(Rectangle())
                         }
                     }
-                    .padding(.vertical, 10)
-
-                    Divider().opacity(0.6)
+                    .padding(.vertical, 4)
 
                     // ✅ Boundary Umpire 2
                     HStack(spacing: 12) {
-                        requiredLabel("Boundary Umpire 2", isMissing: boundaryUmpire2ID == nil)
+                        rowLabel("Boundary Umpire 2")
                         Spacer()
                         Menu {
                             Button("Select…") { boundaryUmpire2ID = nil }
@@ -403,7 +404,7 @@ struct NewGameWizardView: View {
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                requiredValue(playerName(for: boundaryUmpire2ID), isMissing: boundaryUmpire2ID == nil)
+                                rowValue(playerName(for: boundaryUmpire2ID))
                                 Image(systemName: "chevron.up.chevron.down")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.secondary)
@@ -411,7 +412,7 @@ struct NewGameWizardView: View {
                             .contentShape(Rectangle())
                         }
                     }
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 4)
 
                     if boundaryUmpire1ID != nil, boundaryUmpire1ID == boundaryUmpire2ID {
                         Text("Boundary Umpire 1 and 2 can’t be the same.")
@@ -421,6 +422,17 @@ struct NewGameWizardView: View {
                     }
                 }
 
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private var medicalStep: some View {
+        ScrollView {
+            VStack(spacing: 14) {
                 StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
                     StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
                     StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)

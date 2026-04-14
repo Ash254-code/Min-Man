@@ -45,6 +45,7 @@ struct StaffPickerField: View {
 
             } label: {
                 Text(value.isEmpty ? "Select…" : value)
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(value.isEmpty ? .secondary : .primary)
             }
         }
