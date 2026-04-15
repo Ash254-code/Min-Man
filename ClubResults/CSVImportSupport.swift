@@ -147,29 +147,27 @@ extension String {
 // MARK: - Grade Lookup (aliases + normalization)
 
 struct GradeLookup {
-    private let normalizedToID: [String: UUID]
-
-    private let aliases: [String: String] = [
-        "a": "a grade",
-        "b": "b grade",
-        "c": "c grade",
-        "d": "d grade",
-        "seniors": "a grade",
-        "reserves": "b grade"
-    ]
+    private let keyToID: [String: UUID]
 
     init(grades: [Any]) {
         // This init exists only to prevent accidental use without the real Grade type.
         // Use init(grades: [Grade]) below.
-        self.normalizedToID = [:]
+        self.keyToID = [:]
     }
 
     init(grades: [Grade]) {
         var map: [String: UUID] = [:]
         for g in grades {
-            map[GradeLookup.normalize(g.name)] = g.id
+            for key in GradeLookup.matchKeys(forGradeName: g.name) {
+                map[key] = g.id
+            }
         }
-        self.normalizedToID = map
+
+        // Common footy-grade aliases.
+        GradeLookup.addAlias("seniors", toAnyOf: ["a grade"], into: &map)
+        GradeLookup.addAlias("reserves", toAnyOf: ["b grade"], into: &map)
+
+        self.keyToID = map
     }
 
     func ids(forRawGradeField raw: String?, unknownCollector: inout Set<String>) -> [UUID] {
@@ -185,9 +183,8 @@ struct GradeLookup {
 
         var ids: [UUID] = []
         for p in parts {
-            let norm = GradeLookup.normalize(p)
-            let resolved = aliases[norm].map(GradeLookup.normalize) ?? norm
-            if let id = normalizedToID[resolved] {
+            let key = GradeLookup.normalize(p)
+            if let id = keyToID[key] {
                 ids.append(id)
             } else {
                 unknownCollector.insert(p)
@@ -202,7 +199,59 @@ struct GradeLookup {
         s.trimmedLowercased
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"[^a-z0-9 ]+"#, with: " ", options: .regularExpression)
             .replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+    }
+
+    private static func matchKeys(forGradeName name: String) -> Set<String> {
+        let normalized = normalize(name)
+        var keys: Set<String> = [normalized]
+
+        let compact = normalized.replacingOccurrences(of: " ", with: "")
+        if !compact.isEmpty {
+            keys.insert(compact)
+        }
+
+        if let age = extractUnderAge(from: normalized) {
+            keys.insert("u\(age)")
+            keys.insert("u \(age)")
+            keys.insert("under\(age)")
+            keys.insert("under \(age)")
+            keys.insert("under \(age)s")
+        }
+
+        // Letter-grade shorthand (A/B/C/D)
+        if let short = shortLetterGrade(from: normalized) {
+            keys.insert(short)
+        }
+
+        return keys
+    }
+
+    private static func extractUnderAge(from normalized: String) -> String? {
+        guard normalized.hasPrefix("under ") else { return nil }
+        let remainder = String(normalized.dropFirst("under ".count))
+        let digits = remainder.prefix { $0.isNumber }
+        return digits.isEmpty ? nil : String(digits)
+    }
+
+    private static func shortLetterGrade(from normalized: String) -> String? {
+        guard normalized.hasSuffix(" grade") else { return nil }
+        let prefix = normalized.replacingOccurrences(of: " grade", with: "")
+        guard prefix.count == 1 else { return nil }
+        return prefix
+    }
+
+    private static func addAlias(_ alias: String, toAnyOf targetNames: [String], into map: inout [String: UUID]) {
+        let normalizedAlias = normalize(alias)
+        for targetName in targetNames {
+            let targetKey = normalize(targetName)
+            if let id = map[targetKey] {
+                map[normalizedAlias] = id
+                return
+            }
+        }
     }
 }
 
