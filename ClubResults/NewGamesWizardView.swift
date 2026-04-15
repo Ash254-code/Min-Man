@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import AVFoundation
+import VisionKit
 
 // Local model for goal kickers used by this wizard
 private struct WizardGoalKickerEntry: Identifiable, Codable, Hashable {
@@ -94,6 +96,7 @@ struct NewGameWizardView: View {
     @State private var bestRanked: [UUID?] = Array(repeating: nil, count: 6)
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
+    @State private var scannerErrorMessage: String?
     @State private var hasAppliedInitialGrade = false
 
     // MARK: Helpers
@@ -838,7 +841,7 @@ struct NewGameWizardView: View {
                 }
 
                 Button(guestBestFairestVotesScanPDF == nil ? "Scan votes" : "Rescan votes") {
-                    showVotesScanner = true
+                    openVotesScanner()
                 }
             }
         }
@@ -850,7 +853,47 @@ struct NewGameWizardView: View {
                 showVotesScanner = false
             }
         }
+        .alert("Scanner unavailable", isPresented: Binding(
+            get: { scannerErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    scannerErrorMessage = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {
+                scannerErrorMessage = nil
+            }
+        } message: {
+            Text(scannerErrorMessage ?? "")
+        }
         .scrollContentBackground(.hidden)
+    }
+
+    private func openVotesScanner() {
+        guard VNDocumentCameraViewController.isSupported else {
+            scannerErrorMessage = "This device does not support document scanning."
+            return
+        }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            showVotesScanner = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        showVotesScanner = true
+                    } else {
+                        scannerErrorMessage = "Camera access is required to scan guest votes. Enable camera access in Settings."
+                    }
+                }
+            }
+        case .denied, .restricted:
+            scannerErrorMessage = "Camera access is required to scan guest votes. Enable camera access in Settings."
+        @unknown default:
+            scannerErrorMessage = "Unable to access the camera right now. Please try again."
+        }
     }
 
     // MARK: Logic helpers
