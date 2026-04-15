@@ -199,10 +199,6 @@ struct NewGameWizardView: View {
         resolvedConfiguredGrades(from: grades)
     }
 
-    private var orderedGrades: [Grade] {
-        orderedGradesForDisplay(resolvedGrades)
-    }
-
     private var selectedGradeName: String {
         guard let gid = gradeID else { return "Not selected" }
         return resolvedGrades.first(where: { $0.id == gid })?.name ?? "Unknown grade"
@@ -385,8 +381,8 @@ struct NewGameWizardView: View {
                 .padding()
                 .background(.ultraThinMaterial)
             }
-            .navigationTitle("New Game")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle(step == .setup ? "" : "New Game")
+            .navigationBarTitleDisplayMode(step == .setup ? .inline : .large)
 
             // ✅ Cancel in top-left ONLY on first step
             .toolbar {
@@ -436,56 +432,55 @@ struct NewGameWizardView: View {
     // ✅ NEW: Setup step (Grade + Date + Opponent + Venue)
     // Uses the SAME Form styling you had on the Grade screen.
     private var setupStep: some View {
-        Form {
-            Section {
-                if initialGradeID != nil {
-                    HStack {
-                        Text("Grade")
-                        Spacer()
-                        Text(selectedGradeName)
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text("New Game")
+                    .font(.system(size: 44, weight: .bold))
+                Spacer()
+                Text(selectedGradeName)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
+            .padding(.bottom, 8)
+
+            Form {
+                if let _ = gradeID, eligiblePlayers.isEmpty {
+                    Section {
+                        Text("No active players assigned to this grade yet. Add players first.")
                             .foregroundStyle(.secondary)
                     }
-                } else {
-                    Picker("Grade", selection: $gradeID) {
-                        Text("Select…").tag(UUID?.none)
-                        ForEach(orderedGrades) { g in
-                            Text(g.name).tag(UUID?.some(g.id))
+                } else if gradeID != nil {
+                    Section {
+                        Text("\(eligiblePlayers.count) eligible players")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Game details") {
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+
+                    Picker("Opponent", selection: $opponentName) {
+                        Text("Select…").tag("")
+                        ForEach(opponents, id: \.self) { o in
+                            Text(o).tag(o)
                         }
                     }
                     .pickerStyle(.menu)
-                }
-
-                if let _ = gradeID, eligiblePlayers.isEmpty {
-                    Text("No active players assigned to this grade yet. Add players first.")
-                        .foregroundStyle(.secondary)
-                } else if gradeID != nil {
-                    Text("\(eligiblePlayers.count) eligible players")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Game details") {
-                DatePicker("Date", selection: $date, displayedComponents: .date)
-
-                Picker("Opponent", selection: $opponentName) {
-                    Text("Select…").tag("")
-                    ForEach(opponents, id: \.self) { o in
-                        Text(o).tag(o)
+                    .onChange(of: opponentName) { _, _ in
+                        venueName = ""
                     }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: opponentName) { _, _ in
-                    venueName = ""
-                }
 
-                Picker("Venue", selection: $venueName) {
-                    Text("Select…").tag("")
-                    ForEach(venuesForOpponent, id: \.self) { v in
-                        Text(v).tag(v)
+                    Picker("Venue", selection: $venueName) {
+                        Text("Select…").tag("")
+                        ForEach(venuesForOpponent, id: \.self) { v in
+                            Text(v).tag(v)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .disabled(finalOpponent.isEmpty || venuesForOpponent.isEmpty)
                 }
-                .pickerStyle(.menu)
-                .disabled(finalOpponent.isEmpty || venuesForOpponent.isEmpty)
             }
         }
         .scrollContentBackground(.hidden)
