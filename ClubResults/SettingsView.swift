@@ -687,23 +687,42 @@ private struct ContactEditSheet: View {
 private struct ReportsSettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
-    @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
+    @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
     @Query private var reportRecipients: [ReportRecipient]
     @State private var saveErrorMessage: String?
 
-    private var activeGrades: [Grade] {
-        orderedGradesForDisplay(grades)
+    private enum SendMode: String, CaseIterable, Identifiable {
+        case text
+        case email
+        case both
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .text:
+                return "Text"
+            case .email:
+                return "Email"
+            case .both:
+                return "Email + Text"
+            }
+        }
+    }
+
+    private var configuredGrades: [Grade] {
+        orderedGradesForDisplay(grades, includeInactive: true)
     }
 
     var body: some View {
         List {
-            if activeGrades.isEmpty {
+            if configuredGrades.isEmpty {
                 Text("Add a grade first.")
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(activeGrades) { grade in
+            ForEach(configuredGrades) { grade in
                 Section(grade.name) {
                     let recipients = recipientsForGrade(grade.id)
 
@@ -787,8 +806,12 @@ private struct ReportsSettingsView: View {
                             Text("No available contacts")
                         } else {
                             ForEach(available) { contact in
-                                Button(contact.name) {
-                                    addContact(contact, toGrade: grade.id)
+                                Menu(contact.name) {
+                                    ForEach(SendMode.allCases) { mode in
+                                        Button("Send via \(mode.title)") {
+                                            addContact(contact, toGrade: grade.id, sendMode: mode)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -825,16 +848,23 @@ private struct ReportsSettingsView: View {
     }
 
     private func addContact(_ contact: Contact, toGrade gradeID: UUID) {
+        addContact(contact, toGrade: gradeID, sendMode: .both)
+    }
+
+    private func addContact(_ contact: Contact, toGrade gradeID: UUID, sendMode: SendMode) {
         guard !reportRecipients.contains(where: {
             $0.gradeID == gradeID && $0.contactID == contact.id
         }) else { return }
+
+        let sendEmail = sendMode == .email || sendMode == .both
+        let sendText = sendMode == .text || sendMode == .both
 
         modelContext.insert(
             ReportRecipient(
                 gradeID: gradeID,
                 contactID: contact.id,
-                sendEmail: true,
-                sendText: true
+                sendEmail: sendEmail,
+                sendText: sendText
             )
         )
         saveContext()
