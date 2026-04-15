@@ -1,8 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
-import AVFoundation
-import VisionKit
+import MessageUI
 
 // Local model for goal kickers used by this wizard
 private struct WizardGoalKickerEntry: Identifiable, Codable, Hashable {
@@ -27,6 +26,8 @@ struct NewGameWizardView: View {
 
     @Query private var grades: [Grade]
     @Query(sort: \Player.name) private var players: [Player]
+    @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
+    @Query private var reportRecipients: [ReportRecipient]
 
     // ✅ stored defaults per grade + role
     @Query private var staffDefaults: [StaffDefault]
@@ -99,6 +100,12 @@ struct NewGameWizardView: View {
     @State private var showVotesScanner = false
     @State private var scannerErrorMessage: String?
     @State private var hasAppliedInitialGrade = false
+    @State private var reportAttachmentURL: URL?
+    @State private var pendingEmailRecipients: [String] = []
+    @State private var pendingTextRecipients: [String] = []
+    @State private var showMailComposer = false
+    @State private var showMessageComposer = false
+    @State private var sendStatusMessage: String?
 
     // MARK: Helpers
     private func clean(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -400,12 +407,23 @@ struct NewGameWizardView: View {
 
                     Spacer()
 
-                    Button(step == .review ? "Save" : "Next") {
-                        if step == .review { saveGame() }
-                        else { next() }
+                    if step == .review {
+                        Button("Save Draft") {
+                            _ = saveGame(asDraft: true, dismissOnSuccess: true)
+                        }
+                        .disabled(!canProceed)
+                        .buttonStyle(.bordered)
+
+                        Button("Save and Send") {
+                            saveAndSendReport()
+                        }
+                        .disabled(!canProceed)
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Button("Next") { next() }
+                            .disabled(!canProceed)
+                            .buttonStyle(.borderedProminent)
                     }
-                    .disabled(!canProceed)
-                    .buttonStyle(.borderedProminent)
                 }
                 .padding()
                 .background(.ultraThinMaterial)
@@ -446,6 +464,46 @@ struct NewGameWizardView: View {
                 applyDefaults(for: initialGradeID)
                 syncBestPlayersSelectionCount()
             }
+        }
+        .sheet(isPresented: $showMailComposer) {
+            if let attachmentURL = reportAttachmentURL {
+                MailComposeView(
+                    recipients: pendingEmailRecipients,
+                    subject: "Min-Man Game Report",
+                    body: "Attached is the game report PDF.",
+                    attachmentURL: attachmentURL
+                ) {
+                    showMailComposer = false
+                    beginTextSendIfNeeded()
+                }
+            }
+        }
+        .sheet(isPresented: $showMessageComposer) {
+            if let attachmentURL = reportAttachmentURL {
+                MessageComposeView(
+                    recipients: pendingTextRecipients,
+                    body: "Min-Man game report attached.",
+                    attachmentURL: attachmentURL
+                ) {
+                    showMessageComposer = false
+                    dismiss()
+                }
+            }
+        }
+        .alert(
+            "Report status",
+            isPresented: Binding(
+                get: { sendStatusMessage != nil },
+                set: { if !$0 { sendStatusMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                let shouldDismiss = sendStatusMessage?.contains("Game saved") == true
+                sendStatusMessage = nil
+                if shouldDismiss { dismiss() }
+            }
+        } message: {
+            Text(sendStatusMessage ?? "")
         }
     }
 
@@ -986,10 +1044,11 @@ struct NewGameWizardView: View {
     }
 
     // MARK: Save
-    private func saveGame() {
-        guard let gid = gradeID else { return }
-        guard !finalOpponent.isEmpty else { return }
-        guard !finalVenue.isEmpty else { return }
+    @discardableResult
+    private func saveGame(asDraft: Bool, dismissOnSuccess: Bool) -> Game? {
+        guard let gid = gradeID else { return nil }
+        guard !finalOpponent.isEmpty else { return nil }
+        guard !finalVenue.isEmpty else { return nil }
 
         let bestPlayersCount = requiredBestPlayersCount
         let asksGoalKickers = selectedGrade?.asksGoalKickers ?? true
@@ -998,10 +1057,10 @@ struct NewGameWizardView: View {
 
         let bestIDs = bestPlayersCount > 0 ? Array(bestRanked.prefix(bestPlayersCount)).compactMap { $0 } : []
         if bestPlayersCount > 0 {
-            guard bestIDs.count == bestPlayersCount, Set(bestIDs).count == bestPlayersCount else { return }
+            guard bestIDs.count == bestPlayersCount, Set(bestIDs).count == bestPlayersCount else { return nil }
         }
         if asksVotesScan {
-            guard guestBestFairestVotesScanPDF != nil else { return }
+            guard guestBestFairestVotesScanPDF != nil else { return nil }
         }
 
         let cleanedNotes = asksNotes ? notes.trimmingCharacters(in: .whitespacesAndNewlines) : ""
@@ -1024,7 +1083,8 @@ struct NewGameWizardView: View {
             goalKickers: modelGoalKickers,
             bestPlayersRanked: bestIDs,
             notes: cleanedNotes,
-            guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF
+            guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF,
+            isDraft: asDraft
         )
 
         modelContext.insert(game)
@@ -1033,13 +1093,164 @@ struct NewGameWizardView: View {
         persistCurrentStaffSelections(for: gid)
 
         do { try modelContext.save() }
-        catch { print("❌ Failed to save game: \(error)"); return }
+        catch { print("❌ Failed to save game: \(error)"); return nil }
 
-        // ✅ dismiss after successful save
+        if dismissOnSuccess {
+            dismiss()
+        }
+
+        return game
+    }
+
+    private func saveAndSendReport() {
+        guard let savedGame = saveGame(asDraft: false, dismissOnSuccess: false),
+              let gid = gradeID else { return }
+
+        let gradeName = selectedGradeName
+        let playerLookup: (UUID) -> String = { pid in
+            players.first(where: { $0.id == pid })?.name ?? "Unknown"
+        }
+
+        do {
+            reportAttachmentURL = try ExportService.makeGameSummaryPDF(
+                game: savedGame,
+                gradeName: gradeName,
+                playerName: playerLookup
+            )
+        } catch {
+            sendStatusMessage = "Game saved, but failed to build PDF report."
+            return
+        }
+
+        let recipients = reportRecipients.filter { $0.gradeID == gid }
+        let matchedContacts: [(contact: Contact, recipient: ReportRecipient)] = recipients.compactMap { recipient in
+            guard let contact = contacts.first(where: { $0.id == recipient.contactID }) else { return nil }
+            return (contact, recipient)
+        }
+
+        pendingEmailRecipients = matchedContacts
+            .filter { $0.recipient.sendEmail }
+            .map { $0.contact.email.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        pendingTextRecipients = matchedContacts
+            .filter { $0.recipient.sendText }
+            .map { $0.contact.mobile.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if pendingEmailRecipients.isEmpty && pendingTextRecipients.isEmpty {
+            sendStatusMessage = "Game saved. No report recipients are configured for this grade."
+            return
+        }
+
+        if !pendingEmailRecipients.isEmpty && MFMailComposeViewController.canSendMail() {
+            showMailComposer = true
+            return
+        }
+
+        beginTextSendIfNeeded()
+    }
+
+    private func beginTextSendIfNeeded() {
+        if !pendingTextRecipients.isEmpty && MFMessageComposeViewController.canSendText() {
+            showMessageComposer = true
+            return
+        }
+
+        if !pendingEmailRecipients.isEmpty && !MFMailComposeViewController.canSendMail() {
+            sendStatusMessage = "Game saved. Mail is not configured on this device, so email recipients were skipped."
+            return
+        }
+
+        if !pendingTextRecipients.isEmpty && !MFMessageComposeViewController.canSendText() {
+            sendStatusMessage = "Game saved. Text messaging is not available on this device, so text recipients were skipped."
+            return
+        }
+
         dismiss()
     }
 
     // MARK: - AFL-ish card container
+    private struct MailComposeView: UIViewControllerRepresentable {
+        let recipients: [String]
+        let subject: String
+        let body: String
+        let attachmentURL: URL
+        let onFinish: () -> Void
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator(onFinish: onFinish)
+        }
+
+        func makeUIViewController(context: Context) -> MFMailComposeViewController {
+            let controller = MFMailComposeViewController()
+            controller.mailComposeDelegate = context.coordinator
+            controller.setToRecipients(recipients)
+            controller.setSubject(subject)
+            controller.setMessageBody(body, isHTML: false)
+            if let data = try? Data(contentsOf: attachmentURL) {
+                controller.addAttachmentData(data, mimeType: "application/pdf", fileName: attachmentURL.lastPathComponent)
+            }
+            return controller
+        }
+
+        func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {}
+
+        final class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+            let onFinish: () -> Void
+
+            init(onFinish: @escaping () -> Void) {
+                self.onFinish = onFinish
+            }
+
+            func mailComposeController(
+                _ controller: MFMailComposeViewController,
+                didFinishWith result: MFMailComposeResult,
+                error: Error?
+            ) {
+                controller.dismiss(animated: true)
+                onFinish()
+            }
+        }
+    }
+
+    private struct MessageComposeView: UIViewControllerRepresentable {
+        let recipients: [String]
+        let body: String
+        let attachmentURL: URL
+        let onFinish: () -> Void
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator(onFinish: onFinish)
+        }
+
+        func makeUIViewController(context: Context) -> MFMessageComposeViewController {
+            let controller = MFMessageComposeViewController()
+            controller.messageComposeDelegate = context.coordinator
+            controller.recipients = recipients
+            controller.body = body
+            controller.addAttachmentURL(attachmentURL, withAlternateFilename: attachmentURL.lastPathComponent)
+            return controller
+        }
+
+        func updateUIViewController(_ uiViewController: MFMessageComposeViewController, context: Context) {}
+
+        final class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
+            let onFinish: () -> Void
+
+            init(onFinish: @escaping () -> Void) {
+                self.onFinish = onFinish
+            }
+
+            func messageComposeViewController(
+                _ controller: MFMessageComposeViewController,
+                didFinishWith result: MessageComposeResult
+            ) {
+                controller.dismiss(animated: true)
+                onFinish()
+            }
+        }
+    }
+
     private struct StaffCard<Content: View>: View {
         let title: String
         let systemImage: String

@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// A minimal interface for games that can be exported by ExportService.
 protocol ExportableGame {
@@ -118,6 +119,34 @@ enum ExportService {
         let filename = fileSafe("\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted))_vs_\(game.opponent).txt")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         try text.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    static func makeGameSummaryPDF(game: ExportableGame, gradeName: String, playerName: (UUID) -> String) throws -> URL {
+        let summary = gameSummaryText(game: game, gradeName: gradeName, playerName: playerName)
+        let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter at 72 dpi
+        let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
+
+        let data = renderer.pdfData { context in
+            context.beginPage()
+
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byWordWrapping
+            paragraph.lineSpacing = 3
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 13),
+                .paragraphStyle: paragraph
+            ]
+
+            let insetRect = pageBounds.insetBy(dx: 36, dy: 36)
+            let attributed = NSAttributedString(string: summary, attributes: attributes)
+            attributed.draw(in: insetRect)
+        }
+
+        let filename = fileSafe("\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted))_vs_\(game.opponent).pdf")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try data.write(to: url, options: .atomic)
         return url
     }
 
