@@ -115,8 +115,6 @@ struct SettingsView: View {
             try modelContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
-            let backups = SettingsBackupStore.loadGrades()
-            grades = backups.map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
         }
     }
 }
