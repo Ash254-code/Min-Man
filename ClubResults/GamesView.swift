@@ -167,7 +167,7 @@ private struct NewGameQuickStartSection: View {
                                         .font(.system(size: 22, weight: .semibold))
                                 }
                             }
-                            .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .compact ? 108 : 184)
+                            .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .compact ? 84 : 184)
                             .padding(.horizontal, horizontalSizeClass == .compact ? 12 : 16)
                             .background(
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
