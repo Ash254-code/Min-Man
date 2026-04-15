@@ -140,7 +140,12 @@ struct PlayersView: View {
                     pendingImportURL = nil
                 }
             } message: {
-                Text("Choose what happens when a player name already exists.")
+                if let selectedGradeID,
+                   let selected = activeGrades.first(where: { $0.id == selectedGradeID }) {
+                    Text("Choose what happens when a player name already exists. Rows without a grade will default to \(selected.name).")
+                } else {
+                    Text("Choose what happens when a player name already exists.")
+                }
             }
 
             // ✅ Delete prompts
@@ -401,7 +406,15 @@ struct PlayersView: View {
             }
 
             let number = row.number
-            let gradeIDs = gradeLookup.ids(forRawGradeField: row.gradesRaw, unknownCollector: &result.unknownGradeNames)
+            let parsedGradeIDs = gradeLookup.ids(forRawGradeField: row.gradesRaw, unknownCollector: &result.unknownGradeNames)
+            let gradeIDs: [UUID]
+            if parsedGradeIDs.isEmpty, let selectedGradeID {
+                // If importing while a grade filter is active, default missing grade rows
+                // into that visible grade so imported players appear immediately.
+                gradeIDs = [selectedGradeID]
+            } else {
+                gradeIDs = parsedGradeIDs
+            }
 
             if let existing = existingByName[normName], mode != .replaceAll {
                 switch mode {
