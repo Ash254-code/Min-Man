@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct TeamsAndVenuesSettingsView: View {
     @State private var configuration: ClubConfiguration = ClubConfigurationStore.load()
@@ -23,8 +24,14 @@ struct TeamsAndVenuesSettingsView: View {
                         onSave: save
                     )
                 } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(configuration.clubTeam.name)
+                    VStack(alignment: .leading, spacing: 6) {
+                        teamNamePill(
+                            name: configuration.clubTeam.name,
+                            primaryHex: configuration.clubTeam.primaryColorHex,
+                            secondaryHex: configuration.clubTeam.secondaryColorHex,
+                            width: standardPillWidth
+                        )
+
                         Text(venueSummary(configuration.clubTeam.venues))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -51,8 +58,14 @@ struct TeamsAndVenuesSettingsView: View {
                             onSave: save
                         )
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(opposition.name)
+                        VStack(alignment: .leading, spacing: 6) {
+                            teamNamePill(
+                                name: opposition.name,
+                                primaryHex: opposition.primaryColorHex,
+                                secondaryHex: opposition.secondaryColorHex,
+                                width: standardPillWidth
+                            )
+
                             Text(venueSummary(opposition.venues))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -73,6 +86,41 @@ struct TeamsAndVenuesSettingsView: View {
         .onAppear {
             configuration = ClubConfigurationStore.load()
         }
+    }
+
+    private var standardPillWidth: CGFloat {
+        let names = [configuration.clubTeam.name] + configuration.oppositions.map(\.name)
+        let font = UIFont.preferredFont(forTextStyle: .headline)
+        let textWidths = names.map { name in
+            let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = cleaned.isEmpty ? "Team" : cleaned
+            return (value as NSString).size(withAttributes: [.font: font]).width
+        }
+
+        let longest = textWidths.max() ?? 0
+        let padded = longest + 28
+        return min(max(padded, 120), 280)
+    }
+
+    @ViewBuilder
+    private func teamNamePill(name: String, primaryHex: String, secondaryHex: String?, width: CGFloat) -> some View {
+        let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = cleaned.isEmpty ? "Team" : cleaned
+        let cleanedSecondary = secondaryHex?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let textColorHex = cleanedSecondary.isEmpty ? "#FFFFFF" : cleanedSecondary
+
+        Text(label)
+            .font(.headline)
+            .foregroundStyle(Color(hex: textColorHex, fallback: .white))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(width: width, alignment: .center)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color(hex: primaryHex, fallback: .blue))
+            )
     }
 
     private func save() {
