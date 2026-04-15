@@ -5,6 +5,7 @@ struct GradeBackup: Codable {
     let name: String
     let isActive: Bool
     let displayOrder: Int
+    let asksHeadCoach: Bool
     let asksAssistantCoach: Bool
     let asksTeamManager: Bool
     let asksRunner: Bool
@@ -21,6 +22,7 @@ struct GradeBackup: Codable {
         name: String,
         isActive: Bool,
         displayOrder: Int,
+        asksHeadCoach: Bool = true,
         asksAssistantCoach: Bool = true,
         asksTeamManager: Bool = true,
         asksRunner: Bool = true,
@@ -36,6 +38,7 @@ struct GradeBackup: Codable {
         self.name = name
         self.isActive = isActive
         self.displayOrder = displayOrder
+        self.asksHeadCoach = asksHeadCoach
         self.asksAssistantCoach = asksAssistantCoach
         self.asksTeamManager = asksTeamManager
         self.asksRunner = asksRunner
@@ -50,7 +53,7 @@ struct GradeBackup: Codable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, isActive, displayOrder
-        case asksAssistantCoach, asksTeamManager, asksRunner, asksGoalUmpire, asksBoundaryUmpires
+        case asksHeadCoach, asksAssistantCoach, asksTeamManager, asksRunner, asksGoalUmpire, asksBoundaryUmpires
         case asksTrainers, asksNotes, asksGoalKickers, asksBestPlayers, asksGuestBestFairestVotesScan
     }
 
@@ -60,6 +63,7 @@ struct GradeBackup: Codable {
         name = try c.decode(String.self, forKey: .name)
         isActive = try c.decode(Bool.self, forKey: .isActive)
         displayOrder = try c.decode(Int.self, forKey: .displayOrder)
+        asksHeadCoach = try c.decodeIfPresent(Bool.self, forKey: .asksHeadCoach) ?? true
         asksAssistantCoach = try c.decodeIfPresent(Bool.self, forKey: .asksAssistantCoach) ?? true
         asksTeamManager = try c.decodeIfPresent(Bool.self, forKey: .asksTeamManager) ?? true
         asksRunner = try c.decodeIfPresent(Bool.self, forKey: .asksRunner) ?? true
@@ -91,6 +95,7 @@ enum SettingsBackupStore {
                 name: $0.name,
                 isActive: $0.isActive,
                 displayOrder: $0.displayOrder,
+                asksHeadCoach: $0.asksHeadCoach,
                 asksAssistantCoach: $0.asksAssistantCoach,
                 asksTeamManager: $0.asksTeamManager,
                 asksRunner: $0.asksRunner,
@@ -166,6 +171,7 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 name: backup.name,
                 isActive: backup.isActive,
                 displayOrder: backup.displayOrder,
+                asksHeadCoach: backup.asksHeadCoach,
                 asksAssistantCoach: backup.asksAssistantCoach,
                 asksTeamManager: backup.asksTeamManager,
                 asksRunner: backup.asksRunner,

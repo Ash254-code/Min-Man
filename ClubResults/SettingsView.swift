@@ -203,6 +203,7 @@ private struct ClubGradesSettingsView: View {
 
                     if let grade = gradeEditing {
                         Section("New Game Wizard Fields") {
+                            Toggle("Head Coach", isOn: bind(grade, \.asksHeadCoach))
                             Toggle("Assistant Coach", isOn: bind(grade, \.asksAssistantCoach))
                             Toggle("Team Manager", isOn: bind(grade, \.asksTeamManager))
                             Toggle("Runner", isOn: bind(grade, \.asksRunner))
@@ -235,8 +236,9 @@ private struct ClubGradesSettingsView: View {
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") {
-                            saveEditedGrade()
-                            gradeEditing = nil
+                            if saveEditedGrade() {
+                                gradeEditing = nil
+                            }
                         }
                         .disabled(isEditGradeSaveDisabled)
                     }
@@ -266,19 +268,20 @@ private struct ClubGradesSettingsView: View {
         return true
     }
 
-    private func saveEditedGrade() {
-        guard let gradeEditing else { return }
+    private func saveEditedGrade() -> Bool {
+        guard let gradeEditing else { return false }
 
         let name = clean(editGradeName)
-        guard !name.isEmpty else { return }
+        guard !name.isEmpty else { return false }
         guard !grades.contains(where: {
             $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased()
-        }) else { return }
+        }) else { return false }
 
         gradeEditing.name = name
         SettingsBackupStore.saveGrades(grades)
         saveContext()
         reloadGrades()
+        return true
     }
 
     private var isEditGradeSaveDisabled: Bool {
@@ -383,6 +386,7 @@ private struct ClubGradesSettingsView: View {
                             name: $0.name,
                             isActive: $0.isActive,
                             displayOrder: $0.displayOrder,
+                            asksHeadCoach: $0.asksHeadCoach,
                             asksAssistantCoach: $0.asksAssistantCoach,
                             asksTeamManager: $0.asksTeamManager,
                             asksRunner: $0.asksRunner,
@@ -403,6 +407,7 @@ private struct ClubGradesSettingsView: View {
                                 name: item.name,
                                 isActive: item.isActive,
                                 displayOrder: item.displayOrder,
+                                asksHeadCoach: item.asksHeadCoach,
                                 asksAssistantCoach: item.asksAssistantCoach,
                                 asksTeamManager: item.asksTeamManager,
                                 asksRunner: item.asksRunner,
@@ -438,6 +443,7 @@ private struct ClubGradesSettingsView: View {
                     name: $0.name,
                     isActive: $0.isActive,
                     displayOrder: $0.displayOrder,
+                    asksHeadCoach: $0.asksHeadCoach,
                     asksAssistantCoach: $0.asksAssistantCoach,
                     asksTeamManager: $0.asksTeamManager,
                     asksRunner: $0.asksRunner,

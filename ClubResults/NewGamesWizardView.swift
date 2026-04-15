@@ -212,7 +212,7 @@ struct NewGameWizardView: View {
         guard let grade = selectedGrade else { return [.setup] }
 
         var steps: [Step] = [.setup]
-        if grade.asksAssistantCoach || grade.asksTeamManager || grade.asksRunner || grade.asksGoalUmpire || grade.asksBoundaryUmpires {
+        if grade.asksHeadCoach || grade.asksAssistantCoach || grade.asksTeamManager || grade.asksRunner || grade.asksGoalUmpire || grade.asksBoundaryUmpires {
             steps.append(.staff)
         }
         if grade.asksTrainers || grade.asksNotes {
@@ -256,6 +256,7 @@ struct NewGameWizardView: View {
                    !finalVenue.isEmpty
 
         case .staff:
+            let asksHeadCoach = selectedGrade?.asksHeadCoach ?? true
             let asksAssistantCoach = selectedGrade?.asksAssistantCoach ?? true
             let asksTeamManager = selectedGrade?.asksTeamManager ?? true
             let asksRunner = selectedGrade?.asksRunner ?? true
@@ -263,7 +264,7 @@ struct NewGameWizardView: View {
             let asksBoundary = selectedGrade?.asksBoundaryUmpires ?? true
 
             let coachingOK =
-                !finalHeadCoach.isEmpty &&
+                (!asksHeadCoach || !finalHeadCoach.isEmpty) &&
                 (!asksAssistantCoach || !finalAssCoach.isEmpty) &&
                 (!asksTeamManager || !finalTeamManager.isEmpty) &&
                 (!asksRunner || !finalRunner.isEmpty)
@@ -457,7 +458,9 @@ struct NewGameWizardView: View {
             VStack(spacing: 14) {
 
                 StaffCard(title: "Coaching", systemImage: "person.2.fill") {
-                    StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $headCoachName)
+                    if selectedGrade?.asksHeadCoach ?? true {
+                        StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $headCoachName)
+                    }
                     if selectedGrade?.asksAssistantCoach ?? true {
                         StaffPickerField(title: "Assistant Coach", role: .assistantCoach, gradeID: gradeID, value: $assCoachName)
                     }

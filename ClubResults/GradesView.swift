@@ -7,6 +7,7 @@ final class Grade {
     var name: String
     var isActive: Bool
     var displayOrder: Int
+    var asksHeadCoach: Bool
     var asksAssistantCoach: Bool
     var asksTeamManager: Bool
     var asksRunner: Bool
@@ -23,6 +24,7 @@ final class Grade {
         name: String,
         isActive: Bool = true,
         displayOrder: Int = 0,
+        asksHeadCoach: Bool = true,
         asksAssistantCoach: Bool = true,
         asksTeamManager: Bool = true,
         asksRunner: Bool = true,
@@ -38,6 +40,7 @@ final class Grade {
         self.name = name
         self.isActive = isActive
         self.displayOrder = displayOrder
+        self.asksHeadCoach = asksHeadCoach
         self.asksAssistantCoach = asksAssistantCoach
         self.asksTeamManager = asksTeamManager
         self.asksRunner = asksRunner
