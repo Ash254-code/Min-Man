@@ -14,6 +14,7 @@ struct NewGameWizardView: View {
 
     init(initialGradeID: UUID? = nil) {
         self.initialGradeID = initialGradeID
+        _gradeID = State(initialValue: initialGradeID)
     }
 
     // MARK: - Club Colours
@@ -94,7 +95,6 @@ struct NewGameWizardView: View {
     @State private var bestRanked: [UUID?] = Array(repeating: nil, count: 6)
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
-    @State private var hasAppliedInitialGrade = false
 
     // MARK: Helpers
     private func clean(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -393,14 +393,6 @@ struct NewGameWizardView: View {
         .onChange(of: gradeID) { _, newGrade in
             applyDefaults(for: newGrade)
             step = .setup
-        }
-        .onAppear {
-            guard !hasAppliedInitialGrade else { return }
-            hasAppliedInitialGrade = true
-            if let initialGradeID {
-                gradeID = initialGradeID
-                applyDefaults(for: initialGradeID)
-            }
         }
     }
 
