@@ -160,11 +160,14 @@ private struct NewGameQuickStartSection: View {
                                 Text(grade.name)
                                     .font(.system(size: horizontalSizeClass == .compact ? 28 : 34, weight: .bold))
                                     .multilineTextAlignment(.center)
+                                    .lineLimit(horizontalSizeClass == .compact ? 2 : nil)
                                     .minimumScaleFactor(0.7)
-                                Text("🏉 New Game")
-                                    .font(.system(size: horizontalSizeClass == .compact ? 18 : 22, weight: .semibold))
+                                if horizontalSizeClass != .compact {
+                                    Text("🏉 New Game")
+                                        .font(.system(size: 22, weight: .semibold))
+                                }
                             }
-                            .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .compact ? 156 : 184)
+                            .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .compact ? 132 : 184)
                             .padding(.horizontal, horizontalSizeClass == .compact ? 12 : 16)
                             .background(
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
