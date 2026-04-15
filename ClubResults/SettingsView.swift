@@ -1,6 +1,53 @@
 import SwiftUI
 import SwiftData
 
+private struct GradeBackup: Codable {
+    let id: UUID
+    let name: String
+    let isActive: Bool
+    let displayOrder: Int
+}
+
+private struct ContactBackup: Codable {
+    let id: UUID
+    let name: String
+    let mobile: String
+    let email: String
+}
+
+private enum SettingsBackupStore {
+    private static let gradesKey = "settings.backup.grades.v1"
+    private static let contactsKey = "settings.backup.contacts.v1"
+
+    static func saveGrades(_ grades: [Grade]) {
+        let payload = grades.map { GradeBackup(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
+        guard let data = try? JSONEncoder().encode(payload) else { return }
+        UserDefaults.standard.set(data, forKey: gradesKey)
+    }
+
+    static func loadGrades() -> [GradeBackup] {
+        guard let data = UserDefaults.standard.data(forKey: gradesKey),
+              let decoded = try? JSONDecoder().decode([GradeBackup].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
+
+    static func saveContacts(_ contacts: [Contact]) {
+        let payload = contacts.map { ContactBackup(id: $0.id, name: $0.name, mobile: $0.mobile, email: $0.email) }
+        guard let data = try? JSONEncoder().encode(payload) else { return }
+        UserDefaults.standard.set(data, forKey: contactsKey)
+    }
+
+    static func loadContacts() -> [ContactBackup] {
+        guard let data = UserDefaults.standard.data(forKey: contactsKey),
+              let decoded = try? JSONDecoder().decode([ContactBackup].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
+}
+
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var saveErrorMessage: String?
@@ -214,6 +261,7 @@ private struct ClubGradesSettingsView: View {
         let newGrade = Grade(name: name, isActive: true, displayOrder: nextOrder)
         modelContext.insert(newGrade)
         grades.append(newGrade)
+        SettingsBackupStore.saveGrades(grades)
         saveContext()
         reloadGrades()
         return true
@@ -226,6 +274,7 @@ private struct ClubGradesSettingsView: View {
         guard !grades.contains(where: { $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased() }) else { return }
 
         gradeEditing.name = name
+        SettingsBackupStore.saveGrades(grades)
         saveContext()
         reloadGrades()
     }
@@ -238,6 +287,7 @@ private struct ClubGradesSettingsView: View {
             grade.displayOrder = index
         }
 
+        SettingsBackupStore.saveGrades(reordered)
         saveContext()
         reloadGrades()
     }
@@ -266,6 +316,7 @@ private struct ClubGradesSettingsView: View {
             item.displayOrder = index
         }
 
+        SettingsBackupStore.saveGrades(remaining)
         saveContext()
         reloadGrades()
     }
@@ -287,7 +338,20 @@ private struct ClubGradesSettingsView: View {
             let descriptor = FetchDescriptor<Grade>(
                 sortBy: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]
             )
-            grades = try modelContext.fetch(descriptor)
+            let fetched = try modelContext.fetch(descriptor)
+            if fetched.isEmpty {
+                let backups = SettingsBackupStore.loadGrades()
+                if !backups.isEmpty {
+                    for item in backups {
+                        modelContext.insert(Grade(id: item.id, name: item.name, isActive: item.isActive, displayOrder: item.displayOrder))
+                    }
+                    try modelContext.save()
+                    grades = try modelContext.fetch(descriptor)
+                    return
+                }
+            }
+            grades = fetched
+            SettingsBackupStore.saveGrades(grades)
         } catch {
             saveErrorMessage = error.localizedDescription
         }
@@ -365,6 +429,7 @@ private struct ContactsSettingsView: View {
                 modelContext.insert(newContact)
                 contacts.append(newContact)
                 contacts.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                SettingsBackupStore.saveContacts(contacts)
                 saveContext()
                 reloadContacts()
                 return true
@@ -380,6 +445,7 @@ private struct ContactsSettingsView: View {
                 contact.name = name
                 contact.mobile = mobile
                 contact.email = email
+                SettingsBackupStore.saveContacts(contacts)
                 saveContext()
                 reloadContacts()
                 return true
@@ -403,6 +469,8 @@ private struct ContactsSettingsView: View {
             modelContext.delete(recipient)
         }
         modelContext.delete(contact)
+        contacts.removeAll { $0.id == contact.id }
+        SettingsBackupStore.saveContacts(contacts)
         saveContext()
         reloadContacts()
     }
@@ -420,7 +488,20 @@ private struct ContactsSettingsView: View {
             let descriptor = FetchDescriptor<Contact>(
                 sortBy: [SortDescriptor(\Contact.name)]
             )
-            contacts = try modelContext.fetch(descriptor)
+            let fetched = try modelContext.fetch(descriptor)
+            if fetched.isEmpty {
+                let backups = SettingsBackupStore.loadContacts()
+                if !backups.isEmpty {
+                    for item in backups {
+                        modelContext.insert(Contact(id: item.id, name: item.name, mobile: item.mobile, email: item.email))
+                    }
+                    try modelContext.save()
+                    contacts = try modelContext.fetch(descriptor)
+                    return
+                }
+            }
+            contacts = fetched
+            SettingsBackupStore.saveContacts(contacts)
         } catch {
             saveErrorMessage = error.localizedDescription
         }
