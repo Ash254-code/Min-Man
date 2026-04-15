@@ -3,13 +3,17 @@ import SwiftData
 import UIKit
 
 struct GamesView: View {
+    private struct NewGameWizardPresentation: Identifiable {
+        let id = UUID()
+        let initialGradeID: UUID?
+    }
+
     @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: \Player.name) private var players: [Player]
 
     @State private var selectedGradeID: UUID? = nil
-    @State private var showNewGameWizard = false
-    @State private var newGameGradeID: UUID? = nil
+    @State private var newGameWizardPresentation: NewGameWizardPresentation?
 
     // MARK: - Ordered grades (your seeded order + remaining A→Z)
     private var orderedGrades: [Grade] {
@@ -73,8 +77,7 @@ struct GamesView: View {
                             grades: orderedGrades,
                             minHeight: geometry.size.height * 0.33,
                             onStartNewGame: { gradeID in
-                                newGameGradeID = gradeID
-                                showNewGameWizard = true
+                                newGameWizardPresentation = NewGameWizardPresentation(initialGradeID: gradeID)
                             }
                         )
                         .padding(.horizontal)
@@ -115,14 +118,13 @@ struct GamesView: View {
                         grades: orderedGrades,
                         selectedGradeID: $selectedGradeID,
                         onAdd: {
-                            newGameGradeID = nil
-                            showNewGameWizard = true
+                            newGameWizardPresentation = NewGameWizardPresentation(initialGradeID: nil)
                         }
                     )
                 }
             }
-            .sheet(isPresented: $showNewGameWizard) {
-                NewGameWizardView(initialGradeID: newGameGradeID)
+            .sheet(item: $newGameWizardPresentation) { presentation in
+                NewGameWizardView(initialGradeID: presentation.initialGradeID)
                     .appPopupStyle()
             }
         }
