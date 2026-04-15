@@ -15,6 +15,12 @@ struct SettingsView: View {
                 }
 
                 NavigationLink {
+                    BoundaryUmpiresSettingsView()
+                } label: {
+                    settingsRow(title: "Boundary Umpires", icon: "flag.pattern.checkered")
+                }
+
+                NavigationLink {
                     AppAppearanceSettingsView()
                 } label: {
                     settingsRow(title: "App Appearance", icon: "circle.lefthalf.filled")
@@ -82,6 +88,57 @@ struct SettingsView: View {
             try modelContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct BoundaryUmpiresSettingsView: View {
+    @Query private var grades: [Grade]
+    @State private var mappings: [UUID: UUID] = [:]
+
+    private var orderedGrades: [Grade] {
+        orderedGradesForDisplay(resolvedConfiguredGrades(from: grades), includeInactive: true)
+    }
+
+    var body: some View {
+        List {
+            ForEach(orderedGrades) { grade in
+                HStack(spacing: 12) {
+                    Text(grade.name)
+                    Spacer(minLength: 12)
+
+                    Picker("Boundary players from", selection: mappingBinding(for: grade.id)) {
+                        ForEach(orderedGrades) { option in
+                            Text(option.name).tag(option.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .navigationTitle("Boundary Umpires")
+        .task {
+            mappings = SettingsBackupStore.loadBoundaryUmpireGradeMappings()
+            ensureMissingMappingsDefaultToSelf()
+            SettingsBackupStore.saveBoundaryUmpireGradeMappings(mappings)
+        }
+    }
+
+    private func mappingBinding(for gameGradeID: UUID) -> Binding<UUID> {
+        Binding(
+            get: { mappings[gameGradeID] ?? gameGradeID },
+            set: { newBoundaryGradeID in
+                mappings[gameGradeID] = newBoundaryGradeID
+                SettingsBackupStore.saveBoundaryUmpireGradeMappings(mappings)
+            }
+        )
+    }
+
+    private func ensureMissingMappingsDefaultToSelf() {
+        for grade in orderedGrades where mappings[grade.id] == nil {
+            mappings[grade.id] = grade.id
         }
     }
 }

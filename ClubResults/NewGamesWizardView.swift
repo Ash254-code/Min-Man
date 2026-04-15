@@ -64,9 +64,13 @@ struct NewGameWizardView: View {
 
     @State private var goalUmpireName: String = ""
 
-    // Boundary umpires are chosen from players list (IDs)
+    // Boundary umpires are chosen from a configured grade's players, or entered manually.
     @State private var boundaryUmpire1ID: UUID?
     @State private var boundaryUmpire2ID: UUID?
+    @State private var boundaryUmpire1CustomName: String = ""
+    @State private var boundaryUmpire2CustomName: String = ""
+    @State private var boundaryUmpireNamePrompt: BoundaryUmpireSlot?
+    @State private var boundaryUmpireNameDraft: String = ""
 
     @State private var trainer1Name: String = ""
     @State private var trainer2Name: String = ""
@@ -106,8 +110,14 @@ struct NewGameWizardView: View {
         guard let id else { return "" }
         return players.first(where: { $0.id == id })?.name ?? ""
     }
-    private var finalBoundary1: String { playerName(for: boundaryUmpire1ID) }
-    private var finalBoundary2: String { playerName(for: boundaryUmpire2ID) }
+    private var finalBoundary1: String {
+        let custom = clean(boundaryUmpire1CustomName)
+        return custom.isEmpty ? playerName(for: boundaryUmpire1ID) : custom
+    }
+    private var finalBoundary2: String {
+        let custom = clean(boundaryUmpire2CustomName)
+        return custom.isEmpty ? playerName(for: boundaryUmpire2ID) : custom
+    }
 
     private var venuesForOpponent: [String] {
         guard !finalOpponent.isEmpty else { return [] }
@@ -200,6 +210,22 @@ struct NewGameWizardView: View {
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
     }
 
+    private var boundaryUmpireSourceGradeID: UUID? {
+        guard let gid = gradeID else { return nil }
+        let configured = SettingsBackupStore.loadBoundaryUmpireGradeMappings()[gid]
+        return configured ?? gid
+    }
+
+    private var boundaryUmpirePlayers: [Player] {
+        guard let sourceGradeID = boundaryUmpireSourceGradeID else { return [] }
+        return players.filter { $0.isActive && $0.gradeIDs.contains(sourceGradeID) }
+    }
+
+    private enum BoundaryUmpireSlot {
+        case one
+        case two
+    }
+
     // MARK: - Uniform row styling
     private func rowLabel(_ title: String) -> some View {
         Text(title)
@@ -238,8 +264,8 @@ struct NewGameWizardView: View {
 
             let officialsOK =
                 !finalGoalUmpire.isEmpty &&
-                boundaryUmpire1ID != nil &&
-                boundaryUmpire2ID != nil &&
+                !finalBoundary1.isEmpty &&
+                !finalBoundary2.isEmpty &&
                 boundaryUmpire1ID != boundaryUmpire2ID
 
             return coachingOK && officialsOK
@@ -430,16 +456,27 @@ struct NewGameWizardView: View {
                         rowLabel("Boundary Umpire 1")
                         Spacer()
                         Menu {
-                            Button("Select…") { boundaryUmpire1ID = nil }
+                            Button("Select…") {
+                                boundaryUmpire1ID = nil
+                                boundaryUmpire1CustomName = ""
+                            }
                             Divider()
-                            ForEach(players) { person in
+                            ForEach(boundaryUmpirePlayers) { person in
                                 if person.id != boundaryUmpire2ID {
-                                    Button(person.name) { boundaryUmpire1ID = person.id }
+                                    Button(person.name) {
+                                        boundaryUmpire1ID = person.id
+                                        boundaryUmpire1CustomName = ""
+                                    }
                                 }
+                            }
+                            Divider()
+                            Button("Enter different name…") {
+                                boundaryUmpireNameDraft = boundaryUmpire1CustomName
+                                boundaryUmpireNamePrompt = .one
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                rowValue(playerName(for: boundaryUmpire1ID))
+                                rowValue(finalBoundary1)
                                 Image(systemName: "chevron.up.chevron.down")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.secondary)
@@ -454,16 +491,27 @@ struct NewGameWizardView: View {
                         rowLabel("Boundary Umpire 2")
                         Spacer()
                         Menu {
-                            Button("Select…") { boundaryUmpire2ID = nil }
+                            Button("Select…") {
+                                boundaryUmpire2ID = nil
+                                boundaryUmpire2CustomName = ""
+                            }
                             Divider()
-                            ForEach(players) { person in
+                            ForEach(boundaryUmpirePlayers) { person in
                                 if person.id != boundaryUmpire1ID {
-                                    Button(person.name) { boundaryUmpire2ID = person.id }
+                                    Button(person.name) {
+                                        boundaryUmpire2ID = person.id
+                                        boundaryUmpire2CustomName = ""
+                                    }
                                 }
+                            }
+                            Divider()
+                            Button("Enter different name…") {
+                                boundaryUmpireNameDraft = boundaryUmpire2CustomName
+                                boundaryUmpireNamePrompt = .two
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                rowValue(playerName(for: boundaryUmpire2ID))
+                                rowValue(finalBoundary2)
                                 Image(systemName: "chevron.up.chevron.down")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.secondary)
@@ -487,6 +535,32 @@ struct NewGameWizardView: View {
             .padding(.bottom, 28)
         }
         .background(Color(.systemGroupedBackground))
+        .alert(
+            boundaryUmpireNamePrompt == .one ? "Boundary Umpire 1" : "Boundary Umpire 2",
+            isPresented: Binding(
+                get: { boundaryUmpireNamePrompt != nil },
+                set: { if !$0 { boundaryUmpireNamePrompt = nil } }
+            )
+        ) {
+            TextField("Name", text: $boundaryUmpireNameDraft)
+                .textInputAutocapitalization(.words)
+            Button("Cancel", role: .cancel) {
+                boundaryUmpireNamePrompt = nil
+            }
+            Button("Save") {
+                let enteredName = clean(boundaryUmpireNameDraft)
+                if boundaryUmpireNamePrompt == .one {
+                    boundaryUmpire1CustomName = enteredName
+                    boundaryUmpire1ID = nil
+                } else if boundaryUmpireNamePrompt == .two {
+                    boundaryUmpire2CustomName = enteredName
+                    boundaryUmpire2ID = nil
+                }
+                boundaryUmpireNamePrompt = nil
+            }
+        } message: {
+            Text("Enter a name if no listed player was the boundary umpire.")
+        }
     }
 
     private var medicalStep: some View {
