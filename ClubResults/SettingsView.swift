@@ -649,34 +649,46 @@ private struct ContactEditSheet: View {
                         dismiss()
                     }
                 }
+            }
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 12) {
+                    Spacer()
 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(allowsSaveAndAddAnother ? "Save & Add Another" : "Save") {
-                        if onSave(clean(name), clean(mobile), clean(email)) {
-                            if allowsSaveAndAddAnother {
-                                name = ""
-                                mobile = ""
-                                email = ""
-                            } else {
-                                dismiss()
-                            }
+                    if allowsSaveAndAddAnother {
+                        Button("Save & Add Another") {
+                            saveAndAddAnother()
                         }
-                    }
-                    .disabled(!canSave)
-                }
-
-                if allowsSaveAndAddAnother {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save & Close") {
-                            if onSave(clean(name), clean(mobile), clean(email)) {
-                                dismiss()
-                            }
-                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(canSave ? .blue : .gray)
                         .disabled(!canSave)
                     }
+
+                    Button(allowsSaveAndAddAnother ? "Save & Close" : "Save") {
+                        saveAndClose()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(canSave ? .blue : .gray)
+                    .disabled(!canSave)
                 }
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+                .background(.ultraThinMaterial)
             }
         }
+    }
+
+    private func saveAndAddAnother() {
+        guard onSave(clean(name), clean(mobile), clean(email)) else { return }
+
+        name = ""
+        mobile = ""
+        email = ""
+    }
+
+    private func saveAndClose() {
+        guard onSave(clean(name), clean(mobile), clean(email)) else { return }
+        dismiss()
     }
 
     private func clean(_ text: String) -> String {
