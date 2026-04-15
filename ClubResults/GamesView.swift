@@ -136,7 +136,12 @@ private struct NewGameQuickStartSection: View {
     let minHeight: CGFloat
     let onStartNewGame: (UUID) -> Void
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 14), count: 3)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var columns: [GridItem] {
+        let count = horizontalSizeClass == .compact ? 2 : 3
+        return Array(repeating: GridItem(.flexible(), spacing: 14), count: count)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -153,14 +158,17 @@ private struct NewGameQuickStartSection: View {
                         } label: {
                             VStack(spacing: 10) {
                                 Text(grade.name)
-                                    .font(.system(size: 34, weight: .bold))
+                                    .font(.system(size: horizontalSizeClass == .compact ? 20 : 34, weight: .bold))
                                     .multilineTextAlignment(.center)
-                                    .minimumScaleFactor(0.7)
-                                Text("🏉 New Game")
-                                    .font(.system(size: 22, weight: .semibold))
+                                    .lineLimit(horizontalSizeClass == .compact ? 1 : nil)
+                                    .minimumScaleFactor(horizontalSizeClass == .compact ? 0.8 : 0.7)
+                                if horizontalSizeClass != .compact {
+                                    Text("🏉 New Game")
+                                        .font(.system(size: 22, weight: .semibold))
+                                }
                             }
-                            .frame(maxWidth: .infinity, minHeight: 184)
-                            .padding(.horizontal, 16)
+                            .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .compact ? 84 : 184)
+                            .padding(.horizontal, horizontalSizeClass == .compact ? 12 : 16)
                             .background(
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                                     .fill(.regularMaterial)
@@ -264,37 +272,65 @@ private struct GameCardRow: View {
     let gradeName: String
     let opponentWidth: CGFloat
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     private var didWin: Bool { game.ourScore >= game.theirScore }
+    private var isCompact: Bool { horizontalSizeClass == .compact }
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 12) {
+            if isCompact {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        OpponentBadge(opponent: game.opponent, fixedWidth: nil)
+                        Text(game.date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
 
-                // ✅ opponent pills all same width
-                OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth)
+                    Spacer(minLength: 4)
 
-                Spacer(minLength: 10)
+                    VStack(alignment: .trailing, spacing: 8) {
+                        ResultPill(win: didWin)
+                        Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
+                            .font(.system(size: 22, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                        Text(gradeName)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            } else {
+                HStack(spacing: 12) {
 
-                Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
-                    .font(.system(size: 24, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    // ✅ opponent pills all same width
+                    OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth)
 
-                Spacer(minLength: 10)
+                    Spacer(minLength: 10)
 
-                VStack(alignment: .trailing, spacing: 6) {
-                    ResultPill(win: didWin)
-                    Text(gradeName)
+                    Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
+                        .font(.system(size: 24, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+
+                    Spacer(minLength: 10)
+
+                    VStack(alignment: .trailing, spacing: 6) {
+                        ResultPill(win: didWin)
+                        Text(gradeName)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack {
+                    Text(game.date.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.secondary)
+                    Spacer()
                 }
-            }
-
-            HStack {
-                Text(game.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
             }
         }
         .padding(.horizontal, 16)
