@@ -177,19 +177,25 @@ private struct ClubGradesSettingsView: View {
         List {
             Section {
                 ForEach(sortedGrades) { grade in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(grade.name)
+                    Button {
+                        gradeEditing = grade
+                        editGradeName = grade.name
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(grade.name)
 
-                            if !grade.isActive {
-                                Text("Inactive")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                if !grade.isActive {
+                                    Text("Inactive")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
-                        }
 
-                        Spacer()
+                            Spacer()
+                        }
                     }
+                    .buttonStyle(.plain)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button {
                             gradeEditing = grade
@@ -275,6 +281,16 @@ private struct ClubGradesSettingsView: View {
                 Form {
                     TextField("Grade name", text: $editGradeName)
                         .textInputAutocapitalization(.words)
+
+                    Section {
+                        Button(role: .destructive) {
+                            if deleteEditingGrade() {
+                                gradeEditing = nil
+                            }
+                        } label: {
+                            Label("Delete Grade", systemImage: "trash")
+                        }
+                    }
                 }
                 .navigationTitle("Edit Grade")
                 .toolbar {
@@ -288,7 +304,7 @@ private struct ClubGradesSettingsView: View {
                             saveEditedGrade()
                             gradeEditing = nil
                         }
-                        .disabled(clean(editGradeName).isEmpty)
+                        .disabled(isEditGradeSaveDisabled)
                     }
                 }
             }
@@ -331,6 +347,18 @@ private struct ClubGradesSettingsView: View {
         reloadGrades()
     }
 
+    private var isEditGradeSaveDisabled: Bool {
+        guard let gradeEditing else { return true }
+
+        let name = clean(editGradeName)
+        guard !name.isEmpty else { return true }
+        guard name != clean(gradeEditing.name) else { return true }
+
+        return grades.contains(where: {
+            $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased()
+        })
+    }
+
     private func moveGrades(from source: IndexSet, to destination: Int) {
         var reordered = sortedGrades
         reordered.move(fromOffsets: source, toOffset: destination)
@@ -344,17 +372,17 @@ private struct ClubGradesSettingsView: View {
         reloadGrades()
     }
 
-    private func deleteGrade(_ grade: Grade) {
+    private func deleteGrade(_ grade: Grade) -> Bool {
         if games.contains(where: { $0.gradeID == grade.id }) {
             deletionErrorMessage = "This grade has games attached. Reassign or remove those games first."
             showDeletionError = true
-            return
+            return false
         }
 
         if players.contains(where: { $0.gradeIDs.contains(grade.id) }) {
             deletionErrorMessage = "This grade has players attached. Remove the grade from players first."
             showDeletionError = true
-            return
+            return false
         }
 
         for recipient in reportRecipients where recipient.gradeID == grade.id {
@@ -375,6 +403,12 @@ private struct ClubGradesSettingsView: View {
         SettingsBackupStore.saveGrades(remaining)
         saveContext()
         reloadGrades()
+        return true
+    }
+
+    private func deleteEditingGrade() -> Bool {
+        guard let gradeEditing else { return false }
+        return deleteGrade(gradeEditing)
     }
 
     private func clean(_ text: String) -> String {
