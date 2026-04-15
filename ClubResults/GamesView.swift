@@ -89,30 +89,28 @@ struct GamesView: View {
                         )
                         .padding(.horizontal)
 
-                        Text("Games")
-                            .font(.title3.weight(.semibold))
-                            .padding(.horizontal)
-
-                        VStack(spacing: 14) {
+                        GamesListSection(minHeight: geometry.size.height * 0.33) {
                             if filteredGames.isEmpty {
                                 ContentUnavailableView("No games yet", systemImage: "sportscourt")
-                                    .padding(.top, 30)
+                                    .padding(.vertical, 36)
                             } else {
-                                ForEach(filteredGames) { game in
-                                    NavigationLink {
-                                        GameDetailView(game: game, grades: orderedGrades, players: players)
-                                    } label: {
-                                        GameCardRow(
-                                            game: game,
-                                            gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
-                                            opponentWidth: maxOpponentPillWidth
-                                        )
+                                VStack(spacing: 14) {
+                                    ForEach(filteredGames) { game in
+                                        NavigationLink {
+                                            GameDetailView(game: game, grades: orderedGrades, players: players)
+                                        } label: {
+                                            GameCardRow(
+                                                game: game,
+                                                gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
+                                                opponentWidth: maxOpponentPillWidth
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
-                                    .padding(.horizontal)
                                 }
                             }
                         }
+                        .padding(.horizontal)
 
                         Spacer(minLength: 20)
                     }
@@ -150,7 +148,7 @@ private struct NewGameQuickStartSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Start New Game")
-                .font(.system(size: 40, weight: .bold))
+                .font(.system(size: 34, weight: .bold))
 
             if grades.isEmpty {
                 ContentUnavailableView("No active grades", systemImage: "list.bullet.clipboard")
@@ -183,6 +181,31 @@ private struct NewGameQuickStartSection: View {
                     }
                 }
             }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+    }
+}
+
+private struct GamesListSection<Content: View>: View {
+    let minHeight: CGFloat
+    let content: Content
+
+    init(minHeight: CGFloat, @ViewBuilder content: () -> Content) {
+        self.minHeight = minHeight
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Games")
+                .font(.system(size: 34, weight: .bold))
+
+            content
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
