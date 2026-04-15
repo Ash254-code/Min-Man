@@ -2,6 +2,12 @@ import SwiftUI
 import SwiftData
 import UIKit
 import MessageUI
+#if canImport(VisionKit)
+import VisionKit
+#endif
+#if canImport(AVFoundation)
+import AVFoundation
+#endif
 
 // Local model for goal kickers used by this wizard
 private struct WizardGoalKickerEntry: Identifiable, Codable, Hashable {
@@ -971,6 +977,7 @@ struct NewGameWizardView: View {
     }
 
     private func openVotesScanner() {
+#if canImport(VisionKit) && canImport(AVFoundation)
         guard VNDocumentCameraViewController.isSupported else {
             scannerErrorMessage = "This device does not support document scanning."
             return
@@ -994,6 +1001,9 @@ struct NewGameWizardView: View {
         @unknown default:
             scannerErrorMessage = "Unable to access the camera right now. Please try again."
         }
+#else
+        scannerErrorMessage = "Document scanning is not available on this device."
+#endif
     }
 
     // MARK: Logic helpers
