@@ -472,15 +472,13 @@ struct PlayersView: View {
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
 
-    private func createAndSavePlayer(name: String, number: Int?, gradeIDs: [UUID]) -> Bool {
+    private func createAndSavePlayer(name: String, number: Int?, gradeIDs: [UUID]) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty else { return }
 
         let normalized = normalizeName(trimmed)
         guard !playersForDisplay.contains(where: { normalizeName($0.name) == normalized }) else {
-            addErrorMessage = "A player with that name already exists."
-            showAddError = true
-            return false
+            return
         }
 
         let p = Player(name: trimmed, number: number, gradeIDs: gradeIDs)
@@ -489,12 +487,10 @@ struct PlayersView: View {
         do {
             try modelContext.save()
             reloadPlayersFromStore()
-            return true
         } catch {
             modelContext.delete(p)
             addErrorMessage = error.localizedDescription
             showAddError = true
-            return false
         }
     }
 
