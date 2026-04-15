@@ -26,6 +26,13 @@ struct SettingsView: View {
                     settingsRow(title: "App Appearance", icon: "circle.lefthalf.filled")
                 }
 
+
+                NavigationLink {
+                    TeamsAndVenuesSettingsView()
+                } label: {
+                    settingsRow(title: "Teams & Venues", icon: "flag.2.crossed")
+                }
+
                 NavigationLink {
                     ReportsSettingsView()
                 } label: {

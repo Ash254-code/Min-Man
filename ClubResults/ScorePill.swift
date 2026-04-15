@@ -29,8 +29,10 @@ struct ScorePill: View {
 
 // MARK: - Convenience creators
 extension ScorePill {
-    static func minMan() -> ScorePill {
-        ScorePill("Min Man", style: ClubStyle.ourScoreStyle)
+    static func minMan(teamName: String = "Min Man") -> ScorePill {
+        let cleaned = teamName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = cleaned.isEmpty ? "Min Man" : cleaned
+        return ScorePill(label, style: ClubStyle.ourScoreStyle)
     }
 
     static func opponent(_ name: String) -> ScorePill {

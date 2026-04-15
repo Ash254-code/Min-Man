@@ -37,25 +37,26 @@ struct NewGameWizardView: View {
     @State private var gradeID: UUID?
     @State private var date = Date()
 
-    // ✅ Opponent list (ONLY these 7)
-    private let opponents: [String] = [
-        "BSR", "BBH", "RSMU", "North Clare", "South Clare", "Southern Saints", "Blyth/Snowtown"
-    ]
+    @State private var clubConfiguration: ClubConfiguration = ClubConfigurationStore.load()
 
-    // ✅ Venue depends on opponent (ONLY from this)
-    private let venueOptionsByOpponent: [String: [String]] = [
-        "South Clare": ["Clare", "Mintaro", "Manoora"],
-        "North Clare": ["Clare", "Mintaro", "Manoora"],
-        "RSMU": ["Riverton", "Mintaro", "Manoora"],
-        "BSR": ["Mintaro", "Manoora", "Brinkworth", "Spalding", "Redhill"],
-        "BBH": ["Burra", "Mintaro", "Manoora"],
-        "Southern Saints": ["Mintaro", "Manoora", "Eudunda", "Robertstown"],
-        "Blyth/Snowtown": ["Mintaro", "Manoora", "Blyth", "Snowtown"]
-    ]
+    enum GameLocation: String, CaseIterable, Identifiable {
+        case home
+        case away
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .home: return "Home"
+            case .away: return "Away"
+            }
+        }
+    }
 
     // MARK: Selections (dropdowns)
     @State private var opponentName: String = ""
     @State private var venueName: String = ""
+    @State private var gameLocation: GameLocation = .home
 
     // MARK: Staff
     @State private var headCoachName: String = ""
@@ -122,9 +123,34 @@ struct NewGameWizardView: View {
         return custom.isEmpty ? playerName(for: boundaryUmpire2ID) : custom
     }
 
-    private var venuesForOpponent: [String] {
-        guard !finalOpponent.isEmpty else { return [] }
-        return venueOptionsByOpponent[finalOpponent] ?? []
+    private var opponentNames: [String] {
+        clubConfiguration.sortedOppositions.map(\.name)
+    }
+
+    private var selectedOpposition: OppositionTeamProfile? {
+        clubConfiguration.sortedOppositions.first(where: { $0.name == finalOpponent })
+    }
+
+    private var venuesForSelection: [String] {
+        switch gameLocation {
+        case .home: return clubConfiguration.clubTeam.sanitizedVenues
+        case .away: return selectedOpposition?.sanitizedVenues ?? []
+        }
+    }
+
+    private var ourTeamScoreStyle: ClubStyle.Style {
+        let colors = clubConfiguration.clubTeam.colorHexes
+        let background = colors.first.map { Color(hex: $0, fallback: ClubStyle.ourScoreStyle.background) } ?? ClubStyle.ourScoreStyle.background
+        let textColor = colors.dropFirst().first.map { Color(hex: $0, fallback: ClubStyle.ourScoreStyle.text) } ?? ClubStyle.ourScoreStyle.text
+        return ClubStyle.Style(background: background, text: textColor)
+    }
+
+    private var opponentScoreStyle: ClubStyle.Style {
+        guard let selectedOpposition else { return ClubStyle.style(for: finalOpponent) }
+        let colors = selectedOpposition.colorHexes
+        let background = colors.first.map { Color(hex: $0, fallback: ClubStyle.style(for: selectedOpposition.name).background) } ?? ClubStyle.style(for: selectedOpposition.name).background
+        let textColor = colors.dropFirst().first.map { Color(hex: $0, fallback: .white) } ?? .white
+        return ClubStyle.Style(background: background, text: textColor)
     }
 
     // MARK: Defaults (from SwiftData)
@@ -396,6 +422,11 @@ struct NewGameWizardView: View {
         // ✅ Seed staff + defaults once
         .onAppear {
             StaffSeeder.seedIfNeeded(modelContext: modelContext, grades: grades)
+            clubConfiguration = ClubConfigurationStore.load()
+            if !opponentName.isEmpty && !opponentNames.contains(opponentName) {
+                opponentName = ""
+                venueName = ""
+            }
             applyDefaults(for: gradeID)
         }
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
@@ -463,7 +494,7 @@ struct NewGameWizardView: View {
 
                     Picker("Opponent", selection: $opponentName) {
                         Text("Select…").tag("")
-                        ForEach(opponents, id: \.self) { o in
+                        ForEach(opponentNames, id: \.self) { o in
                             Text(o).tag(o)
                         }
                     }
@@ -472,14 +503,24 @@ struct NewGameWizardView: View {
                         venueName = ""
                     }
 
+                    Picker("Location", selection: $gameLocation) {
+                        ForEach(GameLocation.allCases) { location in
+                            Text(location.title).tag(location)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: gameLocation) { _, _ in
+                        venueName = ""
+                    }
+
                     Picker("Venue", selection: $venueName) {
                         Text("Select…").tag("")
-                        ForEach(venuesForOpponent, id: \.self) { v in
+                        ForEach(venuesForSelection, id: \.self) { v in
                             Text(v).tag(v)
                         }
                     }
                     .pickerStyle(.menu)
-                    .disabled(finalOpponent.isEmpty || venuesForOpponent.isEmpty)
+                    .disabled(finalOpponent.isEmpty || venuesForSelection.isEmpty)
                 }
             }
         }
@@ -677,7 +718,7 @@ struct NewGameWizardView: View {
 
             } header: {
                 HStack(alignment: .center) {
-                    ScorePill.minMan()
+                    ScorePill(clubConfiguration.clubTeam.name, style: ourTeamScoreStyle)
                     Spacer()
                     Text("\(ourGoals).\(ourBehinds) (\(ourScore))")
                         .font(.system(size: 24, weight: .bold))
@@ -700,7 +741,7 @@ struct NewGameWizardView: View {
 
             } header: {
                 HStack(alignment: .center) {
-                    ScorePill.opponent(finalOpponent)
+                    ScorePill(finalOpponent.isEmpty ? "Opponent" : finalOpponent, style: opponentScoreStyle)
                     Spacer()
                     Text("\(theirGoals).\(theirBehinds) (\(theirScore))")
                         .font(.system(size: 24, weight: .bold))
@@ -808,6 +849,7 @@ struct NewGameWizardView: View {
         Form {
             Section("Game Summary") {
                 Text("Opponent: \(finalOpponent)")
+                Text("Location: \(gameLocation.title)")
                 Text("Venue: \(finalVenue)")
                 Text("Date: \(date.formatted(date: .abbreviated, time: .omitted))")
 
