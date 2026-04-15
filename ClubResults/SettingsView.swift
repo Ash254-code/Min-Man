@@ -141,7 +141,7 @@ private struct ClubGradesSettingsView: View {
                         .tint(.blue)
 
                         Button(role: .destructive) {
-                            deleteGrade(grade)
+                            _ = deleteGrade(grade)
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }

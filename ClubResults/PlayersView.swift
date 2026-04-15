@@ -377,7 +377,7 @@ struct PlayersView: View {
 
         let gradeLookup = GradeLookup(grades: resolvedGrades)
 
-        let existingByName: [String: Player] = playersForDisplay.reduce(into: [:]) { partial, player in
+        var existingByName: [String: Player] = playersForDisplay.reduce(into: [:]) { partial, player in
             partial[normalizeName(player.name)] = player
         }
 
