@@ -149,6 +149,11 @@ struct NewGameWizardView: View {
         orderedGradesForDisplay(resolvedGrades)
     }
 
+    private var selectedGradeName: String {
+        guard let gid = gradeID else { return "Not selected" }
+        return resolvedGrades.first(where: { $0.id == gid })?.name ?? "Unknown grade"
+    }
+
     private var eligiblePlayers: [Player] {
         guard let gid = gradeID else { return [] }
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
@@ -310,13 +315,22 @@ struct NewGameWizardView: View {
     private var setupStep: some View {
         Form {
             Section {
-                Picker("Grade", selection: $gradeID) {
-                    Text("Select…").tag(UUID?.none)
-                    ForEach(orderedGrades) { g in
-                        Text(g.name).tag(UUID?.some(g.id))
+                if initialGradeID != nil {
+                    HStack {
+                        Text("Grade")
+                        Spacer()
+                        Text(selectedGradeName)
+                            .foregroundStyle(.secondary)
                     }
+                } else {
+                    Picker("Grade", selection: $gradeID) {
+                        Text("Select…").tag(UUID?.none)
+                        ForEach(orderedGrades) { g in
+                            Text(g.name).tag(UUID?.some(g.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
 
                 if let _ = gradeID, eligiblePlayers.isEmpty {
                     Text("No active players assigned to this grade yet. Add players first.")
