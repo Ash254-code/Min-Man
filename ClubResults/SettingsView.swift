@@ -94,7 +94,7 @@ struct SettingsView: View {
 
 private struct BoundaryUmpiresSettingsView: View {
     @Query private var grades: [Grade]
-    @State private var mappings: [UUID: UUID] = [:]
+    @State private var mappings: [UUID: [UUID]] = [:]
 
     private var orderedGrades: [Grade] {
         orderedGradesForDisplay(resolvedConfiguredGrades(from: grades), includeInactive: true)
@@ -103,19 +103,19 @@ private struct BoundaryUmpiresSettingsView: View {
     var body: some View {
         List {
             ForEach(orderedGrades) { grade in
-                HStack(spacing: 12) {
-                    Text(grade.name)
-                    Spacer(minLength: 12)
+                NavigationLink {
+                    boundaryGradeSelectionView(for: grade)
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(grade.name)
 
-                    Picker("Boundary players from", selection: mappingBinding(for: grade.id)) {
-                        ForEach(orderedGrades) { option in
-                            Text(option.name).tag(option.id)
-                        }
+                        Text(mappingSummary(for: grade.id))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 4)
             }
         }
         .navigationTitle("Boundary Umpires")
@@ -126,19 +126,68 @@ private struct BoundaryUmpiresSettingsView: View {
         }
     }
 
-    private func mappingBinding(for gameGradeID: UUID) -> Binding<UUID> {
-        Binding(
-            get: { mappings[gameGradeID] ?? gameGradeID },
-            set: { newBoundaryGradeID in
-                mappings[gameGradeID] = newBoundaryGradeID
-                SettingsBackupStore.saveBoundaryUmpireGradeMappings(mappings)
+    @ViewBuilder
+    private func boundaryGradeSelectionView(for gameGrade: Grade) -> some View {
+        List {
+            ForEach(orderedGrades) { option in
+                Button {
+                    toggleBoundaryGrade(option.id, for: gameGrade.id)
+                } label: {
+                    HStack {
+                        Text(option.name)
+                        Spacer()
+                        if selectedBoundaryGradeIDs(for: gameGrade.id).contains(option.id) {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                }
             }
-        )
+        }
+        .navigationTitle(gameGrade.name)
+    }
+
+    private func selectedBoundaryGradeIDs(for gameGradeID: UUID) -> [UUID] {
+        let selected = mappings[gameGradeID] ?? [gameGradeID]
+        if selected.isEmpty {
+            return [gameGradeID]
+        }
+        return selected
+    }
+
+    private func toggleBoundaryGrade(_ boundaryGradeID: UUID, for gameGradeID: UUID) {
+        var selected = selectedBoundaryGradeIDs(for: gameGradeID)
+        if let index = selected.firstIndex(of: boundaryGradeID) {
+            selected.remove(at: index)
+        } else {
+            selected.append(boundaryGradeID)
+        }
+
+        if selected.isEmpty {
+            selected = [gameGradeID]
+        }
+
+        mappings[gameGradeID] = selected
+        SettingsBackupStore.saveBoundaryUmpireGradeMappings(mappings)
+    }
+
+    private func mappingSummary(for gameGradeID: UUID) -> String {
+        let selectedIDs = selectedBoundaryGradeIDs(for: gameGradeID)
+        let selectedNames = orderedGrades
+            .filter { selectedIDs.contains($0.id) }
+            .map(\.name)
+
+        if selectedNames.isEmpty {
+            return "Boundary players from: \(orderedGrades.first(where: { $0.id == gameGradeID })?.name ?? "This grade")"
+        }
+
+        return "Boundary players from: \(selectedNames.joined(separator: ", "))"
     }
 
     private func ensureMissingMappingsDefaultToSelf() {
-        for grade in orderedGrades where mappings[grade.id] == nil {
-            mappings[grade.id] = grade.id
+        for grade in orderedGrades {
+            let selected = mappings[grade.id] ?? []
+            mappings[grade.id] = selected.isEmpty ? [grade.id] : selected
         }
     }
 }

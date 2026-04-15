@@ -210,15 +210,18 @@ struct NewGameWizardView: View {
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
     }
 
-    private var boundaryUmpireSourceGradeID: UUID? {
-        guard let gid = gradeID else { return nil }
-        let configured = SettingsBackupStore.loadBoundaryUmpireGradeMappings()[gid]
-        return configured ?? gid
+    private var boundaryUmpireSourceGradeIDs: [UUID] {
+        guard let gid = gradeID else { return [] }
+        let configured = SettingsBackupStore.loadBoundaryUmpireGradeMappings()[gid] ?? [gid]
+        return configured.isEmpty ? [gid] : configured
     }
 
     private var boundaryUmpirePlayers: [Player] {
-        guard let sourceGradeID = boundaryUmpireSourceGradeID else { return [] }
-        return players.filter { $0.isActive && $0.gradeIDs.contains(sourceGradeID) }
+        let sourceGradeIDs = Set(boundaryUmpireSourceGradeIDs)
+        guard !sourceGradeIDs.isEmpty else { return [] }
+        return players.filter { player in
+            player.isActive && !sourceGradeIDs.isDisjoint(with: Set(player.gradeIDs))
+        }
     }
 
     private enum BoundaryUmpireSlot {

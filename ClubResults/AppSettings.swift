@@ -19,6 +19,11 @@ struct BoundaryUmpireGradeLink: Codable {
     let boundaryGradeID: UUID
 }
 
+struct BoundaryUmpireGradeLinks: Codable {
+    let gameGradeID: UUID
+    let boundaryGradeIDs: [UUID]
+}
+
 enum SettingsBackupStore {
     static let gradesKey = "settings.backup.grades.v1"
     static let contactsKey = "settings.backup.contacts.v1"
@@ -52,20 +57,29 @@ enum SettingsBackupStore {
         return decoded
     }
 
-    static func saveBoundaryUmpireGradeMappings(_ mappings: [UUID: UUID]) {
+    static func saveBoundaryUmpireGradeMappings(_ mappings: [UUID: [UUID]]) {
         let payload = mappings.map {
-            BoundaryUmpireGradeLink(gameGradeID: $0.key, boundaryGradeID: $0.value)
+            BoundaryUmpireGradeLinks(gameGradeID: $0.key, boundaryGradeIDs: $0.value)
         }
         guard let data = try? JSONEncoder().encode(payload) else { return }
         UserDefaults.standard.set(data, forKey: boundaryUmpireMappingsKey)
     }
 
-    static func loadBoundaryUmpireGradeMappings() -> [UUID: UUID] {
-        guard let data = UserDefaults.standard.data(forKey: boundaryUmpireMappingsKey),
-              let decoded = try? JSONDecoder().decode([BoundaryUmpireGradeLink].self, from: data) else {
+    static func loadBoundaryUmpireGradeMappings() -> [UUID: [UUID]] {
+        guard let data = UserDefaults.standard.data(forKey: boundaryUmpireMappingsKey) else {
             return [:]
         }
-        return Dictionary(uniqueKeysWithValues: decoded.map { ($0.gameGradeID, $0.boundaryGradeID) })
+
+        if let decoded = try? JSONDecoder().decode([BoundaryUmpireGradeLinks].self, from: data) {
+            return Dictionary(uniqueKeysWithValues: decoded.map { ($0.gameGradeID, $0.boundaryGradeIDs) })
+        }
+
+        // Backwards compatibility with single-grade mappings.
+        if let decodedLegacy = try? JSONDecoder().decode([BoundaryUmpireGradeLink].self, from: data) {
+            return Dictionary(uniqueKeysWithValues: decodedLegacy.map { ($0.gameGradeID, [$0.boundaryGradeID]) })
+        }
+
+        return [:]
     }
 }
 
