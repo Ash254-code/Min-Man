@@ -12,6 +12,7 @@ protocol ExportableGame {
     var goalKickers: [ExportGoalKickerEntry] { get }
     var bestPlayersRanked: [UUID] { get }
     var notes: String { get }
+    var guestBestFairestVotesScanPDF: Data? { get }
 }
 
 /// Minimal goal kicker entry used for exporting.
@@ -58,6 +59,11 @@ enum ExportService {
         if !trimmedNotes.isEmpty {
             lines.append("Notes:")
             lines.append(trimmedNotes)
+        }
+
+        if game.guestBestFairestVotesScanPDF != nil {
+            lines.append("")
+            lines.append("Guest Best & Fairest votes scan: attached")
         }
 
         return lines.joined(separator: "\n")
@@ -113,10 +119,17 @@ enum ExportService {
         return url
     }
 
+    static func makeGameSummaryTextFile(game: ExportableGame, gradeName: String, playerName: (UUID) -> String) throws -> URL {
+        let text = gameSummaryText(game: game, gradeName: gradeName, playerName: playerName)
+        let filename = fileSafe("\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted))_vs_\(game.opponent).txt")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
     private static func fileSafe(_ s: String) -> String {
         let bad = CharacterSet(charactersIn: "/\\?%*|\"<>:")
         return s.components(separatedBy: bad).joined(separator: "-")
             .replacingOccurrences(of: " ", with: "_")
     }
 }
-

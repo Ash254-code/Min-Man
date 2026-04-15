@@ -5,6 +5,72 @@ struct GradeBackup: Codable {
     let name: String
     let isActive: Bool
     let displayOrder: Int
+    let asksAssistantCoach: Bool
+    let asksTeamManager: Bool
+    let asksRunner: Bool
+    let asksGoalUmpire: Bool
+    let asksBoundaryUmpires: Bool
+    let asksTrainers: Bool
+    let asksNotes: Bool
+    let asksGoalKickers: Bool
+    let asksBestPlayers: Bool
+    let asksGuestBestFairestVotesScan: Bool
+
+    init(
+        id: UUID,
+        name: String,
+        isActive: Bool,
+        displayOrder: Int,
+        asksAssistantCoach: Bool = true,
+        asksTeamManager: Bool = true,
+        asksRunner: Bool = true,
+        asksGoalUmpire: Bool = true,
+        asksBoundaryUmpires: Bool = true,
+        asksTrainers: Bool = true,
+        asksNotes: Bool = true,
+        asksGoalKickers: Bool = true,
+        asksBestPlayers: Bool = true,
+        asksGuestBestFairestVotesScan: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.isActive = isActive
+        self.displayOrder = displayOrder
+        self.asksAssistantCoach = asksAssistantCoach
+        self.asksTeamManager = asksTeamManager
+        self.asksRunner = asksRunner
+        self.asksGoalUmpire = asksGoalUmpire
+        self.asksBoundaryUmpires = asksBoundaryUmpires
+        self.asksTrainers = asksTrainers
+        self.asksNotes = asksNotes
+        self.asksGoalKickers = asksGoalKickers
+        self.asksBestPlayers = asksBestPlayers
+        self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, isActive, displayOrder
+        case asksAssistantCoach, asksTeamManager, asksRunner, asksGoalUmpire, asksBoundaryUmpires
+        case asksTrainers, asksNotes, asksGoalKickers, asksBestPlayers, asksGuestBestFairestVotesScan
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        isActive = try c.decode(Bool.self, forKey: .isActive)
+        displayOrder = try c.decode(Int.self, forKey: .displayOrder)
+        asksAssistantCoach = try c.decodeIfPresent(Bool.self, forKey: .asksAssistantCoach) ?? true
+        asksTeamManager = try c.decodeIfPresent(Bool.self, forKey: .asksTeamManager) ?? true
+        asksRunner = try c.decodeIfPresent(Bool.self, forKey: .asksRunner) ?? true
+        asksGoalUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksGoalUmpire) ?? true
+        asksBoundaryUmpires = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpires) ?? true
+        asksTrainers = try c.decodeIfPresent(Bool.self, forKey: .asksTrainers) ?? true
+        asksNotes = try c.decodeIfPresent(Bool.self, forKey: .asksNotes) ?? true
+        asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
+        asksBestPlayers = try c.decodeIfPresent(Bool.self, forKey: .asksBestPlayers) ?? true
+        asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
+    }
 }
 
 struct ContactBackup: Codable {
@@ -19,7 +85,24 @@ enum SettingsBackupStore {
     static let contactsKey = "settings.backup.contacts.v1"
 
     static func saveGrades(_ grades: [Grade]) {
-        let payload = grades.map { GradeBackup(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
+        let payload = grades.map {
+            GradeBackup(
+                id: $0.id,
+                name: $0.name,
+                isActive: $0.isActive,
+                displayOrder: $0.displayOrder,
+                asksAssistantCoach: $0.asksAssistantCoach,
+                asksTeamManager: $0.asksTeamManager,
+                asksRunner: $0.asksRunner,
+                asksGoalUmpire: $0.asksGoalUmpire,
+                asksBoundaryUmpires: $0.asksBoundaryUmpires,
+                asksTrainers: $0.asksTrainers,
+                asksNotes: $0.asksNotes,
+                asksGoalKickers: $0.asksGoalKickers,
+                asksBestPlayers: $0.asksBestPlayers,
+                asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
+            )
+        }
         guard let data = try? JSONEncoder().encode(payload) else { return }
         UserDefaults.standard.set(data, forKey: gradesKey)
     }
@@ -82,7 +165,17 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 id: backup.id,
                 name: backup.name,
                 isActive: backup.isActive,
-                displayOrder: backup.displayOrder
+                displayOrder: backup.displayOrder,
+                asksAssistantCoach: backup.asksAssistantCoach,
+                asksTeamManager: backup.asksTeamManager,
+                asksRunner: backup.asksRunner,
+                asksGoalUmpire: backup.asksGoalUmpire,
+                asksBoundaryUmpires: backup.asksBoundaryUmpires,
+                asksTrainers: backup.asksTrainers,
+                asksNotes: backup.asksNotes,
+                asksGoalKickers: backup.asksGoalKickers,
+                asksBestPlayers: backup.asksBestPlayers,
+                asksGuestBestFairestVotesScan: backup.asksGuestBestFairestVotesScan
             )
         )
 

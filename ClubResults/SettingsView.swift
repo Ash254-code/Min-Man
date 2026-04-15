@@ -201,6 +201,21 @@ private struct ClubGradesSettingsView: View {
                     TextField("Grade name", text: $editGradeName)
                         .textInputAutocapitalization(.words)
 
+                    if let grade = gradeEditing {
+                        Section("New Game Wizard Fields") {
+                            Toggle("Assistant Coach", isOn: bind(grade, \.asksAssistantCoach))
+                            Toggle("Team Manager", isOn: bind(grade, \.asksTeamManager))
+                            Toggle("Runner", isOn: bind(grade, \.asksRunner))
+                            Toggle("Goal Umpire", isOn: bind(grade, \.asksGoalUmpire))
+                            Toggle("Boundary Umpires", isOn: bind(grade, \.asksBoundaryUmpires))
+                            Toggle("Trainers", isOn: bind(grade, \.asksTrainers))
+                            Toggle("Notes", isOn: bind(grade, \.asksNotes))
+                            Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
+                            Toggle("Best Players", isOn: bind(grade, \.asksBestPlayers))
+                            Toggle("Guest Best & Fairest Votes Scan", isOn: bind(grade, \.asksGuestBestFairestVotesScan))
+                        }
+                    }
+
                     Section {
                         Button(role: .destructive) {
                             if deleteEditingGrade() {
@@ -218,14 +233,12 @@ private struct ClubGradesSettingsView: View {
                             gradeEditing = nil
                         }
                     }
-                    if hasEditGradeChanges {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") {
-                                saveEditedGrade()
-                                gradeEditing = nil
-                            }
-                            .disabled(isEditGradeSaveDisabled)
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            saveEditedGrade()
+                            gradeEditing = nil
                         }
+                        .disabled(isEditGradeSaveDisabled)
                     }
                 }
             }
@@ -273,16 +286,18 @@ private struct ClubGradesSettingsView: View {
 
         let name = clean(editGradeName)
         guard !name.isEmpty else { return true }
-        guard name != clean(gradeEditing.name) else { return true }
-
         return grades.contains(where: {
             $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased()
         })
     }
 
-    private var hasEditGradeChanges: Bool {
-        guard let gradeEditing else { return false }
-        return clean(editGradeName) != clean(gradeEditing.name)
+    private func bind(_ grade: Grade, _ keyPath: ReferenceWritableKeyPath<Grade, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { grade[keyPath: keyPath] },
+            set: { newValue in
+                grade[keyPath: keyPath] = newValue
+            }
+        )
     }
 
     private func moveGrades(from source: IndexSet, to destination: Int) {
@@ -367,7 +382,17 @@ private struct ClubGradesSettingsView: View {
                             id: $0.id,
                             name: $0.name,
                             isActive: $0.isActive,
-                            displayOrder: $0.displayOrder
+                            displayOrder: $0.displayOrder,
+                            asksAssistantCoach: $0.asksAssistantCoach,
+                            asksTeamManager: $0.asksTeamManager,
+                            asksRunner: $0.asksRunner,
+                            asksGoalUmpire: $0.asksGoalUmpire,
+                            asksBoundaryUmpires: $0.asksBoundaryUmpires,
+                            asksTrainers: $0.asksTrainers,
+                            asksNotes: $0.asksNotes,
+                            asksGoalKickers: $0.asksGoalKickers,
+                            asksBestPlayers: $0.asksBestPlayers,
+                            asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
                         )
                     }
 
@@ -377,7 +402,17 @@ private struct ClubGradesSettingsView: View {
                                 id: item.id,
                                 name: item.name,
                                 isActive: item.isActive,
-                                displayOrder: item.displayOrder
+                                displayOrder: item.displayOrder,
+                                asksAssistantCoach: item.asksAssistantCoach,
+                                asksTeamManager: item.asksTeamManager,
+                                asksRunner: item.asksRunner,
+                                asksGoalUmpire: item.asksGoalUmpire,
+                                asksBoundaryUmpires: item.asksBoundaryUmpires,
+                                asksTrainers: item.asksTrainers,
+                                asksNotes: item.asksNotes,
+                                asksGoalKickers: item.asksGoalKickers,
+                                asksBestPlayers: item.asksBestPlayers,
+                                asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan
                             )
                         )
                     }
@@ -402,7 +437,17 @@ private struct ClubGradesSettingsView: View {
                     id: $0.id,
                     name: $0.name,
                     isActive: $0.isActive,
-                    displayOrder: $0.displayOrder
+                    displayOrder: $0.displayOrder,
+                    asksAssistantCoach: $0.asksAssistantCoach,
+                    asksTeamManager: $0.asksTeamManager,
+                    asksRunner: $0.asksRunner,
+                    asksGoalUmpire: $0.asksGoalUmpire,
+                    asksBoundaryUmpires: $0.asksBoundaryUmpires,
+                    asksTrainers: $0.asksTrainers,
+                    asksNotes: $0.asksNotes,
+                    asksGoalKickers: $0.asksGoalKickers,
+                    asksBestPlayers: $0.asksBestPlayers,
+                    asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
                 )
             }
         }

@@ -26,6 +26,7 @@ final class Game: Identifiable {
 
     // Notes
     var notes: String
+    var guestBestFairestVotesScanPDF: Data?
 
     init(
         id: UUID = UUID(),
@@ -39,7 +40,8 @@ final class Game: Identifiable {
         theirBehinds: Int,
         goalKickers: [GameGoalKickerEntry],
         bestPlayersRanked: [UUID],
-        notes: String
+        notes: String,
+        guestBestFairestVotesScanPDF: Data? = nil
     ) {
         self.id = id
         self.gradeID = gradeID
@@ -53,6 +55,7 @@ final class Game: Identifiable {
         self.goalKickers = goalKickers
         self.bestPlayersRanked = bestPlayersRanked
         self.notes = notes
+        self.guestBestFairestVotesScanPDF = guestBestFairestVotesScanPDF
     }
 
     var ourScore: Int { ourGoals * 6 + ourBehinds }

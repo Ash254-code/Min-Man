@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 // Local model for goal kickers used by this wizard
 private struct WizardGoalKickerEntry: Identifiable, Codable, Hashable {
@@ -29,7 +30,7 @@ struct NewGameWizardView: View {
     @Query private var staffDefaults: [StaffDefault]
 
     // ✅ UPDATED: first screen is Setup (grade + date + opponent + venue)
-    enum Step: Int, CaseIterable { case setup, staff, medical, score, goals, best, review }
+    enum Step: Int { case setup, staff, medical, score, goals, best, votes, review }
     @State private var step: Step = .setup
 
     // MARK: Setup
@@ -87,6 +88,8 @@ struct NewGameWizardView: View {
     // MARK: Goals + best players
     @State private var goalKickers: [WizardGoalKickerEntry] = []
     @State private var bestRanked: [UUID?] = Array(repeating: nil, count: 6)
+    @State private var guestBestFairestVotesScanPDF: Data?
+    @State private var showVotesScanner = false
     @State private var hasAppliedInitialGrade = false
 
     // MARK: Helpers
@@ -200,6 +203,29 @@ struct NewGameWizardView: View {
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
     }
 
+    private var selectedGrade: Grade? {
+        guard let gid = gradeID else { return nil }
+        return resolvedGrades.first(where: { $0.id == gid })
+    }
+
+    private var activeSteps: [Step] {
+        guard let grade = selectedGrade else { return [.setup] }
+
+        var steps: [Step] = [.setup]
+        if grade.asksAssistantCoach || grade.asksTeamManager || grade.asksRunner || grade.asksGoalUmpire || grade.asksBoundaryUmpires {
+            steps.append(.staff)
+        }
+        if grade.asksTrainers || grade.asksNotes {
+            steps.append(.medical)
+        }
+        steps.append(.score)
+        if grade.asksGoalKickers { steps.append(.goals) }
+        if grade.asksBestPlayers { steps.append(.best) }
+        if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
+        steps.append(.review)
+        return steps
+    }
+
     // MARK: - Uniform row styling
     private func rowLabel(_ title: String) -> some View {
         Text(title)
@@ -230,17 +256,25 @@ struct NewGameWizardView: View {
                    !finalVenue.isEmpty
 
         case .staff:
+            let asksAssistantCoach = selectedGrade?.asksAssistantCoach ?? true
+            let asksTeamManager = selectedGrade?.asksTeamManager ?? true
+            let asksRunner = selectedGrade?.asksRunner ?? true
+            let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
+            let asksBoundary = selectedGrade?.asksBoundaryUmpires ?? true
+
             let coachingOK =
                 !finalHeadCoach.isEmpty &&
-                !finalAssCoach.isEmpty &&
-                !finalTeamManager.isEmpty &&
-                !finalRunner.isEmpty
+                (!asksAssistantCoach || !finalAssCoach.isEmpty) &&
+                (!asksTeamManager || !finalTeamManager.isEmpty) &&
+                (!asksRunner || !finalRunner.isEmpty)
 
             let officialsOK =
-                !finalGoalUmpire.isEmpty &&
-                boundaryUmpire1ID != nil &&
-                boundaryUmpire2ID != nil &&
-                boundaryUmpire1ID != boundaryUmpire2ID
+                (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
+                (!asksBoundary || (
+                    boundaryUmpire1ID != nil &&
+                    boundaryUmpire2ID != nil &&
+                    boundaryUmpire1ID != boundaryUmpire2ID
+                ))
 
             return coachingOK && officialsOK
 
@@ -259,6 +293,9 @@ struct NewGameWizardView: View {
             let ids = bestRanked.compactMap { $0 }
             return ids.count == 6 && Set(ids).count == 6
 
+        case .votes:
+            return guestBestFairestVotesScanPDF != nil
+
         case .review:
             return true
         }
@@ -270,8 +307,8 @@ struct NewGameWizardView: View {
             VStack(spacing: 0) {
 
                 ProgressView(
-                    value: Double(step.rawValue),
-                    total: Double(Step.allCases.count - 1)
+                    value: Double(activeSteps.firstIndex(of: step) ?? 0),
+                    total: Double(max(activeSteps.count - 1, 1))
                 )
                 .padding(.horizontal)
                 .padding(.top, 10)
@@ -285,6 +322,7 @@ struct NewGameWizardView: View {
                     case .score: scoreStep
                     case .goals: goalsStep
                     case .best: bestStep
+                    case .votes: votesStep
                     case .review: reviewStep
                     }
                 }
@@ -328,6 +366,7 @@ struct NewGameWizardView: View {
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
             applyDefaults(for: newGrade)
+            step = .setup
         }
         .onAppear {
             guard !hasAppliedInitialGrade else { return }
@@ -340,13 +379,15 @@ struct NewGameWizardView: View {
     }
 
     private func next() {
-        if let n = Step(rawValue: step.rawValue + 1) {
-            step = n
-        }
+        guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
+        let nextIndex = currentIndex + 1
+        guard activeSteps.indices.contains(nextIndex) else { return }
+        step = activeSteps[nextIndex]
     }
 
     private func back() {
-        if let p = Step(rawValue: step.rawValue - 1) { step = p }
+        guard let currentIndex = activeSteps.firstIndex(of: step), currentIndex > 0 else { return }
+        step = activeSteps[currentIndex - 1]
     }
 
     // MARK: Steps
@@ -417,67 +458,75 @@ struct NewGameWizardView: View {
 
                 StaffCard(title: "Coaching", systemImage: "person.2.fill") {
                     StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $headCoachName)
-                    StaffPickerField(title: "Assistant Coach", role: .assistantCoach, gradeID: gradeID, value: $assCoachName)
-                    StaffPickerField(title: "Team Manager", role: .teamManager, gradeID: gradeID, value: $teamManagerName)
-                    StaffPickerField(title: "Runner", role: .runner, gradeID: gradeID, value: $runnerName)
+                    if selectedGrade?.asksAssistantCoach ?? true {
+                        StaffPickerField(title: "Assistant Coach", role: .assistantCoach, gradeID: gradeID, value: $assCoachName)
+                    }
+                    if selectedGrade?.asksTeamManager ?? true {
+                        StaffPickerField(title: "Team Manager", role: .teamManager, gradeID: gradeID, value: $teamManagerName)
+                    }
+                    if selectedGrade?.asksRunner ?? true {
+                        StaffPickerField(title: "Runner", role: .runner, gradeID: gradeID, value: $runnerName)
+                    }
                 }
 
                 StaffCard(title: "Officials", systemImage: "flag.fill") {
-                    StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
-
-                    // ✅ Boundary Umpire 1
-                    HStack(spacing: 12) {
-                        rowLabel("Boundary Umpire 1")
-                        Spacer()
-                        Menu {
-                            Button("Select…") { boundaryUmpire1ID = nil }
-                            Divider()
-                            ForEach(players) { person in
-                                if person.id != boundaryUmpire2ID {
-                                    Button(person.name) { boundaryUmpire1ID = person.id }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                rowValue(playerName(for: boundaryUmpire1ID))
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .contentShape(Rectangle())
-                        }
+                    if selectedGrade?.asksGoalUmpire ?? true {
+                        StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
                     }
-                    .padding(.vertical, 4)
 
-                    // ✅ Boundary Umpire 2
-                    HStack(spacing: 12) {
-                        rowLabel("Boundary Umpire 2")
-                        Spacer()
-                        Menu {
-                            Button("Select…") { boundaryUmpire2ID = nil }
-                            Divider()
-                            ForEach(players) { person in
-                                if person.id != boundaryUmpire1ID {
-                                    Button(person.name) { boundaryUmpire2ID = person.id }
+                    if selectedGrade?.asksBoundaryUmpires ?? true {
+                        HStack(spacing: 12) {
+                            rowLabel("Boundary Umpire 1")
+                            Spacer()
+                            Menu {
+                                Button("Select…") { boundaryUmpire1ID = nil }
+                                Divider()
+                                ForEach(players) { person in
+                                    if person.id != boundaryUmpire2ID {
+                                        Button(person.name) { boundaryUmpire1ID = person.id }
+                                    }
                                 }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    rowValue(playerName(for: boundaryUmpire1ID))
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .contentShape(Rectangle())
                             }
-                        } label: {
-                            HStack(spacing: 6) {
-                                rowValue(playerName(for: boundaryUmpire2ID))
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .contentShape(Rectangle())
                         }
-                    }
-                    .padding(.vertical, 4)
+                        .padding(.vertical, 4)
 
-                    if boundaryUmpire1ID != nil, boundaryUmpire1ID == boundaryUmpire2ID {
-                        Text("Boundary Umpire 1 and 2 can’t be the same.")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .padding(.top, 6)
+                        HStack(spacing: 12) {
+                            rowLabel("Boundary Umpire 2")
+                            Spacer()
+                            Menu {
+                                Button("Select…") { boundaryUmpire2ID = nil }
+                                Divider()
+                                ForEach(players) { person in
+                                    if person.id != boundaryUmpire1ID {
+                                        Button(person.name) { boundaryUmpire2ID = person.id }
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    rowValue(playerName(for: boundaryUmpire2ID))
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                        }
+                        .padding(.vertical, 4)
+
+                        if boundaryUmpire1ID != nil, boundaryUmpire1ID == boundaryUmpire2ID {
+                            Text("Boundary Umpire 1 and 2 can’t be the same.")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .padding(.top, 6)
+                        }
                     }
                 }
 
@@ -493,18 +542,25 @@ struct NewGameWizardView: View {
         ScrollView {
             VStack(spacing: 14) {
                 StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
-                    StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
-                    StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
-                    StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
-                    StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
+                    if selectedGrade?.asksTrainers ?? true {
+                        StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
+                        StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
+                        StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
+                        StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
+                    } else {
+                        Text("Trainer fields are disabled for this grade.")
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
-                StaffCard(title: "Notes", systemImage: "note.text") {
-                    TextField("Notes (optional)", text: $notes, axis: .vertical)
-                        .lineLimit(3...6)
-                        .padding(12)
-                        .background(Color(.systemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                if selectedGrade?.asksNotes ?? true {
+                    StaffCard(title: "Notes", systemImage: "note.text") {
+                        TextField("Notes (optional)", text: $notes, axis: .vertical)
+                            .lineLimit(3...6)
+                            .padding(12)
+                            .background(Color(.systemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -679,6 +735,33 @@ struct NewGameWizardView: View {
         .scrollContentBackground(.hidden)
     }
 
+    private var votesStep: some View {
+        Form {
+            Section("Guest Best & Fairest votes") {
+                if guestBestFairestVotesScanPDF == nil {
+                    Text("Scan the paper votes before saving.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("Votes scan captured", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+
+                Button(guestBestFairestVotesScanPDF == nil ? "Scan votes" : "Rescan votes") {
+                    showVotesScanner = true
+                }
+            }
+        }
+        .sheet(isPresented: $showVotesScanner) {
+            VotesScannerSheet { data in
+                guestBestFairestVotesScanPDF = data
+                showVotesScanner = false
+            } onCancel: {
+                showVotesScanner = false
+            }
+        }
+        .scrollContentBackground(.hidden)
+    }
+
     // MARK: Logic helpers
     private var hasDuplicateBestPlayers: Bool {
         let ids = bestRanked.compactMap { $0 }
@@ -723,15 +806,25 @@ struct NewGameWizardView: View {
         guard !finalOpponent.isEmpty else { return }
         guard !finalVenue.isEmpty else { return }
 
-        let bestIDs = bestRanked.compactMap { $0 }
-        guard bestIDs.count == 6, Set(bestIDs).count == 6 else { return }
+        let asksBestPlayers = selectedGrade?.asksBestPlayers ?? true
+        let asksGoalKickers = selectedGrade?.asksGoalKickers ?? true
+        let asksNotes = selectedGrade?.asksNotes ?? true
+        let asksVotesScan = selectedGrade?.asksGuestBestFairestVotesScan ?? false
 
-        let cleanedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bestIDs = asksBestPlayers ? bestRanked.compactMap { $0 } : []
+        if asksBestPlayers {
+            guard bestIDs.count == 6, Set(bestIDs).count == 6 else { return }
+        }
+        if asksVotesScan {
+            guard guestBestFairestVotesScanPDF != nil else { return }
+        }
 
-        let modelGoalKickers: [GameGoalKickerEntry] = goalKickers.compactMap { entry in
+        let cleanedNotes = asksNotes ? notes.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+
+        let modelGoalKickers: [GameGoalKickerEntry] = asksGoalKickers ? goalKickers.compactMap { entry in
             guard let pid = entry.playerID, entry.goals > 0 else { return nil }
             return GameGoalKickerEntry(playerID: pid, goals: entry.goals)
-        }
+        } : []
 
         let game = Game(
             id: UUID(),
@@ -745,7 +838,8 @@ struct NewGameWizardView: View {
             theirBehinds: theirBehinds,
             goalKickers: modelGoalKickers,
             bestPlayersRanked: bestIDs,
-            notes: cleanedNotes
+            notes: cleanedNotes,
+            guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF
         )
 
         modelContext.insert(game)

@@ -13,6 +13,8 @@ struct GameDetailView: View {
 
     // ✅ Edit sheet
     @State private var showEditSheet = false
+    @State private var shareItems: [Any] = []
+    @State private var showShareSheet = false
 
     // 🔐 Change this
     private let requiredEditCode = "1234"
@@ -87,9 +89,23 @@ struct GameDetailView: View {
                     Text(game.notes)
                 }
             }
+
+            if game.guestBestFairestVotesScanPDF != nil {
+                Section(header: Text("Guest Best & Fairest Votes")) {
+                    Label("Votes scan attached", systemImage: "doc.richtext")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .navigationTitle(game.opponent)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    prepareShareReport()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Edit") {
                     editCode = ""
@@ -123,6 +139,9 @@ struct GameDetailView: View {
         .sheet(isPresented: $showEditSheet) {
             GameEditView(game: game, grades: grades)
         }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheet(items: shareItems)
+        }
     }
 
     @ViewBuilder
@@ -140,6 +159,32 @@ struct GameDetailView: View {
         case 1: return "🥈"
         case 2: return "🥉"
         default: return "\(idx + 1)."
+        }
+    }
+
+    private func prepareShareReport() {
+        let gradeName = grades.first(where: { $0.id == game.gradeID })?.name ?? "Unknown Grade"
+        let playerLookup: (UUID) -> String = { pid in
+            players.first(where: { $0.id == pid })?.name ?? "Unknown"
+        }
+
+        do {
+            var items: [Any] = []
+            items.append(try ExportService.makeGameSummaryTextFile(game: game, gradeName: gradeName, playerName: playerLookup))
+            items.append(try ExportService.makeGameCSV(game: game, gradeName: gradeName, playerName: playerLookup))
+
+            if let scanData = game.guestBestFairestVotesScanPDF {
+                let pdfName = "GuestVotes_\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted)).pdf"
+                let pdfURL = FileManager.default.temporaryDirectory.appendingPathComponent(pdfName.replacingOccurrences(of: "/", with: "-"))
+                try scanData.write(to: pdfURL, options: .atomic)
+                items.append(pdfURL)
+            }
+
+            shareItems = items
+            showShareSheet = true
+        } catch {
+            shareItems = [ExportService.gameSummaryText(game: game, gradeName: gradeName, playerName: playerLookup)]
+            showShareSheet = true
         }
     }
 }
