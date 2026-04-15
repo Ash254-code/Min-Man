@@ -9,41 +9,18 @@ struct TeamsAndVenuesSettingsView: View {
                 NavigationLink {
                     TeamProfileEditorView(
                         title: "Your Team",
-                        teamName: Binding(
-                            get: { configuration.clubTeam.name },
-                            set: {
-                                configuration.clubTeam.name = $0
-                                save()
-                            }
-                        ),
-                        primaryHex: Binding(
-                            get: { configuration.clubTeam.primaryColorHex },
-                            set: {
-                                configuration.clubTeam.primaryColorHex = $0
-                                save()
-                            }
-                        ),
+                        teamName: $configuration.clubTeam.name,
+                        primaryHex: $configuration.clubTeam.primaryColorHex,
                         secondaryHex: Binding(
                             get: { configuration.clubTeam.secondaryColorHex ?? "" },
-                            set: {
-                                configuration.clubTeam.secondaryColorHex = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
-                                save()
-                            }
+                            set: { configuration.clubTeam.secondaryColorHex = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
                         ),
                         tertiaryHex: Binding(
                             get: { configuration.clubTeam.tertiaryColorHex ?? "" },
-                            set: {
-                                configuration.clubTeam.tertiaryColorHex = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
-                                save()
-                            }
+                            set: { configuration.clubTeam.tertiaryColorHex = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
                         ),
-                        venues: Binding(
-                            get: { configuration.clubTeam.venues },
-                            set: {
-                                configuration.clubTeam.venues = $0
-                                save()
-                            }
-                        )
+                        venues: $configuration.clubTeam.venues,
+                        onSave: save
                     )
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
@@ -60,41 +37,18 @@ struct TeamsAndVenuesSettingsView: View {
                     NavigationLink {
                         TeamProfileEditorView(
                             title: opposition.name,
-                            teamName: Binding(
-                                get: { opposition.name },
-                                set: {
-                                    opposition.name = $0
-                                    save()
-                                }
-                            ),
-                            primaryHex: Binding(
-                                get: { opposition.primaryColorHex },
-                                set: {
-                                    opposition.primaryColorHex = $0
-                                    save()
-                                }
-                            ),
+                            teamName: $opposition.name,
+                            primaryHex: $opposition.primaryColorHex,
                             secondaryHex: Binding(
                                 get: { opposition.secondaryColorHex ?? "" },
-                                set: {
-                                    opposition.secondaryColorHex = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
-                                    save()
-                                }
+                                set: { opposition.secondaryColorHex = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
                             ),
                             tertiaryHex: Binding(
                                 get: { opposition.tertiaryColorHex ?? "" },
-                                set: {
-                                    opposition.tertiaryColorHex = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
-                                    save()
-                                }
+                                set: { opposition.tertiaryColorHex = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
                             ),
-                            venues: Binding(
-                                get: { opposition.venues },
-                                set: {
-                                    opposition.venues = $0
-                                    save()
-                                }
-                            )
+                            venues: $opposition.venues,
+                            onSave: save
                         )
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
@@ -165,18 +119,29 @@ private struct TeamProfileEditorView: View {
     @Binding var secondaryHex: String
     @Binding var tertiaryHex: String
     @Binding var venues: [String]
+    let onSave: () -> Void
+
+    @State private var draftTeamName: String = ""
+    @State private var draftPrimaryHex: String = ""
+    @State private var draftSecondaryHex: String = ""
+    @State private var draftTertiaryHex: String = ""
+    @State private var draftVenues: [String] = []
+    @State private var isEditing = false
 
     var body: some View {
         Form {
             Section("Team") {
-                TextField("Name", text: $teamName)
+                teamPill
+
+                TextField("Name", text: $draftTeamName)
                     .textInputAutocapitalization(.words)
+                    .disabled(!isEditing)
             }
 
             Section("Colours") {
-                TeamColorPickerRow(title: TeamColorSlot.primary.title, hexValue: $primaryHex)
-                TeamColorPickerRow(title: TeamColorSlot.secondary.title, hexValue: $secondaryHex)
-                TeamColorPickerRow(title: TeamColorSlot.tertiary.title, hexValue: $tertiaryHex)
+                TeamColorPickerRow(title: TeamColorSlot.primary.title, hexValue: $draftPrimaryHex, isEnabled: isEditing)
+                TeamColorPickerRow(title: TeamColorSlot.secondary.title, hexValue: $draftSecondaryHex, isEnabled: isEditing)
+                TeamColorPickerRow(title: TeamColorSlot.tertiary.title, hexValue: $draftTertiaryHex, isEnabled: isEditing)
 
                 Text("Pick up to three colours. Primary is required.")
                     .font(.caption)
@@ -188,32 +153,119 @@ private struct TeamProfileEditorView: View {
                     TextField(
                         "Venue \(index + 1)",
                         text: Binding(
-                            get: { index < venues.count ? venues[index] : "" },
+                            get: { index < draftVenues.count ? draftVenues[index] : "" },
                             set: { newValue in
                                 setVenue(newValue, at: index)
                             }
                         )
                     )
                     .textInputAutocapitalization(.words)
+                    .disabled(!isEditing)
                 }
             }
         }
         .navigationTitle(title)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(isEditing ? "Done" : "Edit") {
+                    if isEditing { syncFromBindings() }
+                    isEditing.toggle()
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isEditing && hasChanges && canSave {
+                HStack {
+                    Spacer()
+                    Button("Save") {
+                        applyDraftToBindings()
+                        onSave()
+                        isEditing = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
+            }
+        }
+        .onAppear {
+            syncFromBindings()
+        }
+    }
+
+    private var canSave: Bool {
+        !draftTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !draftPrimaryHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var hasChanges: Bool {
+        draftTeamName != teamName ||
+        draftPrimaryHex != primaryHex ||
+        draftSecondaryHex != secondaryHex ||
+        draftTertiaryHex != tertiaryHex ||
+        normalizedDraftVenues != normalizedPersistedVenues
+    }
+
+    private var normalizedDraftVenues: [String] {
+        draftVenues.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    private var normalizedPersistedVenues: [String] {
+        venues.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    private var teamPill: some View {
+        let name = draftTeamName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = name.isEmpty ? "Team" : name
+
+        return Text(displayName)
+            .font(.headline)
+            .foregroundStyle(Color(hex: draftSecondaryHex, fallback: .white))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color(hex: draftPrimaryHex, fallback: .blue))
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func syncFromBindings() {
+        draftTeamName = teamName
+        draftPrimaryHex = primaryHex
+        draftSecondaryHex = secondaryHex
+        draftTertiaryHex = tertiaryHex
+        draftVenues = Array(venues.prefix(3))
+    }
+
+    private func applyDraftToBindings() {
+        teamName = draftTeamName.trimmingCharacters(in: .whitespacesAndNewlines)
+        primaryHex = draftPrimaryHex
+        secondaryHex = draftSecondaryHex.trimmingCharacters(in: .whitespacesAndNewlines)
+        tertiaryHex = draftTertiaryHex.trimmingCharacters(in: .whitespacesAndNewlines)
+        venues = Array(
+            draftVenues
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .prefix(3)
+        )
     }
 
     private func setVenue(_ venue: String, at index: Int) {
-        var mutable = venues
+        var mutable = draftVenues
         while mutable.count <= index {
             mutable.append("")
         }
         mutable[index] = venue
-        venues = Array(mutable.prefix(3))
+        draftVenues = Array(mutable.prefix(3))
     }
 }
 
 private struct TeamColorPickerRow: View {
     let title: String
     @Binding var hexValue: String
+    let isEnabled: Bool
 
     var body: some View {
         ColorPicker(
@@ -224,5 +276,6 @@ private struct TeamColorPickerRow: View {
             ),
             supportsOpacity: false
         )
+        .disabled(!isEnabled)
     }
 }
