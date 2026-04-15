@@ -122,6 +122,7 @@ struct GameDetailView: View {
         // ✅ Only opens after correct code
         .sheet(isPresented: $showEditSheet) {
             GameEditView(game: game, grades: grades)
+                .appPopupStyle()
         }
     }
 
