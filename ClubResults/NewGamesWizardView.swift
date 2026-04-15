@@ -213,7 +213,6 @@ struct NewGameWizardView: View {
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
     }
 
-<<<<<<< HEAD
     private var boundaryUmpireSourceGradeIDs: [UUID] {
         guard let gid = gradeID else { return [] }
         let configured = SettingsBackupStore.loadBoundaryUmpireGradeMappings()[gid] ?? [gid]
@@ -231,7 +230,8 @@ struct NewGameWizardView: View {
     private enum BoundaryUmpireSlot {
         case one
         case two
-=======
+    }
+
     private var selectedGrade: Grade? {
         guard let gid = gradeID else { return nil }
         return resolvedGrades.first(where: { $0.id == gid })
@@ -253,7 +253,6 @@ struct NewGameWizardView: View {
         if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
         steps.append(.review)
         return steps
->>>>>>> redesign-new-game-wizard-with-toggles
     }
 
     // MARK: - Uniform row styling
@@ -300,19 +299,12 @@ struct NewGameWizardView: View {
                 (!asksRunner || !finalRunner.isEmpty)
 
             let officialsOK =
-<<<<<<< HEAD
-                !finalGoalUmpire.isEmpty &&
-                !finalBoundary1.isEmpty &&
-                !finalBoundary2.isEmpty &&
-                boundaryUmpire1ID != boundaryUmpire2ID
-=======
                 (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
                 (!asksBoundary || (
-                    boundaryUmpire1ID != nil &&
-                    boundaryUmpire2ID != nil &&
-                    boundaryUmpire1ID != boundaryUmpire2ID
+                    !finalBoundary1.isEmpty &&
+                    !finalBoundary2.isEmpty &&
+                    finalBoundary1 != finalBoundary2
                 ))
->>>>>>> redesign-new-game-wizard-with-toggles
 
             return coachingOK && officialsOK
 
@@ -514,118 +506,72 @@ struct NewGameWizardView: View {
                         StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
                     }
 
-<<<<<<< HEAD
-                    // ✅ Boundary Umpire 1
-                    HStack(spacing: 12) {
-                        rowLabel("Boundary Umpire 1")
-                        Spacer()
-                        Menu {
-                            Button("Select…") {
-                                boundaryUmpire1ID = nil
-                                boundaryUmpire1CustomName = ""
-                            }
-                            Divider()
-                            ForEach(boundaryUmpirePlayers) { person in
-                                if person.id != boundaryUmpire2ID {
-                                    Button(person.name) {
-                                        boundaryUmpire1ID = person.id
-                                        boundaryUmpire1CustomName = ""
-=======
                     if selectedGrade?.asksBoundaryUmpires ?? true {
                         HStack(spacing: 12) {
                             rowLabel("Boundary Umpire 1")
                             Spacer()
                             Menu {
-                                Button("Select…") { boundaryUmpire1ID = nil }
+                                Button("Select…") {
+                                    boundaryUmpire1ID = nil
+                                    boundaryUmpire1CustomName = ""
+                                }
                                 Divider()
-                                ForEach(players) { person in
+                                ForEach(boundaryUmpirePlayers) { person in
                                     if person.id != boundaryUmpire2ID {
-                                        Button(person.name) { boundaryUmpire1ID = person.id }
->>>>>>> redesign-new-game-wizard-with-toggles
+                                        Button(person.name) {
+                                            boundaryUmpire1ID = person.id
+                                            boundaryUmpire1CustomName = ""
+                                        }
                                     }
+                                }
+                                Divider()
+                                Button("Enter different name…") {
+                                    boundaryUmpireNameDraft = boundaryUmpire1CustomName
+                                    boundaryUmpireNamePrompt = .one
                                 }
                             } label: {
                                 HStack(spacing: 6) {
-                                    rowValue(playerName(for: boundaryUmpire1ID))
+                                    rowValue(finalBoundary1)
                                     Image(systemName: "chevron.up.chevron.down")
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(.secondary)
                                 }
                                 .contentShape(Rectangle())
                             }
-<<<<<<< HEAD
-                            Divider()
-                            Button("Enter different name…") {
-                                boundaryUmpireNameDraft = boundaryUmpire1CustomName
-                                boundaryUmpireNamePrompt = .one
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                rowValue(finalBoundary1)
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .contentShape(Rectangle())
-=======
->>>>>>> redesign-new-game-wizard-with-toggles
                         }
                         .padding(.vertical, 4)
 
-<<<<<<< HEAD
-                    // ✅ Boundary Umpire 2
-                    HStack(spacing: 12) {
-                        rowLabel("Boundary Umpire 2")
-                        Spacer()
-                        Menu {
-                            Button("Select…") {
-                                boundaryUmpire2ID = nil
-                                boundaryUmpire2CustomName = ""
-                            }
-                            Divider()
-                            ForEach(boundaryUmpirePlayers) { person in
-                                if person.id != boundaryUmpire1ID {
-                                    Button(person.name) {
-                                        boundaryUmpire2ID = person.id
-                                        boundaryUmpire2CustomName = ""
-=======
                         HStack(spacing: 12) {
                             rowLabel("Boundary Umpire 2")
                             Spacer()
                             Menu {
-                                Button("Select…") { boundaryUmpire2ID = nil }
+                                Button("Select…") {
+                                    boundaryUmpire2ID = nil
+                                    boundaryUmpire2CustomName = ""
+                                }
                                 Divider()
-                                ForEach(players) { person in
+                                ForEach(boundaryUmpirePlayers) { person in
                                     if person.id != boundaryUmpire1ID {
-                                        Button(person.name) { boundaryUmpire2ID = person.id }
->>>>>>> redesign-new-game-wizard-with-toggles
+                                        Button(person.name) {
+                                            boundaryUmpire2ID = person.id
+                                            boundaryUmpire2CustomName = ""
+                                        }
                                     }
+                                }
+                                Divider()
+                                Button("Enter different name…") {
+                                    boundaryUmpireNameDraft = boundaryUmpire2CustomName
+                                    boundaryUmpireNamePrompt = .two
                                 }
                             } label: {
                                 HStack(spacing: 6) {
-                                    rowValue(playerName(for: boundaryUmpire2ID))
+                                    rowValue(finalBoundary2)
                                     Image(systemName: "chevron.up.chevron.down")
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(.secondary)
                                 }
                                 .contentShape(Rectangle())
                             }
-<<<<<<< HEAD
-                            Divider()
-                            Button("Enter different name…") {
-                                boundaryUmpireNameDraft = boundaryUmpire2CustomName
-                                boundaryUmpireNamePrompt = .two
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                rowValue(finalBoundary2)
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .contentShape(Rectangle())
-=======
->>>>>>> redesign-new-game-wizard-with-toggles
                         }
                         .padding(.vertical, 4)
 
