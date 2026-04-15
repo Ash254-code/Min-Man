@@ -10,17 +10,7 @@ struct PresView: View {
 
     // MARK: - Ordered grades (U9 → A Grade)
     private var orderedGrades: [Grade] {
-        let active = grades.filter { $0.isActive }
-        let nameToGrade = Dictionary(uniqueKeysWithValues: active.map { ($0.name, $0) })
-
-        var result: [Grade] = LockedGradeSeed.orderedGradeNames.compactMap { nameToGrade[$0] }
-
-        let remaining = active
-            .filter { !LockedGradeSeed.orderedGradeNames.contains($0.name) }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-
-        result.append(contentsOf: remaining)
-        return result
+        orderedGradesForDisplay(grades)
     }
 
     // Grade lookup helpers

@@ -18,10 +18,24 @@ struct TabsView: View {
             // ✅ NEW: Pres tab
             PresView()
                 .tabItem { Label("Pres", systemImage: "rectangle.stack") }
+
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .task {
-            // Safe to call every launch
-            LockedGradeSeed.ensureGradesExist(modelContext: modelContext)
+            seedInitialGradesIfNeeded()
         }
+    }
+
+    private func seedInitialGradesIfNeeded() {
+        let existing = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
+        guard existing.isEmpty else { return }
+
+        let defaults = ["A Grade", "B Grade", "Under 17's", "Under 14's", "Under 12's", "Under 9's"]
+        for (index, name) in defaults.enumerated() {
+            modelContext.insert(Grade(name: name, isActive: true, displayOrder: index))
+        }
+
+        try? modelContext.save()
     }
 }

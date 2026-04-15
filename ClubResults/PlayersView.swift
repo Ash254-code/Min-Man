@@ -35,9 +35,7 @@ struct PlayersView: View {
     // MARK: - Grade Ordering
 
     private var orderedGrades: [Grade] {
-        LockedGradeSeed.orderedGradeNames.compactMap { name in
-            grades.first(where: { $0.name == name })
-        }
+        orderedGradesForDisplay(grades, includeInactive: true)
     }
 
     private var activeGrades: [Grade] {
