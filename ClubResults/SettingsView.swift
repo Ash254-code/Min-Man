@@ -488,35 +488,38 @@ private struct ContactsSettingsView: View {
         .sheet(isPresented: $showAddContact) {
             ContactEditSheet(
                 title: "Add Contact",
-                allowsSaveAndAddAnother: true
-            ) { name, mobile, email in
-                let newContact = Contact(name: name, mobile: mobile, email: email)
-                modelContext.insert(newContact)
-                contacts.append(newContact)
-                contacts.sort {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                allowsSaveAndAddAnother: true,
+                onSave: { name, mobile, email in
+                    let newContact = Contact(name: name, mobile: mobile, email: email)
+                    modelContext.insert(newContact)
+                    contacts.append(newContact)
+                    contacts.sort {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
+                    SettingsBackupStore.saveContacts(contacts)
+                    saveContext()
+                    reloadContacts()
+                    return true
                 }
-                SettingsBackupStore.saveContacts(contacts)
-                saveContext()
-                reloadContacts()
-                return true
-            }
+            )
         }
         .sheet(item: $contactEditing) { contact in
             ContactEditSheet(
                 title: "Edit Contact",
                 initialName: contact.name,
                 initialMobile: contact.mobile,
-                initialEmail: contact.email
-            ) { name, mobile, email in
-                contact.name = name
-                contact.mobile = mobile
-                contact.email = email
-                SettingsBackupStore.saveContacts(contacts)
-                saveContext()
-                reloadContacts()
-                return true
-            }
+                initialEmail: contact.email,
+                allowsSaveAndAddAnother: false,
+                onSave: { name, mobile, email in
+                    contact.name = name
+                    contact.mobile = mobile
+                    contact.email = email
+                    SettingsBackupStore.saveContacts(contacts)
+                    saveContext()
+                    reloadContacts()
+                    return true
+                }
+            )
         }
         .alert(
             "Save Error",
