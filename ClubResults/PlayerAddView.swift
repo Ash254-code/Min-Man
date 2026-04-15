@@ -11,6 +11,7 @@ struct PlayerAddView: View {
 
     @State private var name: String = ""
     @State private var selectedGradeIDs: Set<UUID> = []
+    @State private var saveErrorMessage: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -36,6 +37,14 @@ struct PlayerAddView: View {
                         }
                     }
                 }
+            }
+            .alert("Could not save player", isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { saveErrorMessage = nil }
+            } message: {
+                Text(saveErrorMessage ?? "Unknown save error.")
             }
             .navigationTitle("Add Player")
             .toolbar {
@@ -66,6 +75,12 @@ struct PlayerAddView: View {
 
         let p = Player(name: trimmed, gradeIDs: Array(selectedGradeIDs))
         modelContext.insert(p)
-        dismiss()
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            modelContext.delete(p)
+            saveErrorMessage = error.localizedDescription
+        }
     }
 }
