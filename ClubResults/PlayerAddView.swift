@@ -11,6 +11,7 @@ struct PlayerAddView: View {
     @State private var name: String = ""
     @State private var numberText: String = ""
     @State private var selectedGradeIDs: Set<UUID> = []
+    @State private var nameValidationMessage: String?
 
     private var parsedNumber: Int? {
         let trimmed = numberText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -29,6 +30,15 @@ struct PlayerAddView: View {
                 Section("Name") {
                     TextField("Player name", text: $name)
                         .textInputAutocapitalization(.words)
+                        .onChange(of: name) { _, _ in
+                            nameValidationMessage = nil
+                        }
+
+                    if let nameValidationMessage {
+                        Text(nameValidationMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                 }
 
                 Section("Number") {
@@ -66,7 +76,7 @@ struct PlayerAddView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(cleanedName.isEmpty || !numberIsValid)
+                        .disabled(!numberIsValid)
                 }
             }
             .onAppear {
@@ -84,7 +94,12 @@ struct PlayerAddView: View {
     }
 
     private func save() {
-        guard !cleanedName.isEmpty else { return }
+        nameValidationMessage = nil
+
+        guard !cleanedName.isEmpty else {
+            nameValidationMessage = "Please enter a player name."
+            return
+        }
 
         let exists = existingPlayers.contains {
             $0.name
@@ -92,7 +107,10 @@ struct PlayerAddView: View {
                 .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
                 .lowercased() == cleanedName.lowercased()
         }
-        guard !exists else { return }
+        guard !exists else {
+            nameValidationMessage = "That player name already exists."
+            return
+        }
 
         onSave(cleanedName, Array(selectedGradeIDs))
         dismiss()
