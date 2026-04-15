@@ -64,7 +64,12 @@ struct PlayerAddView: View {
         }
         guard !exists else { return }
 
-        onSave(trimmed, Array(selectedGradeIDs))
+        var finalGradeIDs = Array(selectedGradeIDs)
+        if finalGradeIDs.isEmpty, let gid = preselectedGradeID {
+            finalGradeIDs = [gid]
+        }
+
+        onSave(trimmed, finalGradeIDs)
         dismiss()
     }
 }
