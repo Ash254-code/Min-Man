@@ -34,8 +34,12 @@ struct PlayersView: View {
 
     // MARK: - Grade Ordering
 
+    private var resolvedGrades: [Grade] {
+        resolvedConfiguredGrades(from: grades)
+    }
+
     private var orderedGrades: [Grade] {
-        orderedGradesForDisplay(grades, includeInactive: true)
+        orderedGradesForDisplay(resolvedGrades, includeInactive: true)
     }
 
     private var activeGrades: [Grade] {
@@ -352,7 +356,7 @@ struct PlayersView: View {
             throw CSVImportError.missingHeaders(expected: CSVHeaderMap.expectedColumnsDisplay)
         }
 
-        let gradeLookup = GradeLookup(grades: grades)
+        let gradeLookup = GradeLookup(grades: resolvedGrades)
 
         let existingByName: [String: Player] = Dictionary(
             uniqueKeysWithValues: players.map { (normalizeName($0.name), $0) }

@@ -138,11 +138,7 @@ struct NewGameWizardView: View {
 
     // MARK: Ordering helpers
     private var resolvedGrades: [Grade] {
-        if grades.isEmpty {
-            return SettingsBackupStore.loadGrades()
-                .map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
-        }
-        return grades
+        resolvedConfiguredGrades(from: grades)
     }
 
     private var orderedGrades: [Grade] {

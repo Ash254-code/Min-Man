@@ -62,3 +62,39 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         }
     }
 }
+
+func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
+    let backups = SettingsBackupStore.loadGrades()
+    guard !backups.isEmpty else { return persistedGrades }
+
+    var resolved = persistedGrades
+    var seenIDs = Set(persistedGrades.map(\.id))
+    var seenNames = Set(persistedGrades.map { normalizedGradeName($0.name) })
+
+    for backup in backups {
+        let normalizedName = normalizedGradeName(backup.name)
+        if seenIDs.contains(backup.id) || seenNames.contains(normalizedName) {
+            continue
+        }
+
+        resolved.append(
+            Grade(
+                id: backup.id,
+                name: backup.name,
+                isActive: backup.isActive,
+                displayOrder: backup.displayOrder
+            )
+        )
+
+        seenIDs.insert(backup.id)
+        seenNames.insert(normalizedName)
+    }
+
+    return resolved
+}
+
+private func normalizedGradeName(_ name: String) -> String {
+    name
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+}

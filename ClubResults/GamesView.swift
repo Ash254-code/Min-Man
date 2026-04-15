@@ -13,14 +13,7 @@ struct GamesView: View {
 
     // MARK: - Ordered grades (your seeded order + remaining A→Z)
     private var orderedGrades: [Grade] {
-        let sourceGrades: [Grade]
-        if grades.isEmpty {
-            sourceGrades = SettingsBackupStore.loadGrades()
-                .map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
-        } else {
-            sourceGrades = grades
-        }
-        return orderedGradesForDisplay(sourceGrades)
+        orderedGradesForDisplay(resolvedConfiguredGrades(from: grades))
     }
 
     private var gradeNameByID: [UUID: String] {
