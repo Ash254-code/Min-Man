@@ -20,28 +20,46 @@ private enum SettingsBackupStore {
     private static let contactsKey = "settings.backup.contacts.v1"
 
     static func saveGrades(_ grades: [Grade]) {
-        let payload = grades.map { GradeBackup(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
+        let payload = grades.map {
+            GradeBackup(
+                id: $0.id,
+                name: $0.name,
+                isActive: $0.isActive,
+                displayOrder: $0.displayOrder
+            )
+        }
         guard let data = try? JSONEncoder().encode(payload) else { return }
         UserDefaults.standard.set(data, forKey: gradesKey)
     }
 
     static func loadGrades() -> [GradeBackup] {
-        guard let data = UserDefaults.standard.data(forKey: gradesKey),
-              let decoded = try? JSONDecoder().decode([GradeBackup].self, from: data) else {
+        guard
+            let data = UserDefaults.standard.data(forKey: gradesKey),
+            let decoded = try? JSONDecoder().decode([GradeBackup].self, from: data)
+        else {
             return []
         }
         return decoded
     }
 
     static func saveContacts(_ contacts: [Contact]) {
-        let payload = contacts.map { ContactBackup(id: $0.id, name: $0.name, mobile: $0.mobile, email: $0.email) }
+        let payload = contacts.map {
+            ContactBackup(
+                id: $0.id,
+                name: $0.name,
+                mobile: $0.mobile,
+                email: $0.email
+            )
+        }
         guard let data = try? JSONEncoder().encode(payload) else { return }
         UserDefaults.standard.set(data, forKey: contactsKey)
     }
 
     static func loadContacts() -> [ContactBackup] {
-        guard let data = UserDefaults.standard.data(forKey: contactsKey),
-              let decoded = try? JSONDecoder().decode([ContactBackup].self, from: data) else {
+        guard
+            let data = UserDefaults.standard.data(forKey: contactsKey),
+            let decoded = try? JSONDecoder().decode([ContactBackup].self, from: data)
+        else {
             return []
         }
         return decoded
@@ -83,11 +101,16 @@ struct SettingsView: View {
             .task {
                 seedInitialGradesIfNeeded()
             }
-            .alert("Save Error", isPresented: Binding(
-                get: { saveErrorMessage != nil },
-                set: { if !$0 { saveErrorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { saveErrorMessage = nil }
+            .alert(
+                "Save Error",
+                isPresented: Binding(
+                    get: { saveErrorMessage != nil },
+                    set: { if !$0 { saveErrorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {
+                    saveErrorMessage = nil
+                }
             } message: {
                 Text(saveErrorMessage ?? "An unknown error occurred.")
             }
@@ -107,16 +130,23 @@ struct SettingsView: View {
         let existing = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
         guard existing.isEmpty else { return }
 
-        let defaults = ["A Grade", "B Grade", "Under 17's", "Under 14's", "Under 12's", "Under 9's"]
+        let defaults = [
+            "A Grade",
+            "B Grade",
+            "Under 17's",
+            "Under 14's",
+            "Under 12's",
+            "Under 9's"
+        ]
+
         for (index, name) in defaults.enumerated() {
             modelContext.insert(Grade(name: name, isActive: true, displayOrder: index))
         }
+
         do {
             try modelContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
-            let backups = SettingsBackupStore.loadGrades()
-            grades = backups.map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
         }
     }
 }
@@ -150,13 +180,16 @@ private struct ClubGradesSettingsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(grade.name)
+
                             if !grade.isActive {
                                 Text("Inactive")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
+
                         Spacer()
+
                         Button("Edit") {
                             gradeEditing = grade
                             editGradeName = grade.name
@@ -184,17 +217,24 @@ private struct ClubGradesSettingsView: View {
             }
         }
         .navigationTitle("Club Grades")
-        .toolbar { EditButton() }
+        .toolbar {
+            EditButton()
+        }
         .alert("Can’t Delete Grade", isPresented: $showDeletionError) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(deletionErrorMessage ?? "This grade is currently in use.")
         }
-        .alert("Save Error", isPresented: Binding(
-            get: { saveErrorMessage != nil },
-            set: { if !$0 { saveErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { saveErrorMessage = nil }
+        .alert(
+            "Save Error",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                saveErrorMessage = nil
+            }
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
@@ -207,7 +247,9 @@ private struct ClubGradesSettingsView: View {
                 .navigationTitle("Add Grade")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showAddGrade = false }
+                        Button("Cancel") {
+                            showAddGrade = false
+                        }
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save & Add Another") {
@@ -237,7 +279,9 @@ private struct ClubGradesSettingsView: View {
                 .navigationTitle("Edit Grade")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { gradeEditing = nil }
+                        Button("Cancel") {
+                            gradeEditing = nil
+                        }
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") {
@@ -257,12 +301,15 @@ private struct ClubGradesSettingsView: View {
     private func addGrade() -> Bool {
         let name = clean(newGradeName)
         guard !name.isEmpty else { return false }
-        guard !grades.contains(where: { clean($0.name).lowercased() == name.lowercased() }) else { return false }
+        guard !grades.contains(where: {
+            clean($0.name).lowercased() == name.lowercased()
+        }) else { return false }
 
         let nextOrder = (grades.map(\.displayOrder).max() ?? -1) + 1
         let newGrade = Grade(name: name, isActive: true, displayOrder: nextOrder)
         modelContext.insert(newGrade)
         grades.append(newGrade)
+
         SettingsBackupStore.saveGrades(grades)
         saveContext()
         reloadGrades()
@@ -271,9 +318,12 @@ private struct ClubGradesSettingsView: View {
 
     private func saveEditedGrade() {
         guard let gradeEditing else { return }
+
         let name = clean(editGradeName)
         guard !name.isEmpty else { return }
-        guard !grades.contains(where: { $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased() }) else { return }
+        guard !grades.contains(where: {
+            $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased()
+        }) else { return }
 
         gradeEditing.name = name
         SettingsBackupStore.saveGrades(grades)
@@ -313,7 +363,11 @@ private struct ClubGradesSettingsView: View {
 
         modelContext.delete(grade)
 
-        let remaining = orderedGradesForDisplay(grades.filter { $0.id != grade.id }, includeInactive: true)
+        let remaining = orderedGradesForDisplay(
+            grades.filter { $0.id != grade.id },
+            includeInactive: true
+        )
+
         for (index, item) in remaining.enumerated() {
             item.displayOrder = index
         }
@@ -338,18 +392,38 @@ private struct ClubGradesSettingsView: View {
     private func reloadGrades() {
         do {
             let descriptor = FetchDescriptor<Grade>(
-                sortBy: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]
+                sortBy: [
+                    SortDescriptor(\Grade.displayOrder),
+                    SortDescriptor(\Grade.name)
+                ]
             )
             let fetched = try modelContext.fetch(descriptor)
+
             if fetched.isEmpty {
                 let backups = SettingsBackupStore.loadGrades()
                 if !backups.isEmpty {
-                    let restored = backups.map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
-                    grades = restored
-                    for item in backups {
-                        modelContext.insert(Grade(id: item.id, name: item.name, isActive: item.isActive, displayOrder: item.displayOrder))
+                    grades = backups.map {
+                        Grade(
+                            id: $0.id,
+                            name: $0.name,
+                            isActive: $0.isActive,
+                            displayOrder: $0.displayOrder
+                        )
                     }
+
+                    for item in backups {
+                        modelContext.insert(
+                            Grade(
+                                id: item.id,
+                                name: item.name,
+                                isActive: item.isActive,
+                                displayOrder: item.displayOrder
+                            )
+                        )
+                    }
+
                     try? modelContext.save()
+
                     let afterRestore = (try? modelContext.fetch(descriptor)) ?? []
                     if !afterRestore.isEmpty {
                         grades = afterRestore
@@ -357,12 +431,20 @@ private struct ClubGradesSettingsView: View {
                     return
                 }
             }
+
             grades = fetched
             SettingsBackupStore.saveGrades(grades)
         } catch {
             saveErrorMessage = error.localizedDescription
             let backups = SettingsBackupStore.loadGrades()
-            grades = backups.map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
+            grades = backups.map {
+                Grade(
+                    id: $0.id,
+                    name: $0.name,
+                    isActive: $0.isActive,
+                    displayOrder: $0.displayOrder
+                )
+            }
         }
     }
 }
@@ -402,9 +484,11 @@ private struct ContactsSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(contact.name)
                             .font(.headline)
+
                         Text(contact.mobile)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+
                         Text(contact.email)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -433,11 +517,16 @@ private struct ContactsSettingsView: View {
         }
         .navigationTitle("Contacts")
         .sheet(isPresented: $showAddContact) {
-            ContactEditSheet(title: "Add Contact", allowsSaveAndAddAnother: true) { name, mobile, email in
+            ContactEditSheet(
+                title: "Add Contact",
+                allowsSaveAndAddAnother: true
+            ) { name, mobile, email in
                 let newContact = Contact(name: name, mobile: mobile, email: email)
                 modelContext.insert(newContact)
                 contacts.append(newContact)
-                contacts.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                contacts.sort {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
                 SettingsBackupStore.saveContacts(contacts)
                 saveContext()
                 reloadContacts()
@@ -460,11 +549,16 @@ private struct ContactsSettingsView: View {
                 return true
             }
         }
-        .alert("Save Error", isPresented: Binding(
-            get: { saveErrorMessage != nil },
-            set: { if !$0 { saveErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { saveErrorMessage = nil }
+        .alert(
+            "Save Error",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                saveErrorMessage = nil
+            }
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
@@ -477,8 +571,10 @@ private struct ContactsSettingsView: View {
         for recipient in reportRecipients where recipient.contactID == contact.id {
             modelContext.delete(recipient)
         }
+
         modelContext.delete(contact)
         contacts.removeAll { $0.id == contact.id }
+
         SettingsBackupStore.saveContacts(contacts)
         saveContext()
         reloadContacts()
@@ -491,8 +587,17 @@ private struct ContactsSettingsView: View {
             saveErrorMessage = error.localizedDescription
             let backups = SettingsBackupStore.loadContacts()
             contacts = backups
-                .map { Contact(id: $0.id, name: $0.name, mobile: $0.mobile, email: $0.email) }
-                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                .map {
+                    Contact(
+                        id: $0.id,
+                        name: $0.name,
+                        mobile: $0.mobile,
+                        email: $0.email
+                    )
+                }
+                .sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
         }
     }
 
@@ -502,15 +607,36 @@ private struct ContactsSettingsView: View {
                 sortBy: [SortDescriptor(\Contact.name)]
             )
             let fetched = try modelContext.fetch(descriptor)
+
             if fetched.isEmpty {
                 let backups = SettingsBackupStore.loadContacts()
                 if !backups.isEmpty {
-                    let restored = backups.map { Contact(id: $0.id, name: $0.name, mobile: $0.mobile, email: $0.email) }
-                    contacts = restored.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                    contacts = backups
+                        .map {
+                            Contact(
+                                id: $0.id,
+                                name: $0.name,
+                                mobile: $0.mobile,
+                                email: $0.email
+                            )
+                        }
+                        .sorted {
+                            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                        }
+
                     for item in backups {
-                        modelContext.insert(Contact(id: item.id, name: item.name, mobile: item.mobile, email: item.email))
+                        modelContext.insert(
+                            Contact(
+                                id: item.id,
+                                name: item.name,
+                                mobile: item.mobile,
+                                email: item.email
+                            )
+                        )
                     }
+
                     try? modelContext.save()
+
                     let afterRestore = (try? modelContext.fetch(descriptor)) ?? []
                     if !afterRestore.isEmpty {
                         contacts = afterRestore
@@ -518,6 +644,7 @@ private struct ContactsSettingsView: View {
                     return
                 }
             }
+
             contacts = fetched
             SettingsBackupStore.saveContacts(contacts)
         } catch {
@@ -561,7 +688,9 @@ private struct ContactEditSheet: View {
     }
 
     private var canSave: Bool {
-        !clean(name).isEmpty && !clean(mobile).isEmpty && !clean(email).isEmpty
+        !clean(name).isEmpty &&
+        !clean(mobile).isEmpty &&
+        !clean(email).isEmpty
     }
 
     var body: some View {
@@ -569,8 +698,10 @@ private struct ContactEditSheet: View {
             Form {
                 TextField("Name", text: $name)
                     .textInputAutocapitalization(.words)
+
                 TextField("Mobile", text: $mobile)
                     .keyboardType(.phonePad)
+
                 TextField("Email", text: $email)
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
@@ -579,8 +710,11 @@ private struct ContactEditSheet: View {
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        dismiss()
+                    }
                 }
+
                 ToolbarItem(placement: .confirmationAction) {
                     Button(allowsSaveAndAddAnother ? "Save & Add Another" : "Save") {
                         if onSave(clean(name), clean(mobile), clean(email)) {
@@ -595,6 +729,7 @@ private struct ContactEditSheet: View {
                     }
                     .disabled(!canSave)
                 }
+
                 if allowsSaveAndAddAnother {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save & Close") {
@@ -652,17 +787,22 @@ private struct ReportsSettingsView: View {
                                     Text(contact.email)
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
+
                                     Spacer()
-                                    Toggle("Email", isOn: Binding(
-                                        get: { recipient.sendEmail },
-                                        set: { newValue in
-                                            recipient.sendEmail = newValue
-                                            if !recipient.sendEmail && !recipient.sendText {
-                                                recipient.sendText = true
+
+                                    Toggle(
+                                        "Email",
+                                        isOn: Binding(
+                                            get: { recipient.sendEmail },
+                                            set: { newValue in
+                                                recipient.sendEmail = newValue
+                                                if !recipient.sendEmail && !recipient.sendText {
+                                                    recipient.sendText = true
+                                                }
+                                                saveContext()
                                             }
-                                            saveContext()
-                                        }
-                                    ))
+                                        )
+                                    )
                                     .labelsHidden()
                                 }
 
@@ -670,17 +810,22 @@ private struct ReportsSettingsView: View {
                                     Text(contact.mobile)
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
+
                                     Spacer()
-                                    Toggle("Text", isOn: Binding(
-                                        get: { recipient.sendText },
-                                        set: { newValue in
-                                            recipient.sendText = newValue
-                                            if !recipient.sendEmail && !recipient.sendText {
-                                                recipient.sendEmail = true
+
+                                    Toggle(
+                                        "Text",
+                                        isOn: Binding(
+                                            get: { recipient.sendText },
+                                            set: { newValue in
+                                                recipient.sendText = newValue
+                                                if !recipient.sendEmail && !recipient.sendText {
+                                                    recipient.sendEmail = true
+                                                }
+                                                saveContext()
                                             }
-                                            saveContext()
-                                        }
-                                    ))
+                                        )
+                                    )
                                     .labelsHidden()
                                 }
 
@@ -719,11 +864,16 @@ private struct ReportsSettingsView: View {
             }
         }
         .navigationTitle("Reports")
-        .alert("Save Error", isPresented: Binding(
-            get: { saveErrorMessage != nil },
-            set: { if !$0 { saveErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { saveErrorMessage = nil }
+        .alert(
+            "Save Error",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                saveErrorMessage = nil
+            }
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
@@ -740,17 +890,31 @@ private struct ReportsSettingsView: View {
     }
 
     private func addContact(_ contact: Contact, toGrade gradeID: UUID) {
-        guard !reportRecipients.contains(where: { $0.gradeID == gradeID && $0.contactID == contact.id }) else { return }
-        modelContext.insert(ReportRecipient(gradeID: gradeID, contactID: contact.id, sendEmail: true, sendText: true))
+        guard !reportRecipients.contains(where: {
+            $0.gradeID == gradeID && $0.contactID == contact.id
+        }) else { return }
+
+        modelContext.insert(
+            ReportRecipient(
+                gradeID: gradeID,
+                contactID: contact.id,
+                sendEmail: true,
+                sendText: true
+            )
+        )
         saveContext()
     }
 
     private func sendModeText(_ recipient: ReportRecipient) -> String {
         switch (recipient.sendEmail, recipient.sendText) {
-        case (true, true): return "Send via Email + Text"
-        case (true, false): return "Send via Email"
-        case (false, true): return "Send via Text"
-        case (false, false): return "Send via Email"
+        case (true, true):
+            return "Send via Email + Text"
+        case (true, false):
+            return "Send via Email"
+        case (false, true):
+            return "Send via Text"
+        case (false, false):
+            return "Send via Email"
         }
     }
 

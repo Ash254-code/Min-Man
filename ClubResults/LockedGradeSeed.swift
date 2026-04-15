@@ -28,8 +28,8 @@ enum LockedGradeSeed {
 
         let existingNorm = Set(existing.map { Self.norm($0.name) })
 
-        for name in orderedGradeNames where !existingNorm.contains(Self.norm(name)) {
-            modelContext.insert(Grade(name: name, isActive: true))
+        for (index, name) in orderedGradeNames.enumerated() where !existingNorm.contains(Self.norm(name)) {
+            modelContext.insert(Grade(name: name, isActive: true, displayOrder: index))
         }
     }
 }
