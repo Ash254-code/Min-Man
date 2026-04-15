@@ -1,6 +1,8 @@
 import SwiftUI
-import VisionKit
 import PDFKit
+
+#if canImport(VisionKit)
+import VisionKit
 
 struct VotesScannerSheet: UIViewControllerRepresentable {
     let onComplete: (Data?) -> Void
@@ -47,3 +49,30 @@ struct VotesScannerSheet: UIViewControllerRepresentable {
         }
     }
 }
+
+#else
+
+/// Fallback when VisionKit is unavailable for the current target/platform.
+struct VotesScannerSheet: View {
+    let onComplete: (Data?) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "camera.viewfinder")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+            Text("Document scanning is not available on this device.")
+                .multilineTextAlignment(.center)
+            Button("Close") { onCancel() }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(24)
+        .onAppear {
+            // Return nil to keep existing save validation behaviour unchanged.
+            onComplete(nil)
+        }
+    }
+}
+
+#endif
