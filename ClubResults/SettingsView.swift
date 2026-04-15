@@ -124,14 +124,16 @@ private struct ClubGradesSettingsView: View {
                         }
 
                         Spacer()
-
-                        Button("Edit") {
-                            gradeEditing = grade
-                            editGradeName = grade.name
-                        }
-                        .buttonStyle(.borderless)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button {
+                            gradeEditing = grade
+                            editGradeName = grade.name
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+
                         Button(role: .destructive) {
                             deleteGrade(grade)
                         } label: {
@@ -152,9 +154,7 @@ private struct ClubGradesSettingsView: View {
             }
         }
         .navigationTitle("Club Grades")
-        .toolbar {
-            EditButton()
-        }
+        .environment(\.editMode, .constant(.active))
         .alert("Can’t Delete Grade", isPresented: $showDeletionError) {
             Button("OK", role: .cancel) { }
         } message: {
