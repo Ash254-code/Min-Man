@@ -469,7 +469,7 @@ struct PlayersView: View {
     private func normalizeName(_ s: String) -> String {
         s.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-            .replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
 
     private func createAndSavePlayer(name: String, gradeIDs: [UUID]) {
