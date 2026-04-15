@@ -69,7 +69,7 @@ struct SettingsView: View {
         } catch {
             saveErrorMessage = error.localizedDescription
             let backups = SettingsBackupStore.loadGrades()
-            grades = backups.map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
+            grades = backups
         }
     }
 }
@@ -297,10 +297,9 @@ private struct ClubGradesSettingsView: View {
             if fetched.isEmpty {
                 let backups = SettingsBackupStore.loadGrades()
                 if !backups.isEmpty {
-                    let restored = backups.map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
-                    grades = restored
+                    grades = backups
                     for item in backups {
-                        modelContext.insert(Grade(id: item.id, name: item.name, isActive: item.isActive, displayOrder: item.displayOrder))
+                        modelContext.insert(item)
                     }
                     try? modelContext.save()
                     let afterRestore = (try? modelContext.fetch(descriptor)) ?? []
@@ -315,7 +314,7 @@ private struct ClubGradesSettingsView: View {
         } catch {
             saveErrorMessage = error.localizedDescription
             let backups = SettingsBackupStore.loadGrades()
-            grades = backups.map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
+            grades = backups
         }
     }
 }
@@ -444,7 +443,6 @@ private struct ContactsSettingsView: View {
             saveErrorMessage = error.localizedDescription
             let backups = SettingsBackupStore.loadContacts()
             contacts = backups
-                .map { Contact(id: $0.id, name: $0.name, mobile: $0.mobile, email: $0.email) }
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
     }
@@ -458,10 +456,9 @@ private struct ContactsSettingsView: View {
             if fetched.isEmpty {
                 let backups = SettingsBackupStore.loadContacts()
                 if !backups.isEmpty {
-                    let restored = backups.map { Contact(id: $0.id, name: $0.name, mobile: $0.mobile, email: $0.email) }
-                    contacts = restored.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                    contacts = backups.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                     for item in backups {
-                        modelContext.insert(Contact(id: item.id, name: item.name, mobile: item.mobile, email: item.email))
+                        modelContext.insert(item)
                     }
                     try? modelContext.save()
                     let afterRestore = (try? modelContext.fetch(descriptor)) ?? []

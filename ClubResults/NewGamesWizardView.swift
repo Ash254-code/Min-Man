@@ -140,7 +140,6 @@ struct NewGameWizardView: View {
     private var resolvedGrades: [Grade] {
         if grades.isEmpty {
             return SettingsBackupStore.loadGrades()
-                .map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
         }
         return grades
     }
