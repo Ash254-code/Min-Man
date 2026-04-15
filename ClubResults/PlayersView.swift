@@ -100,7 +100,7 @@ struct PlayersView: View {
                         activeGrades: activeGrades,
                         existingPlayers: playersForDisplay,
                         preselectedGradeID: selectedGradeID,
-                        onSave: createAndSavePlayer(name:gradeIDs:)
+                        onSave: createAndSavePlayer(name:number:gradeIDs:)
                     )
                     .toolbarBackground(.hidden, for: .navigationBar)
                 }
@@ -472,25 +472,29 @@ struct PlayersView: View {
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
 
-    private func createAndSavePlayer(name: String, gradeIDs: [UUID]) {
+    private func createAndSavePlayer(name: String, number: Int?, gradeIDs: [UUID]) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
 
         let normalized = normalizeName(trimmed)
         guard !playersForDisplay.contains(where: { normalizeName($0.name) == normalized }) else {
-            return
+            addErrorMessage = "A player with that name already exists."
+            showAddError = true
+            return false
         }
 
-        let p = Player(name: trimmed, gradeIDs: gradeIDs)
+        let p = Player(name: trimmed, number: number, gradeIDs: gradeIDs)
         modelContext.insert(p)
 
         do {
             try modelContext.save()
             reloadPlayersFromStore()
+            return true
         } catch {
             modelContext.delete(p)
             addErrorMessage = error.localizedDescription
             showAddError = true
+            return false
         }
     }
 
