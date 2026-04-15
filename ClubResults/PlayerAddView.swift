@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 struct PlayerAddView: View {
     @Environment(\.dismiss) private var dismiss
@@ -87,8 +86,7 @@ struct PlayerAddView: View {
         }
         guard !exists else { return }
 
-        let p = Player(name: trimmed, number: parsedNumber, gradeIDs: Array(selectedGradeIDs))
-        modelContext.insert(p)
+        onSave(trimmed, Array(selectedGradeIDs))
         dismiss()
     }
 }
