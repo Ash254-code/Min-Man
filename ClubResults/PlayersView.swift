@@ -8,7 +8,6 @@ struct PlayersView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Player.name) private var queriedPlayers: [Player]
     @Query private var grades: [Grade]
-    @State private var playersForDisplay: [Player] = []
 
     @State private var showAdd = false
 
@@ -61,9 +60,9 @@ struct PlayersView: View {
         // First filter by selected grade (if any)
         let gradeFiltered: [Player]
         if let gid = selectedGradeID {
-            gradeFiltered = playersForDisplay.filter { $0.gradeIDs.contains(gid) }
+            gradeFiltered = queriedPlayers.filter { $0.gradeIDs.contains(gid) }
         } else {
-            gradeFiltered = playersForDisplay
+            gradeFiltered = queriedPlayers
         }
 
         // Then filter by search text (if any)
@@ -98,9 +97,9 @@ struct PlayersView: View {
                 NavigationStack {
                     PlayerAddView(
                         activeGrades: activeGrades,
-                        existingPlayers: playersForDisplay,
+                        existingPlayers: queriedPlayers,
                         preselectedGradeID: selectedGradeID,
-                        onSave: createAndSavePlayer(name:gradeIDs:)
+                        onSave: createAndSavePlayer(name:number:gradeIDs:)
                     )
                     .toolbarBackground(.hidden, for: .navigationBar)
                 }
@@ -187,10 +186,6 @@ struct PlayersView: View {
             }
         }
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search players")
-        .onAppear { reloadPlayersFromStore() }
-        .onChange(of: queriedPlayers.count) { _, _ in
-            reloadPlayersFromStore()
-        }
     }
 
     // MARK: - Players Section
@@ -202,7 +197,7 @@ struct PlayersView: View {
                     PlayerEditView(
                         player: player,
                         orderedGrades: orderedGrades,
-                        existingPlayers: playersForDisplay,
+                        existingPlayers: queriedPlayers,
                         onRequestDelete: { p in requestDelete(p) }
                     )
                 } label: {
@@ -305,7 +300,6 @@ struct PlayersView: View {
 
         modelContext.delete(player)
         try? modelContext.save()
-        reloadPlayersFromStore()
 
         playerPendingDelete = nil
         showDeletePrompt = false
@@ -377,7 +371,7 @@ struct PlayersView: View {
 
         let gradeLookup = GradeLookup(grades: resolvedGrades)
 
-        var existingByName: [String: Player] = playersForDisplay.reduce(into: [:]) { partial, player in
+        var existingByName: [String: Player] = queriedPlayers.reduce(into: [:]) { partial, player in
             partial[normalizeName(player.name)] = player
         }
 
@@ -404,7 +398,7 @@ struct PlayersView: View {
         }
 
         if mode == .replaceAll {
-            for p in playersForDisplay { modelContext.delete(p) }
+            for p in queriedPlayers { modelContext.delete(p) }
         }
 
         for row in parsedRows {
@@ -455,7 +449,6 @@ struct PlayersView: View {
         do { try modelContext.save() }
         catch { throw CSVImportError.saveFailed(error.localizedDescription) }
 
-        reloadPlayersFromStore()
         return result
     }
 
@@ -472,35 +465,31 @@ struct PlayersView: View {
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
 
-    private func createAndSavePlayer(name: String, gradeIDs: [UUID]) {
+    private func createAndSavePlayer(name: String, number: Int?, gradeIDs: [UUID]) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
 
         let normalized = normalizeName(trimmed)
-        guard !playersForDisplay.contains(where: { normalizeName($0.name) == normalized }) else {
-            return
+        guard !queriedPlayers.contains(where: { normalizeName($0.name) == normalized }) else {
+            addErrorMessage = "A player with that name already exists."
+            showAddError = true
+            return false
         }
 
-        let p = Player(name: trimmed, gradeIDs: gradeIDs)
+        let p = Player(name: trimmed, number: number, gradeIDs: gradeIDs)
         modelContext.insert(p)
 
         do {
             try modelContext.save()
-            reloadPlayersFromStore()
+            return true
         } catch {
             modelContext.delete(p)
             addErrorMessage = error.localizedDescription
             showAddError = true
+            return false
         }
     }
 
-    private func reloadPlayersFromStore() {
-        var descriptor = FetchDescriptor<Player>(
-            sortBy: [SortDescriptor(\Player.name, order: .forward)]
-        )
-        descriptor.includePendingChanges = true
-        playersForDisplay = (try? modelContext.fetch(descriptor)) ?? []
-    }
 }
 
 // MARK: - AFL Row UI
