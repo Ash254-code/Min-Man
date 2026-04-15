@@ -123,6 +123,7 @@ struct GamesView: View {
             }
             .sheet(isPresented: $showNewGameWizard) {
                 NewGameWizardView(initialGradeID: newGameGradeID)
+                    .appPopupStyle()
             }
         }
     }

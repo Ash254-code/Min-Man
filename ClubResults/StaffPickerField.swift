@@ -96,6 +96,7 @@ struct StaffPickerField: View {
                     }
                 }
             }
+            .appPopupStyle()
         }
     }
 

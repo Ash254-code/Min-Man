@@ -292,6 +292,7 @@ private struct ClubGradesSettingsView: View {
                     }
                 }
             }
+            .appPopupStyle()
         }
         .sheet(item: $gradeEditing) { grade in
             NavigationStack {
@@ -338,6 +339,7 @@ private struct ClubGradesSettingsView: View {
                     }
                 }
             }
+            .appPopupStyle()
         }
         .task {
             reloadGrades()
@@ -624,6 +626,7 @@ private struct ContactsSettingsView: View {
                     return true
                 }
             )
+            .appPopupStyle()
         }
         .sheet(item: $contactEditing) { contact in
             ContactEditSheet(
@@ -642,6 +645,7 @@ private struct ContactsSettingsView: View {
                     return true
                 }
             )
+            .appPopupStyle()
         }
         .alert(
             "Save Error",

@@ -104,6 +104,7 @@ struct PlayersView: View {
                     )
                     .toolbarBackground(.hidden, for: .navigationBar)
                 }
+                .appPopupStyle()
             }
 
             // ✅ file importer

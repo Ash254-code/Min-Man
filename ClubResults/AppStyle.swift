@@ -17,7 +17,20 @@ extension View {
     func appScreenStyle() -> some View {
         modifier(AppScreenBackground())
     }
+
+    func appPopupStyle() -> some View {
+        modifier(AppPopupPresentation())
+    }
 }
+
+private struct AppPopupPresentation: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .presentationDetents([.fraction(0.92), .large])
+            .presentationDragIndicator(.visible)
+    }
+}
+
 struct AppPill: View {
     let text: String
 

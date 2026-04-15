@@ -72,6 +72,7 @@ struct PresView: View {
             .sheet(item: $selectedGame) { game in
                 // ✅ FIX: pass grades + players
                 GameDetailView(game: game, grades: orderedGrades, players: players)
+                    .appPopupStyle()
             }
         }
     }
