@@ -197,46 +197,33 @@ private struct TeamProfileEditorView: View {
     var body: some View {
         Form {
             Section("Team") {
-                teamPill
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if isEditing {
-                            Button("Edit") {
-                                teamNameDraft = draftTeamName
-                                teamNameEditorPresented = true
-                            }
-                            .tint(.blue)
+                HStack(spacing: 12) {
+                    teamPill
+                    Spacer()
+                    if isEditing {
+                        editIconButton {
+                            teamNameDraft = draftTeamName
+                            teamNameEditorPresented = true
                         }
                     }
+                }
             }
 
             Section("Colours") {
-                colorRow(title: "Primary", hex: draftPrimaryHex)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if isEditing {
-                            Button("Edit") { presentColorPicker(.primary) }
-                                .tint(.blue)
-                        }
-                    }
+                editableColorRow(title: "Primary", hex: draftPrimaryHex, editAction: {
+                    presentColorPicker(.primary)
+                }, deleteAction: nil)
 
-                colorRow(title: "Secondary", hex: draftSecondaryHex)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if isEditing {
-                            Button("Edit") { presentColorPicker(.secondary) }
-                                .tint(.blue)
-                        }
-                    }
+                editableColorRow(title: "Secondary", hex: draftSecondaryHex, editAction: {
+                    presentColorPicker(.secondary)
+                }, deleteAction: nil)
 
                 if hasTertiary {
-                    colorRow(title: "Tertiary", hex: draftTertiaryHex)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            if isEditing {
-                                Button("Edit") { presentColorPicker(.tertiary) }
-                                    .tint(.blue)
-                                Button("Delete", role: .destructive) {
-                                    draftTertiaryHex = ""
-                                }
-                            }
-                        }
+                    editableColorRow(title: "Tertiary", hex: draftTertiaryHex, editAction: {
+                        presentColorPicker(.tertiary)
+                    }, deleteAction: {
+                        draftTertiaryHex = ""
+                    })
                 } else if isEditing {
                     Button {
                         draftTertiaryHex = "#FFFFFF"
@@ -252,21 +239,20 @@ private struct TeamProfileEditorView: View {
 
             Section("Venues (up to 3)") {
                 ForEach(Array(draftVenues.enumerated()), id: \.offset) { index, venue in
-                    Text(venue)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            if isEditing {
-                                Button("Edit") {
-                                    venueEditorIndex = index
-                                    venueNameDraft = venue
-                                    venueEditorPresented = true
-                                }
-                                .tint(.blue)
-
-                                Button("Delete", role: .destructive) {
-                                    draftVenues.remove(at: index)
-                                }
+                    HStack {
+                        Text(venue)
+                        Spacer()
+                        if isEditing {
+                            editIconButton {
+                                venueEditorIndex = index
+                                venueNameDraft = venue
+                                venueEditorPresented = true
+                            }
+                            deleteIconButton {
+                                draftVenues.remove(at: index)
                             }
                         }
+                    }
                 }
 
                 if draftVenues.isEmpty {
@@ -288,9 +274,13 @@ private struct TeamProfileEditorView: View {
         .navigationTitle(title)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(isEditing ? "Done" : "Edit") {
-                    if isEditing { syncFromBindings() }
-                    isEditing.toggle()
+                Button(isEditing ? "Cancel" : "Edit") {
+                    if isEditing {
+                        syncFromBindings()
+                        isEditing = false
+                    } else {
+                        isEditing = true
+                    }
                 }
             }
         }
@@ -384,17 +374,18 @@ private struct TeamProfileEditorView: View {
         return Text(displayName)
             .font(.headline)
             .foregroundStyle(Color(hex: draftSecondaryHex, fallback: .white))
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
                 Capsule(style: .continuous)
                     .fill(Color(hex: draftPrimaryHex, fallback: .blue))
             )
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private func colorRow(title: String, hex: String) -> some View {
+    private func editableColorRow(title: String, hex: String, editAction: @escaping () -> Void, deleteAction: (() -> Void)?) -> some View {
         HStack {
             Text(title)
             Spacer()
@@ -405,7 +396,33 @@ private struct TeamProfileEditorView: View {
                     Circle()
                         .stroke(Color.primary.opacity(0.25), lineWidth: 1)
                 )
+
+            if isEditing {
+                editIconButton(action: editAction)
+                if let deleteAction {
+                    deleteIconButton(action: deleteAction)
+                }
+            }
         }
+    }
+
+    @ViewBuilder
+    private func editIconButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "pencil")
+                .font(.subheadline.weight(.semibold))
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.blue)
+    }
+
+    @ViewBuilder
+    private func deleteIconButton(action: @escaping () -> Void) -> some View {
+        Button(role: .destructive, action: action) {
+            Image(systemName: "trash")
+                .font(.subheadline.weight(.semibold))
+        }
+        .buttonStyle(.borderless)
     }
 
     private func presentColorPicker(_ slot: ColorSlot) {
