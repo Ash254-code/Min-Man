@@ -6,7 +6,7 @@ struct PlayerAddView: View {
     let activeGrades: [Grade]
     let existingPlayers: [Player]
     let preselectedGradeID: UUID?
-    let onSave: (String, Int?, [UUID]) -> Bool
+    let onSave: (String, Int?, [UUID]) -> Void
 
     @State private var name: String = ""
     @State private var numberText: String = ""
@@ -112,9 +112,7 @@ struct PlayerAddView: View {
             return
         }
 
-        let didSave = onSave(cleanedName, parsedNumber, Array(selectedGradeIDs))
-        if didSave {
-            dismiss()
-        }
+        onSave(cleanedName, parsedNumber, Array(selectedGradeIDs))
+        dismiss()
     }
 }
