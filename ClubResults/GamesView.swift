@@ -153,8 +153,8 @@ private struct NewGameQuickStartSection: View {
                                     .font(.system(size: 34, weight: .bold))
                                     .multilineTextAlignment(.center)
                                     .minimumScaleFactor(0.7)
-                                Text("New Game")
-                                    .font(.system(size: 30, weight: .semibold))
+                                Text("🏉 New Game")
+                                    .font(.system(size: 22, weight: .semibold))
                             }
                             .frame(maxWidth: .infinity, minHeight: 184)
                             .padding(.horizontal, 16)
