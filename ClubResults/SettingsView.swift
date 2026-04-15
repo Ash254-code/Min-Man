@@ -112,39 +112,23 @@ private struct ClubGradesSettingsView: View {
         List {
             Section {
                 ForEach(sortedGrades) { grade in
-                    Button {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(grade.name)
+
+                            if !grade.isActive {
+                                Text("Inactive")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         gradeEditing = grade
                         editGradeName = grade.name
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(grade.name)
-
-                                if !grade.isActive {
-                                    Text("Inactive")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            Spacer()
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button {
-                            gradeEditing = grade
-                            editGradeName = grade.name
-                        } label: {
-                            Label("Edit", systemImage: "pencil")
-                        }
-                        .tint(.blue)
-
-                        Button(role: .destructive) {
-                            _ = deleteGrade(grade)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
                     }
                 }
                 .onMove(perform: moveGrades)
@@ -234,12 +218,14 @@ private struct ClubGradesSettingsView: View {
                             gradeEditing = nil
                         }
                     }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            saveEditedGrade()
-                            gradeEditing = nil
+                    if hasEditGradeChanges {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                saveEditedGrade()
+                                gradeEditing = nil
+                            }
+                            .disabled(isEditGradeSaveDisabled)
                         }
-                        .disabled(isEditGradeSaveDisabled)
                     }
                 }
             }
@@ -292,6 +278,11 @@ private struct ClubGradesSettingsView: View {
         return grades.contains(where: {
             $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased()
         })
+    }
+
+    private var hasEditGradeChanges: Bool {
+        guard let gradeEditing else { return false }
+        return clean(editGradeName) != clean(gradeEditing.name)
     }
 
     private func moveGrades(from source: IndexSet, to destination: Int) {
