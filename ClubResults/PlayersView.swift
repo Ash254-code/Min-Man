@@ -385,7 +385,9 @@ struct PlayersView: View {
 
         let gradeLookup = GradeLookup(grades: resolvedGrades)
 
-        var existingByName: [String: Player] = playersForDisplay.reduce(into: [:]) { partial, player in
+        // Always start from the persisted source of truth, not an in-memory snapshot.
+        let persistedPlayers = fetchPlayersFromStore()
+        var existingByName: [String: Player] = persistedPlayers.reduce(into: [:]) { partial, player in
             partial[normalizeName(player.name)] = player
         }
 
@@ -412,7 +414,7 @@ struct PlayersView: View {
         }
 
         if mode == .replaceAll {
-            for p in playersForDisplay { modelContext.delete(p) }
+            for p in persistedPlayers { modelContext.delete(p) }
         }
 
         for row in parsedRows {
@@ -485,7 +487,8 @@ struct PlayersView: View {
         guard !trimmed.isEmpty else { return }
 
         let normalized = normalizeName(trimmed)
-        guard !playersForDisplay.contains(where: { normalizeName($0.name) == normalized }) else {
+        let persistedPlayers = fetchPlayersFromStore()
+        guard !persistedPlayers.contains(where: { normalizeName($0.name) == normalized }) else {
             return
         }
 
@@ -503,11 +506,16 @@ struct PlayersView: View {
     }
 
     private func reloadPlayersFromStore() {
+        playersForDisplay = fetchPlayersFromStore()
+    }
+
+    private func fetchPlayersFromStore() -> [Player] {
         var descriptor = FetchDescriptor<Player>(
             sortBy: [SortDescriptor(\Player.name, order: .forward)]
         )
-        descriptor.includePendingChanges = true
-        playersForDisplay = (try? modelContext.fetch(descriptor)) ?? []
+        // Force a read from persisted storage so the UI reflects what was truly saved.
+        descriptor.includePendingChanges = false
+        return (try? modelContext.fetch(descriptor)) ?? []
     }
 }
 
