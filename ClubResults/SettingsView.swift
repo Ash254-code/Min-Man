@@ -306,11 +306,16 @@ private struct ClubGradesSettingsView: View {
                         Toggle("Team Manager", isOn: bind(grade, \.asksTeamManager))
                         Toggle("Runner", isOn: bind(grade, \.asksRunner))
                         Toggle("Goal Umpire", isOn: bind(grade, \.asksGoalUmpire))
-                        Toggle("Boundary Umpires", isOn: bind(grade, \.asksBoundaryUmpires))
+                        Toggle("Boundary Umpire 1", isOn: bind(grade, \.asksBoundaryUmpire1))
+                        Toggle("Boundary Umpire 2", isOn: bind(grade, \.asksBoundaryUmpire2))
                         Toggle("Trainers", isOn: bind(grade, \.asksTrainers))
                         Toggle("Notes", isOn: bind(grade, \.asksNotes))
                         Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
-                        Toggle("Best Players", isOn: bind(grade, \.asksBestPlayers))
+                        Picker("Best Players", selection: bind(grade, \.bestPlayersCount)) {
+                            ForEach(1...10, id: \.self) { count in
+                                Text("\(count)").tag(count)
+                            }
+                        }
                         Toggle("Guest Best & Fairest Votes Scan", isOn: bind(grade, \.asksGuestBestFairestVotesScan))
                     }
 
@@ -350,6 +355,13 @@ private struct ClubGradesSettingsView: View {
         Binding(
             get: { grade[keyPath: keyPath] },
             set: { grade[keyPath: keyPath] = $0 }
+        )
+    }
+
+    private func bind(_ grade: Grade, _ keyPath: ReferenceWritableKeyPath<Grade, Int>) -> Binding<Int> {
+        Binding(
+            get: { grade[keyPath: keyPath] },
+            set: { grade[keyPath: keyPath] = min(max($0, 1), 10) }
         )
     }
 
@@ -470,14 +482,15 @@ private struct ClubGradesSettingsView: View {
                             displayOrder: $0.displayOrder,
                             asksHeadCoach: $0.asksHeadCoach,
                             asksAssistantCoach: $0.asksAssistantCoach,
-                            asksTeamManager: $0.asksTeamManager,
-                            asksRunner: $0.asksRunner,
-                            asksGoalUmpire: $0.asksGoalUmpire,
-                            asksBoundaryUmpires: $0.asksBoundaryUmpires,
-                            asksTrainers: $0.asksTrainers,
+                    asksTeamManager: $0.asksTeamManager,
+                    asksRunner: $0.asksRunner,
+                    asksGoalUmpire: $0.asksGoalUmpire,
+                    asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
+                    asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
+                    asksTrainers: $0.asksTrainers,
                             asksNotes: $0.asksNotes,
                             asksGoalKickers: $0.asksGoalKickers,
-                            asksBestPlayers: $0.asksBestPlayers,
+                            bestPlayersCount: $0.bestPlayersCount,
                             asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
                         )
                     }
@@ -494,11 +507,12 @@ private struct ClubGradesSettingsView: View {
                                 asksTeamManager: item.asksTeamManager,
                                 asksRunner: item.asksRunner,
                                 asksGoalUmpire: item.asksGoalUmpire,
-                                asksBoundaryUmpires: item.asksBoundaryUmpires,
+                                asksBoundaryUmpire1: item.asksBoundaryUmpire1,
+                                asksBoundaryUmpire2: item.asksBoundaryUmpire2,
                                 asksTrainers: item.asksTrainers,
                                 asksNotes: item.asksNotes,
                                 asksGoalKickers: item.asksGoalKickers,
-                                asksBestPlayers: item.asksBestPlayers,
+                                bestPlayersCount: item.bestPlayersCount,
                                 asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan
                             )
                         )
@@ -530,11 +544,12 @@ private struct ClubGradesSettingsView: View {
                     asksTeamManager: $0.asksTeamManager,
                     asksRunner: $0.asksRunner,
                     asksGoalUmpire: $0.asksGoalUmpire,
-                    asksBoundaryUmpires: $0.asksBoundaryUmpires,
+                    asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
+                    asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
                     asksTrainers: $0.asksTrainers,
                     asksNotes: $0.asksNotes,
                     asksGoalKickers: $0.asksGoalKickers,
-                    asksBestPlayers: $0.asksBestPlayers,
+                    bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
                 )
             }

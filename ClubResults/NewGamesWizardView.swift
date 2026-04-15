@@ -237,11 +237,21 @@ struct NewGameWizardView: View {
         return resolvedGrades.first(where: { $0.id == gid })
     }
 
+    private var requiredBestPlayersCount: Int {
+        min(max(selectedGrade?.bestPlayersCount ?? 6, 0), 10)
+    }
+
     private var activeSteps: [Step] {
         guard let grade = selectedGrade else { return [.setup] }
 
         var steps: [Step] = [.setup]
-        if grade.asksHeadCoach || grade.asksAssistantCoach || grade.asksTeamManager || grade.asksRunner || grade.asksGoalUmpire || grade.asksBoundaryUmpires {
+        if grade.asksHeadCoach ||
+            grade.asksAssistantCoach ||
+            grade.asksTeamManager ||
+            grade.asksRunner ||
+            grade.asksGoalUmpire ||
+            grade.asksBoundaryUmpire1 ||
+            grade.asksBoundaryUmpire2 {
             steps.append(.staff)
         }
         if grade.asksTrainers || grade.asksNotes {
@@ -249,7 +259,7 @@ struct NewGameWizardView: View {
         }
         steps.append(.score)
         if grade.asksGoalKickers { steps.append(.goals) }
-        if grade.asksBestPlayers { steps.append(.best) }
+        if grade.bestPlayersCount > 0 { steps.append(.best) }
         if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
         steps.append(.review)
         return steps
@@ -290,7 +300,8 @@ struct NewGameWizardView: View {
             let asksTeamManager = selectedGrade?.asksTeamManager ?? true
             let asksRunner = selectedGrade?.asksRunner ?? true
             let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
-            let asksBoundary = selectedGrade?.asksBoundaryUmpires ?? true
+            let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
+            let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
 
             let coachingOK =
                 (!asksHeadCoach || !finalHeadCoach.isEmpty) &&
@@ -300,11 +311,9 @@ struct NewGameWizardView: View {
 
             let officialsOK =
                 (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
-                (!asksBoundary || (
-                    !finalBoundary1.isEmpty &&
-                    !finalBoundary2.isEmpty &&
-                    finalBoundary1 != finalBoundary2
-                ))
+                (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
+                (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty) &&
+                (!(asksBoundaryUmpire1 && asksBoundaryUmpire2) || finalBoundary1 != finalBoundary2)
 
             return coachingOK && officialsOK
 
@@ -321,7 +330,7 @@ struct NewGameWizardView: View {
 
         case .best:
             let ids = bestRanked.compactMap { $0 }
-            return ids.count == 6 && Set(ids).count == 6
+            return ids.count == requiredBestPlayersCount && Set(ids).count == requiredBestPlayersCount
 
         case .votes:
             return guestBestFairestVotesScanPDF != nil
@@ -396,6 +405,7 @@ struct NewGameWizardView: View {
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
             applyDefaults(for: newGrade)
+            syncBestPlayersSelectionCount()
             step = .setup
         }
         .onAppear {
@@ -404,6 +414,7 @@ struct NewGameWizardView: View {
             if let initialGradeID {
                 gradeID = initialGradeID
                 applyDefaults(for: initialGradeID)
+                syncBestPlayersSelectionCount()
             }
         }
     }
@@ -506,7 +517,10 @@ struct NewGameWizardView: View {
                         StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
                     }
 
-                    if selectedGrade?.asksBoundaryUmpires ?? true {
+                    let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
+                    let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
+
+                    if asksBoundaryUmpire1 {
                         HStack(spacing: 12) {
                             rowLabel("Boundary Umpire 1")
                             Spacer()
@@ -540,7 +554,9 @@ struct NewGameWizardView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                    }
 
+                    if asksBoundaryUmpire2 {
                         HStack(spacing: 12) {
                             rowLabel("Boundary Umpire 2")
                             Spacer()
@@ -574,13 +590,13 @@ struct NewGameWizardView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                    }
 
-                        if boundaryUmpire1ID != nil, boundaryUmpire1ID == boundaryUmpire2ID {
-                            Text("Boundary Umpire 1 and 2 can’t be the same.")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                                .padding(.top, 6)
-                        }
+                    if asksBoundaryUmpire1, asksBoundaryUmpire2, boundaryUmpire1ID != nil, boundaryUmpire1ID == boundaryUmpire2ID {
+                        Text("Boundary Umpire 1 and 2 can’t be the same.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .padding(.top, 6)
                     }
                 }
 
@@ -766,12 +782,12 @@ struct NewGameWizardView: View {
 
     private var bestStep: some View {
         Form {
-            Section("Best players (ranked 1–6)") {
+            Section("Best players (ranked 1–\(requiredBestPlayersCount))") {
                 if eligiblePlayers.isEmpty {
                     Text("Add players to this grade first.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(0..<6, id: \.self) { idx in
+                    ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
                         Picker(bestLabel(for: idx), selection: Binding(
                             get: { bestRanked[idx] ?? UUID() },
                             set: { newID in setBestPlayer(newID, at: idx) }
@@ -844,26 +860,35 @@ struct NewGameWizardView: View {
 
     // MARK: Logic helpers
     private var hasDuplicateBestPlayers: Bool {
-        let ids = bestRanked.compactMap { $0 }
+        let ids = Array(bestRanked.prefix(requiredBestPlayersCount)).compactMap { $0 }
         return ids.count != Set(ids).count
     }
 
     private func setBestPlayer(_ id: UUID, at index: Int) {
         bestRanked[index] = id
-        for i in 0..<bestRanked.count where i != index {
+        for i in 0..<requiredBestPlayersCount where i != index {
             if bestRanked[i] == id { bestRanked[i] = nil }
         }
     }
 
     private func bestLabel(for idx: Int) -> String {
-        switch idx {
-        case 0: return "Best"
-        case 1: return "2nd"
-        case 2: return "3rd"
-        case 3: return "4th"
-        case 4: return "5th"
-        case 5: return "6th"
-        default: return ""
+        let position = idx + 1
+        switch position {
+        case 1: return "Best"
+        case 2: return "2nd"
+        case 3: return "3rd"
+        default:
+            let suffix = (11...13).contains(position % 100) ? "th" : ([1: "st", 2: "nd", 3: "rd"][position % 10] ?? "th")
+            return "\(position)\(suffix)"
+        }
+    }
+
+    private func syncBestPlayersSelectionCount() {
+        let targetCount = requiredBestPlayersCount
+        if bestRanked.count < targetCount {
+            bestRanked.append(contentsOf: Array(repeating: nil, count: targetCount - bestRanked.count))
+        } else if bestRanked.count > targetCount {
+            bestRanked = Array(bestRanked.prefix(targetCount))
         }
     }
 
@@ -886,14 +911,14 @@ struct NewGameWizardView: View {
         guard !finalOpponent.isEmpty else { return }
         guard !finalVenue.isEmpty else { return }
 
-        let asksBestPlayers = selectedGrade?.asksBestPlayers ?? true
+        let bestPlayersCount = requiredBestPlayersCount
         let asksGoalKickers = selectedGrade?.asksGoalKickers ?? true
         let asksNotes = selectedGrade?.asksNotes ?? true
         let asksVotesScan = selectedGrade?.asksGuestBestFairestVotesScan ?? false
 
-        let bestIDs = asksBestPlayers ? bestRanked.compactMap { $0 } : []
-        if asksBestPlayers {
-            guard bestIDs.count == 6, Set(bestIDs).count == 6 else { return }
+        let bestIDs = bestPlayersCount > 0 ? Array(bestRanked.prefix(bestPlayersCount)).compactMap { $0 } : []
+        if bestPlayersCount > 0 {
+            guard bestIDs.count == bestPlayersCount, Set(bestIDs).count == bestPlayersCount else { return }
         }
         if asksVotesScan {
             guard guestBestFairestVotesScanPDF != nil else { return }

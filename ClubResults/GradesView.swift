@@ -14,11 +14,12 @@ final class Grade {
     var asksTeamManager: Bool
     var asksRunner: Bool
     var asksGoalUmpire: Bool
-    var asksBoundaryUmpires: Bool
+    var asksBoundaryUmpire1: Bool
+    var asksBoundaryUmpire2: Bool
     var asksTrainers: Bool
     var asksNotes: Bool
     var asksGoalKickers: Bool
-    var asksBestPlayers: Bool
+    var bestPlayersCount: Int
     var asksGuestBestFairestVotesScan: Bool
 
     init(
@@ -31,11 +32,12 @@ final class Grade {
         asksTeamManager: Bool = true,
         asksRunner: Bool = true,
         asksGoalUmpire: Bool = true,
-        asksBoundaryUmpires: Bool = true,
+        asksBoundaryUmpire1: Bool = true,
+        asksBoundaryUmpire2: Bool = true,
         asksTrainers: Bool = true,
         asksNotes: Bool = true,
         asksGoalKickers: Bool = true,
-        asksBestPlayers: Bool = true,
+        bestPlayersCount: Int = 6,
         asksGuestBestFairestVotesScan: Bool = false
     ) {
         self.id = id
@@ -47,11 +49,12 @@ final class Grade {
         self.asksTeamManager = asksTeamManager
         self.asksRunner = asksRunner
         self.asksGoalUmpire = asksGoalUmpire
-        self.asksBoundaryUmpires = asksBoundaryUmpires
+        self.asksBoundaryUmpire1 = asksBoundaryUmpire1
+        self.asksBoundaryUmpire2 = asksBoundaryUmpire2
         self.asksTrainers = asksTrainers
         self.asksNotes = asksNotes
         self.asksGoalKickers = asksGoalKickers
-        self.asksBestPlayers = asksBestPlayers
+        self.bestPlayersCount = min(max(bestPlayersCount, 0), 10)
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
     }
 }
