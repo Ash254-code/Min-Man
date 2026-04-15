@@ -9,6 +9,7 @@ struct GamesView: View {
 
     @State private var selectedGradeID: UUID? = nil
     @State private var showNewGameWizard = false
+    @State private var newGameGradeID: UUID? = nil
 
     // MARK: - Ordered grades (your seeded order + remaining A→Z)
     private var orderedGrades: [Grade] {
@@ -54,55 +55,67 @@ struct GamesView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
 
-                    // Header like your screenshot: "Games" + small "All" pill
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("Games")
-                            .font(.system(size: 44, weight: .bold))
+                        // Header like your screenshot: "Games" + small "All" pill
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text("Games")
+                                .font(.system(size: 44, weight: .bold))
 
-                        Text(selectedGradeName)
-                            .font(.system(size: 16, weight: .semibold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(.ultraThinMaterial)
-                            )
-                            .foregroundStyle(.secondary)
+                            Text(selectedGradeName)
+                                .font(.system(size: 16, weight: .semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(.ultraThinMaterial)
+                                )
+                                .foregroundStyle(.secondary)
 
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 6)
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 6)
 
-                    Text("Games")
-                        .font(.title3.weight(.semibold))
+                        NewGameQuickStartSection(
+                            grades: orderedGrades,
+                            minHeight: geometry.size.height * 0.33,
+                            onStartNewGame: { gradeID in
+                                newGameGradeID = gradeID
+                                showNewGameWizard = true
+                            }
+                        )
                         .padding(.horizontal)
 
-                    VStack(spacing: 14) {
-                        if filteredGames.isEmpty {
-                            ContentUnavailableView("No games yet", systemImage: "sportscourt")
-                                .padding(.top, 30)
-                        } else {
-                            ForEach(filteredGames) { game in
-                                NavigationLink {
-                                    GameDetailView(game: game, grades: orderedGrades, players: players)
-                                } label: {
-                                    GameCardRow(
-                                        game: game,
-                                        gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
-                                        opponentWidth: maxOpponentPillWidth
-                                    )
+                        Text("Games")
+                            .font(.title3.weight(.semibold))
+                            .padding(.horizontal)
+
+                        VStack(spacing: 14) {
+                            if filteredGames.isEmpty {
+                                ContentUnavailableView("No games yet", systemImage: "sportscourt")
+                                    .padding(.top, 30)
+                            } else {
+                                ForEach(filteredGames) { game in
+                                    NavigationLink {
+                                        GameDetailView(game: game, grades: orderedGrades, players: players)
+                                    } label: {
+                                        GameCardRow(
+                                            game: game,
+                                            gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
+                                            opponentWidth: maxOpponentPillWidth
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal)
                                 }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal)
                             }
                         }
-                    }
 
-                    Spacer(minLength: 20)
+                        Spacer(minLength: 20)
+                    }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -113,14 +126,69 @@ struct GamesView: View {
                     FilterAddCapsule(
                         grades: orderedGrades,
                         selectedGradeID: $selectedGradeID,
-                        onAdd: { showNewGameWizard = true }
+                        onAdd: {
+                            newGameGradeID = nil
+                            showNewGameWizard = true
+                        }
                     )
                 }
             }
             .sheet(isPresented: $showNewGameWizard) {
-                NewGameWizardView()
+                NewGameWizardView(initialGradeID: newGameGradeID)
             }
         }
+    }
+}
+
+private struct NewGameQuickStartSection: View {
+    let grades: [Grade]
+    let minHeight: CGFloat
+    let onStartNewGame: (UUID) -> Void
+
+    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Start New Game")
+                .font(.title2.weight(.bold))
+
+            if grades.isEmpty {
+                ContentUnavailableView("No active grades", systemImage: "list.bullet.clipboard")
+            } else {
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(grades) { grade in
+                        Button {
+                            onStartNewGame(grade.id)
+                        } label: {
+                            VStack(spacing: 10) {
+                                Text(grade.name)
+                                    .font(.title3.weight(.bold))
+                                    .multilineTextAlignment(.center)
+                                Text("New Game")
+                                    .font(.headline.weight(.semibold))
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 92)
+                            .padding(.horizontal, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(.regularMaterial)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
     }
 }
 

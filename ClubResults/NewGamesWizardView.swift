@@ -9,6 +9,12 @@ private struct WizardGoalKickerEntry: Identifiable, Codable, Hashable {
 }
 
 struct NewGameWizardView: View {
+    let initialGradeID: UUID?
+
+    init(initialGradeID: UUID? = nil) {
+        self.initialGradeID = initialGradeID
+    }
+
     // MARK: - Club Colours
     private let clubNavy = Color(red: 0.05, green: 0.15, blue: 0.35)
     private let clubYellow = Color(red: 1.0, green: 0.82, blue: 0.0)
@@ -81,6 +87,7 @@ struct NewGameWizardView: View {
     // MARK: Goals + best players
     @State private var goalKickers: [WizardGoalKickerEntry] = []
     @State private var bestRanked: [UUID?] = Array(repeating: nil, count: 6)
+    @State private var hasAppliedInitialGrade = false
 
     // MARK: Helpers
     private func clean(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -286,6 +293,14 @@ struct NewGameWizardView: View {
         // ✅ When user changes grade, auto-fill defaults (only if empty)
         .onChange(of: gradeID) { _, newGrade in
             applyDefaultsIfNeeded(for: newGrade)
+        }
+        .onAppear {
+            guard !hasAppliedInitialGrade else { return }
+            hasAppliedInitialGrade = true
+            if let initialGradeID {
+                gradeID = initialGradeID
+                applyDefaultsIfNeeded(for: initialGradeID)
+            }
         }
     }
 
