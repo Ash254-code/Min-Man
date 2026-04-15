@@ -9,16 +9,10 @@ protocol ExportableGame {
     var ourBehinds: Int { get }
     var theirGoals: Int { get }
     var theirBehinds: Int { get }
-    var goalKickers: [ExportGoalKickerEntry] { get }
+    var goalKickers: [GameGoalKickerEntry] { get }
     var bestPlayersRanked: [UUID] { get }
     var notes: String { get }
     var guestBestFairestVotesScanPDF: Data? { get }
-}
-
-/// Minimal goal kicker entry used for exporting.
-struct ExportGoalKickerEntry {
-    var playerID: UUID?
-    var goals: Int
 }
 
 enum ExportService {

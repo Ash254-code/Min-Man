@@ -68,3 +68,5 @@ struct GameGoalKickerEntry: Identifiable, Codable, Hashable {
     var playerID: UUID?
     var goals: Int
 }
+
+extension Game: ExportableGame {}
