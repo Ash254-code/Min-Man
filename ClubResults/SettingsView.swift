@@ -3,8 +3,6 @@ import SwiftData
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
-
-    @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @State private var saveErrorMessage: String?
 
     var body: some View {
@@ -59,7 +57,8 @@ struct SettingsView: View {
     }
 
     private func seedInitialGradesIfNeeded() {
-        guard grades.isEmpty else { return }
+        let existing = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
+        guard existing.isEmpty else { return }
 
         let defaults = ["A Grade", "B Grade", "Under 17's", "Under 14's", "Under 12's", "Under 9's"]
         for (index, name) in defaults.enumerated() {
@@ -76,7 +75,7 @@ struct SettingsView: View {
 private struct ClubGradesSettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
-    @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
+    @State private var grades: [Grade] = []
     @Query private var players: [Player]
     @Query private var games: [Game]
     @Query private var reportRecipients: [ReportRecipient]
@@ -192,6 +191,9 @@ private struct ClubGradesSettingsView: View {
                 }
             }
         }
+        .task {
+            reloadGrades()
+        }
     }
 
     private func addGrade() {
@@ -202,6 +204,7 @@ private struct ClubGradesSettingsView: View {
         let nextOrder = (grades.map(\.displayOrder).max() ?? -1) + 1
         modelContext.insert(Grade(name: name, isActive: true, displayOrder: nextOrder))
         saveContext()
+        reloadGrades()
     }
 
     private func saveEditedGrade() {
@@ -212,6 +215,7 @@ private struct ClubGradesSettingsView: View {
 
         gradeEditing.name = name
         saveContext()
+        reloadGrades()
     }
 
     private func moveGrades(from source: IndexSet, to destination: Int) {
@@ -223,6 +227,7 @@ private struct ClubGradesSettingsView: View {
         }
 
         saveContext()
+        reloadGrades()
     }
 
     private func deleteGrade(_ grade: Grade) {
@@ -250,6 +255,7 @@ private struct ClubGradesSettingsView: View {
         }
 
         saveContext()
+        reloadGrades()
     }
 
     private func clean(_ text: String) -> String {
@@ -259,6 +265,17 @@ private struct ClubGradesSettingsView: View {
     private func saveContext() {
         do {
             try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func reloadGrades() {
+        do {
+            let descriptor = FetchDescriptor<Grade>(
+                sortBy: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]
+            )
+            grades = try modelContext.fetch(descriptor)
         } catch {
             saveErrorMessage = error.localizedDescription
         }
@@ -286,7 +303,7 @@ private struct AppAppearanceSettingsView: View {
 private struct ContactsSettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
-    @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
+    @State private var contacts: [Contact] = []
     @Query private var reportRecipients: [ReportRecipient]
 
     @State private var showAddContact = false
@@ -334,6 +351,7 @@ private struct ContactsSettingsView: View {
             ContactEditSheet(title: "Add Contact") { name, mobile, email in
                 modelContext.insert(Contact(name: name, mobile: mobile, email: email))
                 saveContext()
+                reloadContacts()
             }
         }
         .sheet(item: $contactEditing) { contact in
@@ -347,6 +365,7 @@ private struct ContactsSettingsView: View {
                 contact.mobile = mobile
                 contact.email = email
                 saveContext()
+                reloadContacts()
             }
         }
         .alert("Save Error", isPresented: Binding(
@@ -357,6 +376,9 @@ private struct ContactsSettingsView: View {
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
+        .task {
+            reloadContacts()
+        }
     }
 
     private func deleteContact(_ contact: Contact) {
@@ -365,11 +387,23 @@ private struct ContactsSettingsView: View {
         }
         modelContext.delete(contact)
         saveContext()
+        reloadContacts()
     }
 
     private func saveContext() {
         do {
             try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func reloadContacts() {
+        do {
+            let descriptor = FetchDescriptor<Contact>(
+                sortBy: [SortDescriptor(\Contact.name)]
+            )
+            contacts = try modelContext.fetch(descriptor)
         } catch {
             saveErrorMessage = error.localizedDescription
         }
