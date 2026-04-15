@@ -85,7 +85,7 @@ struct TeamsAndVenuesSettingsView: View {
                 id: UUID(),
                 name: "New Opposition",
                 primaryColorHex: "#1D4ED8",
-                secondaryColorHex: nil,
+                secondaryColorHex: "#FFFFFF",
                 tertiaryColorHex: nil,
                 venues: []
             )
@@ -113,6 +113,14 @@ struct TeamsAndVenuesSettingsView: View {
 }
 
 private struct TeamProfileEditorView: View {
+    private enum ColorSlot: String {
+        case primary
+        case secondary
+        case tertiary
+
+        var title: String { rawValue.capitalized }
+    }
+
     let title: String
     @Binding var teamName: String
     @Binding var primaryHex: String
@@ -128,39 +136,104 @@ private struct TeamProfileEditorView: View {
     @State private var draftVenues: [String] = []
     @State private var isEditing = false
 
+    @State private var teamNameEditorPresented = false
+    @State private var teamNameDraft = ""
+
+    @State private var venueEditorPresented = false
+    @State private var venueEditorIndex = 0
+    @State private var venueNameDraft = ""
+
+    @State private var colorPickerPresented = false
+    @State private var colorPickerSlot: ColorSlot = .primary
+
     var body: some View {
         Form {
             Section("Team") {
                 teamPill
-
-                TextField("Name", text: $draftTeamName)
-                    .textInputAutocapitalization(.words)
-                    .disabled(!isEditing)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if isEditing {
+                            Button("Edit") {
+                                teamNameDraft = draftTeamName
+                                teamNameEditorPresented = true
+                            }
+                            .tint(.blue)
+                        }
+                    }
             }
 
             Section("Colours") {
-                TeamColorPickerRow(title: TeamColorSlot.primary.title, hexValue: $draftPrimaryHex, isEnabled: isEditing)
-                TeamColorPickerRow(title: TeamColorSlot.secondary.title, hexValue: $draftSecondaryHex, isEnabled: isEditing)
-                TeamColorPickerRow(title: TeamColorSlot.tertiary.title, hexValue: $draftTertiaryHex, isEnabled: isEditing)
+                colorRow(title: "Primary", hex: draftPrimaryHex)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if isEditing {
+                            Button("Edit") { presentColorPicker(.primary) }
+                                .tint(.blue)
+                        }
+                    }
 
-                Text("Pick up to three colours. Primary is required.")
+                colorRow(title: "Secondary", hex: draftSecondaryHex)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if isEditing {
+                            Button("Edit") { presentColorPicker(.secondary) }
+                                .tint(.blue)
+                        }
+                    }
+
+                if hasTertiary {
+                    colorRow(title: "Tertiary", hex: draftTertiaryHex)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if isEditing {
+                                Button("Edit") { presentColorPicker(.tertiary) }
+                                    .tint(.blue)
+                                Button("Delete", role: .destructive) {
+                                    draftTertiaryHex = ""
+                                }
+                            }
+                        }
+                } else if isEditing {
+                    Button {
+                        draftTertiaryHex = "#FFFFFF"
+                    } label: {
+                        Label("Add Tertiary", systemImage: "plus")
+                    }
+                }
+
+                Text("Primary and Secondary are default. Add tertiary if needed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Section("Venues (up to 3)") {
-                ForEach(0..<3, id: \.self) { index in
-                    TextField(
-                        "Venue \(index + 1)",
-                        text: Binding(
-                            get: { index < draftVenues.count ? draftVenues[index] : "" },
-                            set: { newValue in
-                                setVenue(newValue, at: index)
+                ForEach(Array(draftVenues.enumerated()), id: \.offset) { index, venue in
+                    Text(venue)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if isEditing {
+                                Button("Edit") {
+                                    venueEditorIndex = index
+                                    venueNameDraft = venue
+                                    venueEditorPresented = true
+                                }
+                                .tint(.blue)
+
+                                Button("Delete", role: .destructive) {
+                                    draftVenues.remove(at: index)
+                                }
                             }
-                        )
-                    )
-                    .textInputAutocapitalization(.words)
-                    .disabled(!isEditing)
+                        }
+                }
+
+                if draftVenues.isEmpty {
+                    Text("No venues yet")
+                        .foregroundStyle(.secondary)
+                }
+
+                if isEditing && draftVenues.count < 3 {
+                    Button {
+                        venueEditorIndex = draftVenues.count
+                        venueNameDraft = ""
+                        venueEditorPresented = true
+                    } label: {
+                        Label("Add Venue", systemImage: "plus")
+                    }
                 }
             }
         }
@@ -189,14 +262,63 @@ private struct TeamProfileEditorView: View {
                 .background(.ultraThinMaterial)
             }
         }
+        .sheet(isPresented: $colorPickerPresented) {
+            NavigationStack {
+                Form {
+                    ColorPicker(
+                        colorPickerSlot.title,
+                        selection: Binding(
+                            get: { Color(hex: colorHex(for: colorPickerSlot), fallback: .blue) },
+                            set: { newColor in setColorHex(newColor.toHex(), for: colorPickerSlot) }
+                        ),
+                        supportsOpacity: false
+                    )
+                }
+                .navigationTitle("Edit \(colorPickerSlot.title)")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { colorPickerPresented = false }
+                    }
+                }
+            }
+            .presentationDetents([.height(220)])
+        }
+        .alert("Edit Team Name", isPresented: $teamNameEditorPresented) {
+            TextField("Team name", text: $teamNameDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                let cleaned = teamNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cleaned.isEmpty {
+                    draftTeamName = cleaned
+                }
+            }
+        }
+        .alert("Venue", isPresented: $venueEditorPresented) {
+            TextField("Venue name", text: $venueNameDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                let cleaned = venueNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !cleaned.isEmpty else { return }
+                if venueEditorIndex < draftVenues.count {
+                    draftVenues[venueEditorIndex] = cleaned
+                } else if draftVenues.count < 3 {
+                    draftVenues.append(cleaned)
+                }
+            }
+        }
         .onAppear {
             syncFromBindings()
         }
     }
 
+    private var hasTertiary: Bool {
+        !draftTertiaryHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var canSave: Bool {
         !draftTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !draftPrimaryHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !draftPrimaryHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !draftSecondaryHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var hasChanges: Bool {
@@ -204,15 +326,7 @@ private struct TeamProfileEditorView: View {
         draftPrimaryHex != primaryHex ||
         draftSecondaryHex != secondaryHex ||
         draftTertiaryHex != tertiaryHex ||
-        normalizedDraftVenues != normalizedPersistedVenues
-    }
-
-    private var normalizedDraftVenues: [String] {
-        draftVenues.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-    }
-
-    private var normalizedPersistedVenues: [String] {
-        venues.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        draftVenues != venues
     }
 
     private var teamPill: some View {
@@ -231,10 +345,46 @@ private struct TeamProfileEditorView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
+    private func colorRow(title: String, hex: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Circle()
+                .fill(Color(hex: hex, fallback: .blue))
+                .frame(width: 28, height: 28)
+                .overlay(
+                    Circle()
+                        .stroke(Color.primary.opacity(0.25), lineWidth: 1)
+                )
+        }
+    }
+
+    private func presentColorPicker(_ slot: ColorSlot) {
+        colorPickerSlot = slot
+        colorPickerPresented = true
+    }
+
+    private func colorHex(for slot: ColorSlot) -> String {
+        switch slot {
+        case .primary: return draftPrimaryHex
+        case .secondary: return draftSecondaryHex
+        case .tertiary: return draftTertiaryHex
+        }
+    }
+
+    private func setColorHex(_ hex: String, for slot: ColorSlot) {
+        switch slot {
+        case .primary: draftPrimaryHex = hex
+        case .secondary: draftSecondaryHex = hex
+        case .tertiary: draftTertiaryHex = hex
+        }
+    }
+
     private func syncFromBindings() {
         draftTeamName = teamName
         draftPrimaryHex = primaryHex
-        draftSecondaryHex = secondaryHex
+        draftSecondaryHex = secondaryHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "#FFFFFF" : secondaryHex
         draftTertiaryHex = tertiaryHex
         draftVenues = Array(venues.prefix(3))
     }
@@ -250,32 +400,5 @@ private struct TeamProfileEditorView: View {
                 .filter { !$0.isEmpty }
                 .prefix(3)
         )
-    }
-
-    private func setVenue(_ venue: String, at index: Int) {
-        var mutable = draftVenues
-        while mutable.count <= index {
-            mutable.append("")
-        }
-        mutable[index] = venue
-        draftVenues = Array(mutable.prefix(3))
-    }
-}
-
-private struct TeamColorPickerRow: View {
-    let title: String
-    @Binding var hexValue: String
-    let isEnabled: Bool
-
-    var body: some View {
-        ColorPicker(
-            title,
-            selection: Binding(
-                get: { Color(hex: hexValue, fallback: .blue) },
-                set: { hexValue = $0.toHex() }
-            ),
-            supportsOpacity: false
-        )
-        .disabled(!isEnabled)
     }
 }
