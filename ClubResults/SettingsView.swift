@@ -507,7 +507,10 @@ private struct ContactsSettingsView: View {
                 title: "Edit Contact",
                 initialName: contact.name,
                 initialMobile: contact.mobile,
-                initialEmail: contact.email
+                initialEmail: contact.email,
+                onDelete: {
+                    deleteContact(contact)
+                }
             ) { name, mobile, email in
                 contact.name = name
                 contact.mobile = mobile
@@ -631,6 +634,7 @@ private struct ContactEditSheet: View {
     let initialEmail: String
     let allowsSaveAndAddAnother: Bool
     let onSave: (String, String, String) -> Bool
+    let onDelete: (() -> Void)?
 
     @State private var name: String
     @State private var mobile: String
@@ -642,7 +646,8 @@ private struct ContactEditSheet: View {
         initialMobile: String = "",
         initialEmail: String = "",
         allowsSaveAndAddAnother: Bool = false,
-        onSave: @escaping (String, String, String) -> Bool
+        onSave: @escaping (String, String, String) -> Bool,
+        onDelete: (() -> Void)? = nil
     ) {
         self.title = title
         self.initialName = initialName
@@ -650,6 +655,7 @@ private struct ContactEditSheet: View {
         self.initialEmail = initialEmail
         self.allowsSaveAndAddAnother = allowsSaveAndAddAnother
         self.onSave = onSave
+        self.onDelete = onDelete
 
         _name = State(initialValue: initialName)
         _mobile = State(initialValue: initialMobile)
@@ -679,8 +685,19 @@ private struct ContactEditSheet: View {
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
+                    HStack(spacing: 12) {
+                        if onDelete != nil {
+                            Button(role: .destructive) {
+                                onDelete?()
+                                dismiss()
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                        }
+
+                        Button("Cancel") {
+                            dismiss()
+                        }
                     }
                 }
             }
