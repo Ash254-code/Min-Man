@@ -66,7 +66,7 @@ struct PlayerAddView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !numberIsValid)
+                        .disabled(cleanedName.isEmpty || !numberIsValid)
                 }
             }
             .onAppear {
@@ -77,16 +77,24 @@ struct PlayerAddView: View {
         }
     }
 
+    private var cleanedName: String {
+        name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
     private func save() {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !cleanedName.isEmpty else { return }
 
         let exists = existingPlayers.contains {
-            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == trimmed.lowercased()
+            $0.name
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .lowercased() == cleanedName.lowercased()
         }
         guard !exists else { return }
 
-        onSave(trimmed, Array(selectedGradeIDs))
+        onSave(cleanedName, Array(selectedGradeIDs))
         dismiss()
     }
 }
