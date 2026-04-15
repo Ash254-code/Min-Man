@@ -358,7 +358,7 @@ struct PlayersView: View {
 
         let gradeLookup = GradeLookup(grades: resolvedGrades)
 
-        let existingByName: [String: Player] = Dictionary(
+        var existingByName: [String: Player] = Dictionary(
             uniqueKeysWithValues: players.map { (normalizeName($0.name), $0) }
         )
 
@@ -397,7 +397,10 @@ struct PlayersView: View {
             }
 
             let number = row.number
-            let gradeIDs = gradeLookup.ids(forRawGradeField: row.gradesRaw, unknownCollector: &result.unknownGradeNames)
+            var gradeIDs = gradeLookup.ids(forRawGradeField: row.gradesRaw, unknownCollector: &result.unknownGradeNames)
+            if gradeIDs.isEmpty, let fallbackGradeID = defaultImportGradeID() {
+                gradeIDs = [fallbackGradeID]
+            }
 
             if let existing = existingByName[normName], mode != .replaceAll {
                 switch mode {
@@ -407,7 +410,7 @@ struct PlayersView: View {
                 case .updateExisting:
                     existing.name = row.name.cleanedName
                     existing.number = number
-                    if !gradeIDs.isEmpty { existing.gradeIDs = gradeIDs }
+                    existing.gradeIDs = gradeIDs
                     result.updated += 1
                 case .replaceAll:
                     break
@@ -420,6 +423,7 @@ struct PlayersView: View {
                     isActive: true
                 )
                 modelContext.insert(newPlayer)
+                existingByName[normName] = newPlayer
                 result.imported += 1
             }
         }
@@ -427,7 +431,15 @@ struct PlayersView: View {
         do { try modelContext.save() }
         catch { throw CSVImportError.saveFailed(error.localizedDescription) }
 
+        selectedGradeID = nil
         return result
+    }
+
+    private func defaultImportGradeID() -> UUID? {
+        if let firstActive = activeGrades.first {
+            return firstActive.id
+        }
+        return orderedGrades.first?.id
     }
 
     private func normalizeName(_ s: String) -> String {
