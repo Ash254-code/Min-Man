@@ -145,30 +145,31 @@ private struct NewGameQuickStartSection: View {
     let minHeight: CGFloat
     let onStartNewGame: (UUID) -> Void
 
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 14), count: 3)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Start New Game")
-                .font(.title2.weight(.bold))
+                .font(.system(size: 40, weight: .bold))
 
             if grades.isEmpty {
                 ContentUnavailableView("No active grades", systemImage: "list.bullet.clipboard")
             } else {
-                LazyVGrid(columns: columns, spacing: 12) {
+                LazyVGrid(columns: columns, spacing: 14) {
                     ForEach(grades) { grade in
                         Button {
                             onStartNewGame(grade.id)
                         } label: {
                             VStack(spacing: 10) {
                                 Text(grade.name)
-                                    .font(.title3.weight(.bold))
+                                    .font(.system(size: 34, weight: .bold))
                                     .multilineTextAlignment(.center)
+                                    .minimumScaleFactor(0.7)
                                 Text("New Game")
-                                    .font(.headline.weight(.semibold))
+                                    .font(.system(size: 30, weight: .semibold))
                             }
-                            .frame(maxWidth: .infinity, minHeight: 92)
-                            .padding(.horizontal, 12)
+                            .frame(maxWidth: .infinity, minHeight: 184)
+                            .padding(.horizontal, 16)
                             .background(
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                                     .fill(.regularMaterial)
