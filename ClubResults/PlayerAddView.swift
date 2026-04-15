@@ -10,7 +10,19 @@ struct PlayerAddView: View {
     let onSave: (String, [UUID]) -> Void
 
     @State private var name: String = ""
+    @State private var numberText: String = ""
     @State private var selectedGradeIDs: Set<UUID> = []
+
+    private var parsedNumber: Int? {
+        let trimmed = numberText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        return Int(trimmed)
+    }
+
+    private var numberIsValid: Bool {
+        let trimmed = numberText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || Int(trimmed) != nil
+    }
 
     var body: some View {
         NavigationStack {
@@ -18,6 +30,17 @@ struct PlayerAddView: View {
                 Section("Name") {
                     TextField("Player name", text: $name)
                         .textInputAutocapitalization(.words)
+                }
+
+                Section("Number") {
+                    TextField("Optional", text: $numberText)
+                        .keyboardType(.numberPad)
+
+                    if !numberIsValid {
+                        Text("Enter digits only.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                 }
 
                 Section("Grades") {
@@ -44,7 +67,7 @@ struct PlayerAddView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !numberIsValid)
                 }
             }
             .onAppear {
@@ -64,12 +87,8 @@ struct PlayerAddView: View {
         }
         guard !exists else { return }
 
-        var finalGradeIDs = Array(selectedGradeIDs)
-        if finalGradeIDs.isEmpty, let gid = preselectedGradeID {
-            finalGradeIDs = [gid]
-        }
-
-        onSave(trimmed, finalGradeIDs)
+        let p = Player(name: trimmed, number: parsedNumber, gradeIDs: Array(selectedGradeIDs))
+        modelContext.insert(p)
         dismiss()
     }
 }
