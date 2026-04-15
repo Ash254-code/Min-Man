@@ -50,17 +50,24 @@ struct PlayersView: View {
     }
 
     private var selectedGradeLabel: String {
-        guard let gid = selectedGradeID,
+        guard let gid = effectiveSelectedGradeID,
               let g = activeGrades.first(where: { $0.id == gid }) else {
             return "All"
         }
         return g.name
     }
 
+    /// Treat stale/invalid grade selections as "All" so the list doesn't silently hide every player.
+    private var effectiveSelectedGradeID: UUID? {
+        guard let selectedGradeID else { return nil }
+        guard activeGrades.contains(where: { $0.id == selectedGradeID }) else { return nil }
+        return selectedGradeID
+    }
+
     private var filteredPlayers: [Player] {
         // First filter by selected grade (if any)
         let gradeFiltered: [Player]
-        if let gid = selectedGradeID {
+        if let gid = effectiveSelectedGradeID {
             gradeFiltered = playersForDisplay.filter { $0.gradeIDs.contains(gid) }
         } else {
             gradeFiltered = playersForDisplay
@@ -99,7 +106,7 @@ struct PlayersView: View {
                     PlayerAddView(
                         activeGrades: activeGrades,
                         existingPlayers: playersForDisplay,
-                        preselectedGradeID: selectedGradeID,
+                        preselectedGradeID: effectiveSelectedGradeID,
                         onSave: createAndSavePlayer(name:number:gradeIDs:)
                     )
                     .toolbarBackground(.hidden, for: .navigationBar)
@@ -146,7 +153,7 @@ struct PlayersView: View {
                     pendingImportURL = nil
                 }
             } message: {
-                if let selectedGradeID,
+                if let selectedGradeID = effectiveSelectedGradeID,
                    let selected = activeGrades.first(where: { $0.id == selectedGradeID }) {
                     Text("Choose what happens when a player name already exists. Rows without a grade will default to \(selected.name).")
                 } else {
@@ -419,7 +426,7 @@ struct PlayersView: View {
             let number = row.number
             let parsedGradeIDs = gradeLookup.ids(forRawGradeField: row.gradesRaw, unknownCollector: &result.unknownGradeNames)
             let gradeIDs: [UUID]
-            if parsedGradeIDs.isEmpty, let selectedGradeID {
+            if parsedGradeIDs.isEmpty, let selectedGradeID = effectiveSelectedGradeID {
                 // If importing while a grade filter is active, default missing grade rows
                 // into that visible grade so imported players appear immediately.
                 gradeIDs = [selectedGradeID]
