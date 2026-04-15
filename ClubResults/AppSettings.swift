@@ -5,6 +5,7 @@ struct GradeBackup: Codable {
     let name: String
     let isActive: Bool
     let displayOrder: Int
+<<<<<<< HEAD
 
     let showHeadCoach: Bool
     let showAssistantCoach: Bool
@@ -21,12 +22,26 @@ struct GradeBackup: Codable {
     let showGuestBestAndFairestVotes: Bool
     let showGoalKickers: Bool
     let numberOfBestPlayers: Int
+=======
+    let asksHeadCoach: Bool
+    let asksAssistantCoach: Bool
+    let asksTeamManager: Bool
+    let asksRunner: Bool
+    let asksGoalUmpire: Bool
+    let asksBoundaryUmpires: Bool
+    let asksTrainers: Bool
+    let asksNotes: Bool
+    let asksGoalKickers: Bool
+    let asksBestPlayers: Bool
+    let asksGuestBestFairestVotesScan: Bool
+>>>>>>> redesign-new-game-wizard-with-toggles
 
     init(
         id: UUID,
         name: String,
         isActive: Bool,
         displayOrder: Int,
+<<<<<<< HEAD
         showHeadCoach: Bool = true,
         showAssistantCoach: Bool = true,
         showTeamManager: Bool = true,
@@ -42,11 +57,25 @@ struct GradeBackup: Codable {
         showGuestBestAndFairestVotes: Bool = true,
         showGoalKickers: Bool = true,
         numberOfBestPlayers: Int = 6
+=======
+        asksHeadCoach: Bool = true,
+        asksAssistantCoach: Bool = true,
+        asksTeamManager: Bool = true,
+        asksRunner: Bool = true,
+        asksGoalUmpire: Bool = true,
+        asksBoundaryUmpires: Bool = true,
+        asksTrainers: Bool = true,
+        asksNotes: Bool = true,
+        asksGoalKickers: Bool = true,
+        asksBestPlayers: Bool = true,
+        asksGuestBestFairestVotesScan: Bool = false
+>>>>>>> redesign-new-game-wizard-with-toggles
     ) {
         self.id = id
         self.name = name
         self.isActive = isActive
         self.displayOrder = displayOrder
+<<<<<<< HEAD
         self.showHeadCoach = showHeadCoach
         self.showAssistantCoach = showAssistantCoach
         self.showTeamManager = showTeamManager
@@ -84,6 +113,25 @@ struct GradeBackup: Codable {
         case showGuestBestAndFairestVotes
         case showGoalKickers
         case numberOfBestPlayers
+=======
+        self.asksHeadCoach = asksHeadCoach
+        self.asksAssistantCoach = asksAssistantCoach
+        self.asksTeamManager = asksTeamManager
+        self.asksRunner = asksRunner
+        self.asksGoalUmpire = asksGoalUmpire
+        self.asksBoundaryUmpires = asksBoundaryUmpires
+        self.asksTrainers = asksTrainers
+        self.asksNotes = asksNotes
+        self.asksGoalKickers = asksGoalKickers
+        self.asksBestPlayers = asksBestPlayers
+        self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, isActive, displayOrder
+        case asksHeadCoach, asksAssistantCoach, asksTeamManager, asksRunner, asksGoalUmpire, asksBoundaryUmpires
+        case asksTrainers, asksNotes, asksGoalKickers, asksBestPlayers, asksGuestBestFairestVotesScan
+>>>>>>> redesign-new-game-wizard-with-toggles
     }
 
     init(from decoder: Decoder) throws {
@@ -92,6 +140,7 @@ struct GradeBackup: Codable {
         name = try c.decode(String.self, forKey: .name)
         isActive = try c.decode(Bool.self, forKey: .isActive)
         displayOrder = try c.decode(Int.self, forKey: .displayOrder)
+<<<<<<< HEAD
 
         showHeadCoach = try c.decodeIfPresent(Bool.self, forKey: .showHeadCoach) ?? true
         showAssistantCoach = try c.decodeIfPresent(Bool.self, forKey: .showAssistantCoach) ?? true
@@ -108,6 +157,19 @@ struct GradeBackup: Codable {
         showGuestBestAndFairestVotes = try c.decodeIfPresent(Bool.self, forKey: .showGuestBestAndFairestVotes) ?? true
         showGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .showGoalKickers) ?? true
         numberOfBestPlayers = max(1, min(10, try c.decodeIfPresent(Int.self, forKey: .numberOfBestPlayers) ?? 6))
+=======
+        asksHeadCoach = try c.decodeIfPresent(Bool.self, forKey: .asksHeadCoach) ?? true
+        asksAssistantCoach = try c.decodeIfPresent(Bool.self, forKey: .asksAssistantCoach) ?? true
+        asksTeamManager = try c.decodeIfPresent(Bool.self, forKey: .asksTeamManager) ?? true
+        asksRunner = try c.decodeIfPresent(Bool.self, forKey: .asksRunner) ?? true
+        asksGoalUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksGoalUmpire) ?? true
+        asksBoundaryUmpires = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpires) ?? true
+        asksTrainers = try c.decodeIfPresent(Bool.self, forKey: .asksTrainers) ?? true
+        asksNotes = try c.decodeIfPresent(Bool.self, forKey: .asksNotes) ?? true
+        asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
+        asksBestPlayers = try c.decodeIfPresent(Bool.self, forKey: .asksBestPlayers) ?? true
+        asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
+>>>>>>> redesign-new-game-wizard-with-toggles
     }
 }
 
@@ -140,6 +202,7 @@ enum SettingsBackupStore {
                 name: $0.name,
                 isActive: $0.isActive,
                 displayOrder: $0.displayOrder,
+<<<<<<< HEAD
                 showHeadCoach: $0.showHeadCoach,
                 showAssistantCoach: $0.showAssistantCoach,
                 showTeamManager: $0.showTeamManager,
@@ -155,6 +218,19 @@ enum SettingsBackupStore {
                 showGuestBestAndFairestVotes: $0.showGuestBestAndFairestVotes,
                 showGoalKickers: $0.showGoalKickers,
                 numberOfBestPlayers: $0.numberOfBestPlayers
+=======
+                asksHeadCoach: $0.asksHeadCoach,
+                asksAssistantCoach: $0.asksAssistantCoach,
+                asksTeamManager: $0.asksTeamManager,
+                asksRunner: $0.asksRunner,
+                asksGoalUmpire: $0.asksGoalUmpire,
+                asksBoundaryUmpires: $0.asksBoundaryUmpires,
+                asksTrainers: $0.asksTrainers,
+                asksNotes: $0.asksNotes,
+                asksGoalKickers: $0.asksGoalKickers,
+                asksBestPlayers: $0.asksBestPlayers,
+                asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
+>>>>>>> redesign-new-game-wizard-with-toggles
             )
         }
         guard let data = try? JSONEncoder().encode(payload) else { return }
@@ -245,6 +321,7 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 name: backup.name,
                 isActive: backup.isActive,
                 displayOrder: backup.displayOrder,
+<<<<<<< HEAD
                 showHeadCoach: backup.showHeadCoach,
                 showAssistantCoach: backup.showAssistantCoach,
                 showTeamManager: backup.showTeamManager,
@@ -260,6 +337,19 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 showGuestBestAndFairestVotes: backup.showGuestBestAndFairestVotes,
                 showGoalKickers: backup.showGoalKickers,
                 numberOfBestPlayers: backup.numberOfBestPlayers
+=======
+                asksHeadCoach: backup.asksHeadCoach,
+                asksAssistantCoach: backup.asksAssistantCoach,
+                asksTeamManager: backup.asksTeamManager,
+                asksRunner: backup.asksRunner,
+                asksGoalUmpire: backup.asksGoalUmpire,
+                asksBoundaryUmpires: backup.asksBoundaryUmpires,
+                asksTrainers: backup.asksTrainers,
+                asksNotes: backup.asksNotes,
+                asksGoalKickers: backup.asksGoalKickers,
+                asksBestPlayers: backup.asksBestPlayers,
+                asksGuestBestFairestVotesScan: backup.asksGuestBestFairestVotesScan
+>>>>>>> redesign-new-game-wizard-with-toggles
             )
         )
 
