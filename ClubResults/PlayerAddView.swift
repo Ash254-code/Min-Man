@@ -3,15 +3,14 @@ import SwiftData
 
 struct PlayerAddView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
 
     let activeGrades: [Grade]
     let existingPlayers: [Player]
     let preselectedGradeID: UUID?
+    let onSave: (String, [UUID]) -> Void
 
     @State private var name: String = ""
     @State private var selectedGradeIDs: Set<UUID> = []
-    @State private var saveErrorMessage: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -37,14 +36,6 @@ struct PlayerAddView: View {
                         }
                     }
                 }
-            }
-            .alert("Could not save player", isPresented: Binding(
-                get: { saveErrorMessage != nil },
-                set: { if !$0 { saveErrorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { saveErrorMessage = nil }
-            } message: {
-                Text(saveErrorMessage ?? "Unknown save error.")
             }
             .navigationTitle("Add Player")
             .toolbar {
@@ -73,14 +64,7 @@ struct PlayerAddView: View {
         }
         guard !exists else { return }
 
-        let p = Player(name: trimmed, gradeIDs: Array(selectedGradeIDs))
-        modelContext.insert(p)
-        do {
-            try modelContext.save()
-            dismiss()
-        } catch {
-            modelContext.delete(p)
-            saveErrorMessage = error.localizedDescription
-        }
+        onSave(trimmed, Array(selectedGradeIDs))
+        dismiss()
     }
 }

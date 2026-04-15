@@ -31,6 +31,8 @@ struct PlayersView: View {
     @State private var showImportResult = false
     @State private var importErrorMessage: String? = nil
     @State private var showImportError = false
+    @State private var addErrorMessage: String? = nil
+    @State private var showAddError = false
 
     // MARK: - Grade Ordering
 
@@ -92,7 +94,8 @@ struct PlayersView: View {
                     PlayerAddView(
                         activeGrades: activeGrades,
                         existingPlayers: players,
-                        preselectedGradeID: selectedGradeID
+                        preselectedGradeID: selectedGradeID,
+                        onSave: createAndSavePlayer(name:gradeIDs:)
                     )
                     .toolbarBackground(.hidden, for: .navigationBar)
                 }
@@ -166,6 +169,11 @@ struct PlayersView: View {
                 Button("OK", role: .cancel) { importErrorMessage = nil }
             } message: {
                 Text(importErrorMessage ?? "Unknown error.")
+            }
+            .alert("Could not save player", isPresented: $showAddError) {
+                Button("OK", role: .cancel) { addErrorMessage = nil }
+            } message: {
+                Text(addErrorMessage ?? "Unknown error.")
             }
         }
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search players")
@@ -430,6 +438,27 @@ struct PlayersView: View {
         s.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+    }
+
+    private func createAndSavePlayer(name: String, gradeIDs: [UUID]) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let normalized = normalizeName(trimmed)
+        guard !players.contains(where: { normalizeName($0.name) == normalized }) else {
+            return
+        }
+
+        let p = Player(name: trimmed, gradeIDs: gradeIDs)
+        modelContext.insert(p)
+
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.delete(p)
+            addErrorMessage = error.localizedDescription
+            showAddError = true
+        }
     }
 }
 
