@@ -6,8 +6,9 @@ import UniformTypeIdentifiers
 
 struct PlayersView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Player.name) private var players: [Player]
+    @Query(sort: \Player.name) private var queriedPlayers: [Player]
     @Query private var grades: [Grade]
+    @State private var playersForDisplay: [Player] = []
 
     @State private var showAdd = false
 
@@ -56,9 +57,9 @@ struct PlayersView: View {
         // First filter by selected grade (if any)
         let gradeFiltered: [Player]
         if let gid = selectedGradeID {
-            gradeFiltered = players.filter { $0.gradeIDs.contains(gid) }
+            gradeFiltered = playersForDisplay.filter { $0.gradeIDs.contains(gid) }
         } else {
-            gradeFiltered = players
+            gradeFiltered = playersForDisplay
         }
 
         // Then filter by search text (if any)
@@ -93,7 +94,7 @@ struct PlayersView: View {
                 NavigationStack {
                     PlayerAddView(
                         activeGrades: activeGrades,
-                        existingPlayers: players,
+                        existingPlayers: playersForDisplay,
                         preselectedGradeID: selectedGradeID,
                         onSave: createAndSavePlayer(name:gradeIDs:)
                     )
@@ -182,6 +183,10 @@ struct PlayersView: View {
             }
         }
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search players")
+        .onAppear { reloadPlayersFromStore() }
+        .onChange(of: queriedPlayers.count) { _, _ in
+            reloadPlayersFromStore()
+        }
     }
 
     // MARK: - Players Section
@@ -193,7 +198,7 @@ struct PlayersView: View {
                     PlayerEditView(
                         player: player,
                         orderedGrades: orderedGrades,
-                        existingPlayers: players,
+                        existingPlayers: playersForDisplay,
                         onRequestDelete: { p in requestDelete(p) }
                     )
                 } label: {
@@ -296,6 +301,7 @@ struct PlayersView: View {
 
         modelContext.delete(player)
         try? modelContext.save()
+        reloadPlayersFromStore()
 
         playerPendingDelete = nil
         showDeletePrompt = false
@@ -367,9 +373,9 @@ struct PlayersView: View {
 
         let gradeLookup = GradeLookup(grades: grades)
 
-        let existingByName: [String: Player] = Dictionary(
-            uniqueKeysWithValues: players.map { (normalizeName($0.name), $0) }
-        )
+        let existingByName: [String: Player] = playersForDisplay.reduce(into: [:]) { partial, player in
+            partial[normalizeName(player.name)] = player
+        }
 
         var result = CSVImportResult(mode: mode)
 
@@ -394,7 +400,7 @@ struct PlayersView: View {
         }
 
         if mode == .replaceAll {
-            for p in players { modelContext.delete(p) }
+            for p in playersForDisplay { modelContext.delete(p) }
         }
 
         for row in parsedRows {
@@ -444,6 +450,7 @@ struct PlayersView: View {
         do { try modelContext.save() }
         catch { throw CSVImportError.saveFailed(error.localizedDescription) }
 
+        reloadPlayersFromStore()
         return result
     }
 
@@ -458,7 +465,7 @@ struct PlayersView: View {
         guard !trimmed.isEmpty else { return }
 
         let normalized = normalizeName(trimmed)
-        guard !players.contains(where: { normalizeName($0.name) == normalized }) else {
+        guard !playersForDisplay.contains(where: { normalizeName($0.name) == normalized }) else {
             return
         }
 
@@ -467,11 +474,20 @@ struct PlayersView: View {
 
         do {
             try modelContext.save()
+            reloadPlayersFromStore()
         } catch {
             modelContext.delete(p)
             addErrorMessage = error.localizedDescription
             showAddError = true
         }
+    }
+
+    private func reloadPlayersFromStore() {
+        var descriptor = FetchDescriptor<Player>(
+            sortBy: [SortDescriptor(\Player.name, order: .forward)]
+        )
+        descriptor.includePendingChanges = true
+        playersForDisplay = (try? modelContext.fetch(descriptor)) ?? []
     }
 }
 
