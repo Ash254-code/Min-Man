@@ -18,6 +18,9 @@ struct TabsView: View {
             // ✅ NEW: Pres tab
             PresView()
                 .tabItem { Label("Pres", systemImage: "rectangle.stack") }
+
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .task {
             // Safe to call every launch
