@@ -120,20 +120,65 @@ struct NewGameWizardView: View {
         return staffDefaults.first(where: { $0.gradeID == gradeID && $0.role == role })?.name
     }
 
-    private func applyDefaultsIfNeeded(for gradeID: UUID?) {
-        // Only set if empty so we never overwrite the user's choice
-        if clean(headCoachName).isEmpty {
-            headCoachName = defaultStaffName(for: .headCoach, gradeID: gradeID) ?? ""
+    private enum StaffFieldKey: String, CaseIterable {
+        case headCoach
+        case assistantCoach
+        case teamManager
+        case runner
+        case goalUmpire
+        case trainer1
+        case trainer2
+        case trainer3
+        case trainer4
+    }
+
+    private func persistedLastSelection(for field: StaffFieldKey, gradeID: UUID?) -> String? {
+        guard let gradeID else { return nil }
+        let key = "lastStaffSelection.\(gradeID.uuidString).\(field.rawValue)"
+        let saved = UserDefaults.standard.string(forKey: key) ?? ""
+        let cleaned = clean(saved)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    private func saveLastSelection(_ value: String, for field: StaffFieldKey, gradeID: UUID?) {
+        guard let gradeID else { return }
+        let key = "lastStaffSelection.\(gradeID.uuidString).\(field.rawValue)"
+        let cleaned = clean(value)
+        if cleaned.isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(cleaned, forKey: key)
         }
-        if clean(assCoachName).isEmpty {
-            assCoachName = defaultStaffName(for: .assistantCoach, gradeID: gradeID) ?? ""
-        }
-        if clean(teamManagerName).isEmpty {
-            teamManagerName = defaultStaffName(for: .teamManager, gradeID: gradeID) ?? ""
-        }
-        if clean(runnerName).isEmpty {
-            runnerName = defaultStaffName(for: .runner, gradeID: gradeID) ?? ""
-        }
+    }
+
+    private func assignDefault(for field: StaffFieldKey, role: StaffRole, gradeID: UUID?, assign: (String) -> Void) {
+        let lastSelected = persistedLastSelection(for: field, gradeID: gradeID)
+        let roleDefault = defaultStaffName(for: role, gradeID: gradeID)
+        assign(lastSelected ?? roleDefault ?? "")
+    }
+
+    private func applyDefaults(for gradeID: UUID?) {
+        assignDefault(for: .headCoach, role: .headCoach, gradeID: gradeID) { headCoachName = $0 }
+        assignDefault(for: .assistantCoach, role: .assistantCoach, gradeID: gradeID) { assCoachName = $0 }
+        assignDefault(for: .teamManager, role: .teamManager, gradeID: gradeID) { teamManagerName = $0 }
+        assignDefault(for: .runner, role: .runner, gradeID: gradeID) { runnerName = $0 }
+        assignDefault(for: .goalUmpire, role: .goalUmpire, gradeID: gradeID) { goalUmpireName = $0 }
+        assignDefault(for: .trainer1, role: .trainer, gradeID: gradeID) { trainer1Name = $0 }
+        assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { trainer2Name = $0 }
+        assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { trainer3Name = $0 }
+        assignDefault(for: .trainer4, role: .trainer, gradeID: gradeID) { trainer4Name = $0 }
+    }
+
+    private func persistCurrentStaffSelections(for gradeID: UUID?) {
+        saveLastSelection(headCoachName, for: .headCoach, gradeID: gradeID)
+        saveLastSelection(assCoachName, for: .assistantCoach, gradeID: gradeID)
+        saveLastSelection(teamManagerName, for: .teamManager, gradeID: gradeID)
+        saveLastSelection(runnerName, for: .runner, gradeID: gradeID)
+        saveLastSelection(goalUmpireName, for: .goalUmpire, gradeID: gradeID)
+        saveLastSelection(trainer1Name, for: .trainer1, gradeID: gradeID)
+        saveLastSelection(trainer2Name, for: .trainer2, gradeID: gradeID)
+        saveLastSelection(trainer3Name, for: .trainer3, gradeID: gradeID)
+        saveLastSelection(trainer4Name, for: .trainer4, gradeID: gradeID)
     }
 
     // MARK: Ordering helpers
@@ -278,18 +323,18 @@ struct NewGameWizardView: View {
         // ✅ Seed staff + defaults once
         .onAppear {
             StaffSeeder.seedIfNeeded(modelContext: modelContext, grades: grades)
-            applyDefaultsIfNeeded(for: gradeID)
+            applyDefaults(for: gradeID)
         }
-        // ✅ When user changes grade, auto-fill defaults (only if empty)
+        // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
-            applyDefaultsIfNeeded(for: newGrade)
+            applyDefaults(for: newGrade)
         }
         .onAppear {
             guard !hasAppliedInitialGrade else { return }
             hasAppliedInitialGrade = true
             if let initialGradeID {
                 gradeID = initialGradeID
-                applyDefaultsIfNeeded(for: initialGradeID)
+                applyDefaults(for: initialGradeID)
             }
         }
     }
@@ -704,6 +749,9 @@ struct NewGameWizardView: View {
         )
 
         modelContext.insert(game)
+
+        // Persist the last selected staff for this grade so new entries can default to them.
+        persistCurrentStaffSelections(for: gid)
 
         do { try modelContext.save() }
         catch { print("❌ Failed to save game: \(error)"); return }
