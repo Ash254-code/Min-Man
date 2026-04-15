@@ -161,9 +161,18 @@ private struct ClubGradesSettingsView: View {
                         Button("Cancel") { showAddGrade = false }
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            addGrade()
-                            showAddGrade = false
+                        Button("Save & Add Another") {
+                            if addGrade() {
+                                newGradeName = ""
+                            }
+                        }
+                        .disabled(clean(newGradeName).isEmpty)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save & Close") {
+                            if addGrade() {
+                                showAddGrade = false
+                            }
                         }
                         .disabled(clean(newGradeName).isEmpty)
                     }
@@ -196,15 +205,18 @@ private struct ClubGradesSettingsView: View {
         }
     }
 
-    private func addGrade() {
+    private func addGrade() -> Bool {
         let name = clean(newGradeName)
-        guard !name.isEmpty else { return }
-        guard !grades.contains(where: { clean($0.name).lowercased() == name.lowercased() }) else { return }
+        guard !name.isEmpty else { return false }
+        guard !grades.contains(where: { clean($0.name).lowercased() == name.lowercased() }) else { return false }
 
         let nextOrder = (grades.map(\.displayOrder).max() ?? -1) + 1
-        modelContext.insert(Grade(name: name, isActive: true, displayOrder: nextOrder))
+        let newGrade = Grade(name: name, isActive: true, displayOrder: nextOrder)
+        modelContext.insert(newGrade)
+        grades.append(newGrade)
         saveContext()
         reloadGrades()
+        return true
     }
 
     private func saveEditedGrade() {
@@ -348,10 +360,14 @@ private struct ContactsSettingsView: View {
         }
         .navigationTitle("Contacts")
         .sheet(isPresented: $showAddContact) {
-            ContactEditSheet(title: "Add Contact") { name, mobile, email in
-                modelContext.insert(Contact(name: name, mobile: mobile, email: email))
+            ContactEditSheet(title: "Add Contact", allowsSaveAndAddAnother: true) { name, mobile, email in
+                let newContact = Contact(name: name, mobile: mobile, email: email)
+                modelContext.insert(newContact)
+                contacts.append(newContact)
+                contacts.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 saveContext()
                 reloadContacts()
+                return true
             }
         }
         .sheet(item: $contactEditing) { contact in
@@ -366,6 +382,7 @@ private struct ContactsSettingsView: View {
                 contact.email = email
                 saveContext()
                 reloadContacts()
+                return true
             }
         }
         .alert("Save Error", isPresented: Binding(
@@ -417,7 +434,8 @@ private struct ContactEditSheet: View {
     let initialName: String
     let initialMobile: String
     let initialEmail: String
-    let onSave: (String, String, String) -> Void
+    let allowsSaveAndAddAnother: Bool
+    let onSave: (String, String, String) -> Bool
 
     @State private var name: String
     @State private var mobile: String
@@ -428,12 +446,14 @@ private struct ContactEditSheet: View {
         initialName: String = "",
         initialMobile: String = "",
         initialEmail: String = "",
-        onSave: @escaping (String, String, String) -> Void
+        allowsSaveAndAddAnother: Bool = false,
+        onSave: @escaping (String, String, String) -> Bool
     ) {
         self.title = title
         self.initialName = initialName
         self.initialMobile = initialMobile
         self.initialEmail = initialEmail
+        self.allowsSaveAndAddAnother = allowsSaveAndAddAnother
         self.onSave = onSave
 
         _name = State(initialValue: initialName)
@@ -463,11 +483,28 @@ private struct ContactEditSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(clean(name), clean(mobile), clean(email))
-                        dismiss()
+                    Button(allowsSaveAndAddAnother ? "Save & Add Another" : "Save") {
+                        if onSave(clean(name), clean(mobile), clean(email)) {
+                            if allowsSaveAndAddAnother {
+                                name = ""
+                                mobile = ""
+                                email = ""
+                            } else {
+                                dismiss()
+                            }
+                        }
                     }
                     .disabled(!canSave)
+                }
+                if allowsSaveAndAddAnother {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save & Close") {
+                            if onSave(clean(name), clean(mobile), clean(email)) {
+                                dismiss()
+                            }
+                        }
+                        .disabled(!canSave)
+                    }
                 }
             }
         }
