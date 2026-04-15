@@ -31,8 +31,10 @@ struct TabsView: View {
         let existing = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
         guard existing.isEmpty else { return }
 
-        ["A Grade", "B Grade", "Under 17's", "Under 14's", "Under 12's", "Under 9's"]
-            .forEach { modelContext.insert(Grade(name: $0, isActive: true)) }
+        let defaults = ["A Grade", "B Grade", "Under 17's", "Under 14's", "Under 12's", "Under 9's"]
+        for (index, name) in defaults.enumerated() {
+            modelContext.insert(Grade(name: name, isActive: true, displayOrder: index))
+        }
 
         try? modelContext.save()
     }

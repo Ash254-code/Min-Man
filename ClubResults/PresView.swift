@@ -10,9 +10,7 @@ struct PresView: View {
 
     // MARK: - Ordered grades (U9 → A Grade)
     private var orderedGrades: [Grade] {
-        grades
-            .filter { $0.isActive }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        orderedGradesForDisplay(grades)
     }
 
     // Grade lookup helpers

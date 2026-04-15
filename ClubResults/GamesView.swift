@@ -12,9 +12,7 @@ struct GamesView: View {
 
     // MARK: - Ordered grades (your seeded order + remaining A→Z)
     private var orderedGrades: [Grade] {
-        grades
-            .filter { $0.isActive }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        orderedGradesForDisplay(grades)
     }
 
     private var gradeNameByID: [UUID: String] {

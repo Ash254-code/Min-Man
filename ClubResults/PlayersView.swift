@@ -35,7 +35,7 @@ struct PlayersView: View {
     // MARK: - Grade Ordering
 
     private var orderedGrades: [Grade] {
-        grades.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        orderedGradesForDisplay(grades, includeInactive: true)
     }
 
     private var activeGrades: [Grade] {
