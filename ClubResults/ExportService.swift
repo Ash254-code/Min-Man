@@ -42,7 +42,7 @@ enum ExportService {
         }
 
         if !game.bestPlayersRanked.isEmpty {
-            lines.append("Best Players (1–6):")
+            lines.append("Best Players:")
             for (idx, pid) in game.bestPlayersRanked.enumerated() {
                 lines.append("\(idx + 1). \(playerName(pid))")
             }
