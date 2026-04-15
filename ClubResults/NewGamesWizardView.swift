@@ -137,8 +137,16 @@ struct NewGameWizardView: View {
     }
 
     // MARK: Ordering helpers
+    private var resolvedGrades: [Grade] {
+        if grades.isEmpty {
+            return SettingsBackupStore.loadGrades()
+                .map { Grade(id: $0.id, name: $0.name, isActive: $0.isActive, displayOrder: $0.displayOrder) }
+        }
+        return grades
+    }
+
     private var orderedGrades: [Grade] {
-        orderedGradesForDisplay(grades)
+        orderedGradesForDisplay(resolvedGrades)
     }
 
     private var eligiblePlayers: [Player] {
@@ -601,7 +609,7 @@ struct NewGameWizardView: View {
                 Text("Venue: \(finalVenue)")
                 Text("Date: \(date.formatted(date: .abbreviated, time: .omitted))")
 
-                if let gid = gradeID, let g = grades.first(where: { $0.id == gid }) {
+                if let gid = gradeID, let g = resolvedGrades.first(where: { $0.id == gid }) {
                     Text("Grade: \(g.name)")
                 }
 
