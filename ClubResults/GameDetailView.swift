@@ -38,6 +38,14 @@ struct GameDetailView: View {
 
     var body: some View {
         List {
+            if game.isDraft {
+                Section {
+                    Text("Draft game")
+                        .font(.headline)
+                        .foregroundStyle(.orange)
+                }
+            }
+
             Section(header: Text("Match Info")) {
                 row("Grade", gradeName)
                 row("Opponent", game.opponent)
@@ -98,6 +106,15 @@ struct GameDetailView: View {
             }
         }
         .navigationTitle(game.opponent)
+        .overlay {
+            if game.isDraft {
+                Text("DRAFT")
+                    .font(.system(size: 80, weight: .black))
+                    .foregroundStyle(Color.red.opacity(0.15))
+                    .rotationEffect(.degrees(-28))
+                    .allowsHitTesting(false)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

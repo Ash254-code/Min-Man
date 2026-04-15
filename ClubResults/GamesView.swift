@@ -307,6 +307,15 @@ private struct GameCardRow: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
+        .overlay {
+            if game.isDraft {
+                Text("DRAFT")
+                    .font(.system(size: 56, weight: .black))
+                    .foregroundStyle(Color.red.opacity(0.22))
+                    .rotationEffect(.degrees(-28))
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }
 
