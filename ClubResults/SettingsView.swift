@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
+    @State private var saveErrorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -37,6 +38,14 @@ struct SettingsView: View {
             .task {
                 seedInitialGradesIfNeeded()
             }
+            .alert("Save Error", isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { saveErrorMessage = nil }
+            } message: {
+                Text(saveErrorMessage ?? "An unknown error occurred.")
+            }
         }
     }
 
@@ -56,7 +65,11 @@ struct SettingsView: View {
         for (index, name) in defaults.enumerated() {
             modelContext.insert(Grade(name: name, isActive: true, displayOrder: index))
         }
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -76,6 +89,7 @@ private struct ClubGradesSettingsView: View {
 
     @State private var deletionErrorMessage: String?
     @State private var showDeletionError = false
+    @State private var saveErrorMessage: String?
 
     private var sortedGrades: [Grade] {
         orderedGradesForDisplay(grades, includeInactive: true)
@@ -128,6 +142,14 @@ private struct ClubGradesSettingsView: View {
         } message: {
             Text(deletionErrorMessage ?? "This grade is currently in use.")
         }
+        .alert("Save Error", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveErrorMessage = nil }
+        } message: {
+            Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
         .sheet(isPresented: $showAddGrade) {
             NavigationStack {
                 Form {
@@ -179,7 +201,7 @@ private struct ClubGradesSettingsView: View {
 
         let nextOrder = (grades.map(\.displayOrder).max() ?? -1) + 1
         modelContext.insert(Grade(name: name, isActive: true, displayOrder: nextOrder))
-        try? modelContext.save()
+        saveContext()
     }
 
     private func saveEditedGrade() {
@@ -189,7 +211,7 @@ private struct ClubGradesSettingsView: View {
         guard !grades.contains(where: { $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased() }) else { return }
 
         gradeEditing.name = name
-        try? modelContext.save()
+        saveContext()
     }
 
     private func moveGrades(from source: IndexSet, to destination: Int) {
@@ -200,7 +222,7 @@ private struct ClubGradesSettingsView: View {
             grade.displayOrder = index
         }
 
-        try? modelContext.save()
+        saveContext()
     }
 
     private func deleteGrade(_ grade: Grade) {
@@ -227,11 +249,19 @@ private struct ClubGradesSettingsView: View {
             item.displayOrder = index
         }
 
-        try? modelContext.save()
+        saveContext()
     }
 
     private func clean(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func saveContext() {
+        do {
+            try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -261,6 +291,7 @@ private struct ContactsSettingsView: View {
 
     @State private var showAddContact = false
     @State private var contactEditing: Contact?
+    @State private var saveErrorMessage: String?
 
     var body: some View {
         List {
@@ -302,7 +333,7 @@ private struct ContactsSettingsView: View {
         .sheet(isPresented: $showAddContact) {
             ContactEditSheet(title: "Add Contact") { name, mobile, email in
                 modelContext.insert(Contact(name: name, mobile: mobile, email: email))
-                try? modelContext.save()
+                saveContext()
             }
         }
         .sheet(item: $contactEditing) { contact in
@@ -315,8 +346,16 @@ private struct ContactsSettingsView: View {
                 contact.name = name
                 contact.mobile = mobile
                 contact.email = email
-                try? modelContext.save()
+                saveContext()
             }
+        }
+        .alert("Save Error", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveErrorMessage = nil }
+        } message: {
+            Text(saveErrorMessage ?? "An unknown error occurred.")
         }
     }
 
@@ -325,7 +364,15 @@ private struct ContactsSettingsView: View {
             modelContext.delete(recipient)
         }
         modelContext.delete(contact)
-        try? modelContext.save()
+        saveContext()
+    }
+
+    private func saveContext() {
+        do {
+            try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -403,6 +450,7 @@ private struct ReportsSettingsView: View {
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
     @Query private var reportRecipients: [ReportRecipient]
+    @State private var saveErrorMessage: String?
 
     private var activeGrades: [Grade] {
         orderedGradesForDisplay(grades)
@@ -442,7 +490,7 @@ private struct ReportsSettingsView: View {
                                             if !recipient.sendEmail && !recipient.sendText {
                                                 recipient.sendText = true
                                             }
-                                            try? modelContext.save()
+                                            saveContext()
                                         }
                                     ))
                                     .labelsHidden()
@@ -460,7 +508,7 @@ private struct ReportsSettingsView: View {
                                             if !recipient.sendEmail && !recipient.sendText {
                                                 recipient.sendEmail = true
                                             }
-                                            try? modelContext.save()
+                                            saveContext()
                                         }
                                     ))
                                     .labelsHidden()
@@ -473,7 +521,7 @@ private struct ReportsSettingsView: View {
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     modelContext.delete(recipient)
-                                    try? modelContext.save()
+                                    saveContext()
                                 } label: {
                                     Label("Remove", systemImage: "trash")
                                 }
@@ -501,6 +549,14 @@ private struct ReportsSettingsView: View {
             }
         }
         .navigationTitle("Reports")
+        .alert("Save Error", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveErrorMessage = nil }
+        } message: {
+            Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
     }
 
     private func recipientsForGrade(_ gradeID: UUID) -> [ReportRecipient] {
@@ -516,7 +572,7 @@ private struct ReportsSettingsView: View {
     private func addContact(_ contact: Contact, toGrade gradeID: UUID) {
         guard !reportRecipients.contains(where: { $0.gradeID == gradeID && $0.contactID == contact.id }) else { return }
         modelContext.insert(ReportRecipient(gradeID: gradeID, contactID: contact.id, sendEmail: true, sendText: true))
-        try? modelContext.save()
+        saveContext()
     }
 
     private func sendModeText(_ recipient: ReportRecipient) -> String {
@@ -525,6 +581,14 @@ private struct ReportsSettingsView: View {
         case (true, false): return "Send via Email"
         case (false, true): return "Send via Text"
         case (false, false): return "Send via Email"
+        }
+    }
+
+    private func saveContext() {
+        do {
+            try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
         }
     }
 }
