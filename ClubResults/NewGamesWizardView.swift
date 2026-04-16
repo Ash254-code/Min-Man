@@ -92,6 +92,7 @@ struct NewGameWizardView: View {
     @State private var goalKickers: [WizardGoalKickerEntry] = []
     @State private var goalKickerPickerPrompt: UUID?
     @State private var bestRanked: [UUID?] = Array(repeating: nil, count: 6)
+    @State private var bestPlayerPickerPrompt: Int?
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
     @State private var scannerErrorMessage: String?
@@ -432,6 +433,16 @@ struct NewGameWizardView: View {
     private func setGoalKickerPlayer(_ playerID: UUID?, for entryID: UUID?) {
         guard let entryID, let idx = goalKickers.firstIndex(where: { $0.id == entryID }) else { return }
         goalKickers[idx].playerID = playerID
+    }
+
+    private func selectedBestPlayerID(for rankIndex: Int?) -> UUID? {
+        guard let rankIndex, bestRanked.indices.contains(rankIndex) else { return nil }
+        return bestRanked[rankIndex]
+    }
+
+    private func clearBestPlayer(at rankIndex: Int?) {
+        guard let rankIndex, bestRanked.indices.contains(rankIndex) else { return }
+        bestRanked[rankIndex] = nil
     }
 
     // MARK: Validation
@@ -1206,15 +1217,20 @@ struct NewGameWizardView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
-                        Picker(bestLabel(for: idx), selection: Binding(
-                            get: { bestRanked[idx] ?? UUID() },
-                            set: { newID in setBestPlayer(newID, at: idx) }
-                        )) {
-                            Text("Select…").tag(UUID())
-                            ForEach(eligiblePlayers) { p in
-                                Text(p.name).tag(p.id)
+                        Button {
+                            bestPlayerPickerPrompt = idx
+                        } label: {
+                            HStack(spacing: 12) {
+                                rowLabel(bestLabel(for: idx))
+                                Spacer()
+                                rowValue(playerName(for: bestRanked[idx]))
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
+                                    .foregroundStyle(.secondary)
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                     if hasDuplicateBestPlayers {
                         Text("Duplicate players selected. Each rank must be a different player.")
@@ -1228,6 +1244,53 @@ struct NewGameWizardView: View {
         .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
         .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
+        .sheet(
+            isPresented: Binding(
+                get: { bestPlayerPickerPrompt != nil },
+                set: { if !$0 { bestPlayerPickerPrompt = nil } }
+            )
+        ) {
+            NavigationStack {
+                List {
+                    Button {
+                        clearBestPlayer(at: bestPlayerPickerPrompt)
+                        bestPlayerPickerPrompt = nil
+                    } label: {
+                        selectorListRow(
+                            title: "Select…",
+                            selected: selectedBestPlayerID(for: bestPlayerPickerPrompt) == nil
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(eligiblePlayers) { player in
+                        Button {
+                            if let rank = bestPlayerPickerPrompt {
+                                setBestPlayer(player.id, at: rank)
+                            }
+                            bestPlayerPickerPrompt = nil
+                        } label: {
+                            selectorListRow(
+                                title: player.name,
+                                selected: selectedBestPlayerID(for: bestPlayerPickerPrompt) == player.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .navigationTitle("Select Best Player")
+                .navigationBarTitleDisplayMode(.inline)
+                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { bestPlayerPickerPrompt = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private var reviewStep: some View {
