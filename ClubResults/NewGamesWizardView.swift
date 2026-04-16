@@ -29,6 +29,7 @@ struct NewGameWizardView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss   // ✅ allow Cancel / dismiss sheet
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @Query private var grades: [Grade]
     @Query(sort: \Player.name) private var players: [Player]
@@ -270,6 +271,20 @@ struct NewGameWizardView: View {
         case two
     }
 
+    private var isCompactLayout: Bool { horizontalSizeClass == .compact }
+
+    private var wizardPrimaryTitleFont: Font {
+        .system(size: isCompactLayout ? 40 : 52, weight: .bold)
+    }
+
+    private var wizardSecondaryTitleFont: Font {
+        .system(size: isCompactLayout ? 22 : 30, weight: .semibold)
+    }
+
+    private var wizardBodyFont: Font {
+        .system(size: isCompactLayout ? 20 : 24, weight: .regular)
+    }
+
     private var selectedGrade: Grade? {
         guard let gid = gradeID else { return nil }
         return resolvedGrades.first(where: { $0.id == gid })
@@ -306,12 +321,12 @@ struct NewGameWizardView: View {
     // MARK: - Uniform row styling
     private func rowLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 16, weight: .regular))
+            .font(wizardBodyFont)
     }
 
     private func rowValue(_ text: String) -> some View {
         Text(text.isEmpty ? "Select…" : text)
-            .font(.system(size: 16, weight: .regular))
+            .font(wizardBodyFont)
             .foregroundStyle(text.isEmpty ? .secondary : .primary)
     }
 
@@ -388,8 +403,8 @@ struct NewGameWizardView: View {
                     total: Double(max(activeSteps.count - 1, 1))
                 )
                 .padding(.horizontal)
-                .padding(.top, 10)
-                .padding(.bottom, 6)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
 
                 ZStack {
                     switch step {
@@ -431,7 +446,10 @@ struct NewGameWizardView: View {
                             .buttonStyle(.borderedProminent)
                     }
                 }
-                .padding()
+                .font(.system(size: isCompactLayout ? 24 : 28, weight: .semibold))
+                .controlSize(isCompactLayout ? .large : .extraLarge)
+                .padding(.horizontal, isCompactLayout ? 18 : 26)
+                .padding(.vertical, isCompactLayout ? 14 : 18)
                 .background(.ultraThinMaterial)
             }
             .navigationTitle(step == .setup ? "" : "New Game")
@@ -533,15 +551,15 @@ struct NewGameWizardView: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text("New Game")
-                    .font(.system(size: 44, weight: .bold))
+                    .font(wizardPrimaryTitleFont)
                 Spacer()
                 Text(selectedGradeName)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(wizardSecondaryTitleFont)
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 6)
-            .padding(.bottom, 8)
+            .padding(.horizontal, isCompactLayout ? 20 : 28)
+            .padding(.top, isCompactLayout ? 8 : 14)
+            .padding(.bottom, isCompactLayout ? 12 : 16)
 
             Form {
                 if let _ = gradeID, eligiblePlayers.isEmpty {
@@ -590,7 +608,10 @@ struct NewGameWizardView: View {
                     .disabled(finalOpponent.isEmpty || venuesForSelection.isEmpty)
                 }
             }
+            .font(wizardBodyFont)
+            .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
         }
+        .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
     }
@@ -650,7 +671,7 @@ struct NewGameWizardView: View {
                                 HStack(spacing: 6) {
                                     rowValue(finalBoundary1)
                                     Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
                                         .foregroundStyle(.secondary)
                                 }
                                 .contentShape(Rectangle())
@@ -686,7 +707,7 @@ struct NewGameWizardView: View {
                                 HStack(spacing: 6) {
                                     rowValue(finalBoundary2)
                                     Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
                                         .foregroundStyle(.secondary)
                                 }
                                 .contentShape(Rectangle())
@@ -704,10 +725,12 @@ struct NewGameWizardView: View {
                 }
 
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 28)
+            .padding(.horizontal, isCompactLayout ? 16 : 26)
+            .padding(.top, isCompactLayout ? 12 : 18)
+            .padding(.bottom, isCompactLayout ? 28 : 36)
         }
+        .font(wizardBodyFont)
+        .dynamicTypeSize(.large ... .accessibility2)
         .background(Color(.systemGroupedBackground))
         .alert(
             boundaryUmpireNamePrompt == .one ? "Boundary Umpire 1" : "Boundary Umpire 2",
@@ -762,10 +785,12 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 28)
+            .padding(.horizontal, isCompactLayout ? 16 : 26)
+            .padding(.top, isCompactLayout ? 12 : 18)
+            .padding(.bottom, isCompactLayout ? 28 : 36)
         }
+        .font(wizardBodyFont)
+        .dynamicTypeSize(.large ... .accessibility2)
         .background(Color(.systemGroupedBackground))
     }
 
@@ -817,6 +842,9 @@ struct NewGameWizardView: View {
                 }
             }
         }
+        .font(wizardBodyFont)
+        .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+        .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
     }
 
@@ -880,6 +908,9 @@ struct NewGameWizardView: View {
                 }
             }
         }
+        .font(wizardBodyFont)
+        .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+        .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
     }
 
@@ -909,6 +940,9 @@ struct NewGameWizardView: View {
                 }
             }
         }
+        .font(wizardBodyFont)
+        .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+        .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
     }
 
@@ -932,6 +966,9 @@ struct NewGameWizardView: View {
                 Section("Notes") { Text(notes) }
             }
         }
+        .font(wizardBodyFont)
+        .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+        .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
     }
 
@@ -951,6 +988,9 @@ struct NewGameWizardView: View {
                 }
             }
         }
+        .font(wizardBodyFont)
+        .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+        .dynamicTypeSize(.large ... .accessibility2)
         .sheet(isPresented: $showVotesScanner) {
             VotesScannerSheet { data in
                 guestBestFairestVotesScanPDF = data
@@ -1270,9 +1310,9 @@ struct NewGameWizardView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image(systemName: systemImage)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                     Text(title.uppercased())
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                         .tracking(0.9)
                     Spacer()
                 }
@@ -1281,7 +1321,7 @@ struct NewGameWizardView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     content
                 }
-                .padding(12)
+                .padding(16)
                 .background(Color(.systemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(

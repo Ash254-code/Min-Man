@@ -24,10 +24,19 @@ extension View {
 }
 
 private struct AppPopupPresentation: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     func body(content: Content) -> some View {
-        content
-            .presentationDetents([.fraction(0.92), .large])
-            .presentationDragIndicator(.visible)
+        if #available(iOS 17.0, *) {
+            content
+                .presentationDetents(horizontalSizeClass == .compact ? [.fraction(0.96), .large] : [.fraction(0.9), .fraction(0.98), .large])
+                .presentationSizing(.page)
+                .presentationDragIndicator(.visible)
+        } else {
+            content
+                .presentationDetents(horizontalSizeClass == .compact ? [.fraction(0.96), .large] : [.fraction(0.9), .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 }
 

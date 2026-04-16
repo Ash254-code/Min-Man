@@ -10,6 +10,7 @@ struct StaffPickerField: View {
     @Binding var value: String
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var staffMembers: [StaffMember]
 
     @State private var showAdd = false
@@ -32,11 +33,15 @@ struct StaffPickerField: View {
         gradeID != nil && !trimmedNewName.isEmpty
     }
 
+    private var fieldFont: Font {
+        .system(size: horizontalSizeClass == .compact ? 20 : 24, weight: .regular)
+    }
+
     var body: some View {
 
         HStack(spacing: 12) {
             Text(title)
-                .font(.system(size: 16, weight: .regular))
+                .font(fieldFont)
             Spacer()
 
             Menu {
@@ -53,11 +58,11 @@ struct StaffPickerField: View {
 
             } label: {
                 Text(value.isEmpty ? "Select…" : value)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(fieldFont)
                     .foregroundStyle(value.isEmpty ? .secondary : .primary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, horizontalSizeClass == .compact ? 6 : 10)
         .sheet(isPresented: $showAdd) {
             NavigationStack {
                 VStack(alignment: .leading, spacing: 16) {
