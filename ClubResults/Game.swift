@@ -24,6 +24,16 @@ final class Game: Identifiable {
     var goalKickers: [GameGoalKickerEntry]
     var bestPlayersRanked: [UUID]
 
+    // Staff and officials
+    var headCoachName: String
+    var assistantCoachName: String
+    var teamManagerName: String
+    var runnerName: String
+    var goalUmpireName: String
+    var boundaryUmpire1Name: String
+    var boundaryUmpire2Name: String
+    var trainers: [String]
+
     // Notes
     var notes: String
     var guestBestFairestVotesScanPDF: Data?
@@ -41,6 +51,14 @@ final class Game: Identifiable {
         theirBehinds: Int,
         goalKickers: [GameGoalKickerEntry],
         bestPlayersRanked: [UUID],
+        headCoachName: String = "",
+        assistantCoachName: String = "",
+        teamManagerName: String = "",
+        runnerName: String = "",
+        goalUmpireName: String = "",
+        boundaryUmpire1Name: String = "",
+        boundaryUmpire2Name: String = "",
+        trainers: [String] = [],
         notes: String,
         guestBestFairestVotesScanPDF: Data? = nil,
         isDraft: Bool = false
@@ -56,6 +74,14 @@ final class Game: Identifiable {
         self.theirBehinds = theirBehinds
         self.goalKickers = goalKickers
         self.bestPlayersRanked = bestPlayersRanked
+        self.headCoachName = headCoachName
+        self.assistantCoachName = assistantCoachName
+        self.teamManagerName = teamManagerName
+        self.runnerName = runnerName
+        self.goalUmpireName = goalUmpireName
+        self.boundaryUmpire1Name = boundaryUmpire1Name
+        self.boundaryUmpire2Name = boundaryUmpire2Name
+        self.trainers = trainers
         self.notes = notes
         self.guestBestFairestVotesScanPDF = guestBestFairestVotesScanPDF
         self.isDraft = isDraft
