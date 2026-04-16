@@ -1099,7 +1099,7 @@ private struct ReportsSettingsView: View {
     }
 
     private func templateDetails(for template: CustomReportTemplate) -> String {
-        templateDetails(for: template, grades: grades)
+        buildTemplateDetails(for: template, grades: grades)
     }
 
     private func saveContext() {
@@ -1199,7 +1199,7 @@ private struct CustomReportShareView: View {
     private var shareMessage: String {
         var lines: [String] = []
         lines.append("Custom report: \(template.name)")
-        lines.append(templateDetails(for: template, grades: grades))
+        lines.append(buildTemplateDetails(for: template, grades: grades))
         if selectedContacts.isEmpty {
             lines.append("Selected contacts: none")
         } else {
@@ -1265,7 +1265,7 @@ private struct CustomReportShareView: View {
     }
 }
 
-private func templateDetails(for template: CustomReportTemplate, grades: [Grade]) -> String {
+private func buildTemplateDetails(for template: CustomReportTemplate, grades: [Grade]) -> String {
     let gradeNames = grades
         .filter { !template.includeOnlyActiveGrades || $0.isActive }
         .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
@@ -1378,7 +1378,7 @@ private func templatePreviewText(
 
     var lines: [String] = []
     lines.append("Template: \(template.name)")
-    lines.append(templateDetails(for: template, grades: grades))
+    lines.append(buildTemplateDetails(for: template, grades: grades))
     lines.append("")
 
     if selectedGrades.isEmpty {
