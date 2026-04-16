@@ -443,11 +443,12 @@ struct NewGameWizardView: View {
             return coachingOK
 
         case .medical:
-            let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
-            let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
-            let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
-            // Trainers are optional (0...4 selected trainers should always be valid).
-            let trainersOK = selectedTrainerNames.count <= 4
+            // Trainer selection is optional on the medical step.
+            guard let grade = selectedGrade else { return true }
+
+            let asksGoalUmpire = grade.asksGoalUmpire
+            let asksBoundaryUmpire1 = grade.asksBoundaryUmpire1
+            let asksBoundaryUmpire2 = grade.asksBoundaryUmpire2
 
             let officialsOK =
                 (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
@@ -455,7 +456,7 @@ struct NewGameWizardView: View {
                 (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty) &&
                 (!(asksBoundaryUmpire1 && asksBoundaryUmpire2) || finalBoundary1 != finalBoundary2)
 
-            return officialsOK && trainersOK
+            return officialsOK
 
         case .score:
             return true
