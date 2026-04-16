@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import PDFKit
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -1107,18 +1109,26 @@ private struct CustomReportPreviewView: View {
 
     let template: CustomReportTemplate
     let grades: [Grade]
+    @State private var pdfURL: URL?
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("Report Name") {
-                    Text(template.name)
-                        .font(.headline)
-                }
-
-                Section("Preview") {
-                    Text(templateDetails(for: template, grades: grades))
-                        .font(.subheadline)
+            Group {
+                if let pdfURL {
+                    PDFPreviewView(url: pdfURL)
+                } else if let errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 30))
+                            .foregroundStyle(.orange)
+                        Text(errorMessage)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                } else {
+                    ProgressView("Generating PDF preview…")
                 }
             }
             .navigationTitle("Preview")
@@ -1127,6 +1137,14 @@ private struct CustomReportPreviewView: View {
                     Button("Done") {
                         dismiss()
                     }
+                }
+            }
+            .task {
+                guard pdfURL == nil, errorMessage == nil else { return }
+                do {
+                    pdfURL = try makeTemplatePreviewPDF(template: template, grades: grades)
+                } catch {
+                    errorMessage = "Could not generate preview PDF."
                 }
             }
         }
@@ -1241,6 +1259,67 @@ private func templateDetails(for template: CustomReportTemplate, grades: [Grade]
     let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive")"
     let sections = "Includes: " + (items.isEmpty ? "No sections selected" : items.joined(separator: ", "))
     return [gradesText, sections, filters].joined(separator: " • ")
+}
+
+private func makeTemplatePreviewPDF(template: CustomReportTemplate, grades: [Grade]) throws -> URL {
+    let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
+    let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
+
+    let title = "Custom Report Preview"
+    let body = """
+    Template: \(template.name)
+
+    \(templateDetails(for: template, grades: grades))
+    """
+
+    let data = renderer.pdfData { context in
+        context.beginPage()
+
+        let titleStyle = NSMutableParagraphStyle()
+        titleStyle.lineBreakMode = .byWordWrapping
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.boldSystemFont(ofSize: 24),
+            .paragraphStyle: titleStyle
+        ]
+
+        let bodyStyle = NSMutableParagraphStyle()
+        bodyStyle.lineBreakMode = .byWordWrapping
+        bodyStyle.lineSpacing = 4
+        let bodyAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 13),
+            .paragraphStyle: bodyStyle
+        ]
+
+        let contentRect = pageBounds.insetBy(dx: 36, dy: 36)
+        let titleRect = CGRect(x: contentRect.minX, y: contentRect.minY, width: contentRect.width, height: 34)
+        NSAttributedString(string: title, attributes: titleAttributes).draw(in: titleRect)
+
+        let bodyRect = CGRect(x: contentRect.minX, y: titleRect.maxY + 12, width: contentRect.width, height: contentRect.height - 46)
+        NSAttributedString(string: body, attributes: bodyAttributes).draw(in: bodyRect)
+    }
+
+    let safeName = template.name
+        .replacingOccurrences(of: "/", with: "-")
+        .replacingOccurrences(of: " ", with: "_")
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("CustomReport_\(safeName)_Preview.pdf")
+    try data.write(to: url, options: .atomic)
+    return url
+}
+
+private struct PDFPreviewView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayDirection = .vertical
+        view.displayMode = .singlePageContinuous
+        return view
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        uiView.document = PDFDocument(url: url)
+    }
 }
 
 private struct CustomReportEditView: View {
