@@ -286,13 +286,14 @@ struct NewGameWizardView: View {
         if grade.asksHeadCoach ||
             grade.asksAssistantCoach ||
             grade.asksTeamManager ||
-            grade.asksRunner ||
-            grade.asksGoalUmpire ||
-            grade.asksBoundaryUmpire1 ||
-            grade.asksBoundaryUmpire2 {
+            grade.asksRunner {
             steps.append(.staff)
         }
-        if grade.asksTrainers || grade.asksNotes {
+        if grade.asksGoalUmpire ||
+            grade.asksBoundaryUmpire1 ||
+            grade.asksBoundaryUmpire2 ||
+            grade.asksTrainers ||
+            grade.asksNotes {
             steps.append(.medical)
         }
         steps.append(.score)
@@ -337,9 +338,6 @@ struct NewGameWizardView: View {
             let asksAssistantCoach = selectedGrade?.asksAssistantCoach ?? true
             let asksTeamManager = selectedGrade?.asksTeamManager ?? true
             let asksRunner = selectedGrade?.asksRunner ?? true
-            let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
-            let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
-            let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
 
             let coachingOK =
                 (!asksHeadCoach || !finalHeadCoach.isEmpty) &&
@@ -347,16 +345,20 @@ struct NewGameWizardView: View {
                 (!asksTeamManager || !finalTeamManager.isEmpty) &&
                 (!asksRunner || !finalRunner.isEmpty)
 
+            return coachingOK
+
+        case .medical:
+            let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
+            let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
+            let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
+
             let officialsOK =
                 (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
                 (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
                 (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty) &&
                 (!(asksBoundaryUmpire1 && asksBoundaryUmpire2) || finalBoundary1 != finalBoundary2)
 
-            return coachingOK && officialsOK
-
-        case .medical:
-            return true
+            return officialsOK
 
         case .score:
             return true
@@ -595,7 +597,7 @@ struct NewGameWizardView: View {
         .background(Color(.systemGroupedBackground))
     }
 
-    // ✅ Staff step (unchanged)
+    // Staff step (coaching only)
     private var staffStep: some View {
         ScrollView {
             VStack(spacing: 14) {
@@ -614,7 +616,17 @@ struct NewGameWizardView: View {
                         StaffPickerField(title: "Runner", role: .runner, gradeID: gradeID, value: $runnerName)
                     }
                 }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
 
+    private var medicalStep: some View {
+        ScrollView {
+            VStack(spacing: 14) {
                 StaffCard(title: "Officials", systemImage: "flag.fill") {
                     if selectedGrade?.asksGoalUmpire ?? true {
                         StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
@@ -703,6 +715,27 @@ struct NewGameWizardView: View {
                     }
                 }
 
+                StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
+                    if selectedGrade?.asksTrainers ?? true {
+                        StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
+                        StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
+                        StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
+                        StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
+                    } else {
+                        Text("Trainer fields are disabled for this grade.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if selectedGrade?.asksNotes ?? true {
+                    StaffCard(title: "Notes", systemImage: "note.text") {
+                        TextField("Notes (optional)", text: $notes, axis: .vertical)
+                            .lineLimit(3...6)
+                            .padding(12)
+                            .background(Color(.systemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -735,38 +768,6 @@ struct NewGameWizardView: View {
         } message: {
             Text("Enter a name if no listed player was the boundary umpire.")
         }
-    }
-
-    private var medicalStep: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
-                    if selectedGrade?.asksTrainers ?? true {
-                        StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
-                        StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
-                        StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
-                        StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
-                    } else {
-                        Text("Trainer fields are disabled for this grade.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if selectedGrade?.asksNotes ?? true {
-                    StaffCard(title: "Notes", systemImage: "note.text") {
-                        TextField("Notes (optional)", text: $notes, axis: .vertical)
-                            .lineLimit(3...6)
-                            .padding(12)
-                            .background(Color(.systemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 28)
-        }
-        .background(Color(.systemGroupedBackground))
     }
 
     private var scoreStep: some View {
