@@ -629,6 +629,24 @@ private struct ContactsSettingsView: View {
             } header: {
                 Text("Required fields: Name, Mobile, Email")
             }
+
+            Section("Report Delivery") {
+                NavigationLink {
+                    ReportRecipientsSettingsView()
+                } label: {
+                    HStack {
+                        Label("Recipients By Grade", systemImage: "paperplane")
+                        Spacer()
+                        Text("\(reportRecipients.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text("Move report contacts here: choose who receives each grade's game report by Email and/or Text.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .navigationTitle("Contacts")
         .sheet(isPresented: $showAddContact) {
@@ -897,6 +915,311 @@ private struct ContactEditSheet: View {
 
 private struct ReportsSettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
+    @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
+
+    @State private var templateEditing: CustomReportTemplate?
+    @State private var isCreatingTemplate = false
+    @State private var saveErrorMessage: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if templates.isEmpty {
+                    Text("No custom reports yet. Create one to save reusable report filters.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                }
+
+                ForEach(templates) { template in
+                    Button {
+                        templateEditing = template
+                    } label: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(template.name)
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.primary)
+
+                            Text(templateDetails(for: template))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            modelContext.delete(template)
+                            saveContext()
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+
+                Button {
+                    isCreatingTemplate = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Create Custom Report")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+                .padding(.top, 4)
+            }
+            .padding(.vertical)
+        }
+        .navigationTitle("Reports")
+        .sheet(isPresented: $isCreatingTemplate) {
+            CustomReportEditView(grades: grades) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed in
+                let template = CustomReportTemplate(
+                    name: name,
+                    gradeIDs: selectedGradeIDs,
+                    includeBestPlayers: includeBestPlayers,
+                    includePlayerGrades: includePlayerGrades,
+                    includeGoalKickers: includeGoalKickers,
+                    includeGuernseyNumbers: includeGuernseyNumbers,
+                    includeBestAndFairestVotes: includeBestAndFairestVotes,
+                    includeStaffRoles: includeStaffRoles,
+                    includeTrainers: includeTrainers,
+                    includeMatchNotes: includeMatchNotes,
+                    includeOnlyActiveGrades: includeOnlyActiveGrades,
+                    minimumGamesPlayed: minimumGamesPlayed
+                )
+                modelContext.insert(template)
+                saveContext()
+            }
+            .appPopupStyle()
+        }
+        .sheet(item: $templateEditing) { template in
+            CustomReportEditView(
+                grades: grades,
+                initialName: template.name,
+                initialSelectedGradeIDs: template.gradeIDs,
+                initialIncludeBestPlayers: template.includeBestPlayers,
+                initialIncludePlayerGrades: template.includePlayerGrades,
+                initialIncludeGoalKickers: template.includeGoalKickers,
+                initialIncludeGuernseyNumbers: template.includeGuernseyNumbers,
+                initialIncludeBestAndFairestVotes: template.includeBestAndFairestVotes,
+                initialIncludeStaffRoles: template.includeStaffRoles,
+                initialIncludeTrainers: template.includeTrainers,
+                initialIncludeMatchNotes: template.includeMatchNotes,
+                initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
+                initialMinimumGamesPlayed: template.minimumGamesPlayed
+            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed in
+                template.name = name
+                template.gradeIDs = selectedGradeIDs
+                template.includeBestPlayers = includeBestPlayers
+                template.includePlayerGrades = includePlayerGrades
+                template.includeGoalKickers = includeGoalKickers
+                template.includeGuernseyNumbers = includeGuernseyNumbers
+                template.includeBestAndFairestVotes = includeBestAndFairestVotes
+                template.includeStaffRoles = includeStaffRoles
+                template.includeTrainers = includeTrainers
+                template.includeMatchNotes = includeMatchNotes
+                template.includeOnlyActiveGrades = includeOnlyActiveGrades
+                template.minimumGamesPlayed = minimumGamesPlayed
+                saveContext()
+            }
+            .appPopupStyle()
+        }
+        .alert(
+            "Save Error",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                saveErrorMessage = nil
+            }
+        } message: {
+            Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
+    }
+
+    private func templateDetails(for template: CustomReportTemplate) -> String {
+        let gradeNames = grades
+            .filter { !template.includeOnlyActiveGrades || $0.isActive }
+            .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
+            .map(\.name)
+
+        var items: [String] = []
+        if template.includeBestPlayers { items.append("Best players") }
+        if template.includePlayerGrades { items.append("Player grades") }
+        if template.includeGoalKickers { items.append("Goal kickers") }
+        if template.includeGuernseyNumbers { items.append("Guernsey numbers") }
+        if template.includeBestAndFairestVotes { items.append("B&F votes") }
+        if template.includeStaffRoles { items.append("Staff roles") }
+        if template.includeTrainers { items.append("Trainers") }
+        if template.includeMatchNotes { items.append("Match notes") }
+
+        let gradesText: String = {
+            if gradeNames.isEmpty { return "All grades" }
+            return "Grades: " + gradeNames.joined(separator: ", ")
+        }()
+
+        let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive")"
+        let sections = "Includes: " + (items.isEmpty ? "No sections selected" : items.joined(separator: ", "))
+        return [gradesText, sections, filters].joined(separator: " • ")
+    }
+
+    private func saveContext() {
+        do {
+            try modelContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct CustomReportEditView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let grades: [Grade]
+    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int) -> Void
+
+    @State private var name: String
+    @State private var selectedGradeIDs: Set<UUID>
+    @State private var includeBestPlayers: Bool
+    @State private var includePlayerGrades: Bool
+    @State private var includeGoalKickers: Bool
+    @State private var includeGuernseyNumbers: Bool
+    @State private var includeBestAndFairestVotes: Bool
+    @State private var includeStaffRoles: Bool
+    @State private var includeTrainers: Bool
+    @State private var includeMatchNotes: Bool
+    @State private var includeOnlyActiveGrades: Bool
+    @State private var minimumGamesPlayed: Int
+
+    init(
+        grades: [Grade],
+        initialName: String = "",
+        initialSelectedGradeIDs: [UUID] = [],
+        initialIncludeBestPlayers: Bool = true,
+        initialIncludePlayerGrades: Bool = true,
+        initialIncludeGoalKickers: Bool = true,
+        initialIncludeGuernseyNumbers: Bool = true,
+        initialIncludeBestAndFairestVotes: Bool = true,
+        initialIncludeStaffRoles: Bool = true,
+        initialIncludeTrainers: Bool = true,
+        initialIncludeMatchNotes: Bool = false,
+        initialIncludeOnlyActiveGrades: Bool = true,
+        initialMinimumGamesPlayed: Int = 0,
+        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int) -> Void
+    ) {
+        self.grades = grades
+        self.onSave = onSave
+        _name = State(initialValue: initialName)
+        _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
+        _includeBestPlayers = State(initialValue: initialIncludeBestPlayers)
+        _includePlayerGrades = State(initialValue: initialIncludePlayerGrades)
+        _includeGoalKickers = State(initialValue: initialIncludeGoalKickers)
+        _includeGuernseyNumbers = State(initialValue: initialIncludeGuernseyNumbers)
+        _includeBestAndFairestVotes = State(initialValue: initialIncludeBestAndFairestVotes)
+        _includeStaffRoles = State(initialValue: initialIncludeStaffRoles)
+        _includeTrainers = State(initialValue: initialIncludeTrainers)
+        _includeMatchNotes = State(initialValue: initialIncludeMatchNotes)
+        _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
+        _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
+    }
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Template") {
+                    TextField("Report name", text: $name)
+                }
+
+                Section("Grades") {
+                    ForEach(grades) { grade in
+                        Button {
+                            if selectedGradeIDs.contains(grade.id) {
+                                selectedGradeIDs.remove(grade.id)
+                            } else {
+                                selectedGradeIDs.insert(grade.id)
+                            }
+                        } label: {
+                            HStack {
+                                Text(grade.name)
+                                Spacer()
+                                if selectedGradeIDs.contains(grade.id) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                        }
+                    }
+
+                    Text("No grade selected means all grades.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Data Included") {
+                    Toggle("Best players", isOn: $includeBestPlayers)
+                    Toggle("Player grades", isOn: $includePlayerGrades)
+                    Toggle("Goal kickers", isOn: $includeGoalKickers)
+                    Toggle("Guernsey numbers", isOn: $includeGuernseyNumbers)
+                    Toggle("Best & Fairest votes", isOn: $includeBestAndFairestVotes)
+                    Toggle("Staff roles", isOn: $includeStaffRoles)
+                    Toggle("Trainers", isOn: $includeTrainers)
+                    Toggle("Match notes", isOn: $includeMatchNotes)
+                }
+
+                Section("Filters") {
+                    Toggle("Only active grades", isOn: $includeOnlyActiveGrades)
+                    Stepper("Minimum games played: \(minimumGamesPlayed)", value: $minimumGamesPlayed, in: 0...100)
+                }
+            }
+            .navigationTitle("Custom Report")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(
+                            name.trimmingCharacters(in: .whitespacesAndNewlines),
+                            Array(selectedGradeIDs),
+                            includeBestPlayers,
+                            includePlayerGrades,
+                            includeGoalKickers,
+                            includeGuernseyNumbers,
+                            includeBestAndFairestVotes,
+                            includeStaffRoles,
+                            includeTrainers,
+                            includeMatchNotes,
+                            includeOnlyActiveGrades,
+                            minimumGamesPlayed
+                        )
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+}
+
+private struct ReportRecipientsSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
 
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
@@ -912,12 +1235,9 @@ private struct ReportsSettingsView: View {
 
         var title: String {
             switch self {
-            case .text:
-                return "Text"
-            case .email:
-                return "Email"
-            case .both:
-                return "Email + Text"
+            case .text: return "Text"
+            case .email: return "Email"
+            case .both: return "Email + Text"
             }
         }
     }
@@ -1032,7 +1352,7 @@ private struct ReportsSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Reports")
+        .navigationTitle("Report Recipients")
         .alert(
             "Save Error",
             isPresented: Binding(
@@ -1058,10 +1378,6 @@ private struct ReportsSettingsView: View {
             }
     }
 
-    private func addContact(_ contact: Contact, toGrade gradeID: UUID) {
-        addContact(contact, toGrade: gradeID, sendMode: .both)
-    }
-
     private func addContact(_ contact: Contact, toGrade gradeID: UUID, sendMode: SendMode) {
         guard !reportRecipients.contains(where: {
             $0.gradeID == gradeID && $0.contactID == contact.id
@@ -1083,14 +1399,10 @@ private struct ReportsSettingsView: View {
 
     private func sendModeText(_ recipient: ReportRecipient) -> String {
         switch (recipient.sendEmail, recipient.sendText) {
-        case (true, true):
-            return "Send via Email + Text"
-        case (true, false):
-            return "Send via Email"
-        case (false, true):
-            return "Send via Text"
-        case (false, false):
-            return "Send via Email"
+        case (true, true): return "Send via Email + Text"
+        case (true, false): return "Send via Email"
+        case (false, true): return "Send via Text"
+        case (false, false): return "Send via Email"
         }
     }
 
