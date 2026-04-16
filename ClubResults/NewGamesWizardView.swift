@@ -466,6 +466,10 @@ struct NewGameWizardView: View {
         }
     }
 
+    private var canProceedOnCurrentStep: Bool {
+        step == .medical ? true : canProceed
+    }
+
     // MARK: Body
     var body: some View {
         NavigationStack {
@@ -505,17 +509,17 @@ struct NewGameWizardView: View {
                         Button("Save Draft") {
                             _ = saveGame(asDraft: true, dismissOnSuccess: true)
                         }
-                        .disabled(!canProceed)
+                        .disabled(!canProceedOnCurrentStep)
                         .buttonStyle(.bordered)
 
                         Button("Save and Send") {
                             saveAndSendReport()
                         }
-                        .disabled(!canProceed)
+                        .disabled(!canProceedOnCurrentStep)
                         .buttonStyle(.borderedProminent)
                     } else {
                         Button("Next") { next() }
-                            .disabled(!canProceed)
+                            .disabled(!canProceedOnCurrentStep)
                             .buttonStyle(.borderedProminent)
                     }
                 }
