@@ -173,12 +173,11 @@ struct GradeLookup {
     func ids(forRawGradeField raw: String?, unknownCollector: inout Set<String>) -> [UUID] {
         guard let raw else { return [] }
 
+        // Support multiple grades in a single cell separated by comma/semicolon.
+        // We continue to accept "/" and "|" as legacy separators.
         let parts = raw
-            .replacingOccurrences(of: ";", with: "|")
-            .replacingOccurrences(of: "/", with: "|")
-            .components(separatedBy: "|")
-            .flatMap { $0.components(separatedBy: ",") }
-            .map { $0.trimmed }
+            .split(whereSeparator: { [",", ";", "/", "|"].contains($0) })
+            .map { String($0).trimmed }
             .filter { !$0.isEmpty }
 
         var ids: [UUID] = []
