@@ -64,7 +64,7 @@ struct StaffPickerField: View {
     }
 
     private var chooserExpandedDetent: PresentationDetent {
-        horizontalSizeClass == .compact ? .large : .fraction(0.98)
+        PickerSheetPresentation.expandedDetent(isCompactLayout: isCompactLayout)
     }
 
     var body: some View {
@@ -146,11 +146,10 @@ struct StaffPickerField: View {
             }
             .presentationDetents([.height(chooserHeight), chooserExpandedDetent], selection: $chooserDetent)
             .presentationDragIndicator(.visible)
-            .onAppear {
-                chooserDetent = chooserExpandedDetent
-            }
             .onChange(of: options.count) { _, _ in
-                chooserDetent = chooserExpandedDetent
+                if showChooser {
+                    chooserDetent = .height(chooserHeight)
+                }
             }
             .onChange(of: showChooser) { _, isPresented in
                 if isPresented {

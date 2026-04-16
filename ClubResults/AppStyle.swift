@@ -21,6 +21,10 @@ enum PickerSheetPresentation {
 
         return min(max(desiredHeight, minHeight), maxHeight)
     }
+
+    static func expandedDetent(isCompactLayout: Bool) -> PresentationDetent {
+        isCompactLayout ? .large : .fraction(0.98)
+    }
 }
 
 enum AppStyle {

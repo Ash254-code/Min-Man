@@ -92,8 +92,10 @@ struct NewGameWizardView: View {
     // MARK: Goals + best players
     @State private var goalKickers: [WizardGoalKickerEntry] = []
     @State private var goalKickerPickerPrompt: UUID?
+    @State private var goalKickerPickerDetent: PresentationDetent = .large
     @State private var bestRanked: [UUID?] = Array(repeating: nil, count: 6)
     @State private var bestPlayerPickerPrompt: Int?
+    @State private var bestPlayerPickerDetent: PresentationDetent = .large
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
     @State private var scannerErrorMessage: String?
@@ -220,7 +222,39 @@ struct NewGameWizardView: View {
     }
 
     private var setupPickerExpandedDetent: PresentationDetent {
-        isCompactLayout ? .large : .fraction(0.98)
+        PickerSheetPresentation.expandedDetent(isCompactLayout: isCompactLayout)
+    }
+
+    private var selectorPickerRowHeight: CGFloat { isCompactLayout ? 56 : 72 }
+
+    private var selectorPickerHeaderAndPaddingHeight: CGFloat { isCompactLayout ? 112 : 132 }
+
+    private var goalKickerPickerOptionsCount: Int {
+        eligiblePlayers.count + 1 // "Select…" + players
+    }
+
+    private var goalKickerPickerHeight: CGFloat {
+        PickerSheetPresentation.preferredHeight(
+            optionCount: goalKickerPickerOptionsCount,
+            rowHeight: selectorPickerRowHeight,
+            chromeHeight: selectorPickerHeaderAndPaddingHeight,
+            minVisibleRows: 3,
+            isCompactLayout: isCompactLayout
+        )
+    }
+
+    private var bestPlayerPickerOptionsCount: Int {
+        eligiblePlayers.count + 1 // "Select…" + players
+    }
+
+    private var bestPlayerPickerHeight: CGFloat {
+        PickerSheetPresentation.preferredHeight(
+            optionCount: bestPlayerPickerOptionsCount,
+            rowHeight: selectorPickerRowHeight,
+            chromeHeight: selectorPickerHeaderAndPaddingHeight,
+            minVisibleRows: 3,
+            isCompactLayout: isCompactLayout
+        )
     }
 
     // MARK: Defaults (from SwiftData)
@@ -998,7 +1032,7 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .presentationDetents([.height(boundaryPickerHeight), .large], selection: $boundaryUmpirePickerDetent)
+            .presentationDetents([.height(boundaryPickerHeight), setupPickerExpandedDetent], selection: $boundaryUmpirePickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
                 boundaryUmpirePickerDetent = .height(boundaryPickerHeight)
@@ -1237,8 +1271,14 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.height(goalKickerPickerHeight), setupPickerExpandedDetent], selection: $goalKickerPickerDetent)
             .presentationDragIndicator(.visible)
+            .onAppear {
+                goalKickerPickerDetent = .height(goalKickerPickerHeight)
+            }
+            .onChange(of: goalKickerPickerPrompt) { _, _ in
+                goalKickerPickerDetent = .height(goalKickerPickerHeight)
+            }
         }
     }
 
@@ -1321,8 +1361,14 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.height(bestPlayerPickerHeight), setupPickerExpandedDetent], selection: $bestPlayerPickerDetent)
             .presentationDragIndicator(.visible)
+            .onAppear {
+                bestPlayerPickerDetent = .height(bestPlayerPickerHeight)
+            }
+            .onChange(of: bestPlayerPickerPrompt) { _, _ in
+                bestPlayerPickerDetent = .height(bestPlayerPickerHeight)
+            }
         }
     }
 
