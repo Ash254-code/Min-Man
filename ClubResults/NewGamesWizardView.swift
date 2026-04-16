@@ -54,7 +54,6 @@ struct NewGameWizardView: View {
     @State private var venueName: String = ""
     @State private var setupPickerPrompt: SetupPickerPrompt?
     @State private var setupPickerDetent: PresentationDetent = .large
-    @State private var boundaryUmpirePickerDetent: PresentationDetent = .large
 
     // MARK: Staff
     @State private var headCoachName: String = ""
