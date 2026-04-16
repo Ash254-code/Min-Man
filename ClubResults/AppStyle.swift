@@ -1,4 +1,27 @@
 import SwiftUI
+import UIKit
+
+enum PickerSheetPresentation {
+    static func preferredHeight(
+        optionCount: Int,
+        rowHeight: CGFloat,
+        chromeHeight: CGFloat,
+        minVisibleRows: Int = 3,
+        isCompactLayout: Bool
+    ) -> CGFloat {
+        let screenHeight = UIScreen.main.bounds.height
+        let topAndBottomMargin: CGFloat = isCompactLayout ? 20 : 56
+        let maxHeight = max(
+            chromeHeight + (rowHeight * CGFloat(minVisibleRows)),
+            screenHeight - topAndBottomMargin
+        )
+
+        let minHeight = chromeHeight + (rowHeight * CGFloat(minVisibleRows))
+        let desiredHeight = chromeHeight + (rowHeight * CGFloat(max(optionCount, 0)))
+
+        return min(max(desiredHeight, minHeight), maxHeight)
+    }
+}
 
 enum AppStyle {
     static let background = Color("AppBackground")   // your global background

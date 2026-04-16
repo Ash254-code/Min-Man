@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UIKit
 
 struct StaffPickerField: View {
 
@@ -17,7 +16,7 @@ struct StaffPickerField: View {
     @State private var showAdd = false
     @State private var showChooser = false
     @State private var newName = ""
-    @State private var chooserDetent: PresentationDetent = .medium
+    @State private var chooserDetent: PresentationDetent = .large
 
     private var options: [String] {
         guard let gradeID else { return [] }
@@ -52,22 +51,16 @@ struct StaffPickerField: View {
         options.count + 2 // "Select…" + "Add New"
     }
 
-    private var chooserMinimumHeight: CGFloat {
-        chooserHeaderAndPaddingHeight + (chooserRowHeight * 3)
-    }
-
-    private var chooserMaximumHeight: CGFloat {
-        let screenHeight = UIScreen.main.bounds.height
-        let reservedSpace: CGFloat = horizontalSizeClass == .compact ? 180 : 240
-        return max(chooserMinimumHeight, screenHeight - reservedSpace)
-    }
-
-    private var chooserDesiredHeight: CGFloat {
-        chooserHeaderAndPaddingHeight + (CGFloat(chooserOptionsCount) * chooserRowHeight)
-    }
+    private var isCompactLayout: Bool { horizontalSizeClass == .compact }
 
     private var chooserHeight: CGFloat {
-        min(max(chooserDesiredHeight, chooserMinimumHeight), chooserMaximumHeight)
+        PickerSheetPresentation.preferredHeight(
+            optionCount: chooserOptionsCount,
+            rowHeight: chooserRowHeight,
+            chromeHeight: chooserHeaderAndPaddingHeight,
+            minVisibleRows: 3,
+            isCompactLayout: isCompactLayout
+        )
     }
 
     var body: some View {
@@ -154,6 +147,11 @@ struct StaffPickerField: View {
             }
             .onChange(of: options.count) { _, _ in
                 chooserDetent = .height(chooserHeight)
+            }
+            .onChange(of: showChooser) { _, isPresented in
+                if isPresented {
+                    chooserDetent = .height(chooserHeight)
+                }
             }
         }
         .sheet(isPresented: $showAdd) {
