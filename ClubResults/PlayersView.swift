@@ -155,9 +155,9 @@ struct PlayersView: View {
             } message: {
                 if let selectedGradeID = effectiveSelectedGradeID,
                    let selected = activeGrades.first(where: { $0.id == selectedGradeID }) {
-                    Text("Choose what happens when a player name already exists. Rows without a grade will default to \(selected.name).")
+                    Text("Choose what happens when a player name already exists. Rows without a grade will default to \(selected.name). You can import multiple grades in one cell using commas or semicolons.")
                 } else {
-                    Text("Choose what happens when a player name already exists.")
+                    Text("Choose what happens when a player name already exists. You can import multiple grades in one cell using commas or semicolons.")
                 }
             }
 
