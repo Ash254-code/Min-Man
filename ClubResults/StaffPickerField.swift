@@ -17,7 +17,7 @@ struct StaffPickerField: View {
     @State private var showAdd = false
     @State private var showChooser = false
     @State private var newName = ""
-    @State private var chooserDetent: PresentationDetent = .medium
+    @State private var chooserDetent: PresentationDetent = .large
 
     private var options: [String] {
         guard let gradeID else { return [] }
@@ -68,6 +68,10 @@ struct StaffPickerField: View {
 
     private var chooserHeight: CGFloat {
         min(max(chooserDesiredHeight, chooserMinimumHeight), chooserMaximumHeight)
+    }
+
+    private var chooserExpandedDetent: PresentationDetent {
+        horizontalSizeClass == .compact ? .large : .fraction(0.98)
     }
 
     var body: some View {
@@ -147,13 +151,13 @@ struct StaffPickerField: View {
                     }
                 }
             }
-            .presentationDetents([.height(chooserHeight), .large], selection: $chooserDetent)
+            .presentationDetents([.height(chooserHeight), chooserExpandedDetent], selection: $chooserDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                chooserDetent = .height(chooserHeight)
+                chooserDetent = chooserExpandedDetent
             }
             .onChange(of: options.count) { _, _ in
-                chooserDetent = .height(chooserHeight)
+                chooserDetent = chooserExpandedDetent
             }
         }
         .sheet(isPresented: $showAdd) {

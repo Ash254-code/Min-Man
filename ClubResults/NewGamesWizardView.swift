@@ -69,6 +69,7 @@ struct NewGameWizardView: View {
     @State private var boundaryUmpire1CustomName: String = ""
     @State private var boundaryUmpire2CustomName: String = ""
     @State private var boundaryUmpirePickerPrompt: BoundaryUmpireSlot?
+    @State private var boundaryUmpirePickerDetent: PresentationDetent = .large
     @State private var boundaryUmpireNamePrompt: BoundaryUmpireSlot?
     @State private var boundaryUmpireNameDraft: String = ""
 
@@ -956,8 +957,14 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.medium, setupPickerExpandedDetent], selection: $boundaryUmpirePickerDetent)
             .presentationDragIndicator(.visible)
+            .onAppear {
+                boundaryUmpirePickerDetent = setupPickerExpandedDetent
+            }
+            .onChange(of: boundaryUmpirePickerPrompt) { _, _ in
+                boundaryUmpirePickerDetent = setupPickerExpandedDetent
+            }
         }
         .alert(
             boundaryUmpireNamePrompt == .one ? "Boundary Umpire 1" : "Boundary Umpire 2",
