@@ -52,6 +52,7 @@ struct NewGameWizardView: View {
     // MARK: Selections (dropdowns)
     @State private var opponentName: String = ""
     @State private var venueName: String = ""
+    @State private var setupPickerPrompt: SetupPickerPrompt?
 
     // MARK: Staff
     @State private var headCoachName: String = ""
@@ -66,6 +67,7 @@ struct NewGameWizardView: View {
     @State private var boundaryUmpire2ID: UUID?
     @State private var boundaryUmpire1CustomName: String = ""
     @State private var boundaryUmpire2CustomName: String = ""
+    @State private var boundaryUmpirePickerPrompt: BoundaryUmpireSlot?
     @State private var boundaryUmpireNamePrompt: BoundaryUmpireSlot?
     @State private var boundaryUmpireNameDraft: String = ""
 
@@ -258,6 +260,11 @@ struct NewGameWizardView: View {
         case two
     }
 
+    private enum SetupPickerPrompt {
+        case opponent
+        case venue
+    }
+
     private var isCompactLayout: Bool { horizontalSizeClass == .compact }
 
     private var wizardPrimaryTitleFont: Font {
@@ -316,6 +323,57 @@ struct NewGameWizardView: View {
         Text(text.isEmpty ? "Select…" : text)
             .font(wizardBodyFont)
             .foregroundStyle(text.isEmpty ? .secondary : .primary)
+    }
+
+    private var selectorListFont: Font {
+        .system(size: isCompactLayout ? 24 : 28, weight: .semibold)
+    }
+
+    @ViewBuilder
+    private func formSelectorRow(
+        title: String,
+        value: String,
+        placeholder: String = "Select…",
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(wizardBodyFont)
+                    .foregroundStyle(disabled ? .secondary : .primary)
+                Spacer()
+                Text(value.isEmpty ? placeholder : value)
+                    .font(wizardBodyFont)
+                    .foregroundStyle(value.isEmpty || disabled ? .secondary : .primary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, isCompactLayout ? 6 : 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.65 : 1)
+    }
+
+    @ViewBuilder
+    private func selectorListRow(title: String, selected: Bool) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(selectorListFont)
+                .foregroundStyle(.primary)
+            Spacer()
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: isCompactLayout ? 22 : 26, weight: .semibold))
+                    .foregroundStyle(.tint)
+            }
+        }
+        .padding(.vertical, isCompactLayout ? 8 : 12)
+        .contentShape(Rectangle())
     }
 
     // MARK: Goal allocation helpers
@@ -568,27 +626,17 @@ struct NewGameWizardView: View {
                 Section("Game details") {
                     DatePicker("Date", selection: $date, displayedComponents: .date)
 
-                    Picker("Opponent", selection: $opponentName) {
-                        Text("Select…").tag("")
-                        ForEach(opponentNames, id: \.self) { o in
-                            Text(o).tag(o)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .onChange(of: opponentName) { _, _ in
-                        if !venuesForSelection.contains(venueName) {
-                            venueName = ""
-                        }
+                    formSelectorRow(title: "Opponent", value: opponentName) {
+                        setupPickerPrompt = .opponent
                     }
 
-                    Picker("Venue", selection: $venueName) {
-                        Text("Select…").tag("")
-                        ForEach(venuesForSelection, id: \.self) { v in
-                            Text(v).tag(v)
-                        }
+                    formSelectorRow(
+                        title: "Venue",
+                        value: venueName,
+                        disabled: venuesForSelection.isEmpty
+                    ) {
+                        setupPickerPrompt = .venue
                     }
-                    .pickerStyle(.menu)
-                    .disabled(venuesForSelection.isEmpty)
                 }
             }
             .font(wizardBodyFont)
@@ -597,6 +645,74 @@ struct NewGameWizardView: View {
         .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
+        .sheet(
+            isPresented: Binding(
+                get: { setupPickerPrompt != nil },
+                set: { if !$0 { setupPickerPrompt = nil } }
+            )
+        ) {
+            NavigationStack {
+                List {
+                    switch setupPickerPrompt {
+                    case .opponent:
+                        Button {
+                            opponentName = ""
+                            venueName = ""
+                            setupPickerPrompt = nil
+                        } label: {
+                            selectorListRow(title: "Select…", selected: opponentName.isEmpty)
+                        }
+                        .buttonStyle(.plain)
+
+                        ForEach(opponentNames, id: \.self) { opposition in
+                            Button {
+                                opponentName = opposition
+                                if !venuesForSelection.contains(venueName) {
+                                    venueName = ""
+                                }
+                                setupPickerPrompt = nil
+                            } label: {
+                                selectorListRow(title: opposition, selected: opponentName == opposition)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                    case .venue:
+                        Button {
+                            venueName = ""
+                            setupPickerPrompt = nil
+                        } label: {
+                            selectorListRow(title: "Select…", selected: venueName.isEmpty)
+                        }
+                        .buttonStyle(.plain)
+
+                        ForEach(venuesForSelection, id: \.self) { venue in
+                            Button {
+                                venueName = venue
+                                setupPickerPrompt = nil
+                            } label: {
+                                selectorListRow(title: venue, selected: venueName == venue)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                    case .none:
+                        EmptyView()
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .navigationTitle(setupPickerPrompt == .venue ? "Select Venue" : "Select Opponent")
+                .navigationBarTitleDisplayMode(.inline)
+                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { setupPickerPrompt = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     // Staff step (coaching only)
@@ -641,25 +757,8 @@ struct NewGameWizardView: View {
                         HStack(spacing: 12) {
                             rowLabel("Boundary Umpire 1")
                             Spacer()
-                            Menu {
-                                Button("Select…") {
-                                    boundaryUmpire1ID = nil
-                                    boundaryUmpire1CustomName = ""
-                                }
-                                Divider()
-                                ForEach(boundaryUmpirePlayers) { person in
-                                    if person.id != boundaryUmpire2ID {
-                                        Button(person.name) {
-                                            boundaryUmpire1ID = person.id
-                                            boundaryUmpire1CustomName = ""
-                                        }
-                                    }
-                                }
-                                Divider()
-                                Button("Enter different name…") {
-                                    boundaryUmpireNameDraft = boundaryUmpire1CustomName
-                                    boundaryUmpireNamePrompt = .one
-                                }
+                            Button {
+                                boundaryUmpirePickerPrompt = .one
                             } label: {
                                 HStack(spacing: 6) {
                                     rowValue(finalBoundary1)
@@ -669,6 +768,7 @@ struct NewGameWizardView: View {
                                 }
                                 .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                         .padding(.vertical, 4)
                     }
@@ -677,25 +777,8 @@ struct NewGameWizardView: View {
                         HStack(spacing: 12) {
                             rowLabel("Boundary Umpire 2")
                             Spacer()
-                            Menu {
-                                Button("Select…") {
-                                    boundaryUmpire2ID = nil
-                                    boundaryUmpire2CustomName = ""
-                                }
-                                Divider()
-                                ForEach(boundaryUmpirePlayers) { person in
-                                    if person.id != boundaryUmpire1ID {
-                                        Button(person.name) {
-                                            boundaryUmpire2ID = person.id
-                                            boundaryUmpire2CustomName = ""
-                                        }
-                                    }
-                                }
-                                Divider()
-                                Button("Enter different name…") {
-                                    boundaryUmpireNameDraft = boundaryUmpire2CustomName
-                                    boundaryUmpireNamePrompt = .two
-                                }
+                            Button {
+                                boundaryUmpirePickerPrompt = .two
                             } label: {
                                 HStack(spacing: 6) {
                                     rowValue(finalBoundary2)
@@ -705,6 +788,7 @@ struct NewGameWizardView: View {
                                 }
                                 .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                         .padding(.vertical, 4)
                     }
@@ -746,6 +830,90 @@ struct NewGameWizardView: View {
         .font(wizardBodyFont)
         .dynamicTypeSize(.large ... .accessibility2)
         .background(Color(.systemGroupedBackground))
+        .sheet(
+            isPresented: Binding(
+                get: { boundaryUmpirePickerPrompt != nil },
+                set: { if !$0 { boundaryUmpirePickerPrompt = nil } }
+            )
+        ) {
+            NavigationStack {
+                List {
+                    Button {
+                        if boundaryUmpirePickerPrompt == .one {
+                            boundaryUmpire1ID = nil
+                            boundaryUmpire1CustomName = ""
+                        } else if boundaryUmpirePickerPrompt == .two {
+                            boundaryUmpire2ID = nil
+                            boundaryUmpire2CustomName = ""
+                        }
+                        boundaryUmpirePickerPrompt = nil
+                    } label: {
+                        selectorListRow(
+                            title: "Select…",
+                            selected: boundaryUmpirePickerPrompt == .one ? finalBoundary1.isEmpty : finalBoundary2.isEmpty
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(boundaryUmpirePlayers) { person in
+                        if (boundaryUmpirePickerPrompt == .one && person.id != boundaryUmpire2ID) ||
+                            (boundaryUmpirePickerPrompt == .two && person.id != boundaryUmpire1ID) {
+                            Button {
+                                if boundaryUmpirePickerPrompt == .one {
+                                    boundaryUmpire1ID = person.id
+                                    boundaryUmpire1CustomName = ""
+                                } else if boundaryUmpirePickerPrompt == .two {
+                                    boundaryUmpire2ID = person.id
+                                    boundaryUmpire2CustomName = ""
+                                }
+                                boundaryUmpirePickerPrompt = nil
+                            } label: {
+                                selectorListRow(
+                                    title: person.name,
+                                    selected: boundaryUmpirePickerPrompt == .one ? boundaryUmpire1ID == person.id : boundaryUmpire2ID == person.id
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Section {
+                        Button {
+                            if boundaryUmpirePickerPrompt == .one {
+                                boundaryUmpireNameDraft = boundaryUmpire1CustomName
+                                boundaryUmpireNamePrompt = .one
+                            } else if boundaryUmpirePickerPrompt == .two {
+                                boundaryUmpireNameDraft = boundaryUmpire2CustomName
+                                boundaryUmpireNamePrompt = .two
+                            }
+                            boundaryUmpirePickerPrompt = nil
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.system(size: isCompactLayout ? 22 : 26, weight: .semibold))
+                                    .foregroundStyle(.tint)
+                                Text("Enter Different Name")
+                                    .font(selectorListFont)
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(.vertical, isCompactLayout ? 8 : 12)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .navigationTitle(boundaryUmpirePickerPrompt == .two ? "Boundary Umpire 2" : "Boundary Umpire 1")
+                .navigationBarTitleDisplayMode(.inline)
+                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { boundaryUmpirePickerPrompt = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .alert(
             boundaryUmpireNamePrompt == .one ? "Boundary Umpire 1" : "Boundary Umpire 2",
             isPresented: Binding(

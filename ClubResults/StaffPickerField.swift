@@ -14,6 +14,7 @@ struct StaffPickerField: View {
     @Query private var staffMembers: [StaffMember]
 
     @State private var showAdd = false
+    @State private var showChooser = false
     @State private var newName = ""
 
     private var options: [String] {
@@ -37,6 +38,10 @@ struct StaffPickerField: View {
         .system(size: horizontalSizeClass == .compact ? 20 : 24, weight: .regular)
     }
 
+    private var chooserTitleFont: Font {
+        .system(size: horizontalSizeClass == .compact ? 24 : 28, weight: .semibold)
+    }
+
     var body: some View {
 
         HStack(spacing: 12) {
@@ -44,25 +49,79 @@ struct StaffPickerField: View {
                 .font(fieldFont)
             Spacer()
 
-            Menu {
-                ForEach(options, id: \.self) { name in
-                    Button(name) { value = name }
-                }
-
-                Divider()
-
-                Button("Add new…") {
-                    newName = ""
-                    showAdd = true
-                }
-
+            Button {
+                showChooser = true
             } label: {
                 Text(value.isEmpty ? "Select…" : value)
                     .font(fieldFont)
                     .foregroundStyle(value.isEmpty ? .secondary : .primary)
+                    .lineLimit(1)
+                    .padding(.horizontal, horizontalSizeClass == .compact ? 14 : 18)
+                    .padding(.vertical, horizontalSizeClass == .compact ? 10 : 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(.secondarySystemBackground))
+                    )
             }
+            .buttonStyle(.plain)
+            .disabled(gradeID == nil)
         }
         .padding(.vertical, horizontalSizeClass == .compact ? 6 : 10)
+        .sheet(isPresented: $showChooser) {
+            NavigationStack {
+                List {
+                    Button {
+                        value = ""
+                        showChooser = false
+                    } label: {
+                        chooserRow(title: "Select…", selected: value.isEmpty)
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(options, id: \.self) { name in
+                        Button {
+                            value = name
+                            showChooser = false
+                        } label: {
+                            chooserRow(title: name, selected: value == name)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Section {
+                        Button {
+                            showChooser = false
+                            newName = ""
+                            DispatchQueue.main.async {
+                                showAdd = true
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundStyle(.tint)
+                                Text("Add New")
+                                    .font(.system(size: horizontalSizeClass == .compact ? 22 : 26, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(.vertical, horizontalSizeClass == .compact ? 8 : 12)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .environment(\.defaultMinListRowHeight, horizontalSizeClass == .compact ? 56 : 72)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { showChooser = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showAdd) {
             NavigationStack {
                 VStack(alignment: .leading, spacing: 16) {
@@ -122,6 +181,26 @@ struct StaffPickerField: View {
         } else {
             showAdd = false
         }
+    }
+
+    @ViewBuilder
+    private func chooserRow(title: String, selected: Bool) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(chooserTitleFont)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer()
+
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: horizontalSizeClass == .compact ? 22 : 26, weight: .semibold))
+                    .foregroundStyle(.tint)
+            }
+        }
+        .padding(.vertical, horizontalSizeClass == .compact ? 8 : 12)
+        .contentShape(Rectangle())
     }
 }
 
