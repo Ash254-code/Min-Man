@@ -53,6 +53,7 @@ struct NewGameWizardView: View {
     @State private var opponentName: String = ""
     @State private var venueName: String = ""
     @State private var setupPickerPrompt: SetupPickerPrompt?
+    @State private var setupPickerDetent: PresentationDetent = .fraction(0.82)
 
     // MARK: Staff
     @State private var headCoachName: String = ""
@@ -710,7 +711,7 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.fraction(0.82), .large], selection: $setupPickerDetent)
             .presentationDragIndicator(.visible)
         }
     }
