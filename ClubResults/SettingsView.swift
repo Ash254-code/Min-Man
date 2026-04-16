@@ -917,8 +917,12 @@ private struct ReportsSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
+    @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
 
     @State private var templateEditing: CustomReportTemplate?
+    @State private var templateActioning: CustomReportTemplate?
+    @State private var templatePreviewing: CustomReportTemplate?
+    @State private var templateSharing: CustomReportTemplate?
     @State private var isCreatingTemplate = false
     @State private var saveErrorMessage: String?
 
@@ -934,7 +938,7 @@ private struct ReportsSettingsView: View {
 
                 ForEach(templates) { template in
                     Button {
-                        templateEditing = template
+                        templateActioning = template
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(template.name)
@@ -981,6 +985,30 @@ private struct ReportsSettingsView: View {
             .padding(.vertical)
         }
         .navigationTitle("Reports")
+        .confirmationDialog(
+            templateActioning?.name ?? "Custom Report",
+            isPresented: Binding(
+                get: { templateActioning != nil },
+                set: { if !$0 { templateActioning = nil } }
+            )
+        ) {
+            if let template = templateActioning {
+                Button("Preview") {
+                    templatePreviewing = template
+                }
+                Button("Share") {
+                    templateSharing = template
+                }
+                Button("Edit") {
+                    templateEditing = template
+                }
+                Button("Delete", role: .destructive) {
+                    modelContext.delete(template)
+                    saveContext()
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+        }
         .sheet(isPresented: $isCreatingTemplate) {
             CustomReportEditView(grades: grades) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed in
                 let template = CustomReportTemplate(
@@ -1000,6 +1028,18 @@ private struct ReportsSettingsView: View {
                 modelContext.insert(template)
                 saveContext()
             }
+            .appPopupStyle()
+        }
+        .sheet(item: $templatePreviewing) { template in
+            CustomReportPreviewView(template: template, grades: grades)
+                .appPopupStyle()
+        }
+        .sheet(item: $templateSharing) { template in
+            CustomReportShareView(
+                template: template,
+                grades: grades,
+                contacts: contacts
+            )
             .appPopupStyle()
         }
         .sheet(item: $templateEditing) { template in
@@ -1050,29 +1090,7 @@ private struct ReportsSettingsView: View {
     }
 
     private func templateDetails(for template: CustomReportTemplate) -> String {
-        let gradeNames = grades
-            .filter { !template.includeOnlyActiveGrades || $0.isActive }
-            .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
-            .map(\.name)
-
-        var items: [String] = []
-        if template.includeBestPlayers { items.append("Best players") }
-        if template.includePlayerGrades { items.append("Player grades") }
-        if template.includeGoalKickers { items.append("Goal kickers") }
-        if template.includeGuernseyNumbers { items.append("Guernsey numbers") }
-        if template.includeBestAndFairestVotes { items.append("B&F votes") }
-        if template.includeStaffRoles { items.append("Staff roles") }
-        if template.includeTrainers { items.append("Trainers") }
-        if template.includeMatchNotes { items.append("Match notes") }
-
-        let gradesText: String = {
-            if gradeNames.isEmpty { return "All grades" }
-            return "Grades: " + gradeNames.joined(separator: ", ")
-        }()
-
-        let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive")"
-        let sections = "Includes: " + (items.isEmpty ? "No sections selected" : items.joined(separator: ", "))
-        return [gradesText, sections, filters].joined(separator: " • ")
+        templateDetails(for: template, grades: grades)
     }
 
     private func saveContext() {
@@ -1082,6 +1100,147 @@ private struct ReportsSettingsView: View {
             saveErrorMessage = error.localizedDescription
         }
     }
+}
+
+private struct CustomReportPreviewView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let template: CustomReportTemplate
+    let grades: [Grade]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Report Name") {
+                    Text(template.name)
+                        .font(.headline)
+                }
+
+                Section("Preview") {
+                    Text(templateDetails(for: template, grades: grades))
+                        .font(.subheadline)
+                }
+            }
+            .navigationTitle("Preview")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct CustomReportShareView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let template: CustomReportTemplate
+    let grades: [Grade]
+    let contacts: [Contact]
+
+    @State private var selectedContactIDs: Set<UUID> = []
+    @State private var shareItems: [Any] = []
+    @State private var showShareSheet = false
+
+    private var selectedContacts: [Contact] {
+        contacts.filter { selectedContactIDs.contains($0.id) }
+    }
+
+    private var shareMessage: String {
+        var lines: [String] = []
+        lines.append("Custom report: \(template.name)")
+        lines.append(templateDetails(for: template, grades: grades))
+        if selectedContacts.isEmpty {
+            lines.append("Selected contacts: none")
+        } else {
+            lines.append("Selected contacts: \(selectedContacts.map(\\.name).joined(separator: \", \"))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Select Contacts") {
+                    if contacts.isEmpty {
+                        Text("No contacts found. Add contacts in Settings > Contacts first.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(contacts) { contact in
+                            Button {
+                                if selectedContactIDs.contains(contact.id) {
+                                    selectedContactIDs.remove(contact.id)
+                                } else {
+                                    selectedContactIDs.insert(contact.id)
+                                }
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(contact.name)
+                                        Text(contact.email)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if selectedContactIDs.contains(contact.id) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Share Report")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Share") {
+                        shareItems = [shareMessage]
+                        showShareSheet = true
+                    }
+                    .disabled(contacts.isEmpty)
+                }
+            }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheet(items: shareItems)
+        }
+    }
+}
+
+private func templateDetails(for template: CustomReportTemplate, grades: [Grade]) -> String {
+    let gradeNames = grades
+        .filter { !template.includeOnlyActiveGrades || $0.isActive }
+        .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
+        .map(\.name)
+
+    var items: [String] = []
+    if template.includeBestPlayers { items.append("Best players") }
+    if template.includePlayerGrades { items.append("Player grades") }
+    if template.includeGoalKickers { items.append("Goal kickers") }
+    if template.includeGuernseyNumbers { items.append("Guernsey numbers") }
+    if template.includeBestAndFairestVotes { items.append("B&F votes") }
+    if template.includeStaffRoles { items.append("Staff roles") }
+    if template.includeTrainers { items.append("Trainers") }
+    if template.includeMatchNotes { items.append("Match notes") }
+
+    let gradesText: String = {
+        if gradeNames.isEmpty { return "All grades" }
+        return "Grades: " + gradeNames.joined(separator: ", ")
+    }()
+
+    let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive")"
+    let sections = "Includes: " + (items.isEmpty ? "No sections selected" : items.joined(separator: ", "))
+    return [gradesText, sections, filters].joined(separator: " • ")
 }
 
 private struct CustomReportEditView: View {
