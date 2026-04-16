@@ -235,6 +235,9 @@ private struct ClubGradesSettingsView: View {
                             }
                         }
                         Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
