@@ -92,9 +92,11 @@ struct CSVHeaderMap {
     var hasAnyRecognizedColumn: Bool { firstNameIndex != nil || lastNameIndex != nil || legacyNameIndex != nil }
 
     init(header: [String]) {
+        let normalizedHeader = header.map(Self.normalizeHeader)
+
         func find(_ candidates: [String]) -> Int? {
-            for c in candidates {
-                if let idx = header.firstIndex(of: c) { return idx }
+            for c in candidates.map(Self.normalizeHeader) {
+                if let idx = normalizedHeader.firstIndex(of: c) { return idx }
             }
             return nil
         }
@@ -104,6 +106,15 @@ struct CSVHeaderMap {
         legacyNameIndex = find(["name", "player", "playername", "player name"])
         numberIndex = find(["number", "no", "guernsey", "jumper", "jumper number", "guernsey number"])
         gradesIndex = find(["grades", "grade", "grade(s)", "teams", "team"])
+    }
+
+    private static func normalizeHeader(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "\u{feff}", with: "")
+            .trimmedLowercased
+            .replacingOccurrences(of: #"[^a-z0-9 ]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmed
     }
 }
 
