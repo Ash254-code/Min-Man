@@ -141,7 +141,7 @@ struct PlayersView: View {
                     importMode = .skipDuplicates
                     runCSVImportIfPossible()
                 }
-                Button("Update existing (match by name)") {
+                Button("Update existing (match by full name)") {
                     importMode = .updateExisting
                     runCSVImportIfPossible()
                 }
@@ -418,10 +418,11 @@ struct PlayersView: View {
         }
 
         for row in parsedRows {
-            let normName = normalizeName(row.name)
+            let fullName = row.fullName
+            let normName = normalizeName(fullName)
             if normName.isEmpty {
                 result.skipped += 1
-                result.errors.append("Line \(row.line): Name was empty after trimming.")
+                result.errors.append("Line \(row.line): First/last name was empty after trimming.")
                 continue
             }
 
@@ -442,7 +443,7 @@ struct PlayersView: View {
                     result.skipped += 1
                     continue
                 case .updateExisting:
-                    existing.name = row.name.cleanedName
+                    existing.setName(firstName: row.firstName, lastName: row.lastName)
                     existing.number = number
                     existing.gradeIDs = gradeIDs
                     result.updated += 1
@@ -451,7 +452,8 @@ struct PlayersView: View {
                 }
             } else {
                 let newPlayer = Player(
-                    name: row.name.cleanedName,
+                    firstName: row.firstName,
+                    lastName: row.lastName,
                     number: number,
                     gradeIDs: gradeIDs,
                     isActive: true

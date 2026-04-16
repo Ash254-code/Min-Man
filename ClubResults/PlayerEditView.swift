@@ -113,7 +113,8 @@ struct PlayerEditView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") {
-                    player.name = nameTrimmed
+                    let split = Player.splitName(nameTrimmed)
+                    player.setName(firstName: split.first, lastName: split.last)
                     player.number = parsedNumber
                     try? modelContext.save()
                     dismiss()
