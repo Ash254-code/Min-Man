@@ -920,6 +920,8 @@ private struct ReportsSettingsView: View {
     @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
+    @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
+    @Query(sort: [SortDescriptor(\Player.name)]) private var players: [Player]
 
     @State private var templateEditing: CustomReportTemplate?
     @State private var templateActioning: CustomReportTemplate?
@@ -1033,7 +1035,12 @@ private struct ReportsSettingsView: View {
             .appPopupStyle()
         }
         .sheet(item: $templatePreviewing) { template in
-            CustomReportPreviewView(template: template, grades: grades)
+            CustomReportPreviewView(
+                template: template,
+                grades: grades,
+                games: games,
+                players: players
+            )
                 .appPopupStyle()
         }
         .sheet(item: $templateSharing) { template in
@@ -1109,6 +1116,8 @@ private struct CustomReportPreviewView: View {
 
     let template: CustomReportTemplate
     let grades: [Grade]
+    let games: [Game]
+    let players: [Player]
     @State private var pdfURL: URL?
     @State private var errorMessage: String?
 
@@ -1142,7 +1151,12 @@ private struct CustomReportPreviewView: View {
             .task {
                 guard pdfURL == nil, errorMessage == nil else { return }
                 do {
-                    pdfURL = try makeTemplatePreviewPDF(template: template, grades: grades)
+                    pdfURL = try makeTemplatePreviewPDF(
+                        template: template,
+                        grades: grades,
+                        games: games,
+                        players: players
+                    )
                 } catch {
                     errorMessage = "Could not generate preview PDF."
                 }
@@ -1261,16 +1275,22 @@ private func templateDetails(for template: CustomReportTemplate, grades: [Grade]
     return [gradesText, sections, filters].joined(separator: " • ")
 }
 
-private func makeTemplatePreviewPDF(template: CustomReportTemplate, grades: [Grade]) throws -> URL {
+private func makeTemplatePreviewPDF(
+    template: CustomReportTemplate,
+    grades: [Grade],
+    games: [Game],
+    players: [Player]
+) throws -> URL {
     let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
     let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
 
     let title = "Custom Report Preview"
-    let body = """
-    Template: \(template.name)
-
-    \(templateDetails(for: template, grades: grades))
-    """
+    let body = templatePreviewText(
+        template: template,
+        grades: grades,
+        games: games,
+        players: players
+    )
 
     let data = renderer.pdfData { context in
         context.beginPage()
@@ -1304,6 +1324,139 @@ private func makeTemplatePreviewPDF(template: CustomReportTemplate, grades: [Gra
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("CustomReport_\(safeName)_Preview.pdf")
     try data.write(to: url, options: .atomic)
     return url
+}
+
+private func templatePreviewText(
+    template: CustomReportTemplate,
+    grades: [Grade],
+    games: [Game],
+    players: [Player]
+) -> String {
+    let selectedGrades = grades
+        .filter { !template.includeOnlyActiveGrades || $0.isActive }
+        .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
+
+    let selectedGradeIDs = Set(selectedGrades.map(\.id))
+    let relevantGames = games.filter { selectedGradeIDs.isEmpty || selectedGradeIDs.contains($0.gradeID) }
+    let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
+
+    var lines: [String] = []
+    lines.append("Template: \(template.name)")
+    lines.append(templateDetails(for: template, grades: grades))
+    lines.append("")
+
+    if selectedGrades.isEmpty {
+        lines.append("Grades in scope: All grades")
+    } else {
+        lines.append("Grades in scope: \(selectedGrades.map(\.name).joined(separator: ", "))")
+    }
+    lines.append("Games matched: \(relevantGames.count)")
+    lines.append("")
+
+    if template.includePlayerGrades || template.includeGuernseyNumbers {
+        lines.append("Players")
+        for grade in selectedGrades {
+            let gradePlayers = players
+                .filter { $0.gradeIDs.contains(grade.id) }
+                .filter { !template.includeOnlyActiveGrades || $0.isActive }
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+            if gradePlayers.isEmpty {
+                lines.append("- \(grade.name): no players")
+            } else {
+                let names = gradePlayers.map { player in
+                    if template.includeGuernseyNumbers, let number = player.number {
+                        return "\(player.name) (#\(number))"
+                    }
+                    return player.name
+                }
+                lines.append("- \(grade.name): \(names.prefix(15).joined(separator: ", "))")
+                if names.count > 15 {
+                    lines.append("  +\(names.count - 15) more")
+                }
+            }
+        }
+        lines.append("")
+    }
+
+    if template.includeGoalKickers {
+        var goalsByPlayer: [UUID: Int] = [:]
+        for game in relevantGames {
+            for entry in game.goalKickers {
+                guard let playerID = entry.playerID else { continue }
+                goalsByPlayer[playerID, default: 0] += entry.goals
+            }
+        }
+        let topGoalKickers = goalsByPlayer
+            .sorted { $0.value > $1.value }
+            .prefix(10)
+
+        lines.append("Goal Kickers")
+        if topGoalKickers.isEmpty {
+            lines.append("- No goal kicker data")
+        } else {
+            for (playerID, goals) in topGoalKickers {
+                let playerName = playerLookup[playerID]?.name ?? "Unknown Player"
+                lines.append("- \(playerName): \(goals)")
+            }
+        }
+        lines.append("")
+    }
+
+    if template.includeBestPlayers {
+        var bestCountByPlayer: [UUID: Int] = [:]
+        for game in relevantGames {
+            for playerID in game.bestPlayersRanked {
+                bestCountByPlayer[playerID, default: 0] += 1
+            }
+        }
+        let topBestPlayers = bestCountByPlayer
+            .sorted { $0.value > $1.value }
+            .prefix(10)
+
+        lines.append("Best Players (appearances)")
+        if topBestPlayers.isEmpty {
+            lines.append("- No best player data")
+        } else {
+            for (playerID, appearances) in topBestPlayers {
+                let playerName = playerLookup[playerID]?.name ?? "Unknown Player"
+                lines.append("- \(playerName): \(appearances)")
+            }
+        }
+        lines.append("")
+    }
+
+    if template.includeBestAndFairestVotes {
+        let scannedVotesCount = relevantGames.filter { $0.guestBestFairestVotesScanPDF != nil }.count
+        lines.append("Best & Fairest Votes")
+        lines.append("- Games with vote scan attached: \(scannedVotesCount)")
+        lines.append("")
+    }
+
+    if template.includeMatchNotes {
+        let noteLines = relevantGames
+            .map { ($0.date, $0.opponent, $0.notes.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .filter { !$0.2.isEmpty }
+            .prefix(6)
+
+        lines.append("Match Notes")
+        if noteLines.isEmpty {
+            lines.append("- No notes recorded")
+        } else {
+            for item in noteLines {
+                lines.append("- \(item.0.formatted(date: .abbreviated, time: .omitted)) vs \(item.1): \(item.2)")
+            }
+        }
+        lines.append("")
+    }
+
+    if template.includeStaffRoles || template.includeTrainers {
+        lines.append("Staff / Trainers")
+        lines.append("- Included by template settings (staff entries are configured per game and grade).")
+        lines.append("")
+    }
+
+    return lines.joined(separator: "\n")
 }
 
 private struct PDFPreviewView: UIViewRepresentable {
