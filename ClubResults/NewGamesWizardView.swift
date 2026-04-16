@@ -54,6 +54,7 @@ struct NewGameWizardView: View {
     @State private var venueName: String = ""
     @State private var setupPickerPrompt: SetupPickerPrompt?
     @State private var setupPickerDetent: PresentationDetent = .large
+    @State private var boundaryUmpirePickerDetent: PresentationDetent = .large
 
     // MARK: Staff
     @State private var headCoachName: String = ""
@@ -178,22 +179,44 @@ struct NewGameWizardView: View {
 
     private var setupPickerHeaderAndPaddingHeight: CGFloat { isCompactLayout ? 112 : 132 }
 
-    private var setupPickerMinimumHeight: CGFloat {
-        setupPickerHeaderAndPaddingHeight + (setupPickerRowHeight * 2)
-    }
-
-    private var setupPickerMaximumHeight: CGFloat {
-        let screenHeight = UIScreen.main.bounds.height
-        let reservedSpace: CGFloat = isCompactLayout ? 140 : 180
-        return max(setupPickerMinimumHeight, screenHeight - reservedSpace)
-    }
-
-    private var setupPickerDesiredHeight: CGFloat {
-        setupPickerHeaderAndPaddingHeight + (CGFloat(setupPickerOptionsCount) * setupPickerRowHeight)
-    }
-
     private var setupPickerHeight: CGFloat {
-        min(max(setupPickerDesiredHeight, setupPickerMinimumHeight), setupPickerMaximumHeight)
+        PickerSheetPresentation.preferredHeight(
+            optionCount: setupPickerOptionsCount,
+            rowHeight: setupPickerRowHeight,
+            chromeHeight: setupPickerHeaderAndPaddingHeight,
+            minVisibleRows: 2,
+            isCompactLayout: isCompactLayout
+        )
+    }
+
+    private var boundaryPickerRowHeight: CGFloat { isCompactLayout ? 56 : 72 }
+
+    private var boundaryPickerHeaderAndPaddingHeight: CGFloat { isCompactLayout ? 128 : 148 }
+
+    private var boundaryPickerOptionsCount: Int {
+        let availablePlayers: [Player]
+
+        switch boundaryUmpirePickerPrompt {
+        case .one:
+            availablePlayers = boundaryUmpirePlayers.filter { $0.id != boundaryUmpire2ID }
+        case .two:
+            availablePlayers = boundaryUmpirePlayers.filter { $0.id != boundaryUmpire1ID }
+        case .none:
+            availablePlayers = []
+        }
+
+        // "Select…" + available players + "Enter Different Name"
+        return availablePlayers.count + 2
+    }
+
+    private var boundaryPickerHeight: CGFloat {
+        PickerSheetPresentation.preferredHeight(
+            optionCount: boundaryPickerOptionsCount,
+            rowHeight: boundaryPickerRowHeight,
+            chromeHeight: boundaryPickerHeaderAndPaddingHeight,
+            minVisibleRows: 3,
+            isCompactLayout: isCompactLayout
+        )
     }
 
     private var setupPickerExpandedDetent: PresentationDetent {
@@ -761,10 +784,10 @@ struct NewGameWizardView: View {
             .presentationDetents([.height(setupPickerHeight), setupPickerExpandedDetent], selection: $setupPickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                setupPickerDetent = setupPickerExpandedDetent
+                setupPickerDetent = .height(setupPickerHeight)
             }
             .onChange(of: setupPickerPrompt) { _, _ in
-                setupPickerDetent = setupPickerExpandedDetent
+                setupPickerDetent = .height(setupPickerHeight)
             }
         }
     }
@@ -965,13 +988,13 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .presentationDetents([.medium, setupPickerExpandedDetent], selection: $boundaryUmpirePickerDetent)
+            .presentationDetents([.height(boundaryPickerHeight), .large], selection: $boundaryUmpirePickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                boundaryUmpirePickerDetent = setupPickerExpandedDetent
+                boundaryUmpirePickerDetent = .height(boundaryPickerHeight)
             }
             .onChange(of: boundaryUmpirePickerPrompt) { _, _ in
-                boundaryUmpirePickerDetent = setupPickerExpandedDetent
+                boundaryUmpirePickerDetent = .height(boundaryPickerHeight)
             }
         }
         .alert(

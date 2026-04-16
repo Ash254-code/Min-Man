@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UIKit
 
 struct StaffPickerField: View {
 
@@ -52,22 +51,16 @@ struct StaffPickerField: View {
         options.count + 2 // "Select…" + "Add New"
     }
 
-    private var chooserMinimumHeight: CGFloat {
-        chooserHeaderAndPaddingHeight + (chooserRowHeight * 3)
-    }
-
-    private var chooserMaximumHeight: CGFloat {
-        let screenHeight = UIScreen.main.bounds.height
-        let reservedSpace: CGFloat = horizontalSizeClass == .compact ? 180 : 240
-        return max(chooserMinimumHeight, screenHeight - reservedSpace)
-    }
-
-    private var chooserDesiredHeight: CGFloat {
-        chooserHeaderAndPaddingHeight + (CGFloat(chooserOptionsCount) * chooserRowHeight)
-    }
+    private var isCompactLayout: Bool { horizontalSizeClass == .compact }
 
     private var chooserHeight: CGFloat {
-        min(max(chooserDesiredHeight, chooserMinimumHeight), chooserMaximumHeight)
+        PickerSheetPresentation.preferredHeight(
+            optionCount: chooserOptionsCount,
+            rowHeight: chooserRowHeight,
+            chromeHeight: chooserHeaderAndPaddingHeight,
+            minVisibleRows: 3,
+            isCompactLayout: isCompactLayout
+        )
     }
 
     private var chooserExpandedDetent: PresentationDetent {
@@ -158,6 +151,11 @@ struct StaffPickerField: View {
             }
             .onChange(of: options.count) { _, _ in
                 chooserDetent = chooserExpandedDetent
+            }
+            .onChange(of: showChooser) { _, isPresented in
+                if isPresented {
+                    chooserDetent = .height(chooserHeight)
+                }
             }
         }
         .sheet(isPresented: $showAdd) {
