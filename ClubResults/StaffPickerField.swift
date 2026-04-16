@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct StaffPickerField: View {
 
@@ -16,6 +17,7 @@ struct StaffPickerField: View {
     @State private var showAdd = false
     @State private var showChooser = false
     @State private var newName = ""
+    @State private var chooserDetent: PresentationDetent = .medium
 
     private var options: [String] {
         guard let gradeID else { return [] }
@@ -40,6 +42,32 @@ struct StaffPickerField: View {
 
     private var chooserTitleFont: Font {
         .system(size: horizontalSizeClass == .compact ? 24 : 28, weight: .semibold)
+    }
+
+    private var chooserRowHeight: CGFloat { horizontalSizeClass == .compact ? 56 : 72 }
+
+    private var chooserHeaderAndPaddingHeight: CGFloat { horizontalSizeClass == .compact ? 128 : 148 }
+
+    private var chooserOptionsCount: Int {
+        options.count + 2 // "Select…" + "Add New"
+    }
+
+    private var chooserMinimumHeight: CGFloat {
+        chooserHeaderAndPaddingHeight + (chooserRowHeight * 3)
+    }
+
+    private var chooserMaximumHeight: CGFloat {
+        let screenHeight = UIScreen.main.bounds.height
+        let reservedSpace: CGFloat = horizontalSizeClass == .compact ? 180 : 240
+        return max(chooserMinimumHeight, screenHeight - reservedSpace)
+    }
+
+    private var chooserDesiredHeight: CGFloat {
+        chooserHeaderAndPaddingHeight + (CGFloat(chooserOptionsCount) * chooserRowHeight)
+    }
+
+    private var chooserHeight: CGFloat {
+        min(max(chooserDesiredHeight, chooserMinimumHeight), chooserMaximumHeight)
     }
 
     var body: some View {
@@ -119,8 +147,14 @@ struct StaffPickerField: View {
                     }
                 }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.height(chooserHeight), .large], selection: $chooserDetent)
             .presentationDragIndicator(.visible)
+            .onAppear {
+                chooserDetent = .height(chooserHeight)
+            }
+            .onChange(of: options.count) { _, _ in
+                chooserDetent = .height(chooserHeight)
+            }
         }
         .sheet(isPresented: $showAdd) {
             NavigationStack {
