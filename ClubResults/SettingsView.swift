@@ -1155,7 +1155,7 @@ private struct CustomReportShareView: View {
         if selectedContacts.isEmpty {
             lines.append("Selected contacts: none")
         } else {
-            lines.append("Selected contacts: \(selectedContacts.map(\\.name).joined(separator: \", \"))")
+            lines.append("Selected contacts: \(selectedContacts.map(\.name).joined(separator: ", "))")
         }
         return lines.joined(separator: "\n")
     }
