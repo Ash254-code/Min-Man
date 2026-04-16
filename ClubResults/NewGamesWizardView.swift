@@ -91,6 +91,7 @@ struct NewGameWizardView: View {
 
     // MARK: Goals + best players
     @State private var goalKickers: [WizardGoalKickerEntry] = []
+    @State private var goalKickerPickerPrompt: UUID?
     @State private var bestRanked: [UUID?] = Array(repeating: nil, count: 6)
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
@@ -422,6 +423,20 @@ struct NewGameWizardView: View {
     private func maxAllowedGoals(for entry: WizardGoalKickerEntry) -> Int {
         let remaining = ourGoals - (totalAllocatedGoals - entry.goals)
         return max(0, remaining)
+    }
+
+    private func goalKickerEntry(for id: UUID?) -> WizardGoalKickerEntry? {
+        guard let id else { return nil }
+        return goalKickers.first(where: { $0.id == id })
+    }
+
+    private func selectedGoalKickerPlayerID(for entryID: UUID?) -> UUID? {
+        goalKickerEntry(for: entryID)?.playerID
+    }
+
+    private func setGoalKickerPlayer(_ playerID: UUID?, for entryID: UUID?) {
+        guard let entryID, let idx = goalKickers.firstIndex(where: { $0.id == entryID }) else { return }
+        goalKickers[idx].playerID = playerID
     }
 
     // MARK: Validation
@@ -1101,12 +1116,20 @@ struct NewGameWizardView: View {
                 } else {
                     ForEach($goalKickers) { $entry in
                         HStack(spacing: 12) {
-                            Picker("Player", selection: $entry.playerID) {
-                                Text("Select player…").tag(UUID?.none)
-                                ForEach(eligiblePlayers) { p in
-                                    Text(p.name).tag(UUID?.some(p.id))
+                            Button {
+                                goalKickerPickerPrompt = entry.id
+                            } label: {
+                                HStack(spacing: 12) {
+                                    rowLabel("Player")
+                                    Spacer()
+                                    rowValue(playerName(for: entry.playerID))
+                                        .lineLimit(1)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
+                                        .foregroundStyle(.secondary)
                                 }
                             }
+                            .buttonStyle(.plain)
 
                             Spacer(minLength: 8)
 
@@ -1139,6 +1162,51 @@ struct NewGameWizardView: View {
         .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
         .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
+        .sheet(
+            isPresented: Binding(
+                get: { goalKickerPickerPrompt != nil },
+                set: { if !$0 { goalKickerPickerPrompt = nil } }
+            )
+        ) {
+            NavigationStack {
+                List {
+                    Button {
+                        setGoalKickerPlayer(nil, for: goalKickerPickerPrompt)
+                        goalKickerPickerPrompt = nil
+                    } label: {
+                        selectorListRow(
+                            title: "Select…",
+                            selected: selectedGoalKickerPlayerID(for: goalKickerPickerPrompt) == nil
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(eligiblePlayers) { player in
+                        Button {
+                            setGoalKickerPlayer(player.id, for: goalKickerPickerPrompt)
+                            goalKickerPickerPrompt = nil
+                        } label: {
+                            selectorListRow(
+                                title: player.name,
+                                selected: selectedGoalKickerPlayerID(for: goalKickerPickerPrompt) == player.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .navigationTitle("Select Player")
+                .navigationBarTitleDisplayMode(.inline)
+                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { goalKickerPickerPrompt = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private var bestStep: some View {
