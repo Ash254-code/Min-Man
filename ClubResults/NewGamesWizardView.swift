@@ -48,24 +48,9 @@ struct NewGameWizardView: View {
 
     @State private var clubConfiguration: ClubConfiguration = ClubConfigurationStore.load()
 
-    enum GameLocation: String, CaseIterable, Identifiable {
-        case home
-        case away
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .home: return "Home"
-            case .away: return "Away"
-            }
-        }
-    }
-
     // MARK: Selections (dropdowns)
     @State private var opponentName: String = ""
     @State private var venueName: String = ""
-    @State private var gameLocation: GameLocation = .home
 
     // MARK: Staff
     @State private var headCoachName: String = ""
@@ -148,10 +133,9 @@ struct NewGameWizardView: View {
     }
 
     private var venuesForSelection: [String] {
-        switch gameLocation {
-        case .home: return clubConfiguration.clubTeam.sanitizedVenues
-        case .away: return selectedOpposition?.sanitizedVenues ?? []
-        }
+        let combined = clubConfiguration.clubTeam.sanitizedVenues + (selectedOpposition?.sanitizedVenues ?? [])
+        var seen = Set<String>()
+        return combined.filter { seen.insert($0).inserted }
     }
 
     private var ourTeamScoreStyle: ClubStyle.Style {
@@ -567,17 +551,9 @@ struct NewGameWizardView: View {
                     }
                     .pickerStyle(.menu)
                     .onChange(of: opponentName) { _, _ in
-                        venueName = ""
-                    }
-
-                    Picker("Location", selection: $gameLocation) {
-                        ForEach(GameLocation.allCases) { location in
-                            Text(location.title).tag(location)
+                        if !venuesForSelection.contains(venueName) {
+                            venueName = ""
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: gameLocation) { _, _ in
-                        venueName = ""
                     }
 
                     Picker("Venue", selection: $venueName) {
@@ -587,7 +563,7 @@ struct NewGameWizardView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .disabled(finalOpponent.isEmpty || venuesForSelection.isEmpty)
+                    .disabled(venuesForSelection.isEmpty)
                 }
             }
         }
@@ -916,7 +892,6 @@ struct NewGameWizardView: View {
         Form {
             Section("Game Summary") {
                 Text("Opponent: \(finalOpponent)")
-                Text("Location: \(gameLocation.title)")
                 Text("Venue: \(finalVenue)")
                 Text("Date: \(date.formatted(date: .abbreviated, time: .omitted))")
 
