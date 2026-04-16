@@ -171,14 +171,8 @@ struct StaffPickerField: View {
                     Spacer()
 
                     HStack(spacing: 12) {
-                        Button("Save & Add Another") {
-                            saveNewStaff(keepSheetOpen: true)
-                        }
-                        .buttonStyle(AddSheetActionButtonStyle(isEnabled: canSaveNewStaff))
-                        .disabled(!canSaveNewStaff)
-
-                        Button("Save & Close") {
-                            saveNewStaff(keepSheetOpen: false)
+                        Button("Save") {
+                            saveNewStaff()
                         }
                         .buttonStyle(AddSheetActionButtonStyle(isEnabled: canSaveNewStaff))
                         .disabled(!canSaveNewStaff)
@@ -198,7 +192,7 @@ struct StaffPickerField: View {
         }
     }
 
-    private func saveNewStaff(keepSheetOpen: Bool) {
+    private func saveNewStaff() {
         guard let gradeID, canSaveNewStaff else { return }
 
         let newStaff = StaffMember(
@@ -210,11 +204,7 @@ struct StaffPickerField: View {
         modelContext.insert(newStaff)
         value = trimmedNewName
 
-        if keepSheetOpen {
-            newName = ""
-        } else {
-            showAdd = false
-        }
+        showAdd = false
     }
 
     @ViewBuilder
