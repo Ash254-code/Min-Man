@@ -443,20 +443,8 @@ struct NewGameWizardView: View {
             return coachingOK
 
         case .medical:
-            // Trainer selection is optional on the medical step.
-            guard let grade = selectedGrade else { return true }
-
-            let asksGoalUmpire = grade.asksGoalUmpire
-            let asksBoundaryUmpire1 = grade.asksBoundaryUmpire1
-            let asksBoundaryUmpire2 = grade.asksBoundaryUmpire2
-
-            let officialsOK =
-                (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
-                (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
-                (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty) &&
-                (!(asksBoundaryUmpire1 && asksBoundaryUmpire2) || finalBoundary1 != finalBoundary2)
-
-            return officialsOK
+            // This step is informational/optional; never block navigation here.
+            return true
 
         case .score:
             return true
