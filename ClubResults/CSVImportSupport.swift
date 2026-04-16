@@ -81,36 +81,56 @@ enum CSVImportError: LocalizedError {
 // MARK: - Header Mapping
 
 struct CSVHeaderMap {
-    let nameIndex: Int?
+    let firstNameIndex: Int?
+    let lastNameIndex: Int?
+    let legacyNameIndex: Int?
     let numberIndex: Int?
     let gradesIndex: Int?
 
-    static let expectedColumnsDisplay = "name, number, grades"
+    static let expectedColumnsDisplay = "First Name, Last Name, Number, Grade"
 
-    var hasAnyRecognizedColumn: Bool { nameIndex != nil }
+    var hasAnyRecognizedColumn: Bool { firstNameIndex != nil || lastNameIndex != nil || legacyNameIndex != nil }
 
     init(header: [String]) {
+        let normalizedHeader = header.map(Self.normalizeHeader)
+
         func find(_ candidates: [String]) -> Int? {
-            for c in candidates {
-                if let idx = header.firstIndex(of: c) { return idx }
+            for c in candidates.map(Self.normalizeHeader) {
+                if let idx = normalizedHeader.firstIndex(of: c) { return idx }
             }
             return nil
         }
 
-        nameIndex = find(["name", "player", "playername", "player name"])
+        firstNameIndex = find(["first name", "firstname", "first"])
+        lastNameIndex = find(["last name", "lastname", "last", "surname"])
+        legacyNameIndex = find(["name", "player", "playername", "player name"])
         numberIndex = find(["number", "no", "guernsey", "jumper", "jumper number", "guernsey number"])
         gradesIndex = find(["grades", "grade", "grade(s)", "teams", "team"])
+    }
+
+    private static func normalizeHeader(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "\u{feff}", with: "")
+            .trimmedLowercased
+            .replacingOccurrences(of: #"[^a-z0-9 ]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmed
     }
 }
 
 struct CSVPlayerRow {
     let line: Int
-    let name: String
+    let firstName: String
+    let lastName: String
     let number: Int?
     let gradesRaw: String?
 
+    var fullName: String {
+        Player.combineName(first: firstName, last: lastName)
+    }
+
     static func from(_ row: [String], headerMap: CSVHeaderMap, lineNumber: Int) throws -> CSVPlayerRow {
-        guard let nameIdx = headerMap.nameIndex else {
+        guard headerMap.hasAnyRecognizedColumn else {
             throw CSVImportError.missingHeaders(expected: CSVHeaderMap.expectedColumnsDisplay)
         }
 
@@ -120,15 +140,33 @@ struct CSVPlayerRow {
             return v.isEmpty ? nil : v
         }
 
-        guard let name = value(at: nameIdx) else {
-            throw CSVImportError.badRow(line: lineNumber, message: "Missing name.")
+        let first = value(at: headerMap.firstNameIndex)
+        let last = value(at: headerMap.lastNameIndex)
+        let legacyName = value(at: headerMap.legacyNameIndex)
+
+        let resolvedFirst: String
+        let resolvedLast: String
+
+        if let first, let last {
+            resolvedFirst = first.cleanedName
+            resolvedLast = last.cleanedName
+        } else if let legacyName {
+            let split = Player.splitName(legacyName)
+            resolvedFirst = split.first
+            resolvedLast = split.last
+        } else {
+            throw CSVImportError.badRow(line: lineNumber, message: "Missing first/last name.")
+        }
+
+        guard !Player.combineName(first: resolvedFirst, last: resolvedLast).isEmpty else {
+            throw CSVImportError.badRow(line: lineNumber, message: "Missing first/last name.")
         }
 
         let numberString = value(at: headerMap.numberIndex)
         let number = numberString.flatMap { Int($0.filter { $0.isNumber }) }
         let grades = value(at: headerMap.gradesIndex)
 
-        return CSVPlayerRow(line: lineNumber, name: name, number: number, gradesRaw: grades)
+        return CSVPlayerRow(line: lineNumber, firstName: resolvedFirst, lastName: resolvedLast, number: number, gradesRaw: grades)
     }
 }
 
