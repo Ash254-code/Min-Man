@@ -22,6 +22,7 @@ final class CustomReportTemplate {
     // Filters
     var includeOnlyActiveGrades: Bool
     var minimumGamesPlayed: Int
+    var groupingModeRawValue: Int
 
     init(
         id: UUID = UUID(),
@@ -36,7 +37,8 @@ final class CustomReportTemplate {
         includeTrainers: Bool = true,
         includeMatchNotes: Bool = false,
         includeOnlyActiveGrades: Bool = true,
-        minimumGamesPlayed: Int = 0
+        minimumGamesPlayed: Int = 0,
+        groupingModeRawValue: Int = 0
     ) {
         self.id = id
         self.name = name
@@ -51,6 +53,7 @@ final class CustomReportTemplate {
         self.includeMatchNotes = includeMatchNotes
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
         self.minimumGamesPlayed = max(0, minimumGamesPlayed)
+        self.groupingModeRawValue = groupingModeRawValue
     }
 
     var gradeIDs: [UUID] {

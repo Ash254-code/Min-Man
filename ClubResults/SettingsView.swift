@@ -1017,7 +1017,7 @@ private struct ReportsSettingsView: View {
             }
         }
         .sheet(isPresented: $isCreatingTemplate) {
-            CustomReportEditView(grades: grades) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed in
+            CustomReportEditView(grades: grades) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue in
                 let template = CustomReportTemplate(
                     name: name,
                     gradeIDs: selectedGradeIDs,
@@ -1030,7 +1030,8 @@ private struct ReportsSettingsView: View {
                     includeTrainers: includeTrainers,
                     includeMatchNotes: includeMatchNotes,
                     includeOnlyActiveGrades: includeOnlyActiveGrades,
-                    minimumGamesPlayed: minimumGamesPlayed
+                    minimumGamesPlayed: minimumGamesPlayed,
+                    groupingModeRawValue: groupingModeRawValue
                 )
                 modelContext.insert(template)
                 saveContext()
@@ -1068,8 +1069,9 @@ private struct ReportsSettingsView: View {
                 initialIncludeTrainers: template.includeTrainers,
                 initialIncludeMatchNotes: template.includeMatchNotes,
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
-                initialMinimumGamesPlayed: template.minimumGamesPlayed
-            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed in
+                initialMinimumGamesPlayed: template.minimumGamesPlayed,
+                initialGroupingModeRawValue: template.groupingModeRawValue
+            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue in
                 template.name = name
                 template.gradeIDs = selectedGradeIDs
                 template.includeBestPlayers = includeBestPlayers
@@ -1082,6 +1084,7 @@ private struct ReportsSettingsView: View {
                 template.includeMatchNotes = includeMatchNotes
                 template.includeOnlyActiveGrades = includeOnlyActiveGrades
                 template.minimumGamesPlayed = minimumGamesPlayed
+                template.groupingModeRawValue = groupingModeRawValue
                 saveContext()
             }
             .appPopupStyle()
@@ -1289,9 +1292,35 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
         return "Grades: " + gradeNames.joined(separator: ", ")
     }()
 
-    let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive")"
+    let grouping = ReportGroupingMode(rawValue: template.groupingModeRawValue) ?? .combinedTotals
+    let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive"), \(grouping.filterSummary)"
     let sections = "Includes: " + (items.isEmpty ? "No sections selected" : items.joined(separator: ", "))
     return [gradesText, sections, filters].joined(separator: " • ")
+}
+
+private enum ReportGroupingMode: Int, CaseIterable, Identifiable {
+    case combinedTotals = 0
+    case splitByGameAndGrade = 1
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .combinedTotals:
+            return "Combine totals"
+        case .splitByGameAndGrade:
+            return "Split by game & grade"
+        }
+    }
+
+    var filterSummary: String {
+        switch self {
+        case .combinedTotals:
+            return "combined totals"
+        case .splitByGameAndGrade:
+            return "split by game and grade"
+        }
+    }
 }
 
 private func makeTemplatePreviewPDF(
@@ -1302,39 +1331,234 @@ private func makeTemplatePreviewPDF(
 ) throws -> URL {
     let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
     let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
-
-    let title = "Custom Report Preview"
-    let body = templatePreviewText(
-        template: template,
-        grades: grades,
-        games: games,
-        players: players
-    )
+    let groupingMode = ReportGroupingMode(rawValue: template.groupingModeRawValue) ?? .combinedTotals
+    let selectedGrades = grades
+        .filter { !template.includeOnlyActiveGrades || $0.isActive }
+        .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
+    let selectedGradeIDs = Set(selectedGrades.map(\.id))
+    let relevantGames = games
+        .filter { selectedGradeIDs.isEmpty || selectedGradeIDs.contains($0.gradeID) }
+        .filter { !$0.isDraft && $0.date <= Date() }
+        .sorted { $0.date > $1.date }
+    let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
+    let gradeLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0.name) })
+    var gamesByPlayer: [UUID: Int] = [:]
+    for game in relevantGames {
+        var seenPlayerIDs = Set<UUID>()
+        for entry in game.goalKickers {
+            if let playerID = entry.playerID {
+                seenPlayerIDs.insert(playerID)
+            }
+        }
+        for playerID in game.bestPlayersRanked {
+            seenPlayerIDs.insert(playerID)
+        }
+        for playerID in seenPlayerIDs {
+            gamesByPlayer[playerID, default: 0] += 1
+        }
+    }
 
     let data = renderer.pdfData { context in
-        context.beginPage()
+        let horizontalInset: CGFloat = 30
+        let verticalInset: CGFloat = 28
+        let contentRect = pageBounds.insetBy(dx: horizontalInset, dy: verticalInset)
+        var cursorY = contentRect.minY
+        let bottomLimit = contentRect.maxY
 
-        let titleStyle = NSMutableParagraphStyle()
-        titleStyle.lineBreakMode = .byWordWrapping
-        let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 24),
-            .paragraphStyle: titleStyle
+        func beginNewPageIfNeeded(requiredHeight: CGFloat) {
+            if cursorY + requiredHeight <= bottomLimit { return }
+            context.beginPage()
+            cursorY = contentRect.minY
+        }
+
+        func beginNewPage() {
+            context.beginPage()
+            cursorY = contentRect.minY
+        }
+
+        beginNewPage()
+
+        let titleFont = UIFont(name: "AvenirNext-Bold", size: 22) ?? UIFont.boldSystemFont(ofSize: 22)
+        let subtitleFont = UIFont(name: "AvenirNext-Medium", size: 12) ?? UIFont.systemFont(ofSize: 12, weight: .medium)
+        let sectionFont = UIFont(name: "AvenirNext-DemiBold", size: 14) ?? UIFont.systemFont(ofSize: 14, weight: .semibold)
+        let bodyFont = UIFont(name: "AvenirNext-Regular", size: 11) ?? UIFont.systemFont(ofSize: 11)
+        let headerFont = UIFont(name: "AvenirNext-DemiBold", size: 10) ?? UIFont.systemFont(ofSize: 10, weight: .semibold)
+
+        if let logo = UIImage(named: "club_logo") {
+            let logoRect = CGRect(x: contentRect.minX, y: cursorY, width: 56, height: 56)
+            logo.draw(in: logoRect)
+        }
+
+        let titleX = contentRect.minX + 68
+        let titleRect = CGRect(x: titleX, y: cursorY + 4, width: contentRect.width - 68, height: 28)
+        NSAttributedString(
+            string: "Custom Report Preview",
+            attributes: [.font: titleFont, .foregroundColor: UIColor.label]
+        ).draw(in: titleRect)
+
+        let subtitle = "Template: \(template.name) • Layout: \(groupingMode.title) • Generated \(Date().formatted(date: .abbreviated, time: .shortened))"
+        let subtitleRect = CGRect(x: titleX, y: titleRect.maxY + 2, width: contentRect.width - 68, height: 22)
+        NSAttributedString(
+            string: subtitle,
+            attributes: [.font: subtitleFont, .foregroundColor: UIColor.secondaryLabel]
+        ).draw(in: subtitleRect)
+        cursorY += 72
+
+        let tableColumns: [(String, CGFloat)] = [
+            ("Player Name", 0.34),
+            ("Guernsey", 0.11),
+            ("Goals", 0.11),
+            ("Best Players", 0.16),
+            ("Games", 0.10),
+            ("Notes", 0.18)
         ]
+        let tableWidth = contentRect.width
+        let columnWidths = tableColumns.map { $0.1 * tableWidth }
 
-        let bodyStyle = NSMutableParagraphStyle()
-        bodyStyle.lineBreakMode = .byWordWrapping
-        bodyStyle.lineSpacing = 4
-        let bodyAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 13),
-            .paragraphStyle: bodyStyle
-        ]
+        func drawSectionHeader(_ text: String) {
+            beginNewPageIfNeeded(requiredHeight: 24)
+            let rect = CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: 20)
+            NSAttributedString(string: text, attributes: [.font: sectionFont]).draw(in: rect)
+            cursorY += 24
+        }
 
-        let contentRect = pageBounds.insetBy(dx: 36, dy: 36)
-        let titleRect = CGRect(x: contentRect.minX, y: contentRect.minY, width: contentRect.width, height: 34)
-        NSAttributedString(string: title, attributes: titleAttributes).draw(in: titleRect)
+        func drawTableHeader() {
+            beginNewPageIfNeeded(requiredHeight: 24)
+            var x = contentRect.minX
+            let headerY = cursorY
+            for (idx, column) in tableColumns.enumerated() {
+                let width = columnWidths[idx]
+                let rect = CGRect(x: x, y: headerY, width: width, height: 22)
+                UIColor.systemGray5.setFill()
+                UIBezierPath(rect: rect).fill()
+                UIColor.separator.setStroke()
+                UIBezierPath(rect: rect).stroke()
+                NSAttributedString(
+                    string: column.0,
+                    attributes: [.font: headerFont, .foregroundColor: UIColor.label]
+                ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                x += width
+            }
+            cursorY += 22
+        }
 
-        let bodyRect = CGRect(x: contentRect.minX, y: titleRect.maxY + 12, width: contentRect.width, height: contentRect.height - 46)
-        NSAttributedString(string: body, attributes: bodyAttributes).draw(in: bodyRect)
+        func drawRow(playerName: String, guernsey: String, goals: String, bestPlayers: String, gamesPlayed: String, notes: String) {
+            beginNewPageIfNeeded(requiredHeight: 20)
+            var x = contentRect.minX
+            let values = [playerName, guernsey, goals, bestPlayers, gamesPlayed, notes]
+            for (idx, value) in values.enumerated() {
+                let width = columnWidths[idx]
+                let rect = CGRect(x: x, y: cursorY, width: width, height: 20)
+                UIColor.separator.setStroke()
+                UIBezierPath(rect: rect).stroke()
+                NSAttributedString(
+                    string: value,
+                    attributes: [.font: bodyFont, .foregroundColor: UIColor.label]
+                ).draw(in: rect.insetBy(dx: 4, dy: 4))
+                x += width
+            }
+            cursorY += 20
+        }
+
+        if relevantGames.isEmpty {
+            drawSectionHeader("No completed games matched this template.")
+            return
+        }
+
+        switch groupingMode {
+        case .splitByGameAndGrade:
+            for game in relevantGames {
+                let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
+                drawSectionHeader("\(gradeName) • \(game.date.formatted(date: .abbreviated, time: .omitted)) vs \(game.opponent)")
+                drawTableHeader()
+
+                var rowsByPlayer: [UUID: (goals: Int, bestCount: Int)] = [:]
+                for entry in game.goalKickers {
+                    guard let playerID = entry.playerID else { continue }
+                    var stats = rowsByPlayer[playerID] ?? (0, 0)
+                    stats.goals += entry.goals
+                    rowsByPlayer[playerID] = stats
+                }
+                for playerID in game.bestPlayersRanked {
+                    var stats = rowsByPlayer[playerID] ?? (0, 0)
+                    stats.bestCount += 1
+                    rowsByPlayer[playerID] = stats
+                }
+
+                if rowsByPlayer.isEmpty {
+                    drawRow(playerName: "No player stats", guernsey: "-", goals: "-", bestPlayers: "-", gamesPlayed: "0", notes: "")
+                } else {
+                    for (playerID, stats) in rowsByPlayer.sorted(by: { (lhs, rhs) in
+                        (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
+                    }) {
+                        if template.minimumGamesPlayed > 0, gamesByPlayer[playerID, default: 0] < template.minimumGamesPlayed {
+                            continue
+                        }
+                        let player = playerLookup[playerID]
+                        let guernsey = template.includeGuernseyNumbers ? (player?.number.map(String.init) ?? "-") : "-"
+                        let notes = template.includeMatchNotes ? game.notes.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                        drawRow(
+                            playerName: player?.name ?? "Unknown Player",
+                            guernsey: guernsey,
+                            goals: template.includeGoalKickers ? "\(stats.goals)" : "-",
+                            bestPlayers: template.includeBestPlayers ? "\(stats.bestCount)" : "-",
+                            gamesPlayed: "1",
+                            notes: notes
+                        )
+                    }
+                }
+                cursorY += 10
+            }
+        case .combinedTotals:
+            let groupedGames = Dictionary(grouping: relevantGames, by: \.gradeID)
+            for (gradeID, gradeGames) in groupedGames.sorted(by: { (gradeLookup[$0.key] ?? "") < (gradeLookup[$1.key] ?? "") }) {
+                let gradeName = gradeLookup[gradeID] ?? "Unknown Grade"
+                drawSectionHeader("\(gradeName) • Combined totals")
+                drawTableHeader()
+
+                var rowsByPlayer: [UUID: (goals: Int, bestCount: Int, gamesPlayed: Int)] = [:]
+                for game in gradeGames {
+                    var touchedInGame = Set<UUID>()
+                    for entry in game.goalKickers {
+                        guard let playerID = entry.playerID else { continue }
+                        var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
+                        stats.goals += entry.goals
+                        rowsByPlayer[playerID] = stats
+                        touchedInGame.insert(playerID)
+                    }
+                    for playerID in game.bestPlayersRanked {
+                        var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
+                        stats.bestCount += 1
+                        rowsByPlayer[playerID] = stats
+                        touchedInGame.insert(playerID)
+                    }
+                    for playerID in touchedInGame {
+                        var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
+                        stats.gamesPlayed += 1
+                        rowsByPlayer[playerID] = stats
+                    }
+                }
+
+                for (playerID, stats) in rowsByPlayer.sorted(by: { (lhs, rhs) in
+                    (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
+                }) {
+                    if template.minimumGamesPlayed > 0, gamesByPlayer[playerID, default: 0] < template.minimumGamesPlayed {
+                        continue
+                    }
+                    let player = playerLookup[playerID]
+                    let guernsey = template.includeGuernseyNumbers ? (player?.number.map(String.init) ?? "-") : "-"
+                    drawRow(
+                        playerName: player?.name ?? "Unknown Player",
+                        guernsey: guernsey,
+                        goals: template.includeGoalKickers ? "\(stats.goals)" : "-",
+                        bestPlayers: template.includeBestPlayers ? "\(stats.bestCount)" : "-",
+                        gamesPlayed: "\(stats.gamesPlayed)",
+                        notes: ""
+                    )
+                }
+                cursorY += 10
+            }
+        }
     }
 
     let safeName = template.name
@@ -1343,201 +1567,6 @@ private func makeTemplatePreviewPDF(
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("CustomReport_\(safeName)_Preview.pdf")
     try data.write(to: url, options: .atomic)
     return url
-}
-
-private func templatePreviewText(
-    template: CustomReportTemplate,
-    grades: [Grade],
-    games: [Game],
-    players: [Player]
-) -> String {
-    let selectedGrades = grades
-        .filter { !template.includeOnlyActiveGrades || $0.isActive }
-        .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
-
-    let selectedGradeIDs = Set(selectedGrades.map(\.id))
-    let relevantGames = games
-        .filter { selectedGradeIDs.isEmpty || selectedGradeIDs.contains($0.gradeID) }
-        .filter { !$0.isDraft && $0.date <= Date() }
-        .sorted { $0.date > $1.date }
-    let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
-    let gradeLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0.name) })
-
-    var gamesByPlayer: [UUID: Int] = [:]
-    for game in relevantGames {
-        var seenPlayerIDs = Set<UUID>()
-        for playerID in game.bestPlayersRanked {
-            seenPlayerIDs.insert(playerID)
-        }
-        for kicker in game.goalKickers {
-            if let playerID = kicker.playerID {
-                seenPlayerIDs.insert(playerID)
-            }
-        }
-        for playerID in seenPlayerIDs {
-            gamesByPlayer[playerID, default: 0] += 1
-        }
-    }
-
-    var lines: [String] = []
-    lines.append("Template: \(template.name)")
-    lines.append(buildTemplateDetails(for: template, grades: grades))
-    lines.append("")
-
-    if selectedGrades.isEmpty {
-        lines.append("Grades in scope: All grades")
-    } else {
-        lines.append("Grades in scope: \(selectedGrades.map(\.name).joined(separator: ", "))")
-    }
-    lines.append("Games matched: \(relevantGames.count)")
-    lines.append("")
-
-    if template.includePlayerGrades || template.includeGuernseyNumbers {
-        lines.append("Players")
-        for grade in selectedGrades {
-            let gradePlayers = players
-                .filter { $0.gradeIDs.contains(grade.id) }
-                .filter { !template.includeOnlyActiveGrades || $0.isActive }
-                .filter { template.minimumGamesPlayed <= 0 || gamesByPlayer[$0.id, default: 0] >= template.minimumGamesPlayed }
-                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-
-            if gradePlayers.isEmpty {
-                lines.append("- \(grade.name): no players")
-            } else {
-                let names = gradePlayers.map { player in
-                    if template.includeGuernseyNumbers, let number = player.number {
-                        return "\(player.name) (#\(number))"
-                    }
-                    return player.name
-                }
-                lines.append("- \(grade.name): \(names.prefix(15).joined(separator: ", "))")
-                if names.count > 15 {
-                    lines.append("  +\(names.count - 15) more")
-                }
-            }
-        }
-        lines.append("")
-    }
-
-    lines.append("Previous Games Included")
-    if relevantGames.isEmpty {
-        lines.append("- No completed games match this template.")
-        lines.append("")
-    } else {
-        for game in relevantGames {
-            let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
-            lines.append("\(game.date.formatted(date: .abbreviated, time: .omitted)) • \(gradeName) vs \(game.opponent)")
-            lines.append("Score: \(game.ourGoals).\(game.ourBehinds) (\(game.ourScore)) - \(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
-            if !game.venue.isEmpty {
-                lines.append("Venue: \(game.venue)")
-            }
-
-            if template.includeGoalKickers {
-                if game.goalKickers.isEmpty {
-                    lines.append("Goal kickers: none")
-                } else {
-                    let goalLines = game.goalKickers
-                        .sorted { $0.goals > $1.goals }
-                        .compactMap { entry -> String? in
-                            guard let playerID = entry.playerID else { return nil }
-                            let playerName = playerLookup[playerID]?.name ?? "Unknown Player"
-                            return "\(playerName) \(entry.goals)"
-                        }
-                    lines.append("Goal kickers: \(goalLines.joined(separator: ", "))")
-                }
-            }
-
-            if template.includeBestPlayers {
-                if game.bestPlayersRanked.isEmpty {
-                    lines.append("Best players: none")
-                } else {
-                    let bestList = game.bestPlayersRanked.enumerated().map { (idx, playerID) -> String in
-                        let playerName = playerLookup[playerID]?.name ?? "Unknown Player"
-                        if template.includeGuernseyNumbers, let number = playerLookup[playerID]?.number {
-                            return "\(idx + 1). \(playerName) (#\(number))"
-                        }
-                        return "\(idx + 1). \(playerName)"
-                    }
-                    lines.append("Best players: \(bestList.joined(separator: "; "))")
-                }
-            }
-
-            if template.includeBestAndFairestVotes {
-                lines.append("B&F vote scan: \(game.guestBestFairestVotesScanPDF == nil ? "No" : "Yes")")
-            }
-
-            if template.includeMatchNotes {
-                let trimmedNotes = game.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedNotes.isEmpty {
-                    lines.append("Notes: \(trimmedNotes)")
-                }
-            }
-
-            lines.append("")
-        }
-    }
-
-    if template.includeGoalKickers {
-        var goalsByPlayer: [UUID: Int] = [:]
-        for game in relevantGames {
-            for entry in game.goalKickers {
-                guard let playerID = entry.playerID else { continue }
-                goalsByPlayer[playerID, default: 0] += entry.goals
-            }
-        }
-        let topGoalKickers = goalsByPlayer
-            .sorted { $0.value > $1.value }
-            .prefix(10)
-
-        lines.append("Goal Kicker Totals")
-        if topGoalKickers.isEmpty {
-            lines.append("- No goal kicker data")
-        } else {
-            for (playerID, goals) in topGoalKickers {
-                let playerName = playerLookup[playerID]?.name ?? "Unknown Player"
-                lines.append("- \(playerName): \(goals)")
-            }
-        }
-        lines.append("")
-    }
-
-    if template.includeBestPlayers {
-        var bestCountByPlayer: [UUID: Int] = [:]
-        for game in relevantGames {
-            for playerID in game.bestPlayersRanked {
-                bestCountByPlayer[playerID, default: 0] += 1
-            }
-        }
-        let topBestPlayers = bestCountByPlayer
-            .sorted { $0.value > $1.value }
-            .prefix(10)
-
-        lines.append("Best Player Appearance Totals")
-        if topBestPlayers.isEmpty {
-            lines.append("- No best player data")
-        } else {
-            for (playerID, appearances) in topBestPlayers {
-                let playerName = playerLookup[playerID]?.name ?? "Unknown Player"
-                lines.append("- \(playerName): \(appearances)")
-            }
-        }
-        lines.append("")
-    }
-
-    if template.includeBestAndFairestVotes {
-        let scannedVotesCount = relevantGames.filter { $0.guestBestFairestVotesScanPDF != nil }.count
-        lines.append("Best & Fairest Votes")
-        lines.append("- Games with vote scan attached: \(scannedVotesCount) of \(relevantGames.count)")
-        lines.append("")
-    }
-
-    if template.includeStaffRoles || template.includeTrainers {
-        lines.append("Staff / Trainers")
-        lines.append("- Included by template settings (staff entries are configured per game and grade).")
-        lines.append("")
-    }
-
-    return lines.joined(separator: "\n")
 }
 
 private struct PDFPreviewView: UIViewRepresentable {
@@ -1560,7 +1589,7 @@ private struct CustomReportEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     let grades: [Grade]
-    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int) -> Void
+    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
@@ -1574,6 +1603,7 @@ private struct CustomReportEditView: View {
     @State private var includeMatchNotes: Bool
     @State private var includeOnlyActiveGrades: Bool
     @State private var minimumGamesPlayed: Int
+    @State private var groupingMode: ReportGroupingMode
 
     init(
         grades: [Grade],
@@ -1589,7 +1619,8 @@ private struct CustomReportEditView: View {
         initialIncludeMatchNotes: Bool = false,
         initialIncludeOnlyActiveGrades: Bool = true,
         initialMinimumGamesPlayed: Int = 0,
-        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int) -> Void
+        initialGroupingModeRawValue: Int = 0,
+        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int) -> Void
     ) {
         self.grades = grades
         self.onSave = onSave
@@ -1605,6 +1636,7 @@ private struct CustomReportEditView: View {
         _includeMatchNotes = State(initialValue: initialIncludeMatchNotes)
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
+        _groupingMode = State(initialValue: ReportGroupingMode(rawValue: initialGroupingModeRawValue) ?? .combinedTotals)
     }
 
     private var canSave: Bool {
@@ -1655,6 +1687,11 @@ private struct CustomReportEditView: View {
                 }
 
                 Section("Filters") {
+                    Picker("Report layout", selection: $groupingMode) {
+                        ForEach(ReportGroupingMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
                     Toggle("Only active grades", isOn: $includeOnlyActiveGrades)
                     Stepper("Minimum games played: \(minimumGamesPlayed)", value: $minimumGamesPlayed, in: 0...100)
                 }
@@ -1679,7 +1716,8 @@ private struct CustomReportEditView: View {
                             includeTrainers,
                             includeMatchNotes,
                             includeOnlyActiveGrades,
-                            minimumGamesPlayed
+                            minimumGamesPlayed,
+                            groupingMode.rawValue
                         )
                         dismiss()
                     }
