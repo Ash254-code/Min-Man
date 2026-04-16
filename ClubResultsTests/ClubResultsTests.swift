@@ -36,4 +36,17 @@ struct ClubResultsTests {
         #expect(unknown.isEmpty)
     }
 
+    @Test func gradeLookupMatchesSmartApostropheAgeGrades() async throws {
+        let u14 = Grade(name: "Under 14's")
+        let u17 = Grade(name: "Under 17's")
+        let lookup = GradeLookup(grades: [u14, u17])
+        var unknown = Set<String>()
+
+        let ids = lookup.ids(forRawGradeField: "Under 14’s; Under 17’s", unknownCollector: &unknown)
+
+        #expect(ids.count == 2)
+        #expect(Set(ids) == Set([u14.id, u17.id]))
+        #expect(unknown.isEmpty)
+    }
+
 }

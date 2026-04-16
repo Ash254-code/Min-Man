@@ -198,7 +198,10 @@ struct GradeLookup {
         s.trimmedLowercased
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
+            // Handle straight and “smart” apostrophes consistently.
             .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "’", with: "")
+            .replacingOccurrences(of: "‘", with: "")
             .replacingOccurrences(of: #"[^a-z0-9 ]+"#, with: " ", options: .regularExpression)
             .replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
     }
