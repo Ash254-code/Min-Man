@@ -160,6 +160,40 @@ struct NewGameWizardView: View {
         return ClubStyle.style(for: opponent, configuration: clubConfiguration)
     }
 
+    // MARK: Setup picker sizing
+    private var setupPickerOptionsCount: Int {
+        switch setupPickerPrompt {
+        case .opponent:
+            return opponentNames.count + 1 // "Select…" option
+        case .venue:
+            return venuesForSelection.count + 1 // "Select…" option
+        case .none:
+            return 0
+        }
+    }
+
+    private var setupPickerRowHeight: CGFloat { isCompactLayout ? 56 : 72 }
+
+    private var setupPickerHeaderAndPaddingHeight: CGFloat { isCompactLayout ? 112 : 132 }
+
+    private var setupPickerMinimumHeight: CGFloat {
+        setupPickerHeaderAndPaddingHeight + (setupPickerRowHeight * 2)
+    }
+
+    private var setupPickerMaximumHeight: CGFloat {
+        let screenHeight = UIScreen.main.bounds.height
+        let reservedSpace: CGFloat = isCompactLayout ? 140 : 180
+        return max(setupPickerMinimumHeight, screenHeight - reservedSpace)
+    }
+
+    private var setupPickerDesiredHeight: CGFloat {
+        setupPickerHeaderAndPaddingHeight + (CGFloat(setupPickerOptionsCount) * setupPickerRowHeight)
+    }
+
+    private var setupPickerHeight: CGFloat {
+        min(max(setupPickerDesiredHeight, setupPickerMinimumHeight), setupPickerMaximumHeight)
+    }
+
     // MARK: Defaults (from SwiftData)
     private func defaultStaffName(for role: StaffRole, gradeID: UUID?) -> String? {
         guard let gradeID else { return nil }
@@ -711,8 +745,14 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .presentationDetents([.fraction(0.82), .large], selection: $setupPickerDetent)
+            .presentationDetents([.height(setupPickerHeight), .large], selection: $setupPickerDetent)
             .presentationDragIndicator(.visible)
+            .onAppear {
+                setupPickerDetent = .height(setupPickerHeight)
+            }
+            .onChange(of: setupPickerPrompt) { _, _ in
+                setupPickerDetent = .height(setupPickerHeight)
+            }
         }
     }
 
