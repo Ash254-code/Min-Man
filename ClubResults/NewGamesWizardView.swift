@@ -124,6 +124,11 @@ struct NewGameWizardView: View {
         let custom = clean(boundaryUmpire2CustomName)
         return custom.isEmpty ? playerName(for: boundaryUmpire2ID) : custom
     }
+    private var selectedTrainerNames: [String] {
+        [trainer1Name, trainer2Name, trainer3Name, trainer4Name]
+            .map(clean)
+            .filter { !$0.isEmpty }
+    }
 
     private var opponentNames: [String] {
         clubConfiguration.sortedOppositions.map(\.name)
@@ -348,6 +353,8 @@ struct NewGameWizardView: View {
             let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
             let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
             let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
+            // Trainers are optional (0...4 selected trainers should always be valid).
+            let trainersOK = selectedTrainerNames.count <= 4
 
             let officialsOK =
                 (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
@@ -355,7 +362,7 @@ struct NewGameWizardView: View {
                 (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty) &&
                 (!(asksBoundaryUmpire1 && asksBoundaryUmpire2) || finalBoundary1 != finalBoundary2)
 
-            return officialsOK
+            return officialsOK && trainersOK
 
         case .score:
             return true

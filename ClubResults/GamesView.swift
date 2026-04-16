@@ -105,12 +105,9 @@ struct GamesView: View {
             // ✅ EXACT "other pages" style: one capsule containing filter + plus
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    FilterAddCapsule(
+                    FilterCapsule(
                         grades: orderedGrades,
-                        selectedGradeID: $selectedGradeID,
-                        onAdd: {
-                            newGameWizardPresentation = NewGameWizardPresentation(initialGradeID: nil)
-                        }
+                        selectedGradeID: $selectedGradeID
                     )
                 }
             }
@@ -208,42 +205,25 @@ private struct GamesListSection<Content: View>: View {
     }
 }
 
-// MARK: - Top-right capsule (Filter + Plus) — matches your screenshot
-private struct FilterAddCapsule: View {
+// MARK: - Top-right capsule (Filter only)
+private struct FilterCapsule: View {
     let grades: [Grade]
     @Binding var selectedGradeID: UUID?
-    let onAdd: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
+        Menu {
+            Button("All") { selectedGradeID = nil }
 
-            // Filter menu
-            Menu {
-                Button("All") { selectedGradeID = nil }
-
-                if !grades.isEmpty {
-                    Divider()
-                    ForEach(grades) { g in
-                        Button(g.name) { selectedGradeID = g.id }
-                    }
+            if !grades.isEmpty {
+                Divider()
+                ForEach(grades) { g in
+                    Button(g.name) { selectedGradeID = g.id }
                 }
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 44, height: 36)
             }
-
-            // Divider inside capsule
-            Rectangle()
-                .fill(Color.white.opacity(0.15))
-                .frame(width: 1, height: 18)
-
-            // Plus button
-            Button(action: onAdd) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 44, height: 36)
-            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 44, height: 36)
         }
         .foregroundStyle(.primary)
         .background(
