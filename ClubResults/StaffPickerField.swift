@@ -148,12 +148,12 @@ struct StaffPickerField: View {
             .presentationDragIndicator(.visible)
             .onChange(of: options.count) { _, _ in
                 if showChooser {
-                    chooserDetent = .height(chooserHeight)
+                    chooserDetent = chooserExpandedDetent
                 }
             }
             .onChange(of: showChooser) { _, isPresented in
                 if isPresented {
-                    chooserDetent = .height(chooserHeight)
+                    chooserDetent = chooserExpandedDetent
                 }
             }
         }

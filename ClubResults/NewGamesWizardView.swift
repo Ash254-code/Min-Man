@@ -828,10 +828,10 @@ struct NewGameWizardView: View {
             .presentationDetents([.height(setupPickerHeight), setupPickerExpandedDetent], selection: $setupPickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                setupPickerDetent = .height(setupPickerHeight)
+                setupPickerDetent = setupPickerExpandedDetent
             }
             .onChange(of: setupPickerPrompt) { _, _ in
-                setupPickerDetent = .height(setupPickerHeight)
+                setupPickerDetent = setupPickerExpandedDetent
             }
         }
     }
@@ -1035,10 +1035,10 @@ struct NewGameWizardView: View {
             .presentationDetents([.height(boundaryPickerHeight), setupPickerExpandedDetent], selection: $boundaryUmpirePickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                boundaryUmpirePickerDetent = .height(boundaryPickerHeight)
+                boundaryUmpirePickerDetent = setupPickerExpandedDetent
             }
             .onChange(of: boundaryUmpirePickerPrompt) { _, _ in
-                boundaryUmpirePickerDetent = .height(boundaryPickerHeight)
+                boundaryUmpirePickerDetent = setupPickerExpandedDetent
             }
         }
         .alert(
@@ -1274,10 +1274,10 @@ struct NewGameWizardView: View {
             .presentationDetents([.height(goalKickerPickerHeight), setupPickerExpandedDetent], selection: $goalKickerPickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                goalKickerPickerDetent = .height(goalKickerPickerHeight)
+                goalKickerPickerDetent = setupPickerExpandedDetent
             }
             .onChange(of: goalKickerPickerPrompt) { _, _ in
-                goalKickerPickerDetent = .height(goalKickerPickerHeight)
+                goalKickerPickerDetent = setupPickerExpandedDetent
             }
         }
     }
@@ -1364,10 +1364,10 @@ struct NewGameWizardView: View {
             .presentationDetents([.height(bestPlayerPickerHeight), setupPickerExpandedDetent], selection: $bestPlayerPickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                bestPlayerPickerDetent = .height(bestPlayerPickerHeight)
+                bestPlayerPickerDetent = setupPickerExpandedDetent
             }
             .onChange(of: bestPlayerPickerPrompt) { _, _ in
-                bestPlayerPickerDetent = .height(bestPlayerPickerHeight)
+                bestPlayerPickerDetent = setupPickerExpandedDetent
             }
         }
     }
