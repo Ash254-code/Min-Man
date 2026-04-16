@@ -65,6 +65,7 @@ struct ClubResultsApp: App {
             Grade.self,
             Contact.self,
             ReportRecipient.self,
+            CustomReportTemplate.self,
             StaffMember.self,   // ✅ Staff list for pickers
             StaffDefault.self   // ✅ Default per grade + role
         ])
