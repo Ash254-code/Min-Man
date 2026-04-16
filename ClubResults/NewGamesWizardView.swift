@@ -394,7 +394,7 @@ struct NewGameWizardView: View {
                     switch step {
                     case .setup: setupStep
                     case .staff: staffStep
-                    case .medical: medicalStep
+                    case .medical: medicalStepView
                     case .score: scoreStep
                     case .goals: goalsStep
                     case .best: bestStep
@@ -767,7 +767,7 @@ struct NewGameWizardView: View {
         }
     }
 
-    private var medicalStep: some View {
+    private var medicalStepView: some View {
         ScrollView {
             VStack(spacing: 14) {
                 StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
