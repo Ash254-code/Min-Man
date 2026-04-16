@@ -194,6 +194,10 @@ struct NewGameWizardView: View {
         min(max(setupPickerDesiredHeight, setupPickerMinimumHeight), setupPickerMaximumHeight)
     }
 
+    private var setupPickerExpandedDetent: PresentationDetent {
+        isCompactLayout ? .large : .fraction(0.98)
+    }
+
     // MARK: Defaults (from SwiftData)
     private func defaultStaffName(for role: StaffRole, gradeID: UUID?) -> String? {
         guard let gradeID else { return nil }
@@ -738,13 +742,13 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .presentationDetents([.height(setupPickerHeight), .large], selection: $setupPickerDetent)
+            .presentationDetents([.height(setupPickerHeight), setupPickerExpandedDetent], selection: $setupPickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                setupPickerDetent = .large
+                setupPickerDetent = setupPickerExpandedDetent
             }
             .onChange(of: setupPickerPrompt) { _, _ in
-                setupPickerDetent = .large
+                setupPickerDetent = setupPickerExpandedDetent
             }
         }
     }
