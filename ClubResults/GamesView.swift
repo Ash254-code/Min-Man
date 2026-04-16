@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UIKit
 
 struct GamesView: View {
     private struct NewGameWizardPresentation: Identifiable {
@@ -35,16 +34,8 @@ struct GamesView: View {
         return base.filter { $0.gradeID == gid }
     }
 
-    // ✅ Widest opponent pill (based on currently shown games)
-    private var maxOpponentPillWidth: CGFloat {
-        let font = UIFont.preferredFont(forTextStyle: .subheadline)
-
-        let maxTextWidth = filteredGames
-            .map { ($0.opponent as NSString).size(withAttributes: [.font: font]).width }
-            .max() ?? 0
-
-        // + horizontal padding used inside OpponentBadge (10 + 10)
-        return maxTextWidth + 20
+    private var standardPillWidth: CGFloat {
+        ClubStyle.standardPillWidth(configuration: ClubConfigurationStore.load())
     }
 
     var body: some View {
@@ -95,7 +86,7 @@ struct GamesView: View {
                                             GameCardRow(
                                                 game: game,
                                                 gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
-                                                opponentWidth: maxOpponentPillWidth
+                                                opponentWidth: standardPillWidth
                                             )
                                         }
                                         .buttonStyle(.plain)

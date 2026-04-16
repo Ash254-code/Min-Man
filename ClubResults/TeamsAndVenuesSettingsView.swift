@@ -29,6 +29,7 @@ struct TeamsAndVenuesSettingsView: View {
                             name: configuration.clubTeam.name,
                             primaryHex: configuration.clubTeam.primaryColorHex,
                             secondaryHex: configuration.clubTeam.secondaryColorHex,
+                            tertiaryHex: configuration.clubTeam.tertiaryColorHex,
                             width: standardPillWidth
                         )
 
@@ -63,6 +64,7 @@ struct TeamsAndVenuesSettingsView: View {
                                 name: opposition.name,
                                 primaryHex: opposition.primaryColorHex,
                                 secondaryHex: opposition.secondaryColorHex,
+                                tertiaryHex: opposition.tertiaryColorHex,
                                 width: standardPillWidth
                             )
 
@@ -89,29 +91,23 @@ struct TeamsAndVenuesSettingsView: View {
     }
 
     private var standardPillWidth: CGFloat {
-        let names = [configuration.clubTeam.name] + configuration.oppositions.map(\.name)
-        let font = UIFont.preferredFont(forTextStyle: .headline)
-        let textWidths = names.map { name in
-            let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            let value = cleaned.isEmpty ? "Team" : cleaned
-            return (value as NSString).size(withAttributes: [.font: font]).width
-        }
-
-        let longest = textWidths.max() ?? 0
-        let padded = longest + 28
-        return min(max(padded, 120), 280)
+        ClubStyle.standardPillWidth(configuration: configuration, fontTextStyle: .headline)
     }
 
     @ViewBuilder
-    private func teamNamePill(name: String, primaryHex: String, secondaryHex: String?, width: CGFloat) -> some View {
+    private func teamNamePill(name: String, primaryHex: String, secondaryHex: String?, tertiaryHex: String?, width: CGFloat) -> some View {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let label = cleaned.isEmpty ? "Team" : cleaned
-        let cleanedSecondary = secondaryHex?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let textColorHex = cleanedSecondary.isEmpty ? "#FFFFFF" : cleanedSecondary
+        let style = ClubStyle.style(
+            primaryHex: primaryHex,
+            secondaryHex: secondaryHex,
+            tertiaryHex: tertiaryHex,
+            fallback: ClubStyle.ourScoreStyle
+        )
 
         Text(label)
             .font(.headline)
-            .foregroundStyle(Color(hex: textColorHex, fallback: .white))
+            .foregroundStyle(style.text)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .frame(width: width, alignment: .center)
@@ -119,7 +115,11 @@ struct TeamsAndVenuesSettingsView: View {
             .padding(.vertical, 8)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color(hex: primaryHex, fallback: .blue))
+                    .fill(style.background)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(style.border.opacity(0.95), lineWidth: 1.5)
             )
     }
 
@@ -371,16 +371,27 @@ private struct TeamProfileEditorView: View {
         let name = draftTeamName.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayName = name.isEmpty ? "Team" : name
 
+        let style = ClubStyle.style(
+            primaryHex: draftPrimaryHex,
+            secondaryHex: draftSecondaryHex,
+            tertiaryHex: draftTertiaryHex,
+            fallback: ClubStyle.ourScoreStyle
+        )
+
         return Text(displayName)
             .font(.headline)
-            .foregroundStyle(Color(hex: draftSecondaryHex, fallback: .white))
+            .foregroundStyle(style.text)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color(hex: draftPrimaryHex, fallback: .blue))
+                    .fill(style.background)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(style.border.opacity(0.95), lineWidth: 1.5)
             )
     }
 

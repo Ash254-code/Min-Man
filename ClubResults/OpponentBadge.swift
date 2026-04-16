@@ -10,7 +10,9 @@ struct OpponentBadge: View {
     }
 
     var body: some View {
-        let style = ClubStyle.style(for: opponent)
+        let configuration = ClubConfigurationStore.load()
+        let style = ClubStyle.style(for: opponent, configuration: configuration)
+        let resolvedWidth = fixedWidth ?? ClubStyle.standardPillWidth(configuration: configuration)
 
         Text(opponent)
             .font(.subheadline)
@@ -19,10 +21,14 @@ struct OpponentBadge: View {
             .minimumScaleFactor(0.8)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .frame(width: fixedWidth, alignment: .center)
+            .frame(width: resolvedWidth, alignment: .center)
             .background(
                 Capsule(style: .continuous)
                     .fill(style.background)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(style.border.opacity(0.95), lineWidth: 1.5)
             )
             .foregroundStyle(style.text)
             .accessibilityLabel(Text("Opponent: \(opponent)"))

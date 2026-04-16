@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ClubStyle {
 
@@ -10,6 +11,7 @@ struct ClubStyle {
     struct Style {
         let background: Color
         let text: Color
+        let border: Color
     }
 
     // MARK: - Helpers
@@ -55,11 +57,68 @@ struct ClubStyle {
     // ✅ THIS is what OpponentBadge expects
     static func style(for opponent: String) -> Style {
         let c = opponentColours(for: opponent)
-        return Style(background: c.primary, text: c.text)
+        return Style(background: c.primary, text: c.text, border: c.text)
     }
 
     // Club pill style (Min Man)
     static var ourScoreStyle: Style {
-        Style(background: clubNavy, text: clubYellow)
+        Style(background: clubNavy, text: clubYellow, border: clubYellow)
     }
+
+
+    static func style(primaryHex: String, secondaryHex: String?, tertiaryHex: String?, fallback: Style) -> Style {
+        let primary = Color(hex: primaryHex, fallback: fallback.background)
+
+        let cleanedSecondary = secondaryHex?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let secondary = cleanedSecondary.isEmpty
+            ? fallback.text
+            : Color(hex: cleanedSecondary, fallback: fallback.text)
+
+        let cleanedTertiary = tertiaryHex?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let border = cleanedTertiary.isEmpty
+            ? secondary
+            : Color(hex: cleanedTertiary, fallback: secondary)
+
+        return Style(background: primary, text: secondary, border: border)
+    }
+
+    static func style(for teamName: String, configuration: ClubConfiguration) -> Style {
+        let normalized = cleanName(teamName)
+
+        if normalized.caseInsensitiveCompare(configuration.clubTeam.name) == .orderedSame {
+            return style(
+                primaryHex: configuration.clubTeam.primaryColorHex,
+                secondaryHex: configuration.clubTeam.secondaryColorHex,
+                tertiaryHex: configuration.clubTeam.tertiaryColorHex,
+                fallback: ourScoreStyle
+            )
+        }
+
+        if let opposition = configuration.oppositions.first(where: { cleanName($0.name).caseInsensitiveCompare(normalized) == .orderedSame }) {
+            return style(
+                primaryHex: opposition.primaryColorHex,
+                secondaryHex: opposition.secondaryColorHex,
+                tertiaryHex: opposition.tertiaryColorHex,
+                fallback: style(for: opposition.name)
+            )
+        }
+
+        return style(for: normalized)
+    }
+
+    static func standardPillWidth(configuration: ClubConfiguration, fontTextStyle: UIFont.TextStyle = .headline) -> CGFloat {
+        let names = [configuration.clubTeam.name] + configuration.oppositions.map(\.name)
+        let font = UIFont.preferredFont(forTextStyle: fontTextStyle)
+
+        let textWidths = names.map { name in
+            let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = cleaned.isEmpty ? "Team" : cleaned
+            return (value as NSString).size(withAttributes: [.font: font]).width
+        }
+
+        let longest = textWidths.max() ?? 0
+        let padded = longest + 28
+        return min(max(padded, 120), 280)
+    }
+
 }

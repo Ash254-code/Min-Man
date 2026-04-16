@@ -154,19 +154,17 @@ struct NewGameWizardView: View {
         }
     }
 
+    private var standardPillWidth: CGFloat {
+        ClubStyle.standardPillWidth(configuration: clubConfiguration)
+    }
+
     private var ourTeamScoreStyle: ClubStyle.Style {
-        let colors = clubConfiguration.clubTeam.colorHexes
-        let background = colors.first.map { Color(hex: $0, fallback: ClubStyle.ourScoreStyle.background) } ?? ClubStyle.ourScoreStyle.background
-        let textColor = colors.dropFirst().first.map { Color(hex: $0, fallback: ClubStyle.ourScoreStyle.text) } ?? ClubStyle.ourScoreStyle.text
-        return ClubStyle.Style(background: background, text: textColor)
+        ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration)
     }
 
     private var opponentScoreStyle: ClubStyle.Style {
-        guard let selectedOpposition else { return ClubStyle.style(for: finalOpponent) }
-        let colors = selectedOpposition.colorHexes
-        let background = colors.first.map { Color(hex: $0, fallback: ClubStyle.style(for: selectedOpposition.name).background) } ?? ClubStyle.style(for: selectedOpposition.name).background
-        let textColor = colors.dropFirst().first.map { Color(hex: $0, fallback: .white) } ?? .white
-        return ClubStyle.Style(background: background, text: textColor)
+        let opponent = finalOpponent.isEmpty ? "Opponent" : finalOpponent
+        return ClubStyle.style(for: opponent, configuration: clubConfiguration)
     }
 
     // MARK: Defaults (from SwiftData)
@@ -785,7 +783,7 @@ struct NewGameWizardView: View {
 
             } header: {
                 HStack(alignment: .center) {
-                    ScorePill(clubConfiguration.clubTeam.name, style: ourTeamScoreStyle)
+                    ScorePill(clubConfiguration.clubTeam.name, style: ourTeamScoreStyle, fixedWidth: standardPillWidth)
                     Spacer()
                     Text("\(ourGoals).\(ourBehinds) (\(ourScore))")
                         .font(.system(size: 24, weight: .bold))
@@ -808,7 +806,7 @@ struct NewGameWizardView: View {
 
             } header: {
                 HStack(alignment: .center) {
-                    ScorePill(finalOpponent.isEmpty ? "Opponent" : finalOpponent, style: opponentScoreStyle)
+                    ScorePill(finalOpponent.isEmpty ? "Opponent" : finalOpponent, style: opponentScoreStyle, fixedWidth: standardPillWidth)
                     Spacer()
                     Text("\(theirGoals).\(theirBehinds) (\(theirScore))")
                         .font(.system(size: 24, weight: .bold))
