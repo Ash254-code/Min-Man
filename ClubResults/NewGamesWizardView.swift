@@ -585,13 +585,15 @@ struct NewGameWizardView: View {
         NavigationStack {
             VStack(spacing: 0) {
 
-                ProgressView(
-                    value: Double(activeSteps.firstIndex(of: step) ?? 0),
-                    total: Double(max(activeSteps.count - 1, 1))
-                )
-                .padding(.horizontal)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                if step != .score {
+                    ProgressView(
+                        value: Double(activeSteps.firstIndex(of: step) ?? 0),
+                        total: Double(max(activeSteps.count - 1, 1))
+                    )
+                    .padding(.horizontal)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+                }
 
                 ZStack {
                     switch step {
@@ -607,46 +609,50 @@ struct NewGameWizardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                HStack {
-                    // ✅ hide Back entirely on the first step
-                    if step != .setup {
-                        Button("Back") { back() }
-                    }
-
-                    Spacer()
-
-                    if step == .review {
-                        Button("Save Draft") {
-                            _ = saveGame(asDraft: true, dismissOnSuccess: true)
+                if step != .score {
+                    HStack {
+                        // ✅ hide Back entirely on the first step
+                        if step != .setup {
+                            Button("Back") { back() }
                         }
-                        .disabled(!canProceedOnCurrentStep)
-                        .buttonStyle(.bordered)
 
-                        Button("Save and Send") {
-                            saveAndSendReport()
-                        }
-                        .disabled(!canProceedOnCurrentStep)
-                        .buttonStyle(.borderedProminent)
-                    } else {
-                        Button("Next") { next() }
+                        Spacer()
+
+                        if step == .review {
+                            Button("Save Draft") {
+                                _ = saveGame(asDraft: true, dismissOnSuccess: true)
+                            }
+                            .disabled(!canProceedOnCurrentStep)
+                            .buttonStyle(.bordered)
+
+                            Button("Save and Send") {
+                                saveAndSendReport()
+                            }
                             .disabled(!canProceedOnCurrentStep)
                             .buttonStyle(.borderedProminent)
+                        } else {
+                            Button("Next") { next() }
+                                .disabled(!canProceedOnCurrentStep)
+                                .buttonStyle(.borderedProminent)
+                        }
                     }
+                    .font(.system(size: isCompactLayout ? 24 : 28, weight: .semibold))
+                    .controlSize(isCompactLayout ? .large : .extraLarge)
+                    .padding(.horizontal, isCompactLayout ? 18 : 26)
+                    .padding(.vertical, isCompactLayout ? 14 : 18)
+                    .background(.ultraThinMaterial)
                 }
-                .font(.system(size: isCompactLayout ? 24 : 28, weight: .semibold))
-                .controlSize(isCompactLayout ? .large : .extraLarge)
-                .padding(.horizontal, isCompactLayout ? 18 : 26)
-                .padding(.vertical, isCompactLayout ? 14 : 18)
-                .background(.ultraThinMaterial)
             }
-            .navigationTitle(step == .setup ? "" : "New Game")
-            .navigationBarTitleDisplayMode(step == .setup ? .inline : .large)
+            .navigationTitle(step == .score ? "Live Game View" : (step == .setup ? "" : "New Game"))
+            .navigationBarTitleDisplayMode((step == .setup || step == .score) ? .inline : .large)
 
             // ✅ Cancel in top-left ONLY on first step
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if step == .setup {
                         Button("Cancel") { dismiss() }
+                    } else if step == .score {
+                        Button("Close") { dismiss() }
                     }
                 }
             }
@@ -1211,7 +1217,17 @@ struct NewGameWizardView: View {
                 let scoreboardHeight = max(300, proxy.size.height * 0.5)
 
                 VStack(spacing: cardSpacing) {
+                    VStack(spacing: 8) {
+                        Text("Live Game View")
+                            .font(.system(size: isCompactLayout ? 30 : 46, weight: .bold))
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+
                     if isCompactLayout {
+                        timerCard(width: proxy.size.width, minHeight: timerHeight)
                         scoreboardCard(minHeight: scoreboardHeight)
                         timerCard(width: proxy.size.width, minHeight: timerHeight)
                     } else {
@@ -1223,6 +1239,12 @@ struct NewGameWizardView: View {
                                 .frame(width: timerWidth, alignment: .topTrailing)
                         }
                     }
+
+                    goalScorersCard
+
+                    Button("Save and Continue") { next() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                 }
                 .padding(.horizontal, isCompactLayout ? 14 : 24)
                 .padding(.top, isCompactLayout ? 14 : 20)
@@ -1249,6 +1271,32 @@ struct NewGameWizardView: View {
         Timer.publish(every: 1, on: .main, in: .common)
     }
 
+    private var periodMinutesEditor: Binding<String> {
+        Binding(
+            get: { String(periodMinutes) },
+            set: { newValue in
+                let digitsOnly = newValue.filter(\.isNumber)
+                guard let value = Int(digitsOnly), (1...99).contains(value) else { return }
+                periodMinutes = value
+            }
+        )
+    }
+
+    private var liveGoalScorersSummary: [(name: String, goals: Int)] {
+        let grouped = Dictionary(grouping: goalKickers.compactMap { entry -> (String, Int)? in
+            guard
+                let playerID = entry.playerID,
+                let player = players.first(where: { $0.id == playerID }),
+                entry.goals > 0
+            else { return nil }
+            return (player.name, entry.goals)
+        }, by: { $0.0 })
+
+        return grouped
+            .map { (name, entries) in (name: name, goals: entries.reduce(0) { $0 + $1.1 }) }
+            .sorted { $0.goals > $1.goals }
+    }
+
     private var formattedClock: String {
         let safeSeconds = max(0, remainingSeconds)
         let minutes = safeSeconds / 60
@@ -1263,8 +1311,12 @@ struct NewGameWizardView: View {
                     .font(.title3.weight(.semibold))
                 Spacer()
                 HStack(spacing: 8) {
-                    Text("Minutes")
+                    Text("Period minutes")
                         .foregroundStyle(.secondary)
+                    TextField("20", text: periodMinutesEditor)
+                        .keyboardType(.numberPad)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 72)
                     Stepper("", value: $periodMinutes, in: 1...99)
                         .labelsHidden()
                 }
@@ -1299,6 +1351,37 @@ struct NewGameWizardView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private var goalScorersCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Goal scorers")
+                .font(.title3.weight(.bold))
+
+            if liveGoalScorersSummary.isEmpty {
+                Text("No goal scorers yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(liveGoalScorersSummary, id: \.name) { scorer in
+                    HStack {
+                        Text(scorer.name)
+                        Spacer()
+                        Text("\(scorer.goals)")
+                            .fontWeight(.bold)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
     }
