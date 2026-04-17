@@ -18,11 +18,169 @@ private struct WizardGoalKickerEntry: Identifiable, Codable, Hashable {
     var goals: Int
 }
 
+struct NewGameWizardPreviewData {
+    static let minimal = (
+        venue: "Main Oval",
+        opposition: "Redbacks",
+        players: ["Tom Hill", "Jack Stone"],
+        coaches: ["Ben Coach"],
+        trainers: [String](),
+        selectedPlayers: [String](),
+        selectedCoaches: [String](),
+        selectedTrainers: [String]()
+    )
+
+    static let large = (
+        venue: "Memorial Park",
+        opposition: "South Districts",
+        players: [
+            "Tom Hill", "Jack Stone", "Sam Reed", "Will Parker", "Luke Mason",
+            "Ben Smith", "Josh Taylor", "Max Young", "Noah White", "Liam Brown",
+            "Cooper Green", "Ethan Hall", "Hudson King", "Mason Scott", "Levi Ward",
+            "Aiden Bell", "Zac Cook", "Ned Price", "Harry Long", "Alex West",
+            "Owen Lee", "Isaac Adams", "Joel Baker", "Finn Carter", "Ryan Evans",
+            "Ty Fox", "Hugo Grant", "Bailey Jones", "Mitchell Kerr", "Oscar Lane"
+        ],
+        coaches: ["Ben Coach", "Rob Assistant"],
+        trainers: ["Trainer 1", "Trainer 2", "Trainer 3", "Trainer 4"],
+        selectedPlayers: ["Tom Hill", "Jack Stone"],
+        selectedCoaches: ["Ben Coach"],
+        selectedTrainers: []
+    )
+}
+
+struct NewGameWizardPreviewContainer: View {
+    let step: NewGameWizardStep
+    let data: (
+        venue: String,
+        opposition: String,
+        players: [String],
+        coaches: [String],
+        trainers: [String],
+        selectedPlayers: [String],
+        selectedCoaches: [String],
+        selectedTrainers: [String]
+    )
+
+    var body: some View {
+        NavigationStack {
+            NewGameWizardView(
+                previewStep: step,
+                previewVenue: data.venue,
+                previewOpposition: data.opposition,
+                previewAvailablePlayers: data.players,
+                previewAvailableCoaches: data.coaches,
+                previewAvailableTrainers: data.trainers,
+                previewSelectedPlayers: data.selectedPlayers,
+                previewSelectedCoaches: data.selectedCoaches,
+                previewSelectedTrainers: data.selectedTrainers
+            )
+        }
+    }
+}
+
+#Preview("Details - Empty") {
+    NewGameWizardPreviewContainer(
+        step: .details,
+        data: NewGameWizardPreviewData.minimal
+    )
+}
+
+#Preview("Players - Large List") {
+    NewGameWizardPreviewContainer(
+        step: .players,
+        data: NewGameWizardPreviewData.large
+    )
+}
+
+#Preview("Coaches") {
+    NewGameWizardPreviewContainer(
+        step: .coaches,
+        data: NewGameWizardPreviewData.large
+    )
+}
+
+#Preview("Trainers - None Selected") {
+    NewGameWizardPreviewContainer(
+        step: .trainers,
+        data: NewGameWizardPreviewData.minimal
+    )
+}
+
+#Preview("Dark Mode") {
+    NewGameWizardPreviewContainer(
+        step: .players,
+        data: NewGameWizardPreviewData.large
+    )
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Large Text") {
+    NewGameWizardPreviewContainer(
+        step: .players,
+        data: NewGameWizardPreviewData.large
+    )
+    .environment(\.sizeCategory, .accessibilityExtraExtraExtraLarge)
+}
+
+enum NewGameWizardStep {
+    case details
+    case coaches
+    case boundaryUmpires
+    case players
+    case trainers
+    case bestPlayers
+    case guestVotes
+    case review
+
+    fileprivate var wizardStep: NewGameWizardView.Step {
+        switch self {
+        case .details: .setup
+        case .coaches: .staff
+        case .boundaryUmpires: .officials
+        case .players: .goals
+        case .trainers: .medical
+        case .bestPlayers: .best
+        case .guestVotes: .votes
+        case .review: .review
+        }
+    }
+}
+
 struct NewGameWizardView: View {
     let initialGradeID: UUID?
+    var previewStep: NewGameWizardStep? = nil
+    var previewVenue: String? = nil
+    var previewOpposition: String? = nil
+    var previewAvailablePlayers: [String]? = nil
+    var previewAvailableCoaches: [String]? = nil
+    var previewAvailableTrainers: [String]? = nil
+    var previewSelectedPlayers: [String]? = nil
+    var previewSelectedCoaches: [String]? = nil
+    var previewSelectedTrainers: [String]? = nil
 
-    init(initialGradeID: UUID? = nil) {
+    init(
+        initialGradeID: UUID? = nil,
+        previewStep: NewGameWizardStep? = nil,
+        previewVenue: String? = nil,
+        previewOpposition: String? = nil,
+        previewAvailablePlayers: [String]? = nil,
+        previewAvailableCoaches: [String]? = nil,
+        previewAvailableTrainers: [String]? = nil,
+        previewSelectedPlayers: [String]? = nil,
+        previewSelectedCoaches: [String]? = nil,
+        previewSelectedTrainers: [String]? = nil
+    ) {
         self.initialGradeID = initialGradeID
+        self.previewStep = previewStep
+        self.previewVenue = previewVenue
+        self.previewOpposition = previewOpposition
+        self.previewAvailablePlayers = previewAvailablePlayers
+        self.previewAvailableCoaches = previewAvailableCoaches
+        self.previewAvailableTrainers = previewAvailableTrainers
+        self.previewSelectedPlayers = previewSelectedPlayers
+        self.previewSelectedCoaches = previewSelectedCoaches
+        self.previewSelectedTrainers = previewSelectedTrainers
     }
 
     // MARK: - Club Colours
@@ -118,6 +276,14 @@ struct NewGameWizardView: View {
     @State private var showMessageComposer = false
     @State private var sendStatusMessage: String?
 
+    private var isPreviewMode: Bool { previewStep != nil }
+    private var currentStep: Step { previewStep?.wizardStep ?? step }
+    private var previewPlayers: [Player] {
+        (previewAvailablePlayers ?? []).enumerated().map { idx, name in
+            Player(id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", idx + 1)) ?? UUID(), name: name, isActive: true)
+        }
+    }
+
     // MARK: Helpers
     private func clean(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -134,7 +300,9 @@ struct NewGameWizardView: View {
 
     private func playerName(for id: UUID?) -> String {
         guard let id else { return "" }
-        return players.first(where: { $0.id == id })?.name ?? ""
+        return eligiblePlayers.first(where: { $0.id == id })?.name
+            ?? players.first(where: { $0.id == id })?.name
+            ?? ""
     }
     private func playerName(_ id: UUID) -> String {
         playerName(for: id)
@@ -333,6 +501,9 @@ struct NewGameWizardView: View {
     }
 
     private var eligiblePlayers: [Player] {
+        if isPreviewMode {
+            return previewPlayers
+        }
         guard let gid = gradeID else { return [] }
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
     }
@@ -568,9 +739,9 @@ struct NewGameWizardView: View {
         NavigationStack {
             VStack(spacing: 0) {
 
-                if step != .score {
+                if currentStep != .score {
                     ProgressView(
-                        value: Double(activeSteps.firstIndex(of: step) ?? 0),
+                        value: Double(activeSteps.firstIndex(of: currentStep) ?? 0),
                         total: Double(max(activeSteps.count - 1, 1))
                     )
                     .padding(.horizontal)
@@ -579,7 +750,7 @@ struct NewGameWizardView: View {
                 }
 
                 ZStack {
-                    switch step {
+                    switch currentStep {
                     case .setup: setupStep
                     case .staff: staffStep
                     case .officials: officialsStep
@@ -593,16 +764,16 @@ struct NewGameWizardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if step != .score {
+                if !isPreviewMode && currentStep != .score {
                     HStack {
                         // ✅ hide Back entirely on the first step
-                        if step != .setup {
+                        if currentStep != .setup {
                             Button("Back") { back() }
                         }
 
                         Spacer()
 
-                        if step == .review {
+                        if currentStep == .review {
                             Button("Save Draft") {
                                 _ = saveGame(asDraft: true, dismissOnSuccess: true)
                             }
@@ -628,18 +799,18 @@ struct NewGameWizardView: View {
                 }
             }
             .navigationTitle(
-                step == .score
+                currentStep == .score
                     ? (supportsLiveGameView ? "Live Game View" : "Final Score")
-                    : (step == .setup ? "" : "New Game")
+                    : (currentStep == .setup ? "" : "New Game")
             )
-            .navigationBarTitleDisplayMode((step == .setup || step == .score) ? .inline : .large)
+            .navigationBarTitleDisplayMode((currentStep == .setup || currentStep == .score) ? .inline : .large)
 
             // ✅ Cancel in top-left ONLY on first step
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if step == .setup {
+                    if !isPreviewMode && currentStep == .setup {
                         Button("Cancel") { dismiss() }
-                    } else if step == .score {
+                    } else if !isPreviewMode && currentStep == .score {
                         Button("Close") { dismiss() }
                     }
                 }
@@ -654,6 +825,7 @@ struct NewGameWizardView: View {
                 venueName = ""
             }
             applyDefaults(for: gradeID)
+            applyPreviewStateIfNeeded()
         }
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
@@ -672,6 +844,7 @@ struct NewGameWizardView: View {
                 applyDefaults(for: initialGradeID)
                 syncBestPlayersSelectionCount()
             }
+            applyPreviewStateIfNeeded()
         }
         .sheet(isPresented: $showMailComposer) {
             if let attachmentURL = reportAttachmentURL {
@@ -831,6 +1004,43 @@ struct NewGameWizardView: View {
             step = .votes
         } else {
             step = .review
+        }
+    }
+
+    private func applyPreviewStateIfNeeded() {
+        guard isPreviewMode else { return }
+
+        step = previewStep?.wizardStep ?? step
+        entryMode = .postGame
+
+        if let previewVenue {
+            venueName = previewVenue
+        }
+        if let previewOpposition {
+            opponentName = previewOpposition
+        }
+
+        let selectedCoaches = previewSelectedCoaches ?? previewAvailableCoaches ?? []
+        headCoachName = selectedCoaches.indices.contains(0) ? selectedCoaches[0] : ""
+        assCoachName = selectedCoaches.indices.contains(1) ? selectedCoaches[1] : ""
+
+        let selectedTrainers = previewSelectedTrainers ?? previewAvailableTrainers ?? []
+        trainer1Name = selectedTrainers.indices.contains(0) ? selectedTrainers[0] : ""
+        trainer2Name = selectedTrainers.indices.contains(1) ? selectedTrainers[1] : ""
+        trainer3Name = selectedTrainers.indices.contains(2) ? selectedTrainers[2] : ""
+        trainer4Name = selectedTrainers.indices.contains(3) ? selectedTrainers[3] : ""
+
+        let selectedPlayerNames = Set(previewSelectedPlayers ?? [])
+        let selectedPlayerIDs = previewPlayers
+            .filter { selectedPlayerNames.contains($0.name) }
+            .map(\.id)
+
+        if !selectedPlayerIDs.isEmpty {
+            goalKickers = selectedPlayerIDs.map { WizardGoalKickerEntry(playerID: $0, goals: 1) }
+            syncBestPlayersSelectionCount()
+            for idx in bestRanked.indices {
+                bestRanked[idx] = idx < selectedPlayerIDs.count ? selectedPlayerIDs[idx] : nil
+            }
         }
     }
 
