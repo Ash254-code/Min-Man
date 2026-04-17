@@ -1256,7 +1256,6 @@ struct NewGameWizardView: View {
                     .frame(maxWidth: .infinity)
 
                     if isCompactLayout {
-                        timerCard(width: proxy.size.width, minHeight: timerHeight)
                         scoreboardCard(minHeight: scoreboardHeight)
                         timerCard(width: proxy.size.width, minHeight: timerHeight)
                     } else {
@@ -1333,29 +1332,70 @@ struct NewGameWizardView: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    private var clockEditor: Binding<String> {
+        Binding(
+            get: { formattedClock },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                let filtered = trimmed.filter { $0.isNumber || $0 == ":" }
+                guard !filtered.isEmpty else { return }
+
+                if let colonIndex = filtered.firstIndex(of: ":") {
+                    let minutesPart = String(filtered[..<colonIndex]).filter(\.isNumber)
+                    let secondsPart = String(filtered[filtered.index(after: colonIndex)...]).filter(\.isNumber)
+                    guard
+                        let minutes = Int(minutesPart),
+                        let seconds = Int(secondsPart),
+                        (0...59).contains(seconds)
+                    else { return }
+                    remainingSeconds = (minutes * 60) + seconds
+                    return
+                }
+
+                let digitsOnly = filtered.filter(\.isNumber)
+                guard let totalSeconds = Int(digitsOnly), totalSeconds >= 0 else { return }
+                remainingSeconds = totalSeconds
+            }
+        )
+    }
+
     private func timerCard(width: CGFloat, minHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 Text("Timer")
                     .font(.title3.weight(.semibold))
                 Spacer()
-                HStack(spacing: 8) {
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(formattedClock)
+                    .font(.system(size: isCompactLayout ? 54 : 72, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Edit time")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    TextField("MM:SS", text: clockEditor)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.title3, design: .monospaced))
+                        .frame(width: 120)
+
                     Text("Period minutes")
                         .foregroundStyle(.secondary)
+
                     TextField("20", text: periodMinutesEditor)
                         .keyboardType(.numberPad)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 72)
+
                     Stepper("", value: $periodMinutes, in: 1...99)
                         .labelsHidden()
                 }
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(formattedClock)
-                    .font(.system(size: isCompactLayout ? 52 : 68, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                Spacer()
             }
 
             HStack(spacing: 10) {
@@ -1442,26 +1482,18 @@ struct NewGameWizardView: View {
                 )
             }
 
-            HStack(spacing: 14) {
-                eventButton(
-                    title: "Goal",
-                    color: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration).background,
-                    action: { ourGoals += 1 }
+            HStack(alignment: .top, spacing: 14) {
+                teamActionButtons(
+                    title: clubConfiguration.clubTeam.name,
+                    style: ourTeamScoreStyle,
+                    goalAction: { ourGoals += 1 },
+                    pointAction: { ourBehinds += 1 }
                 )
-                eventButton(
-                    title: "Point",
-                    color: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration).background,
-                    action: { ourBehinds += 1 }
-                )
-                eventButton(
-                    title: "Goal",
-                    color: ClubStyle.style(for: finalOpponent.isEmpty ? "Opponent" : finalOpponent, configuration: clubConfiguration).background,
-                    action: { theirGoals += 1 }
-                )
-                eventButton(
-                    title: "Point",
-                    color: ClubStyle.style(for: finalOpponent.isEmpty ? "Opponent" : finalOpponent, configuration: clubConfiguration).background,
-                    action: { theirBehinds += 1 }
+                teamActionButtons(
+                    title: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
+                    style: opponentScoreStyle,
+                    goalAction: { theirGoals += 1 },
+                    pointAction: { theirBehinds += 1 }
                 )
             }
         }
@@ -1490,11 +1522,11 @@ struct NewGameWizardView: View {
             ScorePill(title, style: style, fixedWidth: standardPillWidth)
 
             Text("\(goals).\(behinds)")
-                .font(.system(size: isCompactLayout ? 36 : 54, weight: .bold, design: .rounded))
+                .font(.system(size: isCompactLayout ? 44 : 64, weight: .bold, design: .rounded))
                 .monospacedDigit()
 
             Text("\(total)")
-                .font(.system(size: isCompactLayout ? 56 : 88, weight: .black, design: .rounded))
+                .font(.system(size: isCompactLayout ? 74 : 122, weight: .black, design: .rounded))
                 .monospacedDigit()
 
             HStack(spacing: 12) {
@@ -1509,16 +1541,33 @@ struct NewGameWizardView: View {
     private func eventButton(title: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: isCompactLayout ? 18 : 24, weight: .bold))
+                .font(.system(size: isCompactLayout ? 24 : 34, weight: .heavy))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, isCompactLayout ? 14 : 18)
+                .padding(.vertical, isCompactLayout ? 18 : 24)
         }
         .buttonStyle(.plain)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(color.opacity(0.85))
         )
         .foregroundStyle(.white)
+    }
+
+    private func teamActionButtons(
+        title: String,
+        style: ClubStyle.Style,
+        goalAction: @escaping () -> Void,
+        pointAction: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ScorePill(title, style: style)
+
+            HStack(spacing: 10) {
+                eventButton(title: "Goal", color: style.background, action: goalAction)
+                eventButton(title: "Point", color: style.background, action: pointAction)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var goalsStep: some View {
