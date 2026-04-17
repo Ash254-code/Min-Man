@@ -2220,6 +2220,32 @@ struct NewGameWizardView: View {
                                 }
                             }
 
+                        VStack(alignment: .leading, spacing: 10) {
+                            ScorePill("Goal Kickers", style: ourStyle)
+                            if scorerTally.isEmpty, rushedPoints == 0 {
+                                Text("No scorers yet.")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(scorerTally, id: \.id) { scorer in
+                                    HStack {
+                                        Text(playerName(scorer.id))
+                                        Spacer()
+                                        Text(playerContribution(goals: scorer.goals, points: scorer.points))
+                                            .font(.headline)
+                                            .monospacedDigit()
+                                    }
+                                }
+                                if rushedPoints > 0 {
+                                    HStack {
+                                        Text("Rushed")
+                                        Spacer()
+                                        Text(playerContribution(goals: 0, points: rushedPoints))
+                                            .font(.headline)
+                                            .monospacedDigit()
+                                    }
+                                }
+                            }
+
                             Button("Save and Continue") {
                                 pauseTimer()
                                 onSaveAndContinue()
@@ -2432,8 +2458,7 @@ struct NewGameWizardView: View {
 
         private func goalKickerSummaryCard(width: CGFloat) -> some View {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Scoring contributors")
-                    .font(.headline)
+                ScorePill("Goal Kickers", style: ourStyle)
                 if scorerTally.isEmpty, rushedPoints == 0 {
                     Text("No scorers yet.")
                         .foregroundStyle(.secondary)
@@ -2442,7 +2467,7 @@ struct NewGameWizardView: View {
                         HStack {
                             Text(playerName(scorer.id))
                             Spacer()
-                            Text("\(scorer.goals)G \(scorer.points)P")
+                            Text(playerContribution(goals: scorer.goals, points: scorer.points))
                                 .font(.headline)
                                 .monospacedDigit()
                         }
@@ -2451,7 +2476,7 @@ struct NewGameWizardView: View {
                         HStack {
                             Text("Rushed")
                             Spacer()
-                            Text("\(rushedPoints)P")
+                            Text(playerContribution(goals: 0, points: rushedPoints))
                                 .font(.headline)
                                 .monospacedDigit()
                         }
@@ -2461,6 +2486,10 @@ struct NewGameWizardView: View {
             .padding()
             .frame(maxWidth: width, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+
+        private func playerContribution(goals: Int, points: Int) -> String {
+            "\(goals).\(points)"
         }
 
         private func teamScoreCard(
