@@ -2457,7 +2457,7 @@ struct NewGameWizardView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save and Continue") {
+                    Button("Save Game") {
                         pauseTimer()
                         onSaveAndContinue()
                     }
