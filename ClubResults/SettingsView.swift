@@ -532,7 +532,6 @@ private struct ClubGradesSettingsView: View {
                             .font(.subheadline.weight(.semibold))
                         Toggle("Notes", isOn: bind(grade, \.asksNotes))
                         Toggle("Score", isOn: bind(grade, \.asksScore))
-                        Toggle("Live Game View", isOn: bind(grade, \.asksLiveGameView))
                         Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
                         Picker("Best Players", selection: bind(grade, \.bestPlayersCount)) {
                             ForEach(1...10, id: \.self) { count in
