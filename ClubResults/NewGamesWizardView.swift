@@ -2082,61 +2082,127 @@ struct NewGameWizardView: View {
         @State private var timerRunning = false
         @State private var timerTask: Task<Void, Never>?
         @State private var showPlayerPicker = false
+        @State private var showPointPicker = false
+        @State private var pointScorers: [UUID: Int] = [:]
+        @State private var rushedPoints: Int = 0
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
         private var isDangerTime: Bool { secondsRemaining <= 120 }
 
-        private var scorerTally: [(id: UUID, goals: Int)] {
-            goalKickers
-                .compactMap { entry -> (UUID, Int)? in
-                    guard let id = entry.playerID, entry.goals > 0 else { return nil }
-                    return (id, entry.goals)
+        private var scorerTally: [(id: UUID, goals: Int, points: Int)] {
+            var goalCounts: [UUID: Int] = [:]
+            for entry in goalKickers {
+                guard let id = entry.playerID, entry.goals > 0 else { continue }
+                goalCounts[id, default: 0] += entry.goals
+            }
+
+            let ids = Set(goalCounts.keys).union(pointScorers.keys)
+            return ids
+                .map { id in
+                    (id: id, goals: goalCounts[id, default: 0], points: pointScorers[id, default: 0])
                 }
+                .filter { $0.goals > 0 || $0.points > 0 }
                 .sorted { lhs, rhs in
-                    if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-                    return playerName(lhs.0) < playerName(rhs.0)
+                    let lhsTotal = lhs.goals * 6 + lhs.points
+                    let rhsTotal = rhs.goals * 6 + rhs.points
+                    if lhsTotal != rhsTotal { return lhsTotal > rhsTotal }
+                    return playerName(lhs.id) < playerName(rhs.id)
                 }
         }
 
         var body: some View {
             NavigationStack {
                 GeometryReader { proxy in
-                    let compact = proxy.size.width < 860
+                    let compact = proxy.size.width < 980
                     let cardSpacing: CGFloat = compact ? 14 : 18
-                    let timerWidth = max(280, proxy.size.width * 0.33)
-                    let scoreboardHeight = max(330, proxy.size.height * 0.5)
-                    let timerHeight = max(220, proxy.size.height * 0.25)
-                    let sharedCardHeight = max(scoreboardHeight, timerHeight)
+                    let teamCardWidth = max(300, proxy.size.width * 0.35)
+                    let timerWidth = max(280, proxy.size.width * 0.22)
+                    let sharedCardHeight = max(380, proxy.size.height * 0.48)
 
                     ScrollView {
                         VStack(spacing: cardSpacing) {
-                            topHeader
+                            VStack(spacing: 10) {
+                                Text("Live Game View")
+                                    .font(.title.bold())
+                                Text(date.formatted(date: .abbreviated, time: .shortened))
+                                    .foregroundStyle(.secondary)
+                            }
 
                             if compact {
-                                scoreboardCard(minHeight: scoreboardHeight)
-                                timerCard(minHeight: timerHeight, width: proxy.size.width)
+                                teamScoreCard(
+                                    title: ourTeamName,
+                                    style: ourStyle,
+                                    goals: $ourGoals,
+                                    behinds: $ourBehinds,
+                                    score: ourScore,
+                                    goalAction: { showPlayerPicker = true },
+                                    pointAction: { showPointPicker = true },
+                                    minHeight: sharedCardHeight
+                                )
+                                timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
+                                teamScoreCard(
+                                    title: oppTeamName,
+                                    style: oppStyle,
+                                    goals: $theirGoals,
+                                    behinds: $theirBehinds,
+                                    score: theirScore,
+                                    goalAction: { theirGoals += 1 },
+                                    pointAction: { theirBehinds += 1 },
+                                    minHeight: sharedCardHeight
+                                )
                             } else {
                                 HStack(alignment: .top, spacing: cardSpacing) {
-                                    scoreboardCard(minHeight: sharedCardHeight)
-                                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                                    teamScoreCard(
+                                        title: ourTeamName,
+                                        style: ourStyle,
+                                        goals: $ourGoals,
+                                        behinds: $ourBehinds,
+                                        score: ourScore,
+                                        goalAction: { showPlayerPicker = true },
+                                        pointAction: { showPointPicker = true },
+                                        minHeight: sharedCardHeight
+                                    )
+                                    .frame(width: teamCardWidth, alignment: .topLeading)
+
                                     timerCard(minHeight: sharedCardHeight, width: timerWidth)
-                                        .frame(width: timerWidth, alignment: .topTrailing)
+                                        .frame(width: timerWidth, alignment: .top)
+
+                                    teamScoreCard(
+                                        title: oppTeamName,
+                                        style: oppStyle,
+                                        goals: $theirGoals,
+                                        behinds: $theirBehinds,
+                                        score: theirScore,
+                                        goalAction: { theirGoals += 1 },
+                                        pointAction: { theirBehinds += 1 },
+                                        minHeight: sharedCardHeight
+                                    )
+                                    .frame(width: teamCardWidth, alignment: .topTrailing)
                                 }
                             }
 
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Goal scorers")
+                            Text("Scoring contributors")
                                 .font(.headline)
-                            if scorerTally.isEmpty {
-                                Text("No goal scorers yet.")
+                            if scorerTally.isEmpty, rushedPoints == 0 {
+                                Text("No scorers yet.")
                                     .foregroundStyle(.secondary)
                             } else {
                                 ForEach(scorerTally, id: \.id) { scorer in
                                     HStack {
                                         Text(playerName(scorer.id))
                                         Spacer()
-                                        Text("\(scorer.goals)")
+                                        Text("\(scorer.goals)G \(scorer.points)P")
+                                            .font(.headline)
+                                            .monospacedDigit()
+                                    }
+                                }
+                                if rushedPoints > 0 {
+                                    HStack {
+                                        Text("Rushed")
+                                        Spacer()
+                                        Text("\(rushedPoints)P")
                                             .font(.headline)
                                             .monospacedDigit()
                                     }
@@ -2190,6 +2256,35 @@ struct NewGameWizardView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showPointPicker) {
+                NavigationStack {
+                    List {
+                        Section {
+                            Button("Rushed") {
+                                recordPoint(for: nil)
+                                showPointPicker = false
+                            }
+                            .font(.headline)
+                        }
+
+                        Section("Players") {
+                            ForEach(eligiblePlayers) { player in
+                                Button(player.name) {
+                                    recordPoint(for: player.id)
+                                    showPointPicker = false
+                                }
+                            }
+                        }
+                    }
+                    .navigationTitle("Who scored the point?")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showPointPicker = false }
+                        }
+                    }
+                }
+            }
             .onDisappear {
                 pauseTimer()
             }
@@ -2204,64 +2299,6 @@ struct NewGameWizardView: View {
                     periodMinutes = value
                 }
             )
-        }
-
-        private var topHeader: some View {
-            HStack(alignment: .top) {
-                headerScoreBlock(
-                    title: ourTeamName,
-                    style: ourStyle,
-                    goals: ourGoals,
-                    behinds: ourBehinds,
-                    score: ourScore,
-                    alignment: .leading
-                )
-
-                Spacer(minLength: 12)
-
-                VStack(spacing: 8) {
-                    Text("Live Game View")
-                        .font(.title.bold())
-                    Text(timeText(secondsRemaining))
-                        .font(.system(size: 36, weight: .heavy, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(isDangerTime ? .red : .primary)
-                    Text(date.formatted(date: .abbreviated, time: .shortened))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 12)
-
-                headerScoreBlock(
-                    title: oppTeamName,
-                    style: oppStyle,
-                    goals: theirGoals,
-                    behinds: theirBehinds,
-                    score: theirScore,
-                    alignment: .trailing
-                )
-            }
-        }
-
-        private func headerScoreBlock(
-            title: String,
-            style: ClubStyle.Style,
-            goals: Int,
-            behinds: Int,
-            score: Int,
-            alignment: HorizontalAlignment
-        ) -> some View {
-            VStack(alignment: alignment, spacing: 6) {
-                ScorePill(title, style: style, fixedWidth: 170)
-                Text("\(goals).\(behinds)")
-                    .font(.title3.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                Text("\(score)")
-                    .font(.system(size: 48, weight: .black, design: .rounded))
-                    .monospacedDigit()
-            }
-            .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
         }
 
         private func timerCard(minHeight: CGFloat, width: CGFloat) -> some View {
@@ -2281,9 +2318,11 @@ struct NewGameWizardView: View {
                             .labelsHidden()
                     }
                 }
-                Text("Clock is shown in the header")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+
+                Text(timeText(secondsRemaining))
+                    .font(.system(size: 62, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(isDangerTime ? .red : .primary)
 
                 HStack(spacing: 10) {
                     Button("Start") { startTimer() }
@@ -2303,20 +2342,19 @@ struct NewGameWizardView: View {
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
-        private func scoreboardCard(minHeight: CGFloat) -> some View {
+        private func teamScoreCard(
+            title: String,
+            style: ClubStyle.Style,
+            goals: Binding<Int>,
+            behinds: Binding<Int>,
+            score: Int,
+            goalAction: @escaping () -> Void,
+            pointAction: @escaping () -> Void,
+            minHeight: CGFloat
+        ) -> some View {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Scoreboard")
-                    .font(.title2.bold())
-
-                HStack(alignment: .top, spacing: 16) {
-                    scoreColumn(title: ourTeamName, style: ourStyle, goals: $ourGoals, behinds: $ourBehinds, score: ourScore)
-                    scoreColumn(title: oppTeamName, style: oppStyle, goals: $theirGoals, behinds: $theirBehinds, score: theirScore)
-                }
-
-                HStack(alignment: .top, spacing: 14) {
-                    teamActionSection(title: ourTeamName, style: ourStyle, goalAction: { showPlayerPicker = true }, pointAction: { ourBehinds += 1 })
-                    teamActionSection(title: oppTeamName, style: oppStyle, goalAction: { theirGoals += 1 }, pointAction: { theirBehinds += 1 })
-                }
+                scoreColumn(title: title, style: style, goals: goals, behinds: behinds, score: score)
+                teamActionSection(title: title, style: style, goalAction: goalAction, pointAction: pointAction)
             }
             .padding(20)
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
@@ -2383,6 +2421,15 @@ struct NewGameWizardView: View {
             } else {
                 goalKickers.append(WizardGoalKickerEntry(playerID: playerID, goals: 1))
             }
+        }
+
+        private func recordPoint(for playerID: UUID?) {
+            ourBehinds += 1
+            guard let playerID else {
+                rushedPoints += 1
+                return
+            }
+            pointScorers[playerID, default: 0] += 1
         }
 
         private func startTimer() {
