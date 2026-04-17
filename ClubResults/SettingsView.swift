@@ -531,6 +531,8 @@ private struct ClubGradesSettingsView: View {
                         Label("Awards", systemImage: "rosette")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Notes", isOn: bind(grade, \.asksNotes))
+                        Toggle("Score", isOn: bind(grade, \.asksScore))
+                        Toggle("Live Game View", isOn: bind(grade, \.asksLiveGameView))
                         Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
                         Picker("Best Players", selection: bind(grade, \.bestPlayersCount)) {
                             ForEach(1...10, id: \.self) { count in
@@ -620,6 +622,9 @@ private struct ClubGradesSettingsView: View {
             asksTrainer2: draft.asksTrainer2,
             asksTrainer3: draft.asksTrainer3,
             asksTrainer4: draft.asksTrainer4,
+            asksNotes: true,
+            asksScore: draft.asksScore,
+            asksLiveGameView: draft.asksLiveGameView,
             asksGoalKickers: draft.asksGoalKickers,
             bestPlayersCount: draft.bestPlayersCount,
             asksGuestBestFairestVotesScan: draft.asksGuestBestFairestVotesScan,
@@ -748,6 +753,8 @@ private struct ClubGradesSettingsView: View {
                             asksTrainer3: $0.asksTrainer3,
                             asksTrainer4: $0.asksTrainer4,
                             asksNotes: $0.asksNotes,
+                            asksScore: $0.asksScore,
+                            asksLiveGameView: $0.asksLiveGameView,
                             asksGoalKickers: $0.asksGoalKickers,
                             bestPlayersCount: $0.bestPlayersCount,
                             asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
@@ -776,6 +783,8 @@ private struct ClubGradesSettingsView: View {
                                 asksTrainer3: item.asksTrainer3,
                                 asksTrainer4: item.asksTrainer4,
                                 asksNotes: item.asksNotes,
+                                asksScore: item.asksScore,
+                                asksLiveGameView: item.asksLiveGameView,
                                 asksGoalKickers: item.asksGoalKickers,
                                 bestPlayersCount: item.bestPlayersCount,
                                 asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan,
@@ -819,6 +828,8 @@ private struct ClubGradesSettingsView: View {
                     asksTrainer3: $0.asksTrainer3,
                     asksTrainer4: $0.asksTrainer4,
                     asksNotes: $0.asksNotes,
+                    asksScore: $0.asksScore,
+                    asksLiveGameView: $0.asksLiveGameView,
                     asksGoalKickers: $0.asksGoalKickers,
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
@@ -861,6 +872,8 @@ private struct NewGradeDraft {
     var asksTrainer2 = true
     var asksTrainer3 = true
     var asksTrainer4 = true
+    var asksScore = true
+    var asksLiveGameView = true
     var asksGoalKickers = true
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = false
@@ -918,6 +931,8 @@ private struct AddGradeWizardView: View {
                     }
                 case .awards:
                     Section("Awards") {
+                        Toggle("Score", isOn: $draft.asksScore)
+                        Toggle("Live Game View", isOn: $draft.asksLiveGameView)
                         Toggle("Goal Kickers", isOn: $draft.asksGoalKickers)
                         Picker("Best Players", selection: $draft.bestPlayersCount) {
                             ForEach(1...10, id: \.self) { count in
