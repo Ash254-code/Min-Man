@@ -2135,7 +2135,6 @@ struct NewGameWizardView: View {
                     let headingHeight: CGFloat = 86
                     let centerCardTopOffset: CGFloat = 16
                     let sideCardTopOffset: CGFloat = 8
-                    let centerCardExtraDrop: CGFloat = 20
                     let centerTimerHeight = max(300, sharedCardHeight - headingHeight - centerCardTopOffset + 32)
 
                     ScrollView {
@@ -2221,43 +2220,16 @@ struct NewGameWizardView: View {
                                 }
                             }
 
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Scoring contributors")
-                                .font(.headline)
-                            if scorerTally.isEmpty, rushedPoints == 0 {
-                                Text("No scorers yet.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(scorerTally, id: \.id) { scorer in
-                                    HStack {
-                                        Text(playerName(scorer.id))
-                                        Spacer()
-                                        Text("\(scorer.goals)G \(scorer.points)P")
-                                            .font(.headline)
-                                            .monospacedDigit()
-                                    }
-                                }
-                                if rushedPoints > 0 {
-                                    HStack {
-                                        Text("Rushed")
-                                        Spacer()
-                                        Text("\(rushedPoints)P")
-                                            .font(.headline)
-                                            .monospacedDigit()
-                                    }
-                                }
+                            Button("Save and Continue") {
+                                pauseTimer()
+                                onSaveAndContinue()
                             }
-
-                        Button("Save and Continue") {
-                            pauseTimer()
-                            onSaveAndContinue()
+                            .buttonStyle(.borderedProminent)
+                            .font(.headline)
+                            .padding(.top, 8)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .font(.headline)
-                        .padding(.top, 8)
-                    }
-                    .padding(.horizontal, compact ? 14 : 24)
-                    .padding(.vertical, compact ? 12 : 18)
+                        .padding(.horizontal, compact ? 14 : 24)
+                        .padding(.vertical, compact ? 12 : 18)
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
@@ -2392,23 +2364,25 @@ struct NewGameWizardView: View {
                         Image(systemName: "play.fill")
                     }
                     .accessibilityLabel("Start")
-                        .buttonStyle(.borderedProminent)
-                        .disabled(timerRunning || secondsRemaining == 0)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(timerRunning || secondsRemaining == 0)
+
                     Button {
                         pauseTimer()
                     } label: {
                         Image(systemName: "pause.fill")
                     }
                     .accessibilityLabel("Pause")
-                        .buttonStyle(.bordered)
-                        .disabled(!timerRunning)
+                    .buttonStyle(.bordered)
+                    .disabled(!timerRunning)
+
                     Button {
                         resetTimer()
                     } label: {
                         Image(systemName: "arrow.counterclockwise")
                     }
                     .accessibilityLabel("Reset")
-                        .buttonStyle(.bordered)
+                    .buttonStyle(.bordered)
                 }
                 .font(.title3.weight(.semibold))
                 .controlSize(.large)
