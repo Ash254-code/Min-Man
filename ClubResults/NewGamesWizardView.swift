@@ -142,6 +142,9 @@ struct NewGameWizardView: View {
         guard let id else { return "" }
         return players.first(where: { $0.id == id })?.name ?? ""
     }
+    private func playerName(_ id: UUID) -> String {
+        playerName(for: id)
+    }
     private var finalBoundary1: String {
         let custom = clean(boundaryUmpire1CustomName)
         return custom.isEmpty ? playerName(for: boundaryUmpire1ID) : custom
