@@ -419,7 +419,6 @@ struct NewGameWizardView: View {
 
     private var shouldAskForEntryMode: Bool {
         supportsLiveGameView
-        && (selectedGrade?.asksScore ?? true || (selectedGrade?.asksGoalKickers ?? true) || requiredBestPlayersCount > 0)
     }
 
     private var activeSteps: [Step] {
@@ -449,7 +448,7 @@ struct NewGameWizardView: View {
         if grade.asksGoalKickers && entryMode != .live {
             steps.append(.goals)
         }
-        if grade.bestPlayersCount > 0 { steps.append(.best) }
+        if grade.bestPlayersCount > 0 && entryMode != .live { steps.append(.best) }
         if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
         steps.append(.review)
         return steps
@@ -627,7 +626,7 @@ struct NewGameWizardView: View {
                     switch step {
                     case .setup: setupStep
                     case .staff: staffStep
-                    case .medical: medicalStepView
+                    case .medical: medicalStep
                     case .score: scoreStep
                     case .goals: goalsStep
                     case .best: bestStep
