@@ -19,6 +19,8 @@ struct GradeBackup: Codable {
     let asksTrainer3: Bool
     let asksTrainer4: Bool
     let asksNotes: Bool
+    let asksScore: Bool
+    let asksLiveGameView: Bool
     let asksGoalKickers: Bool
     let bestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
@@ -44,6 +46,8 @@ struct GradeBackup: Codable {
         asksTrainer3: Bool = true,
         asksTrainer4: Bool = true,
         asksNotes: Bool = true,
+        asksScore: Bool = true,
+        asksLiveGameView: Bool = true,
         asksGoalKickers: Bool = true,
         bestPlayersCount: Int = 6,
         asksGuestBestFairestVotesScan: Bool = false,
@@ -68,6 +72,8 @@ struct GradeBackup: Codable {
         self.asksTrainer3 = asksTrainer3
         self.asksTrainer4 = asksTrainer4
         self.asksNotes = asksNotes
+        self.asksScore = asksScore
+        self.asksLiveGameView = asksLiveGameView
         self.asksGoalKickers = asksGoalKickers
         self.bestPlayersCount = min(max(bestPlayersCount, 0), 10)
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
@@ -81,7 +87,7 @@ struct GradeBackup: Codable {
         case asksFieldUmpire
         case asksBoundaryUmpire1, asksBoundaryUmpire2, asksBoundaryUmpires
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
-        case asksNotes, asksGoalKickers
+        case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
         case bestPlayersCount, asksBestPlayers
         case asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes
     }
@@ -108,6 +114,8 @@ struct GradeBackup: Codable {
         asksTrainer4 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer4) ?? legacyAsksTrainers
         asksTrainers = asksTrainer1 || asksTrainer2 || asksTrainer3 || asksTrainer4
         asksNotes = try c.decodeIfPresent(Bool.self, forKey: .asksNotes) ?? true
+        asksScore = try c.decodeIfPresent(Bool.self, forKey: .asksScore) ?? true
+        asksLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .asksLiveGameView) ?? true
         asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
         if let decodedCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) {
             bestPlayersCount = min(max(decodedCount, 0), 10)
@@ -140,6 +148,8 @@ struct GradeBackup: Codable {
         try c.encode(asksTrainer3, forKey: .asksTrainer3)
         try c.encode(asksTrainer4, forKey: .asksTrainer4)
         try c.encode(asksNotes, forKey: .asksNotes)
+        try c.encode(asksScore, forKey: .asksScore)
+        try c.encode(asksLiveGameView, forKey: .asksLiveGameView)
         try c.encode(asksGoalKickers, forKey: .asksGoalKickers)
         try c.encode(bestPlayersCount, forKey: .bestPlayersCount)
         try c.encode(asksGuestBestFairestVotesScan, forKey: .asksGuestBestFairestVotesScan)
@@ -191,6 +201,8 @@ enum SettingsBackupStore {
                 asksTrainer3: $0.asksTrainer3,
                 asksTrainer4: $0.asksTrainer4,
                 asksNotes: $0.asksNotes,
+                asksScore: $0.asksScore,
+                asksLiveGameView: $0.asksLiveGameView,
                 asksGoalKickers: $0.asksGoalKickers,
                 bestPlayersCount: $0.bestPlayersCount,
                 asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
@@ -300,6 +312,8 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 asksTrainer3: backup.asksTrainer3,
                 asksTrainer4: backup.asksTrainer4,
                 asksNotes: backup.asksNotes,
+                asksScore: backup.asksScore,
+                asksLiveGameView: backup.asksLiveGameView,
                 asksGoalKickers: backup.asksGoalKickers,
                 bestPlayersCount: backup.bestPlayersCount,
                 asksGuestBestFairestVotesScan: backup.asksGuestBestFairestVotesScan,

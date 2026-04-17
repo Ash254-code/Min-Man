@@ -418,8 +418,9 @@ struct NewGameWizardView: View {
         min(max(selectedGrade?.bestPlayersCount ?? 6, 0), 10)
     }
 
-    private var supportsLiveGameView: Bool {
-        selectedGrade?.allowsLiveGameView ?? true
+    private var shouldAskForEntryMode: Bool {
+        (selectedGrade?.asksLiveGameView ?? true)
+        && (selectedGrade?.asksScore ?? true || (selectedGrade?.asksGoalKickers ?? true) || requiredBestPlayersCount > 0)
     }
 
     private var activeSteps: [Step] {
@@ -443,9 +444,11 @@ struct NewGameWizardView: View {
             grade.asksNotes {
             steps.append(.medical)
         }
-        if entryMode != .live {
+        if grade.asksScore && entryMode != .live {
             steps.append(.score)
-            if grade.asksGoalKickers { steps.append(.goals) }
+        }
+        if grade.asksGoalKickers && entryMode != .live {
+            steps.append(.goals)
         }
         if grade.bestPlayersCount > 0 { steps.append(.best) }
         if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
@@ -454,6 +457,7 @@ struct NewGameWizardView: View {
     }
 
     private var entryModeTriggerStep: Step {
+        if !shouldAskForEntryMode { return .review }
         if activeSteps.contains(.medical) { return .medical }
         if activeSteps.contains(.staff) { return .staff }
         return .setup
@@ -835,17 +839,12 @@ struct NewGameWizardView: View {
     }
 
     private func next() {
-        if step == entryModeTriggerStep && entryMode == nil {
-            if !supportsLiveGameView {
-                entryMode = .postGame
-                proceedAfterEntryModeSelection()
-                return
-            }
+        if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == nil {
             showEntryModePrompt = true
             return
         }
 
-        if step == entryModeTriggerStep && entryMode == .live && !liveGameSessionSaved {
+        if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == .live && !liveGameSessionSaved {
             showLiveGameView = true
             return
         }
@@ -862,7 +861,7 @@ struct NewGameWizardView: View {
     }
 
     private func proceedAfterEntryModeSelection() {
-        guard step == entryModeTriggerStep else { return }
+        guard shouldAskForEntryMode, step == entryModeTriggerStep else { return }
         if entryMode == .live {
             showLiveGameView = true
             return
