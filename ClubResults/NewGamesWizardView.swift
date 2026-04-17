@@ -149,6 +149,9 @@ enum NewGameWizardStep {
 
 struct NewGameWizardView: View {
     let initialGradeID: UUID?
+    let draftGameID: UUID?
+    let reopenLiveViewOnAppear: Bool
+    let onBackToHomeFromLive: ((UUID) -> Void)?
     var previewStep: NewGameWizardStep? = nil
     var previewVenue: String? = nil
     var previewOpposition: String? = nil
@@ -161,6 +164,9 @@ struct NewGameWizardView: View {
 
     init(
         initialGradeID: UUID? = nil,
+        draftGameID: UUID? = nil,
+        reopenLiveViewOnAppear: Bool = false,
+        onBackToHomeFromLive: ((UUID) -> Void)? = nil,
         previewStep: NewGameWizardStep? = nil,
         previewVenue: String? = nil,
         previewOpposition: String? = nil,
@@ -172,6 +178,9 @@ struct NewGameWizardView: View {
         previewSelectedTrainers: [String]? = nil
     ) {
         self.initialGradeID = initialGradeID
+        self.draftGameID = draftGameID
+        self.reopenLiveViewOnAppear = reopenLiveViewOnAppear
+        self.onBackToHomeFromLive = onBackToHomeFromLive
         self.previewStep = previewStep
         self.previewVenue = previewVenue
         self.previewOpposition = previewOpposition
@@ -192,6 +201,7 @@ struct NewGameWizardView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @Query private var grades: [Grade]
+    @Query private var games: [Game]
     @Query(sort: \Player.name) private var players: [Player]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
     @Query private var reportRecipients: [ReportRecipient]
@@ -270,6 +280,8 @@ struct NewGameWizardView: View {
     @State private var showVotesScanner = false
     @State private var scannerErrorMessage: String?
     @State private var hasAppliedInitialGrade = false
+    @State private var hasAppliedDraftRestore = false
+    @State private var isRestoringDraft = false
     @State private var reportAttachmentURL: URL?
     @State private var pendingEmailRecipients: [String] = []
     @State private var pendingTextRecipients: [String] = []
@@ -865,6 +877,7 @@ struct NewGameWizardView: View {
         }
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
+            guard !isRestoringDraft else { return }
             applyDefaults(for: newGrade)
             syncBestPlayersSelectionCount()
             step = .setup
@@ -882,6 +895,7 @@ struct NewGameWizardView: View {
                 syncBestPlayersSelectionCount()
             }
             applyPreviewStateIfNeeded()
+            restoreDraftIfNeeded()
         }
         .sheet(isPresented: $showMailComposer) {
             if let attachmentURL = reportAttachmentURL {
@@ -981,6 +995,9 @@ struct NewGameWizardView: View {
                         proceedAfterLiveSave()
                     }
                 },
+                onBackToHome: {
+                    pauseAndSaveLiveDraftThenReturnHome()
+                },
                 onCollapse: {
                     showLiveGameView = false
                 }
@@ -1056,6 +1073,19 @@ struct NewGameWizardView: View {
 
     private var oppTeamNameForDisplay: String {
         finalOpponent.isEmpty ? "Opponent" : finalOpponent
+    }
+
+    private func pauseAndSaveLiveDraftThenReturnHome() {
+        guard let gid = gradeID else {
+            showLiveGameView = false
+            dismiss()
+            return
+        }
+
+        _ = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
+        onBackToHomeFromLive?(gid)
+        showLiveGameView = false
+        dismiss()
     }
 
     private func next() {
@@ -1138,6 +1168,60 @@ struct NewGameWizardView: View {
             for idx in bestRanked.indices {
                 bestRanked[idx] = idx < selectedPlayerIDs.count ? selectedPlayerIDs[idx] : nil
             }
+        }
+    }
+
+    private func restoreDraftIfNeeded() {
+        guard !hasAppliedDraftRestore else { return }
+        hasAppliedDraftRestore = true
+        guard let draftGameID else { return }
+        guard let draft = games.first(where: { $0.id == draftGameID && $0.isDraft }) else { return }
+
+        isRestoringDraft = true
+        editingGame = draft
+        gradeID = draft.gradeID
+        date = draft.date
+        opponentName = draft.opponent
+        venueName = draft.venue
+        ourGoals = draft.ourGoals
+        ourBehinds = draft.ourBehinds
+        theirGoals = draft.theirGoals
+        theirBehinds = draft.theirBehinds
+        goalKickers = draft.goalKickers.map { kickerEntry in
+            WizardGoalKickerEntry(playerID: kickerEntry.playerID, goals: kickerEntry.goals)
+        }
+        headCoachName = draft.headCoachName
+        assCoachName = draft.assistantCoachName
+        teamManagerName = draft.teamManagerName
+        runnerName = draft.runnerName
+        goalUmpireName = draft.goalUmpireName
+        fieldUmpireName = draft.fieldUmpireName
+        boundaryUmpire1Name = draft.boundaryUmpire1Name
+        boundaryUmpire2Name = draft.boundaryUmpire2Name
+        trainer1Name = draft.trainers.indices.contains(0) ? draft.trainers[0] : ""
+        trainer2Name = draft.trainers.indices.contains(1) ? draft.trainers[1] : ""
+        trainer3Name = draft.trainers.indices.contains(2) ? draft.trainers[2] : ""
+        trainer4Name = draft.trainers.indices.contains(3) ? draft.trainers[3] : ""
+        notes = draft.notes
+        guestBestFairestVotesScanPDF = draft.guestBestFairestVotesScanPDF
+
+        syncBestPlayersSelectionCount()
+        let bestIDs = draft.bestPlayersRanked
+        for idx in bestRanked.indices {
+            bestRanked[idx] = bestIDs.indices.contains(idx) ? bestIDs[idx] : nil
+        }
+
+        if reopenLiveViewOnAppear {
+            entryMode = .live
+            startLiveSessionIfNeeded()
+            step = .score
+            DispatchQueue.main.async {
+                showLiveGameView = true
+                isRestoringDraft = false
+            }
+        } else {
+            entryMode = .postGame
+            isRestoringDraft = false
         }
     }
 
@@ -2289,6 +2373,7 @@ struct NewGameWizardView: View {
         let eligiblePlayers: [Player]
         let playerName: (UUID) -> String
         let onSaveAndContinue: () -> Void
+        let onBackToHome: () -> Void
         let onCollapse: () -> Void
 
         @State private var timerRunning = false
@@ -2319,6 +2404,7 @@ struct NewGameWizardView: View {
             eligiblePlayers: [Player],
             playerName: @escaping (UUID) -> String,
             onSaveAndContinue: @escaping () -> Void,
+            onBackToHome: @escaping () -> Void,
             onCollapse: @escaping () -> Void
         ) {
             _date = date
@@ -2341,6 +2427,7 @@ struct NewGameWizardView: View {
             self.eligiblePlayers = eligiblePlayers
             self.playerName = playerName
             self.onSaveAndContinue = onSaveAndContinue
+            self.onBackToHome = onBackToHome
             self.onCollapse = onCollapse
         }
 
@@ -2577,6 +2664,14 @@ struct NewGameWizardView: View {
                     .padding(.bottom, 22)
                 }
                 .background(Color(.systemGroupedBackground))
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Back") {
+                            pauseTimer()
+                            onBackToHome()
+                        }
+                    }
+                }
             }
             .navigationBarTitleDisplayMode(.inline)
             .sheet(

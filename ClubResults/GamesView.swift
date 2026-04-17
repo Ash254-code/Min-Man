@@ -5,6 +5,26 @@ struct GamesView: View {
     private struct NewGameWizardPresentation: Identifiable {
         let id = UUID()
         let initialGradeID: UUID?
+        let draftGameID: UUID?
+        let reopenLiveView: Bool
+    }
+
+    fileprivate enum GradeRecentStatus {
+        case noneRecent
+        case inProgressDraft
+        case finalizedRecent
+    }
+
+    private enum DraftResumeStore {
+        private static let openLivePrefix = "resume.openLive."
+
+        static func shouldOpenLive(for gradeID: UUID) -> Bool {
+            UserDefaults.standard.bool(forKey: openLivePrefix + gradeID.uuidString)
+        }
+
+        static func setShouldOpenLive(_ shouldOpen: Bool, for gradeID: UUID) {
+            UserDefaults.standard.set(shouldOpen, forKey: openLivePrefix + gradeID.uuidString)
+        }
     }
 
     @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
@@ -34,6 +54,25 @@ struct GamesView: View {
         let base = games.sorted { $0.date > $1.date }
         guard let gid = selectedGradeID else { return base }
         return base.filter { $0.gradeID == gid }
+    }
+
+    private func latestDraft(for gradeID: UUID) -> Game? {
+        games
+            .filter { $0.gradeID == gradeID && $0.isDraft }
+            .sorted { $0.date > $1.date }
+            .first
+    }
+
+    private func gradeStatus(for gradeID: UUID) -> GradeRecentStatus {
+        if latestDraft(for: gradeID) != nil {
+            return .inProgressDraft
+        }
+
+        let cutoff = Date().addingTimeInterval(-48 * 60 * 60)
+        let hasRecentFinalized = games.contains { game in
+            game.gradeID == gradeID && !game.isDraft && game.date >= cutoff
+        }
+        return hasRecentFinalized ? .finalizedRecent : .noneRecent
     }
 
     private var standardPillWidth: CGFloat {
@@ -69,8 +108,23 @@ struct GamesView: View {
                         NewGameQuickStartSection(
                             grades: orderedGrades,
                             minHeight: geometry.size.height * 0.33,
+                            statusForGrade: gradeStatus(for:),
                             onStartNewGame: { gradeID in
-                                newGameWizardPresentation = NewGameWizardPresentation(initialGradeID: gradeID)
+                                if let draft = latestDraft(for: gradeID) {
+                                    let reopenLive = DraftResumeStore.shouldOpenLive(for: gradeID)
+                                    newGameWizardPresentation = NewGameWizardPresentation(
+                                        initialGradeID: gradeID,
+                                        draftGameID: draft.id,
+                                        reopenLiveView: reopenLive
+                                    )
+                                    DraftResumeStore.setShouldOpenLive(false, for: gradeID)
+                                } else {
+                                    newGameWizardPresentation = NewGameWizardPresentation(
+                                        initialGradeID: gradeID,
+                                        draftGameID: nil,
+                                        reopenLiveView: false
+                                    )
+                                }
                             }
                         )
                         .padding(.horizontal)
@@ -114,7 +168,14 @@ struct GamesView: View {
                 }
             }
             .sheet(item: $newGameWizardPresentation) { presentation in
-                NewGameWizardView(initialGradeID: presentation.initialGradeID)
+                NewGameWizardView(
+                    initialGradeID: presentation.initialGradeID,
+                    draftGameID: presentation.draftGameID,
+                    reopenLiveViewOnAppear: presentation.reopenLiveView,
+                    onBackToHomeFromLive: { gradeID in
+                        DraftResumeStore.setShouldOpenLive(true, for: gradeID)
+                    }
+                )
                     .appPopupStyle()
             }
         }
@@ -122,8 +183,11 @@ struct GamesView: View {
 }
 
 private struct NewGameQuickStartSection: View {
+    typealias GradeStatus = GamesView.GradeRecentStatus
+
     let grades: [Grade]
     let minHeight: CGFloat
+    let statusForGrade: (UUID) -> GradeStatus
     let onStartNewGame: (UUID) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -167,6 +231,10 @@ private struct NewGameQuickStartSection: View {
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                                     .stroke(Color.white.opacity(0.18), lineWidth: 1)
                             )
+                            .overlay(alignment: .topTrailing) {
+                                statusDot(statusForGrade(grade.id))
+                                    .padding(10)
+                            }
                         }
                         .buttonStyle(.plain)
                     }
@@ -179,6 +247,25 @@ private struct NewGameQuickStartSection: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(.ultraThinMaterial)
         )
+    }
+
+    @ViewBuilder
+    private func statusDot(_ status: GradeStatus) -> some View {
+        let size: CGFloat = 14
+        switch status {
+        case .inProgressDraft:
+            Circle()
+                .fill(Color.orange)
+                .frame(width: size, height: size)
+        case .finalizedRecent:
+            Circle()
+                .fill(Color.green)
+                .frame(width: size, height: size)
+        case .noneRecent:
+            Circle()
+                .stroke(Color.secondary.opacity(0.75), lineWidth: 2)
+                .frame(width: size, height: size)
+        }
     }
 }
 
