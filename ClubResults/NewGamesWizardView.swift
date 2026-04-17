@@ -410,6 +410,7 @@ struct NewGameWizardView: View {
 
     private var entryModeTriggerStep: Step {
         if !shouldAskForEntryMode { return .review }
+        if activeSteps.contains(.officials) { return .officials }
         if activeSteps.contains(.medical) { return .medical }
         if activeSteps.contains(.officials) { return .officials }
         if activeSteps.contains(.staff) { return .staff }
@@ -534,22 +535,7 @@ struct NewGameWizardView: View {
 
             return coachingOK
 
-        case .officials:
-            let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
-            let asksFieldUmpire = selectedGrade?.asksFieldUmpire ?? true
-            let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
-            let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
-
-            let officialsOK =
-                (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
-                (!asksFieldUmpire || !finalFieldUmpire.isEmpty) &&
-                (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
-                (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty)
-
-            let boundaryUnique = !(asksBoundaryUmpire1 && asksBoundaryUmpire2 && finalBoundary1 == finalBoundary2)
-            return officialsOK && boundaryUnique
-
-        case .medical:
+        case .officials, .medical:
             // This step is informational/optional; never block navigation here.
             return true
 
@@ -574,7 +560,7 @@ struct NewGameWizardView: View {
     }
 
     private var canProceedOnCurrentStep: Bool {
-        step == .medical ? true : canProceed
+        (step == .officials || step == .medical) ? true : canProceed
     }
 
     // MARK: Body
@@ -597,7 +583,7 @@ struct NewGameWizardView: View {
                     case .setup: setupStep
                     case .staff: staffStep
                     case .officials: officialsStep
-                    case .medical: medicalStepView
+                    case .medical: medicalStep
                     case .score: scoreStep
                     case .goals: goalsStep
                     case .best: bestStep
@@ -1019,21 +1005,21 @@ struct NewGameWizardView: View {
                     let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
 
                     if asksBoundaryUmpire1 {
-                        StaffPickerField(
+                        formSelectorRow(
                             title: "Boundary Umpire 1",
-                            role: .boundaryUmpire,
-                            gradeID: gradeID,
-                            value: $boundaryUmpire1Name
-                        )
+                            value: finalBoundary1
+                        ) {
+                            boundaryUmpirePickerPrompt = .one
+                        }
                     }
 
                     if asksBoundaryUmpire2 {
-                        StaffPickerField(
+                        formSelectorRow(
                             title: "Boundary Umpire 2",
-                            role: .boundaryUmpire,
-                            gradeID: gradeID,
-                            value: $boundaryUmpire2Name
-                        )
+                            value: finalBoundary2
+                        ) {
+                            boundaryUmpirePickerPrompt = .two
+                        }
                     }
 
                     if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalBoundary1.isEmpty, finalBoundary1 == finalBoundary2 {
@@ -1043,6 +1029,7 @@ struct NewGameWizardView: View {
                             .padding(.top, 6)
                     }
                 }
+
             }
             .padding(.horizontal, isCompactLayout ? 16 : 26)
             .padding(.top, isCompactLayout ? 12 : 18)
@@ -1053,7 +1040,7 @@ struct NewGameWizardView: View {
         .background(Color(.systemGroupedBackground))
     }
 
-    private var medicalStepView: some View {
+    private var medicalStep: some View {
         ScrollView {
             VStack(spacing: 14) {
                 StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
