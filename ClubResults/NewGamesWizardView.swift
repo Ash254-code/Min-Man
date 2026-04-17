@@ -413,6 +413,10 @@ struct NewGameWizardView: View {
         min(max(selectedGrade?.bestPlayersCount ?? 6, 0), 10)
     }
 
+    private var liveGameViewEnabledForGrade: Bool {
+        selectedGrade?.asksLiveGameView ?? true
+    }
+
     private var activeSteps: [Step] {
         guard let grade = selectedGrade else { return [.setup] }
 
@@ -434,7 +438,7 @@ struct NewGameWizardView: View {
             grade.asksNotes {
             steps.append(.medical)
         }
-        if entryMode != .live {
+        if !liveGameViewEnabledForGrade || entryMode != .live {
             steps.append(.score)
             if grade.asksGoalKickers { steps.append(.goals) }
         }
@@ -688,7 +692,7 @@ struct NewGameWizardView: View {
             applyDefaults(for: newGrade)
             syncBestPlayersSelectionCount()
             step = .setup
-            entryMode = nil
+            entryMode = liveGameViewEnabledForGrade ? nil : .postGame
             liveGameSessionSaved = false
             editingGame = nil
         }
@@ -820,12 +824,12 @@ struct NewGameWizardView: View {
     }
 
     private func next() {
-        if step == entryModeTriggerStep && entryMode == nil {
+        if step == entryModeTriggerStep && liveGameViewEnabledForGrade && entryMode == nil {
             showEntryModePrompt = true
             return
         }
 
-        if step == entryModeTriggerStep && entryMode == .live && !liveGameSessionSaved {
+        if step == entryModeTriggerStep && liveGameViewEnabledForGrade && entryMode == .live && !liveGameSessionSaved {
             showLiveGameView = true
             return
         }
