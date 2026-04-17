@@ -530,7 +530,6 @@ private struct ClubGradesSettingsView: View {
                     Section {
                         Label("Awards", systemImage: "rosette")
                             .font(.subheadline.weight(.semibold))
-                        Toggle("Notes", isOn: bind(grade, \.asksNotes))
                         Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
                         Picker("Best Players", selection: bind(grade, \.bestPlayersCount)) {
                             ForEach(1...10, id: \.self) { count in
@@ -538,6 +537,13 @@ private struct ClubGradesSettingsView: View {
                             }
                         }
                         Toggle("Guest Best & Fairest Votes Scan", isOn: bind(grade, \.asksGuestBestFairestVotesScan))
+                    }
+
+                    Section {
+                        Label("Settings", systemImage: "gearshape.fill")
+                            .font(.subheadline.weight(.semibold))
+                        Toggle("Notes", isOn: bind(grade, \.asksNotes))
+                        Toggle("Live Game View", isOn: bind(grade, \.allowsLiveGameView))
                         Picker(
                             "Length of Quarters",
                             selection: Binding(
@@ -620,9 +626,11 @@ private struct ClubGradesSettingsView: View {
             asksTrainer2: draft.asksTrainer2,
             asksTrainer3: draft.asksTrainer3,
             asksTrainer4: draft.asksTrainer4,
+            asksNotes: draft.asksNotes,
             asksGoalKickers: draft.asksGoalKickers,
             bestPlayersCount: draft.bestPlayersCount,
             asksGuestBestFairestVotesScan: draft.asksGuestBestFairestVotesScan,
+            allowsLiveGameView: draft.allowsLiveGameView,
             quarterLengthMinutes: draft.quarterLengthMinutes
         )
         modelContext.insert(newGrade)
@@ -751,6 +759,7 @@ private struct ClubGradesSettingsView: View {
                             asksGoalKickers: $0.asksGoalKickers,
                             bestPlayersCount: $0.bestPlayersCount,
                             asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                            allowsLiveGameView: $0.allowsLiveGameView,
                             quarterLengthMinutes: $0.quarterLengthMinutes
                         )
                     }
@@ -779,6 +788,7 @@ private struct ClubGradesSettingsView: View {
                                 asksGoalKickers: item.asksGoalKickers,
                                 bestPlayersCount: item.bestPlayersCount,
                                 asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan,
+                                allowsLiveGameView: item.allowsLiveGameView,
                                 quarterLengthMinutes: item.quarterLengthMinutes
                             )
                         )
@@ -822,6 +832,7 @@ private struct ClubGradesSettingsView: View {
                     asksGoalKickers: $0.asksGoalKickers,
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                    allowsLiveGameView: $0.allowsLiveGameView,
                     quarterLengthMinutes: $0.quarterLengthMinutes
                 )
             }
@@ -861,9 +872,11 @@ private struct NewGradeDraft {
     var asksTrainer2 = true
     var asksTrainer3 = true
     var asksTrainer4 = true
+    var asksNotes = true
     var asksGoalKickers = true
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = false
+    var allowsLiveGameView = true
     var quarterLengthMinutes = 20
 
     var hasAnyTrainerEnabled: Bool {
@@ -878,6 +891,7 @@ private struct AddGradeWizardView: View {
         case officials
         case trainers
         case awards
+        case settings
     }
 
     @Binding var draft: NewGradeDraft
@@ -925,6 +939,11 @@ private struct AddGradeWizardView: View {
                             }
                         }
                         Toggle("Guest B & F Votes", isOn: $draft.asksGuestBestFairestVotesScan)
+                    }
+                case .settings:
+                    Section("Settings") {
+                        Toggle("Notes", isOn: $draft.asksNotes)
+                        Toggle("Live Game View", isOn: $draft.allowsLiveGameView)
                         Picker("Length of Quarters", selection: $draft.quarterLengthMinutes) {
                             ForEach(10...30, id: \.self) { minute in
                                 Text("\(minute) min").tag(minute)
@@ -946,12 +965,12 @@ private struct AddGradeWizardView: View {
                             }
                         }
                         Spacer()
-                        if step == .awards {
+                        if step == .settings {
                             Button("Save") { onSave(draft) }
                                 .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         } else {
                             Button("Next") {
-                                step = Step(rawValue: step.rawValue + 1) ?? .awards
+                                step = Step(rawValue: step.rawValue + 1) ?? .settings
                             }
                             .disabled(step == .gradeName && draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
