@@ -1,6 +1,24 @@
 import SwiftUI
 import SwiftData
 
+private enum GradeRecentStatus {
+    case noGameSaved
+    case draftOnly
+    case gameSaved
+
+    // Backward-compatible aliases for previously used naming.
+    static let noneRecent: Self = .noGameSaved
+    static let inProgressDraft: Self = .draftOnly
+
+    var color: Color {
+        switch self {
+        case .noGameSaved: return .secondary
+        case .draftOnly: return .orange
+        case .gameSaved: return .green
+        }
+    }
+}
+
 struct GamesView: View {
     private struct NewGameWizardPresentation: Identifiable {
         let id = UUID()
@@ -184,19 +202,7 @@ struct GamesView: View {
 }
 
 private struct NewGameQuickStartSection: View {
-    private enum GradeStatus {
-        case noGameSaved
-        case draftOnly
-        case gameSaved
-
-        var color: Color {
-            switch self {
-            case .noGameSaved: return .secondary
-            case .draftOnly: return .orange
-            case .gameSaved: return .green
-            }
-        }
-    }
+    typealias GradeStatus = GradeRecentStatus
 
     let grades: [Grade]
     let games: [Game]
