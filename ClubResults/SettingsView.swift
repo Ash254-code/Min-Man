@@ -245,7 +245,7 @@ private struct AdminNameResetView: View {
     private func checkboxRow(title: String, isSelected: Bool) -> some View {
         HStack(spacing: 12) {
             Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                .foregroundStyle(isSelected ? .tint : .secondary)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             Text(title)
                 .foregroundStyle(.primary)
             Spacer()
