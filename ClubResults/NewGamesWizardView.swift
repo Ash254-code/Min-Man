@@ -2105,26 +2105,22 @@ struct NewGameWizardView: View {
                     let compact = proxy.size.width < 860
                     let cardSpacing: CGFloat = compact ? 14 : 18
                     let timerWidth = max(280, proxy.size.width * 0.33)
-                    let timerHeight = max(220, proxy.size.height * 0.25)
                     let scoreboardHeight = max(330, proxy.size.height * 0.5)
+                    let timerHeight = max(220, proxy.size.height * 0.25)
+                    let sharedCardHeight = max(scoreboardHeight, timerHeight)
 
                     ScrollView {
                         VStack(spacing: cardSpacing) {
-                        VStack(spacing: 10) {
-                            Text("Live Game View")
-                                .font(.title.bold())
-                            Text(date.formatted(date: .abbreviated, time: .shortened))
-                                .foregroundStyle(.secondary)
-                        }
+                            topHeader
 
                             if compact {
                                 scoreboardCard(minHeight: scoreboardHeight)
                                 timerCard(minHeight: timerHeight, width: proxy.size.width)
                             } else {
                                 HStack(alignment: .top, spacing: cardSpacing) {
-                                    scoreboardCard(minHeight: scoreboardHeight)
+                                    scoreboardCard(minHeight: sharedCardHeight)
                                         .frame(maxWidth: .infinity, alignment: .topLeading)
-                                    timerCard(minHeight: timerHeight, width: timerWidth)
+                                    timerCard(minHeight: sharedCardHeight, width: timerWidth)
                                         .frame(width: timerWidth, alignment: .topTrailing)
                                 }
                             }
@@ -2210,6 +2206,64 @@ struct NewGameWizardView: View {
             )
         }
 
+        private var topHeader: some View {
+            HStack(alignment: .top) {
+                headerScoreBlock(
+                    title: ourTeamName,
+                    style: ourStyle,
+                    goals: ourGoals,
+                    behinds: ourBehinds,
+                    score: ourScore,
+                    alignment: .leading
+                )
+
+                Spacer(minLength: 12)
+
+                VStack(spacing: 8) {
+                    Text("Live Game View")
+                        .font(.title.bold())
+                    Text(timeText(secondsRemaining))
+                        .font(.system(size: 36, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(isDangerTime ? .red : .primary)
+                    Text(date.formatted(date: .abbreviated, time: .shortened))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 12)
+
+                headerScoreBlock(
+                    title: oppTeamName,
+                    style: oppStyle,
+                    goals: theirGoals,
+                    behinds: theirBehinds,
+                    score: theirScore,
+                    alignment: .trailing
+                )
+            }
+        }
+
+        private func headerScoreBlock(
+            title: String,
+            style: ClubStyle.Style,
+            goals: Int,
+            behinds: Int,
+            score: Int,
+            alignment: HorizontalAlignment
+        ) -> some View {
+            VStack(alignment: alignment, spacing: 6) {
+                ScorePill(title, style: style, fixedWidth: 170)
+                Text("\(goals).\(behinds)")
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Text("\(score)")
+                    .font(.system(size: 48, weight: .black, design: .rounded))
+                    .monospacedDigit()
+            }
+            .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
+        }
+
         private func timerCard(minHeight: CGFloat, width: CGFloat) -> some View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
@@ -2227,11 +2281,9 @@ struct NewGameWizardView: View {
                             .labelsHidden()
                     }
                 }
-
-                Text(timeText(secondsRemaining))
-                    .font(.system(size: 62, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(isDangerTime ? .red : .primary)
+                Text("Clock is shown in the header")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
                 HStack(spacing: 10) {
                     Button("Start") { startTimer() }
