@@ -211,6 +211,7 @@ struct NewGameWizardView: View {
     @State private var entryModePickerDetent: PresentationDetent = .height(280)
     @State private var showLiveGameView = false
     @State private var liveGameSessionSaved = false
+    @State private var liveGameSession = LiveGameSessionState()
     @State private var editingGame: Game?
 
     // MARK: Setup
@@ -752,6 +753,15 @@ struct NewGameWizardView: View {
         canProceed
     }
 
+    private var shouldShowLiveGameDock: Bool {
+        entryMode == .live && !liveGameSessionSaved && !showLiveGameView
+    }
+
+    private func startLiveSessionIfNeeded() {
+        let configuredPeriod = min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30)
+        liveGameSession.configureIfNeeded(initialPeriodMinutes: configuredPeriod)
+    }
+
     // MARK: Body
     var body: some View {
         NavigationStack {
@@ -834,6 +844,14 @@ struct NewGameWizardView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if shouldShowLiveGameDock {
+                liveGameDock
+                    .padding(.horizontal, isCompactLayout ? 12 : 20)
+                    .padding(.bottom, 10)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         // ✅ Seed staff + defaults once
         .onAppear {
             StaffSeeder.seedIfNeeded(modelContext: modelContext, grades: grades)
@@ -852,6 +870,7 @@ struct NewGameWizardView: View {
             step = .setup
             entryMode = nil
             liveGameSessionSaved = false
+            liveGameSession = LiveGameSessionState()
             editingGame = nil
         }
         .onAppear {
@@ -908,6 +927,7 @@ struct NewGameWizardView: View {
                                 entryMode = .live
                                 liveGameSessionSaved = false
                                 showEntryModePrompt = false
+                                startLiveSessionIfNeeded()
                                 showLiveGameView = true
                             } label: {
                                 selectorListRow(title: "Live entry", selected: entryMode == .live)
@@ -941,6 +961,7 @@ struct NewGameWizardView: View {
                 theirBehinds: $theirBehinds,
                 goalKickers: $goalKickers,
                 bestRanked: $bestRanked,
+                liveSession: $liveGameSession,
                 initialPeriodMinutes: min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30),
                 requiredBestPlayersCount: requiredBestPlayersCount,
                 ourTeamName: clubConfiguration.clubTeam.name,
@@ -955,6 +976,7 @@ struct NewGameWizardView: View {
                     let saved = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
                     if saved != nil {
                         liveGameSessionSaved = true
+                        liveGameSession = LiveGameSessionState()
                         showLiveGameView = false
                         proceedAfterLiveSave()
                     }
@@ -981,6 +1003,61 @@ struct NewGameWizardView: View {
         }
     }
 
+    private var liveGameDock: some View {
+        HStack(spacing: 12) {
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.45))
+                .frame(width: 34, height: 5)
+                .padding(.trailing, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Live Game View")
+                    .font(.headline)
+                Text("\(ourTeamNameForDisplay) \(ourScore) • \(oppTeamNameForDisplay) \(theirScore)")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("Open") {
+                startLiveSessionIfNeeded()
+                showLiveGameView = true
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            startLiveSessionIfNeeded()
+            showLiveGameView = true
+        }
+        .gesture(
+            DragGesture(minimumDistance: 10)
+                .onEnded { value in
+                    guard value.translation.height < -45 else { return }
+                    startLiveSessionIfNeeded()
+                    showLiveGameView = true
+                }
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Live game dock. Swipe up or tap to reopen live game view.")
+    }
+
+    private var ourTeamNameForDisplay: String {
+        clubConfiguration.clubTeam.name
+    }
+
+    private var oppTeamNameForDisplay: String {
+        finalOpponent.isEmpty ? "Opponent" : finalOpponent
+    }
+
     private func next() {
         if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == nil {
             showEntryModePrompt = true
@@ -988,6 +1065,7 @@ struct NewGameWizardView: View {
         }
 
         if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == .live && !liveGameSessionSaved {
+            startLiveSessionIfNeeded()
             showLiveGameView = true
             return
         }
@@ -1006,6 +1084,7 @@ struct NewGameWizardView: View {
     private func proceedAfterEntryModeSelection() {
         guard shouldAskForEntryMode, step == entryModeTriggerStep else { return }
         if entryMode == .live {
+            startLiveSessionIfNeeded()
             showLiveGameView = true
             return
         }
@@ -2170,6 +2249,26 @@ struct NewGameWizardView: View {
         dismiss()
     }
 
+    private struct LiveGameSessionState {
+        var periodMinutes: Int = 20
+        var secondsRemaining: Int = 20 * 60
+        var pointScorers: [UUID: Int] = [:]
+        var rushedPoints: Int = 0
+        var periodSnapshots: [PeriodSnapshot] = []
+        var isInitialized = false
+
+        mutating func configureIfNeeded(initialPeriodMinutes: Int) {
+            guard !isInitialized else { return }
+            let bounded = min(max(initialPeriodMinutes, 1), 30)
+            periodMinutes = bounded
+            secondsRemaining = bounded * 60
+            pointScorers = [:]
+            rushedPoints = 0
+            periodSnapshots = []
+            isInitialized = true
+        }
+    }
+
     // MARK: - AFL-ish card container
     private struct LiveGameView: View {
         @Binding var date: Date
@@ -2179,6 +2278,7 @@ struct NewGameWizardView: View {
         @Binding var theirBehinds: Int
         @Binding var goalKickers: [WizardGoalKickerEntry]
         @Binding var bestRanked: [UUID?]
+        @Binding var liveSession: LiveGameSessionState
 
         let initialPeriodMinutes: Int
         let requiredBestPlayersCount: Int
@@ -2191,17 +2291,12 @@ struct NewGameWizardView: View {
         let onSaveAndContinue: () -> Void
         let onCollapse: () -> Void
 
-        @State private var periodMinutes: Int
-        @State private var secondsRemaining: Int
         @State private var timerRunning = false
         @State private var timerTask: Task<Void, Never>?
         @State private var showPlayerPicker = false
         @State private var showPointPicker = false
         @State private var showTimerAdjuster = false
         @State private var showGoalKickerEditor = false
-        @State private var pointScorers: [UUID: Int] = [:]
-        @State private var rushedPoints: Int = 0
-        @State private var periodSnapshots: [PeriodSnapshot] = []
         @State private var showEndOfPeriodPrompt = false
         @State private var showManualSavePrompt = false
         @State private var bestPlayerPickerPrompt: Int?
@@ -2214,6 +2309,7 @@ struct NewGameWizardView: View {
             theirBehinds: Binding<Int>,
             goalKickers: Binding<[WizardGoalKickerEntry]>,
             bestRanked: Binding<[UUID?]>,
+            liveSession: Binding<LiveGameSessionState>,
             initialPeriodMinutes: Int,
             requiredBestPlayersCount: Int,
             ourTeamName: String,
@@ -2232,11 +2328,10 @@ struct NewGameWizardView: View {
             _theirBehinds = theirBehinds
             _goalKickers = goalKickers
             _bestRanked = bestRanked
+            _liveSession = liveSession
 
             let boundedPeriodMinutes = min(max(initialPeriodMinutes, 1), 30)
             self.initialPeriodMinutes = boundedPeriodMinutes
-            _periodMinutes = State(initialValue: boundedPeriodMinutes)
-            _secondsRemaining = State(initialValue: boundedPeriodMinutes * 60)
 
             self.requiredBestPlayersCount = requiredBestPlayersCount
             self.ourTeamName = ourTeamName
@@ -2251,10 +2346,10 @@ struct NewGameWizardView: View {
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
-        private var isDangerTime: Bool { secondsRemaining <= 120 }
-        private var canSaveAndContinue: Bool { periodSnapshots.count == 4 && allRequiredBestPlayersSelected }
+        private var isDangerTime: Bool { liveSession.secondsRemaining <= 120 }
+        private var canSaveAndContinue: Bool { liveSession.periodSnapshots.count == 4 && allRequiredBestPlayersSelected }
         private var nextPeriodLabel: String? {
-            switch periodSnapshots.count {
+            switch liveSession.periodSnapshots.count {
             case 0: return "Quarter Time"
             case 1: return "Half Time"
             case 2: return "3 Quarter Time"
@@ -2270,10 +2365,10 @@ struct NewGameWizardView: View {
                 goalCounts[id, default: 0] += entry.goals
             }
 
-            let ids = Set(goalCounts.keys).union(pointScorers.keys)
+            let ids = Set(goalCounts.keys).union(liveSession.pointScorers.keys)
             return ids
                 .map { id in
-                    (id: id, goals: goalCounts[id, default: 0], points: pointScorers[id, default: 0])
+                    (id: id, goals: goalCounts[id, default: 0], points: liveSession.pointScorers[id, default: 0])
                 }
                 .filter { $0.goals > 0 || $0.points > 0 }
                 .sorted { lhs, rhs in
@@ -2300,7 +2395,7 @@ struct NewGameWizardView: View {
                 rows: scorerTally.map { scorer in
                     GoalKickerEditorState.Row(id: scorer.id, goals: scorer.goals, points: scorer.points)
                 },
-                rushedPoints: rushedPoints
+                rushedPoints: liveSession.rushedPoints
             )
         }
 
@@ -2319,14 +2414,14 @@ struct NewGameWizardView: View {
                 .filter { $0.goals > 0 }
                 .map { WizardGoalKickerEntry(playerID: $0.id, goals: $0.goals) }
 
-            pointScorers = Dictionary(uniqueKeysWithValues: normalizedRows.compactMap { row in
+            liveSession.pointScorers = Dictionary(uniqueKeysWithValues: normalizedRows.compactMap { row in
                 guard row.points > 0 else { return nil }
                 return (row.id, row.points)
             })
 
-            rushedPoints = max(0, state.rushedPoints)
+            liveSession.rushedPoints = max(0, state.rushedPoints)
             ourGoals = goalKickers.reduce(0) { $0 + $1.goals }
-            ourBehinds = pointScorers.values.reduce(0, +) + rushedPoints
+            ourBehinds = liveSession.pointScorers.values.reduce(0, +) + liveSession.rushedPoints
         }
 
         private var allRequiredBestPlayersSelected: Bool {
@@ -2514,9 +2609,9 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .onChange(of: periodMinutes) { _, newValue in
+            .onChange(of: liveSession.periodMinutes) { _, newValue in
                 if !timerRunning {
-                    secondsRemaining = max(1, newValue) * 60
+                    liveSession.secondsRemaining = max(1, newValue) * 60
                 }
             }
             .onAppear {
@@ -2626,7 +2721,7 @@ struct NewGameWizardView: View {
                     Text("Timer")
                         .font(.title3.weight(.semibold))
                     Spacer()
-                    Text("\(periodMinutes) min")
+                    Text("\(liveSession.periodMinutes) min")
                         .font(.subheadline.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
                     Button {
@@ -2641,7 +2736,7 @@ struct NewGameWizardView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Period length")
                                 .font(.headline)
-                            Picker("Minutes", selection: $periodMinutes) {
+                            Picker("Minutes", selection: $liveSession.periodMinutes) {
                                 ForEach(1...30, id: \.self) { minute in
                                     Text("\(minute) min").tag(minute)
                                 }
@@ -2653,7 +2748,7 @@ struct NewGameWizardView: View {
                     }
                 }
 
-                Text(timeText(secondsRemaining))
+                Text(timeText(liveSession.secondsRemaining))
                     .font(.system(size: 78, weight: .heavy, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(isDangerTime ? .red : .primary)
@@ -2669,7 +2764,7 @@ struct NewGameWizardView: View {
                     }
                     .accessibilityLabel("Start")
                     .buttonStyle(.borderedProminent)
-                    .disabled(timerRunning || secondsRemaining == 0)
+                    .disabled(timerRunning || liveSession.secondsRemaining == 0)
 
                     Button {
                         pauseTimer()
@@ -2706,11 +2801,11 @@ struct NewGameWizardView: View {
                 Text("Period scores")
                     .font(.headline)
 
-                if periodSnapshots.isEmpty {
+                if liveSession.periodSnapshots.isEmpty {
                     Text("No period scores saved yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(periodSnapshots) { snapshot in
+                    ForEach(liveSession.periodSnapshots) { snapshot in
                         HStack {
                             Text(snapshot.label)
                             Spacer()
@@ -2751,7 +2846,7 @@ struct NewGameWizardView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Edit goal kickers")
                 }
-                if scorerTally.isEmpty, rushedPoints == 0 {
+                if scorerTally.isEmpty, liveSession.rushedPoints == 0 {
                     Text("No scorers yet.")
                         .foregroundStyle(.secondary)
                 } else {
@@ -2764,11 +2859,11 @@ struct NewGameWizardView: View {
                                 .monospacedDigit()
                         }
                     }
-                    if rushedPoints > 0 {
+                    if liveSession.rushedPoints > 0 {
                         HStack {
                             Text("Rushed")
                             Spacer()
-                            Text(playerContribution(goals: 0, points: rushedPoints))
+                            Text(playerContribution(goals: 0, points: liveSession.rushedPoints))
                                 .font(.headline)
                                 .monospacedDigit()
                         }
@@ -3071,10 +3166,10 @@ struct NewGameWizardView: View {
         private func recordPoint(for playerID: UUID?) {
             ourBehinds += 1
             guard let playerID else {
-                rushedPoints += 1
+                liveSession.rushedPoints += 1
                 return
             }
-            pointScorers[playerID, default: 0] += 1
+            liveSession.pointScorers[playerID, default: 0] += 1
         }
 
         private func startTimer() {
@@ -3082,13 +3177,13 @@ struct NewGameWizardView: View {
             timerRunning = true
             timerTask?.cancel()
             timerTask = Task {
-                while !Task.isCancelled && timerRunning && secondsRemaining > 0 {
+                while !Task.isCancelled && timerRunning && liveSession.secondsRemaining > 0 {
                     try? await Task.sleep(for: .seconds(1))
                     guard !Task.isCancelled else { return }
                     await MainActor.run {
                         guard timerRunning else { return }
-                        secondsRemaining = max(0, secondsRemaining - 1)
-                        if secondsRemaining == 0 {
+                        liveSession.secondsRemaining = max(0, liveSession.secondsRemaining - 1)
+                        if liveSession.secondsRemaining == 0 {
                             timerRunning = false
                             AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
                             UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -3107,7 +3202,7 @@ struct NewGameWizardView: View {
 
         private func resetTimer() {
             pauseTimer()
-            secondsRemaining = periodMinutes * 60
+            liveSession.secondsRemaining = liveSession.periodMinutes * 60
         }
 
         private func timeText(_ seconds: Int) -> String {
@@ -3118,7 +3213,7 @@ struct NewGameWizardView: View {
 
         private func saveCurrentPeriodSnapshot() {
             guard let label = nextPeriodLabel else { return }
-            periodSnapshots.append(
+            liveSession.periodSnapshots.append(
                 PeriodSnapshot(
                     label: label,
                     ourGoals: ourGoals,
@@ -3130,9 +3225,9 @@ struct NewGameWizardView: View {
         }
 
         private func applyConfiguredInitialPeriod() {
-            guard !timerRunning, periodSnapshots.isEmpty else { return }
-            periodMinutes = initialPeriodMinutes
-            secondsRemaining = initialPeriodMinutes * 60
+            guard !timerRunning, liveSession.periodSnapshots.isEmpty else { return }
+            liveSession.periodMinutes = initialPeriodMinutes
+            liveSession.secondsRemaining = initialPeriodMinutes * 60
         }
     }
 
