@@ -2134,120 +2134,118 @@ struct NewGameWizardView: View {
 
         var body: some View {
             NavigationStack {
-                VStack(spacing: 0) {
-                    pullDownHandle
-                        .padding(.top, 8)
-                        .padding(.bottom, 8)
+                ZStack(alignment: .topTrailing) {
+                    VStack(spacing: 0) {
+                        pullDownHandle
+                            .padding(.top, 8)
+                            .padding(.bottom, 8)
 
-                    GeometryReader { proxy in
-                        let compact = proxy.size.width < 980
-                        let cardSpacing: CGFloat = compact ? 14 : 18
-                        let teamCardWidth = max(300, proxy.size.width * 0.35)
-                        let timerWidth = max(280, proxy.size.width * 0.22)
-                        let sharedCardHeight = max(368, proxy.size.height * 0.46)
-                        let headingHeight: CGFloat = 86
-                        let centerCardTopOffset: CGFloat = 16
-                        let sideCardTopOffset: CGFloat = 8
-                        let centerTimerHeight = max(300, sharedCardHeight - headingHeight - centerCardTopOffset + 32)
+                        GeometryReader { proxy in
+                            let compact = proxy.size.width < 980
+                            let cardSpacing: CGFloat = compact ? 14 : 18
+                            let teamCardWidth = max(300, proxy.size.width * 0.35)
+                            let timerWidth = max(280, proxy.size.width * 0.22)
+                            let sharedCardHeight = max(368, proxy.size.height * 0.46)
+                            let headingHeight: CGFloat = 86
+                            let centerCardTopOffset: CGFloat = 16
+                            let sideCardTopOffset: CGFloat = 8
+                            let centerTimerHeight = max(300, sharedCardHeight - headingHeight - centerCardTopOffset + 32)
 
-                        ScrollView {
-                            VStack(spacing: cardSpacing) {
-                                if compact {
-                                    VStack(spacing: 10) {
-                                        Text("Live Game View")
-                                            .font(.title.bold())
-                                        Text(date.formatted(date: .abbreviated, time: .shortened))
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    teamScoreCard(
-                                        title: ourTeamName,
-                                        style: ourStyle,
-                                        goals: $ourGoals,
-                                        behinds: $ourBehinds,
-                                        score: ourScore,
-                                        goalAction: { showPlayerPicker = true },
-                                        pointAction: { showPointPicker = true },
-                                        minHeight: sharedCardHeight
-                                    )
-                                    goalKickerSummaryCard(width: proxy.size.width)
-                                    timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
-                                    periodScoresCard(width: proxy.size.width)
-                                    teamScoreCard(
-                                        title: oppTeamName,
-                                        style: oppStyle,
-                                        goals: $theirGoals,
-                                        behinds: $theirBehinds,
-                                        score: theirScore,
-                                        goalAction: { theirGoals += 1 },
-                                        pointAction: { theirBehinds += 1 },
-                                        minHeight: sharedCardHeight
-                                    )
-                                    bestPlayersCard(width: proxy.size.width)
-                                } else {
-                                    VStack(spacing: 0) {
+                            ScrollView {
+                                VStack(spacing: cardSpacing) {
+                                    if compact {
                                         VStack(spacing: 10) {
                                             Text("Live Game View")
                                                 .font(.title.bold())
                                             Text(date.formatted(date: .abbreviated, time: .shortened))
                                                 .foregroundStyle(.secondary)
                                         }
-                                        .frame(width: timerWidth)
 
-                                        HStack(alignment: .top, spacing: cardSpacing) {
-                                            VStack(spacing: cardSpacing) {
-                                                teamScoreCard(
-                                                    title: ourTeamName,
-                                                    style: ourStyle,
-                                                    goals: $ourGoals,
-                                                    behinds: $ourBehinds,
-                                                    score: ourScore,
-                                                    goalAction: { showPlayerPicker = true },
-                                                    pointAction: { showPointPicker = true },
-                                                    minHeight: sharedCardHeight
-                                                )
-                                                goalKickerSummaryCard(width: teamCardWidth)
+                                        teamScoreCard(
+                                            title: ourTeamName,
+                                            style: ourStyle,
+                                            goals: $ourGoals,
+                                            behinds: $ourBehinds,
+                                            score: ourScore,
+                                            goalAction: { showPlayerPicker = true },
+                                            pointAction: { showPointPicker = true },
+                                            minHeight: sharedCardHeight
+                                        )
+                                        goalKickerSummaryCard(width: proxy.size.width)
+                                        timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
+                                        periodScoresCard(width: proxy.size.width)
+                                        teamScoreCard(
+                                            title: oppTeamName,
+                                            style: oppStyle,
+                                            goals: $theirGoals,
+                                            behinds: $theirBehinds,
+                                            score: theirScore,
+                                            goalAction: { theirGoals += 1 },
+                                            pointAction: { theirBehinds += 1 },
+                                            minHeight: sharedCardHeight
+                                        )
+                                        bestPlayersCard(width: proxy.size.width)
+                                    } else {
+                                        VStack(spacing: 0) {
+                                            VStack(spacing: 10) {
+                                                Text("Live Game View")
+                                                    .font(.title.bold())
+                                                Text(date.formatted(date: .abbreviated, time: .shortened))
+                                                    .foregroundStyle(.secondary)
                                             }
-                                            .frame(width: teamCardWidth, alignment: .topLeading)
-                                            .padding(.top, sideCardTopOffset)
+                                            .frame(width: timerWidth)
 
-                                            VStack(spacing: cardSpacing) {
-                                                timerCard(minHeight: centerTimerHeight, width: timerWidth)
-                                                periodScoresCard(width: timerWidth)
-                                            }
-                                            .frame(width: timerWidth, alignment: .top)
-                                            .padding(.top, centerCardTopOffset)
+                                            HStack(alignment: .top, spacing: cardSpacing) {
+                                                VStack(spacing: cardSpacing) {
+                                                    teamScoreCard(
+                                                        title: ourTeamName,
+                                                        style: ourStyle,
+                                                        goals: $ourGoals,
+                                                        behinds: $ourBehinds,
+                                                        score: ourScore,
+                                                        goalAction: { showPlayerPicker = true },
+                                                        pointAction: { showPointPicker = true },
+                                                        minHeight: sharedCardHeight
+                                                    )
+                                                    goalKickerSummaryCard(width: teamCardWidth)
+                                                }
+                                                .frame(width: teamCardWidth, alignment: .topLeading)
+                                                .padding(.top, sideCardTopOffset)
 
-                                            VStack(spacing: cardSpacing) {
-                                                teamScoreCard(
-                                                    title: oppTeamName,
-                                                    style: oppStyle,
-                                                    goals: $theirGoals,
-                                                    behinds: $theirBehinds,
-                                                    score: theirScore,
-                                                    goalAction: { theirGoals += 1 },
-                                                    pointAction: { theirBehinds += 1 },
-                                                    minHeight: sharedCardHeight
-                                                )
-                                                bestPlayersCard(width: teamCardWidth)
+                                                VStack(spacing: cardSpacing) {
+                                                    timerCard(minHeight: centerTimerHeight, width: timerWidth)
+                                                    periodScoresCard(width: timerWidth)
+                                                }
+                                                .frame(width: timerWidth, alignment: .top)
+                                                .padding(.top, centerCardTopOffset)
+
+                                                VStack(spacing: cardSpacing) {
+                                                    teamScoreCard(
+                                                        title: oppTeamName,
+                                                        style: oppStyle,
+                                                        goals: $theirGoals,
+                                                        behinds: $theirBehinds,
+                                                        score: theirScore,
+                                                        goalAction: { theirGoals += 1 },
+                                                        pointAction: { theirBehinds += 1 },
+                                                        minHeight: sharedCardHeight
+                                                    )
+                                                    bestPlayersCard(width: teamCardWidth)
+                                                }
+                                                .frame(width: teamCardWidth, alignment: .topTrailing)
+                                                .padding(.top, sideCardTopOffset)
                                             }
-                                            .frame(width: teamCardWidth, alignment: .topTrailing)
-                                            .padding(.top, sideCardTopOffset)
                                         }
                                     }
                                 }
                             }
                         }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                        .padding(.bottom, 22)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 22)
-                }
-                .background(Color(.systemGroupedBackground))
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                    .background(Color(.systemGroupedBackground))
+
                     Button("Save Game") {
                         pauseTimer()
                         onSaveAndContinue()
@@ -2255,8 +2253,11 @@ struct NewGameWizardView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(canSaveAndContinue ? .blue : .gray)
                     .disabled(!canSaveAndContinue)
+                    .padding(.top, 8)
+                    .padding(.trailing, 18)
                 }
             }
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(
                 isPresented: Binding(
                     get: { bestPlayerPickerPrompt != nil },
