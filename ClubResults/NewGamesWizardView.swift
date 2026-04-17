@@ -2083,6 +2083,7 @@ struct NewGameWizardView: View {
         @State private var timerTask: Task<Void, Never>?
         @State private var showPlayerPicker = false
         @State private var showPointPicker = false
+        @State private var showTimerAdjuster = false
         @State private var pointScorers: [UUID: Int] = [:]
         @State private var rushedPoints: Int = 0
 
@@ -2118,10 +2119,12 @@ struct NewGameWizardView: View {
                     let cardSpacing: CGFloat = compact ? 14 : 18
                     let teamCardWidth = max(300, proxy.size.width * 0.35)
                     let timerWidth = max(280, proxy.size.width * 0.22)
-                    let sharedCardHeight = max(380, proxy.size.height * 0.48)
+                    let sharedCardHeight = max(368, proxy.size.height * 0.46)
                     let headingHeight: CGFloat = 86
                     let centerCardTopOffset: CGFloat = 16
-                    let centerTimerHeight = max(280, sharedCardHeight - headingHeight - centerCardTopOffset)
+                    let sideCardTopOffset: CGFloat = 8
+                    let centerCardExtraDrop: CGFloat = 20
+                    let centerTimerHeight = max(300, sharedCardHeight - headingHeight - centerCardTopOffset + 32)
 
                     ScrollView {
                         VStack(spacing: cardSpacing) {
@@ -2164,7 +2167,7 @@ struct NewGameWizardView: View {
                                     }
                                     .frame(width: timerWidth)
 
-                                    HStack(alignment: .top, spacing: cardSpacing) {
+                                    HStack(alignment: .bottom, spacing: cardSpacing) {
                                         teamScoreCard(
                                             title: ourTeamName,
                                             style: ourStyle,
@@ -2176,10 +2179,11 @@ struct NewGameWizardView: View {
                                             minHeight: sharedCardHeight
                                         )
                                         .frame(width: teamCardWidth, alignment: .topLeading)
+                                        .padding(.top, sideCardTopOffset)
 
                                         timerCard(minHeight: centerTimerHeight, width: timerWidth)
                                             .frame(width: timerWidth, alignment: .bottom)
-                                            .padding(.top, centerCardTopOffset)
+                                            .padding(.top, centerCardTopOffset + centerCardExtraDrop)
 
                                         teamScoreCard(
                                             title: oppTeamName,
@@ -2192,6 +2196,7 @@ struct NewGameWizardView: View {
                                             minHeight: sharedCardHeight
                                         )
                                         .frame(width: teamCardWidth, alignment: .topTrailing)
+                                        .padding(.top, sideCardTopOffset)
                                     }
                                 }
                             }
@@ -2304,41 +2309,36 @@ struct NewGameWizardView: View {
             }
         }
 
-        private func adjustPeriodMinutes(by delta: Int) {
-            periodMinutes = min(99, max(1, periodMinutes + delta))
-        }
-
         private func timerCard(minHeight: CGFloat, width: CGFloat) -> some View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     Text("Timer")
                         .font(.title3.weight(.semibold))
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Text("Period")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        HStack(spacing: 10) {
-                            Button {
-                                adjustPeriodMinutes(by: -1)
-                            } label: {
-                                Image(systemName: "minus")
+                    Text("\(periodMinutes) min")
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Button {
+                        showTimerAdjuster = true
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Adjust timer")
+                    .popover(isPresented: $showTimerAdjuster, attachmentAnchor: .point(.bottomTrailing), arrowEdge: .top) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Period length")
+                                .font(.headline)
+                            Picker("Minutes", selection: $periodMinutes) {
+                                ForEach(1...30, id: \.self) { minute in
+                                    Text("\(minute) min").tag(minute)
+                                }
                             }
-                            .buttonStyle(.bordered)
-
-                            Text("\(periodMinutes) min")
-                                .font(.headline.monospacedDigit())
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(.ultraThinMaterial, in: Capsule())
-
-                            Button {
-                                adjustPeriodMinutes(by: 1)
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                            .buttonStyle(.bordered)
+                            .pickerStyle(.wheel)
+                            .frame(width: 200, height: 140)
                         }
+                        .padding()
                     }
                 }
 
@@ -2348,13 +2348,28 @@ struct NewGameWizardView: View {
                     .foregroundStyle(isDangerTime ? .red : .primary)
 
                 HStack(spacing: 10) {
-                    Button("Start") { startTimer() }
+                    Button {
+                        startTimer()
+                    } label: {
+                        Image(systemName: "play.fill")
+                    }
+                    .accessibilityLabel("Start")
                         .buttonStyle(.borderedProminent)
                         .disabled(timerRunning || secondsRemaining == 0)
-                    Button("Pause") { pauseTimer() }
+                    Button {
+                        pauseTimer()
+                    } label: {
+                        Image(systemName: "pause.fill")
+                    }
+                    .accessibilityLabel("Pause")
                         .buttonStyle(.bordered)
                         .disabled(!timerRunning)
-                    Button("Reset") { resetTimer() }
+                    Button {
+                        resetTimer()
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                    }
+                    .accessibilityLabel("Reset")
                         .buttonStyle(.bordered)
                 }
                 .font(.headline)
