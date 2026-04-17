@@ -1076,18 +1076,17 @@ private struct ContactEditSheet: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 8) {
-                        if allowsSaveAndAddAnother {
-                            Button("Save & Add Another") {
-                                saveAndAddAnother()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(canSave ? .blue : .gray)
-                            .disabled(!canSave)
-                        }
-
-                        Button("Save") {
-                            saveAndClose()
+                    Button("Save") {
+                        saveAndClose()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(canSave ? .blue : .gray)
+                    .disabled(!canSave)
+                }
+                if allowsSaveAndAddAnother {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Save & Add Another") {
+                            saveAndAddAnother()
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(canSave ? .blue : .gray)
