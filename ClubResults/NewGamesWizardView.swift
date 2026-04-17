@@ -2381,7 +2381,6 @@ struct NewGameWizardView: View {
                                     )
                                     goalKickerSummaryCard(width: proxy.size.width)
                                     timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
-                                    periodScoresCard(width: proxy.size.width)
                                     teamScoreCard(
                                         title: oppTeamName,
                                         style: oppStyle,
@@ -2422,7 +2421,6 @@ struct NewGameWizardView: View {
 
                                             VStack(spacing: cardSpacing) {
                                                 timerCard(minHeight: centerTimerHeight, width: timerWidth)
-                                                periodScoresCard(width: timerWidth)
                                             }
                                             .frame(width: timerWidth, alignment: .top)
                                             .padding(.top, centerCardTopOffset)
@@ -2673,13 +2671,17 @@ struct NewGameWizardView: View {
                 .font(.title3.weight(.semibold))
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, alignment: .center)
+
+                Divider()
+
+                periodScoresSection
             }
             .padding(18)
             .frame(maxWidth: width, minHeight: minHeight, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
-        private func periodScoresCard(width: CGFloat) -> some View {
+        private var periodScoresSection: some View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Period scores")
                     .font(.headline)
@@ -2711,9 +2713,6 @@ struct NewGameWizardView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
-            .padding(16)
-            .frame(maxWidth: width, alignment: .topLeading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
         private func goalKickerSummaryCard(width: CGFloat) -> some View {
