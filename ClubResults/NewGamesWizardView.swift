@@ -50,6 +50,7 @@ struct NewGameWizardView: View {
     @State private var step: Step = .setup
     @State private var entryMode: EntryMode?
     @State private var showEntryModePrompt = false
+    @State private var entryModePickerDetent: PresentationDetent = .height(280)
     @State private var showLiveGameView = false
     @State private var liveGameSessionSaved = false
     @State private var editingGame: Game?
@@ -710,18 +711,46 @@ struct NewGameWizardView: View {
                 }
             }
         }
-        .confirmationDialog("Live entry or Post-Game entry?", isPresented: $showEntryModePrompt, titleVisibility: .visible) {
-            Button("Post-Game entry") {
-                entryMode = .postGame
-                liveGameSessionSaved = false
-                proceedAfterEntryModeSelection()
+        .sheet(isPresented: $showEntryModePrompt) {
+            NavigationStack {
+                List {
+                    Section {
+                        Button {
+                            entryMode = .postGame
+                            liveGameSessionSaved = false
+                            showEntryModePrompt = false
+                            proceedAfterEntryModeSelection()
+                        } label: {
+                            selectorListRow(title: "Post-Game entry", selected: entryMode == .postGame)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            entryMode = .live
+                            liveGameSessionSaved = false
+                            showEntryModePrompt = false
+                            showLiveGameView = true
+                        } label: {
+                            selectorListRow(title: "Live entry", selected: entryMode == .live)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .navigationTitle("Entry Mode")
+                .navigationBarTitleDisplayMode(.inline)
+                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showEntryModePrompt = false }
+                    }
+                }
             }
-            Button("Live entry") {
-                entryMode = .live
-                liveGameSessionSaved = false
-                showLiveGameView = true
+            .presentationDetents([.height(280), .medium], selection: $entryModePickerDetent)
+            .presentationDragIndicator(.visible)
+            .onAppear {
+                entryModePickerDetent = .height(280)
             }
-            Button("Cancel", role: .cancel) {}
         }
         .fullScreenCover(isPresented: $showLiveGameView) {
             LiveGameView(
