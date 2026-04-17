@@ -17,9 +17,11 @@ struct GamesView: View {
             case .noGameSaved: return .secondary
             case .draftOnly: return .orange
             case .gameSaved: return .green
+            @unknown default: return .secondary
             }
         }
     }
+    typealias GradeRecentStatus = QuickStartGradeStatus
 
     private struct NewGameWizardPresentation: Identifiable {
         let id = UUID()
@@ -203,10 +205,11 @@ struct GamesView: View {
 }
 
 private struct NewGameQuickStartSection: View {
-    typealias GradeStatus = GamesView.QuickStartGradeStatus
+    typealias GradeStatus = GamesView.GradeRecentStatus
 
     let grades: [Grade]
     let games: [Game]
+    let statusProvider: (@Sendable (UUID) -> GradeStatus)? = nil
     let minHeight: CGFloat
     let statusForGrade: (UUID) -> GradeStatus
     let onStartNewGame: (UUID) -> Void
@@ -219,6 +222,9 @@ private struct NewGameQuickStartSection: View {
     }
 
     private func status(for gradeID: UUID) -> GradeStatus {
+        if let statusProvider {
+            return statusProvider(gradeID)
+        }
         let gradeGames = games.filter { $0.gradeID == gradeID }
         if gradeGames.contains(where: { !$0.isDraft }) {
             return .gameSaved
