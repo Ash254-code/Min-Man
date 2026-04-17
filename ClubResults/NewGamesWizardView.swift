@@ -2341,6 +2341,7 @@ struct NewGameWizardView: View {
                 Text("Save \(nextPeriodLabel ?? "period") using the updated live scores?")
             }
         }
+    }
 
         private func timerCard(minHeight: CGFloat, width: CGFloat) -> some View {
             VStack(alignment: .leading, spacing: 18) {
