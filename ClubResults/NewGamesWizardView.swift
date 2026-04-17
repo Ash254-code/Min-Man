@@ -86,6 +86,10 @@ struct NewGameWizardView: View {
     @State private var theirGoals = 0
     @State private var theirBehinds = 0
 
+    @State private var periodMinutes = 20
+    @State private var remainingSeconds = 20 * 60
+    @State private var isTimerRunning = false
+
     private var ourScore: Int { ourGoals * 6 + ourBehinds }
     private var theirScore: Int { theirGoals * 6 + theirBehinds }
 
@@ -562,13 +566,15 @@ struct NewGameWizardView: View {
         NavigationStack {
             VStack(spacing: 0) {
 
-                ProgressView(
-                    value: Double(activeSteps.firstIndex(of: step) ?? 0),
-                    total: Double(max(activeSteps.count - 1, 1))
-                )
-                .padding(.horizontal)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                if step != .score {
+                    ProgressView(
+                        value: Double(activeSteps.firstIndex(of: step) ?? 0),
+                        total: Double(max(activeSteps.count - 1, 1))
+                    )
+                    .padding(.horizontal)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+                }
 
                 ZStack {
                     switch step {
@@ -584,46 +590,50 @@ struct NewGameWizardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                HStack {
-                    // ✅ hide Back entirely on the first step
-                    if step != .setup {
-                        Button("Back") { back() }
-                    }
-
-                    Spacer()
-
-                    if step == .review {
-                        Button("Save Draft") {
-                            _ = saveGame(asDraft: true, dismissOnSuccess: true)
+                if step != .score {
+                    HStack {
+                        // ✅ hide Back entirely on the first step
+                        if step != .setup {
+                            Button("Back") { back() }
                         }
-                        .disabled(!canProceedOnCurrentStep)
-                        .buttonStyle(.bordered)
 
-                        Button("Save and Send") {
-                            saveAndSendReport()
-                        }
-                        .disabled(!canProceedOnCurrentStep)
-                        .buttonStyle(.borderedProminent)
-                    } else {
-                        Button("Next") { next() }
+                        Spacer()
+
+                        if step == .review {
+                            Button("Save Draft") {
+                                _ = saveGame(asDraft: true, dismissOnSuccess: true)
+                            }
+                            .disabled(!canProceedOnCurrentStep)
+                            .buttonStyle(.bordered)
+
+                            Button("Save and Send") {
+                                saveAndSendReport()
+                            }
                             .disabled(!canProceedOnCurrentStep)
                             .buttonStyle(.borderedProminent)
+                        } else {
+                            Button("Next") { next() }
+                                .disabled(!canProceedOnCurrentStep)
+                                .buttonStyle(.borderedProminent)
+                        }
                     }
+                    .font(.system(size: isCompactLayout ? 24 : 28, weight: .semibold))
+                    .controlSize(isCompactLayout ? .large : .extraLarge)
+                    .padding(.horizontal, isCompactLayout ? 18 : 26)
+                    .padding(.vertical, isCompactLayout ? 14 : 18)
+                    .background(.ultraThinMaterial)
                 }
-                .font(.system(size: isCompactLayout ? 24 : 28, weight: .semibold))
-                .controlSize(isCompactLayout ? .large : .extraLarge)
-                .padding(.horizontal, isCompactLayout ? 18 : 26)
-                .padding(.vertical, isCompactLayout ? 14 : 18)
-                .background(.ultraThinMaterial)
             }
-            .navigationTitle(step == .setup ? "" : "New Game")
-            .navigationBarTitleDisplayMode(step == .setup ? .inline : .large)
+            .navigationTitle(step == .score ? "Live Game View" : (step == .setup ? "" : "New Game"))
+            .navigationBarTitleDisplayMode((step == .setup || step == .score) ? .inline : .large)
 
             // ✅ Cancel in top-left ONLY on first step
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if step == .setup {
                         Button("Cancel") { dismiss() }
+                    } else if step == .score {
+                        Button("Close") { dismiss() }
                     }
                 }
             }
@@ -1104,57 +1114,286 @@ struct NewGameWizardView: View {
     }
 
     private var scoreStep: some View {
-        Form {
-            Section {
-                Stepper("Goals: \(ourGoals)", value: $ourGoals, in: 0...50)
-                Stepper("Behinds: \(ourBehinds)", value: $ourBehinds, in: 0...50)
+        GeometryReader { proxy in
+            ScrollView {
+                let cardSpacing: CGFloat = isCompactLayout ? 14 : 18
+                let timerHeight = max(190, proxy.size.height * 0.25)
+                let timerWidth = max(280, proxy.size.width * 0.33)
+                let scoreboardHeight = max(300, proxy.size.height * 0.5)
 
-                HStack {
-                    Text("Total")
-                    Spacer()
-                    Text("\(ourScore)")
-                        .font(.headline)
-                        .monospacedDigit()
+                VStack(spacing: cardSpacing) {
+                    VStack(spacing: 8) {
+                        Text("Live Game View")
+                            .font(.system(size: isCompactLayout ? 30 : 46, weight: .bold))
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    if isCompactLayout {
+                        timerCard(width: proxy.size.width, minHeight: timerHeight)
+                        scoreboardCard(minHeight: scoreboardHeight)
+                    } else {
+                        HStack(alignment: .top, spacing: cardSpacing) {
+                            scoreboardCard(minHeight: scoreboardHeight)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                            timerCard(width: timerWidth, minHeight: timerHeight)
+                                .frame(width: timerWidth, alignment: .topTrailing)
+                        }
+                    }
+
+                    goalScorersCard
+
+                    Button("Save and Continue") { next() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                 }
+                .padding(.horizontal, isCompactLayout ? 14 : 24)
+                .padding(.top, isCompactLayout ? 14 : 20)
+                .padding(.bottom, 26)
+            }
+        }
+        .onChange(of: periodMinutes) { _, newValue in
+            periodMinutes = max(1, newValue)
+            if !isTimerRunning {
+                remainingSeconds = periodMinutes * 60
+            }
+        }
+        .onReceive(timerTick.autoconnect()) { _ in
+            guard isTimerRunning else { return }
+            if remainingSeconds > 0 {
+                remainingSeconds -= 1
+            } else {
+                isTimerRunning = false
+            }
+        }
+    }
 
-            } header: {
-                HStack(alignment: .center) {
-                    ScorePill(clubConfiguration.clubTeam.name, style: ourTeamScoreStyle, fixedWidth: standardPillWidth)
-                    Spacer()
-                    Text("\(ourGoals).\(ourBehinds) (\(ourScore))")
-                        .font(.system(size: 24, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
+    private var timerTick: Timer.TimerPublisher {
+        Timer.publish(every: 1, on: .main, in: .common)
+    }
+
+    private var periodMinutesEditor: Binding<String> {
+        Binding(
+            get: { String(periodMinutes) },
+            set: { newValue in
+                let digitsOnly = newValue.filter(\.isNumber)
+                guard let value = Int(digitsOnly), (1...99).contains(value) else { return }
+                periodMinutes = value
+            }
+        )
+    }
+
+    private var liveGoalScorersSummary: [(name: String, goals: Int)] {
+        let grouped = Dictionary(grouping: goalKickers.compactMap { entry -> (String, Int)? in
+            guard
+                let playerID = entry.playerID,
+                let player = players.first(where: { $0.id == playerID }),
+                entry.goals > 0
+            else { return nil }
+            return (player.name, entry.goals)
+        }, by: { $0.0 })
+
+        return grouped
+            .map { (name, entries) in (name: name, goals: entries.reduce(0) { $0 + $1.1 }) }
+            .sorted { $0.goals > $1.goals }
+    }
+
+    private var formattedClock: String {
+        let safeSeconds = max(0, remainingSeconds)
+        let minutes = safeSeconds / 60
+        let seconds = safeSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    private func timerCard(width: CGFloat, minHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Timer")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                HStack(spacing: 8) {
+                    Text("Period minutes")
+                        .foregroundStyle(.secondary)
+                    TextField("20", text: periodMinutesEditor)
+                        .keyboardType(.numberPad)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 72)
+                    Stepper("", value: $periodMinutes, in: 1...99)
+                        .labelsHidden()
                 }
             }
 
-            Section {
-                Stepper("Goals: \(theirGoals)", value: $theirGoals, in: 0...50)
-                Stepper("Behinds: \(theirBehinds)", value: $theirBehinds, in: 0...50)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(formattedClock)
+                    .font(.system(size: isCompactLayout ? 52 : 68, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                Spacer()
+            }
 
-                HStack {
-                    Text("Total")
-                    Spacer()
-                    Text("\(theirScore)")
-                        .font(.headline)
-                        .monospacedDigit()
+            HStack(spacing: 10) {
+                Button("Start") { isTimerRunning = remainingSeconds > 0 }
+                    .buttonStyle(.borderedProminent)
+                Button("Pause") { isTimerRunning = false }
+                    .buttonStyle(.bordered)
+                Button("Reset") {
+                    isTimerRunning = false
+                    remainingSeconds = periodMinutes * 60
                 }
+                .buttonStyle(.bordered)
+            }
+            .font(.headline)
+            .controlSize(.large)
+        }
+        .padding(18)
+        .frame(maxWidth: width, minHeight: minHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
 
-            } header: {
-                HStack(alignment: .center) {
-                    ScorePill(finalOpponent.isEmpty ? "Opponent" : finalOpponent, style: opponentScoreStyle, fixedWidth: standardPillWidth)
-                    Spacer()
-                    Text("\(theirGoals).\(theirBehinds) (\(theirScore))")
-                        .font(.system(size: 24, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
+    private var goalScorersCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Goal scorers")
+                .font(.title3.weight(.bold))
+
+            if liveGoalScorersSummary.isEmpty {
+                Text("No goal scorers yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(liveGoalScorersSummary, id: \.name) { scorer in
+                    HStack {
+                        Text(scorer.name)
+                        Spacer()
+                        Text("\(scorer.goals)")
+                            .fontWeight(.bold)
+                    }
                 }
             }
         }
-        .font(wizardBodyFont)
-        .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
-        .dynamicTypeSize(.large ... .accessibility2)
-        .scrollContentBackground(.hidden)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func scoreboardCard(minHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Scoreboard")
+                .font(.title2.weight(.bold))
+
+            HStack(alignment: .top, spacing: 16) {
+                teamScoreColumn(
+                    title: clubConfiguration.clubTeam.name,
+                    style: ourTeamScoreStyle,
+                    goals: ourGoals,
+                    behinds: ourBehinds,
+                    total: ourScore,
+                    goalsBinding: $ourGoals,
+                    behindsBinding: $ourBehinds
+                )
+
+                teamScoreColumn(
+                    title: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
+                    style: opponentScoreStyle,
+                    goals: theirGoals,
+                    behinds: theirBehinds,
+                    total: theirScore,
+                    goalsBinding: $theirGoals,
+                    behindsBinding: $theirBehinds
+                )
+            }
+
+            HStack(spacing: 14) {
+                eventButton(
+                    title: "Goal",
+                    color: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration).background,
+                    action: { ourGoals += 1 }
+                )
+                eventButton(
+                    title: "Point",
+                    color: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration).background,
+                    action: { ourBehinds += 1 }
+                )
+                eventButton(
+                    title: "Goal",
+                    color: ClubStyle.style(for: finalOpponent.isEmpty ? "Opponent" : finalOpponent, configuration: clubConfiguration).background,
+                    action: { theirGoals += 1 }
+                )
+                eventButton(
+                    title: "Point",
+                    color: ClubStyle.style(for: finalOpponent.isEmpty ? "Opponent" : finalOpponent, configuration: clubConfiguration).background,
+                    action: { theirBehinds += 1 }
+                )
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func teamScoreColumn(
+        title: String,
+        style: ClubStyle.Style,
+        goals: Int,
+        behinds: Int,
+        total: Int,
+        goalsBinding: Binding<Int>,
+        behindsBinding: Binding<Int>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ScorePill(title, style: style, fixedWidth: standardPillWidth)
+
+            Text("\(goals).\(behinds)")
+                .font(.system(size: isCompactLayout ? 36 : 54, weight: .bold, design: .rounded))
+                .monospacedDigit()
+
+            Text("\(total)")
+                .font(.system(size: isCompactLayout ? 56 : 88, weight: .black, design: .rounded))
+                .monospacedDigit()
+
+            HStack(spacing: 12) {
+                Stepper("Goals: \(goals)", value: goalsBinding, in: 0...50)
+                Stepper("Points: \(behinds)", value: behindsBinding, in: 0...50)
+            }
+            .labelsHidden()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func eventButton(title: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: isCompactLayout ? 18 : 24, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, isCompactLayout ? 14 : 18)
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(color.opacity(0.85))
+        )
+        .foregroundStyle(.white)
     }
 
     private var goalsStep: some View {
