@@ -33,10 +33,7 @@
 		5EE0D39B2F3C2FB300AA9C37 /* Exceptions for "ClubResults" folder in "ClubResults" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				AppSettings.duplicate.disabled,
 				Info.plist,
-				NewGamesWizardView.duplicate.disabled,
-				SettingsView.duplicate.disabled,
 			);
 			target = 5EE0D3772F3C2FB000AA9C37 /* ClubResults */;
 		};
