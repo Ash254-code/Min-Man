@@ -2107,24 +2107,20 @@ struct NewGameWizardView: View {
                     let timerWidth = max(280, proxy.size.width * 0.33)
                     let timerHeight = max(220, proxy.size.height * 0.25)
                     let scoreboardHeight = max(330, proxy.size.height * 0.5)
+                    let sharedCardHeight = max(scoreboardHeight, timerHeight)
 
                     ScrollView {
                         VStack(spacing: cardSpacing) {
-                        VStack(spacing: 10) {
-                            Text("Live Game View")
-                                .font(.title.bold())
-                            Text(date.formatted(date: .abbreviated, time: .shortened))
-                                .foregroundStyle(.secondary)
-                        }
+                            gameHeader(compact: compact)
 
                             if compact {
-                                scoreboardCard(minHeight: scoreboardHeight)
-                                timerCard(minHeight: timerHeight, width: proxy.size.width)
+                                scoreboardCard(minHeight: sharedCardHeight)
+                                timerCard(minHeight: sharedCardHeight, width: proxy.size.width)
                             } else {
                                 HStack(alignment: .top, spacing: cardSpacing) {
-                                    scoreboardCard(minHeight: scoreboardHeight)
+                                    scoreboardCard(minHeight: sharedCardHeight)
                                         .frame(maxWidth: .infinity, alignment: .topLeading)
-                                    timerCard(minHeight: timerHeight, width: timerWidth)
+                                    timerCard(minHeight: sharedCardHeight, width: timerWidth)
                                         .frame(width: timerWidth, alignment: .topTrailing)
                                 }
                             }
@@ -2199,6 +2195,41 @@ struct NewGameWizardView: View {
             }
         }
 
+        private func gameHeader(compact: Bool) -> some View {
+            VStack(spacing: 10) {
+                HStack(alignment: .top) {
+                    headerScoreSummary(title: ourTeamName, goals: ourGoals, behinds: ourBehinds, score: ourScore, style: ourStyle, alignment: .leading)
+                    Spacer(minLength: compact ? 12 : 24)
+                    VStack(spacing: 8) {
+                        Text("Live Game View")
+                            .font(.title.bold())
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: compact ? 12 : 24)
+                    headerScoreSummary(title: oppTeamName, goals: theirGoals, behinds: theirBehinds, score: theirScore, style: oppStyle, alignment: .trailing)
+                }
+
+                Text(timeText(secondsRemaining))
+                    .font(.system(size: compact ? 48 : 56, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(isDangerTime ? .red : .primary)
+            }
+        }
+
+        @ViewBuilder
+        private func headerScoreSummary(title: String, goals: Int, behinds: Int, score: Int, style: ClubStyle.Style, alignment: HorizontalAlignment) -> some View {
+            VStack(alignment: alignment, spacing: 4) {
+                ScorePill(title, style: style, fixedWidth: 140)
+                Text("\(goals).\(behinds)")
+                    .font(.headline.weight(.semibold))
+                    .monospacedDigit()
+                Text("\(score)")
+                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .monospacedDigit()
+            }
+        }
+
         private var periodMinutesEditor: Binding<String> {
             Binding(
                 get: { String(periodMinutes) },
@@ -2227,11 +2258,6 @@ struct NewGameWizardView: View {
                             .labelsHidden()
                     }
                 }
-
-                Text(timeText(secondsRemaining))
-                    .font(.system(size: 62, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(isDangerTime ? .red : .primary)
 
                 HStack(spacing: 10) {
                     Button("Start") { startTimer() }
