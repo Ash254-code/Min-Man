@@ -413,6 +413,10 @@ struct NewGameWizardView: View {
         min(max(selectedGrade?.bestPlayersCount ?? 6, 0), 10)
     }
 
+    private var supportsLiveGameView: Bool {
+        selectedGrade?.allowsLiveGameView ?? true
+    }
+
     private var activeSteps: [Step] {
         guard let grade = selectedGrade else { return [.setup] }
 
@@ -740,15 +744,17 @@ struct NewGameWizardView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Button {
-                            entryMode = .live
-                            liveGameSessionSaved = false
-                            showEntryModePrompt = false
-                            showLiveGameView = true
-                        } label: {
-                            selectorListRow(title: "Live entry", selected: entryMode == .live)
+                        if supportsLiveGameView {
+                            Button {
+                                entryMode = .live
+                                liveGameSessionSaved = false
+                                showEntryModePrompt = false
+                                showLiveGameView = true
+                            } label: {
+                                selectorListRow(title: "Live entry", selected: entryMode == .live)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -821,6 +827,11 @@ struct NewGameWizardView: View {
 
     private func next() {
         if step == entryModeTriggerStep && entryMode == nil {
+            if !supportsLiveGameView {
+                entryMode = .postGame
+                proceedAfterEntryModeSelection()
+                return
+            }
             showEntryModePrompt = true
             return
         }
