@@ -14,10 +14,15 @@ struct GradeBackup: Codable {
     let asksBoundaryUmpire1: Bool
     let asksBoundaryUmpire2: Bool
     let asksTrainers: Bool
+    let asksTrainer1: Bool
+    let asksTrainer2: Bool
+    let asksTrainer3: Bool
+    let asksTrainer4: Bool
     let asksNotes: Bool
     let asksGoalKickers: Bool
     let bestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
+    let quarterLengthMinutes: Int
 
     init(
         id: UUID,
@@ -33,10 +38,15 @@ struct GradeBackup: Codable {
         asksBoundaryUmpire1: Bool = true,
         asksBoundaryUmpire2: Bool = true,
         asksTrainers: Bool = true,
+        asksTrainer1: Bool = true,
+        asksTrainer2: Bool = true,
+        asksTrainer3: Bool = true,
+        asksTrainer4: Bool = true,
         asksNotes: Bool = true,
         asksGoalKickers: Bool = true,
         bestPlayersCount: Int = 6,
-        asksGuestBestFairestVotesScan: Bool = false
+        asksGuestBestFairestVotesScan: Bool = false,
+        quarterLengthMinutes: Int = 20
     ) {
         self.id = id
         self.name = name
@@ -51,10 +61,15 @@ struct GradeBackup: Codable {
         self.asksBoundaryUmpire1 = asksBoundaryUmpire1
         self.asksBoundaryUmpire2 = asksBoundaryUmpire2
         self.asksTrainers = asksTrainers
+        self.asksTrainer1 = asksTrainer1
+        self.asksTrainer2 = asksTrainer2
+        self.asksTrainer3 = asksTrainer3
+        self.asksTrainer4 = asksTrainer4
         self.asksNotes = asksNotes
         self.asksGoalKickers = asksGoalKickers
         self.bestPlayersCount = min(max(bestPlayersCount, 0), 10)
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
+        self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -62,9 +77,10 @@ struct GradeBackup: Codable {
         case asksHeadCoach, asksAssistantCoach, asksTeamManager, asksRunner, asksGoalUmpire
         case asksFieldUmpire
         case asksBoundaryUmpire1, asksBoundaryUmpire2, asksBoundaryUmpires
-        case asksTrainers, asksNotes, asksGoalKickers
+        case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
+        case asksNotes, asksGoalKickers
         case bestPlayersCount, asksBestPlayers
-        case asksGuestBestFairestVotesScan
+        case asksGuestBestFairestVotesScan, quarterLengthMinutes
     }
 
     init(from decoder: Decoder) throws {
@@ -82,7 +98,12 @@ struct GradeBackup: Codable {
         let legacyAsksBoundaryUmpires = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpires) ?? true
         asksBoundaryUmpire1 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire1) ?? legacyAsksBoundaryUmpires
         asksBoundaryUmpire2 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire2) ?? legacyAsksBoundaryUmpires
-        asksTrainers = try c.decodeIfPresent(Bool.self, forKey: .asksTrainers) ?? true
+        let legacyAsksTrainers = try c.decodeIfPresent(Bool.self, forKey: .asksTrainers) ?? true
+        asksTrainer1 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer1) ?? legacyAsksTrainers
+        asksTrainer2 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer2) ?? legacyAsksTrainers
+        asksTrainer3 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer3) ?? legacyAsksTrainers
+        asksTrainer4 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer4) ?? legacyAsksTrainers
+        asksTrainers = asksTrainer1 || asksTrainer2 || asksTrainer3 || asksTrainer4
         asksNotes = try c.decodeIfPresent(Bool.self, forKey: .asksNotes) ?? true
         asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
         if let decodedCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) {
@@ -92,6 +113,7 @@ struct GradeBackup: Codable {
             bestPlayersCount = legacyAsksBestPlayers ? 6 : 0
         }
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
+        quarterLengthMinutes = min(max(try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20, 10), 30)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -109,10 +131,15 @@ struct GradeBackup: Codable {
         try c.encode(asksBoundaryUmpire1, forKey: .asksBoundaryUmpire1)
         try c.encode(asksBoundaryUmpire2, forKey: .asksBoundaryUmpire2)
         try c.encode(asksTrainers, forKey: .asksTrainers)
+        try c.encode(asksTrainer1, forKey: .asksTrainer1)
+        try c.encode(asksTrainer2, forKey: .asksTrainer2)
+        try c.encode(asksTrainer3, forKey: .asksTrainer3)
+        try c.encode(asksTrainer4, forKey: .asksTrainer4)
         try c.encode(asksNotes, forKey: .asksNotes)
         try c.encode(asksGoalKickers, forKey: .asksGoalKickers)
         try c.encode(bestPlayersCount, forKey: .bestPlayersCount)
         try c.encode(asksGuestBestFairestVotesScan, forKey: .asksGuestBestFairestVotesScan)
+        try c.encode(quarterLengthMinutes, forKey: .quarterLengthMinutes)
     }
 }
 
@@ -154,10 +181,15 @@ enum SettingsBackupStore {
                 asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                 asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
                 asksTrainers: $0.asksTrainers,
+                asksTrainer1: $0.asksTrainer1,
+                asksTrainer2: $0.asksTrainer2,
+                asksTrainer3: $0.asksTrainer3,
+                asksTrainer4: $0.asksTrainer4,
                 asksNotes: $0.asksNotes,
                 asksGoalKickers: $0.asksGoalKickers,
                 bestPlayersCount: $0.bestPlayersCount,
-                asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
+                asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                quarterLengthMinutes: $0.quarterLengthMinutes
             )
         }
         guard let data = try? JSONEncoder().encode(payload) else { return }
@@ -257,10 +289,15 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 asksBoundaryUmpire1: backup.asksBoundaryUmpire1,
                 asksBoundaryUmpire2: backup.asksBoundaryUmpire2,
                 asksTrainers: backup.asksTrainers,
+                asksTrainer1: backup.asksTrainer1,
+                asksTrainer2: backup.asksTrainer2,
+                asksTrainer3: backup.asksTrainer3,
+                asksTrainer4: backup.asksTrainer4,
                 asksNotes: backup.asksNotes,
                 asksGoalKickers: backup.asksGoalKickers,
                 bestPlayersCount: backup.bestPlayersCount,
-                asksGuestBestFairestVotesScan: backup.asksGuestBestFairestVotesScan
+                asksGuestBestFairestVotesScan: backup.asksGuestBestFairestVotesScan,
+                quarterLengthMinutes: backup.quarterLengthMinutes
             )
         )
 

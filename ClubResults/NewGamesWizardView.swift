@@ -330,6 +330,12 @@ struct NewGameWizardView: View {
         assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { trainer2Name = $0 }
         assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { trainer3Name = $0 }
         assignDefault(for: .trainer4, role: .trainer, gradeID: gradeID) { trainer4Name = $0 }
+        if let gradeID, let grade = resolvedGrades.first(where: { $0.id == gradeID }) {
+            periodMinutes = min(max(grade.quarterLengthMinutes, 10), 30)
+            if !isTimerRunning {
+                remainingSeconds = periodMinutes * 60
+            }
+        }
     }
 
     private func persistCurrentStaffSelections(for gradeID: UUID?) {
@@ -421,7 +427,10 @@ struct NewGameWizardView: View {
             grade.asksFieldUmpire ||
             grade.asksBoundaryUmpire1 ||
             grade.asksBoundaryUmpire2 ||
-            grade.asksTrainers ||
+            grade.asksTrainer1 ||
+            grade.asksTrainer2 ||
+            grade.asksTrainer3 ||
+            grade.asksTrainer4 ||
             grade.asksNotes {
             steps.append(.medical)
         }
@@ -1070,12 +1079,22 @@ struct NewGameWizardView: View {
                 }
 
                 StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
-                    if selectedGrade?.asksTrainers ?? true {
+                    if selectedGrade?.asksTrainer1 ?? true {
                         StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
+                    }
+                    if selectedGrade?.asksTrainer2 ?? true {
                         StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
+                    }
+                    if selectedGrade?.asksTrainer3 ?? true {
                         StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
+                    }
+                    if selectedGrade?.asksTrainer4 ?? true {
                         StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
-                    } else {
+                    }
+                    if !(selectedGrade?.asksTrainer1 ?? true) &&
+                        !(selectedGrade?.asksTrainer2 ?? true) &&
+                        !(selectedGrade?.asksTrainer3 ?? true) &&
+                        !(selectedGrade?.asksTrainer4 ?? true) {
                         Text("Trainer fields are disabled for this grade.")
                             .foregroundStyle(.secondary)
                     }
@@ -1220,12 +1239,22 @@ struct NewGameWizardView: View {
         ScrollView {
             VStack(spacing: 14) {
                 StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
-                    if selectedGrade?.asksTrainers ?? true {
+                    if selectedGrade?.asksTrainer1 ?? true {
                         StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
+                    }
+                    if selectedGrade?.asksTrainer2 ?? true {
                         StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
+                    }
+                    if selectedGrade?.asksTrainer3 ?? true {
                         StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
+                    }
+                    if selectedGrade?.asksTrainer4 ?? true {
                         StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
-                    } else {
+                    }
+                    if !(selectedGrade?.asksTrainer1 ?? true) &&
+                        !(selectedGrade?.asksTrainer2 ?? true) &&
+                        !(selectedGrade?.asksTrainer3 ?? true) &&
+                        !(selectedGrade?.asksTrainer4 ?? true) {
                         Text("Trainer fields are disabled for this grade.")
                             .foregroundStyle(.secondary)
                     }

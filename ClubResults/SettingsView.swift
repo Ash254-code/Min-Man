@@ -411,7 +411,7 @@ private struct ClubGradesSettingsView: View {
     @Query private var reportRecipients: [ReportRecipient]
 
     @State private var showAddGrade = false
-    @State private var newGradeName = ""
+    @State private var newGradeDraft = NewGradeDraft()
 
     @State private var gradeEditing: Grade?
     @State private var editGradeName = ""
@@ -451,7 +451,7 @@ private struct ClubGradesSettingsView: View {
                 .onMove(perform: moveGrades)
 
                 Button {
-                    newGradeName = ""
+                    newGradeDraft = NewGradeDraft()
                     showAddGrade = true
                 } label: {
                     Label("Add Grade", systemImage: "plus")
@@ -483,27 +483,12 @@ private struct ClubGradesSettingsView: View {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
         .sheet(isPresented: $showAddGrade) {
-            NavigationStack {
-                Form {
-                    TextField("Grade name", text: $newGradeName)
-                        .textInputAutocapitalization(.words)
+            AddGradeWizardView(draft: $newGradeDraft) { draft in
+                if addGrade(using: draft) {
+                    showAddGrade = false
                 }
-                .navigationTitle("Add Grade")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showAddGrade = false
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            if addGrade() {
-                                showAddGrade = false
-                            }
-                        }
-                        .disabled(clean(newGradeName).isEmpty)
-                    }
-                }
+            } onCancel: {
+                showAddGrade = false
             }
             .appPopupStyle()
         }
@@ -514,15 +499,29 @@ private struct ClubGradesSettingsView: View {
                         .textInputAutocapitalization(.words)
 
                     Section("New Game Wizard Fields") {
+                        Text("Coaches")
+                            .font(.subheadline.weight(.semibold))
                         Toggle("Head Coach", isOn: bind(grade, \.asksHeadCoach))
                         Toggle("Assistant Coach", isOn: bind(grade, \.asksAssistantCoach))
                         Toggle("Team Manager", isOn: bind(grade, \.asksTeamManager))
                         Toggle("Runner", isOn: bind(grade, \.asksRunner))
+
+                        Text("Officials")
+                            .font(.subheadline.weight(.semibold))
                         Toggle("Goal Umpire", isOn: bind(grade, \.asksGoalUmpire))
                         Toggle("Field Umpire", isOn: bind(grade, \.asksFieldUmpire))
                         Toggle("Boundary Umpire 1", isOn: bind(grade, \.asksBoundaryUmpire1))
                         Toggle("Boundary Umpire 2", isOn: bind(grade, \.asksBoundaryUmpire2))
-                        Toggle("Trainers", isOn: bind(grade, \.asksTrainers))
+
+                        Text("Trainers")
+                            .font(.subheadline.weight(.semibold))
+                        Toggle("Trainer 1", isOn: bind(grade, \.asksTrainer1))
+                        Toggle("Trainer 2", isOn: bind(grade, \.asksTrainer2))
+                        Toggle("Trainer 3", isOn: bind(grade, \.asksTrainer3))
+                        Toggle("Trainer 4", isOn: bind(grade, \.asksTrainer4))
+
+                        Text("Awards")
+                            .font(.subheadline.weight(.semibold))
                         Toggle("Notes", isOn: bind(grade, \.asksNotes))
                         Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
                         Picker("Best Players", selection: bind(grade, \.bestPlayersCount)) {
@@ -531,6 +530,17 @@ private struct ClubGradesSettingsView: View {
                             }
                         }
                         Toggle("Guest Best & Fairest Votes Scan", isOn: bind(grade, \.asksGuestBestFairestVotesScan))
+                        Picker(
+                            "Length of Quarters",
+                            selection: Binding(
+                                get: { grade.quarterLengthMinutes },
+                                set: { grade.quarterLengthMinutes = min(max($0, 10), 30) }
+                            )
+                        ) {
+                            ForEach(10...30, id: \.self) { minute in
+                                Text("\(minute) min").tag(minute)
+                            }
+                        }
                     }
 
                     Section {
@@ -579,13 +589,34 @@ private struct ClubGradesSettingsView: View {
         )
     }
 
-    private func addGrade() -> Bool {
-        let name = clean(newGradeName)
+    private func addGrade(using draft: NewGradeDraft) -> Bool {
+        let name = clean(draft.name)
         guard !name.isEmpty else { return false }
         guard !grades.contains(where: { clean($0.name).lowercased() == name.lowercased() }) else { return false }
 
         let nextOrder = (grades.map(\.displayOrder).max() ?? -1) + 1
-        let newGrade = Grade(name: name, isActive: true, displayOrder: nextOrder)
+        let newGrade = Grade(
+            name: name,
+            isActive: true,
+            displayOrder: nextOrder,
+            asksHeadCoach: draft.asksHeadCoach,
+            asksAssistantCoach: draft.asksAssistantCoach,
+            asksTeamManager: draft.asksTeamManager,
+            asksRunner: draft.asksRunner,
+            asksGoalUmpire: draft.asksGoalUmpire,
+            asksFieldUmpire: draft.asksFieldUmpire,
+            asksBoundaryUmpire1: draft.asksBoundaryUmpire1,
+            asksBoundaryUmpire2: draft.asksBoundaryUmpire2,
+            asksTrainers: draft.hasAnyTrainerEnabled,
+            asksTrainer1: draft.asksTrainer1,
+            asksTrainer2: draft.asksTrainer2,
+            asksTrainer3: draft.asksTrainer3,
+            asksTrainer4: draft.asksTrainer4,
+            asksGoalKickers: draft.asksGoalKickers,
+            bestPlayersCount: draft.bestPlayersCount,
+            asksGuestBestFairestVotesScan: draft.asksGuestBestFairestVotesScan,
+            quarterLengthMinutes: draft.quarterLengthMinutes
+        )
         modelContext.insert(newGrade)
         grades.append(newGrade)
 
@@ -603,6 +634,7 @@ private struct ClubGradesSettingsView: View {
         guard !grades.contains(where: { $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased() }) else { return false }
 
         gradeEditing.name = name
+        gradeEditing.asksTrainers = gradeEditing.asksTrainer1 || gradeEditing.asksTrainer2 || gradeEditing.asksTrainer3 || gradeEditing.asksTrainer4
         SettingsBackupStore.saveGrades(grades)
         saveContext()
         reloadGrades()
@@ -699,14 +731,19 @@ private struct ClubGradesSettingsView: View {
                     asksTeamManager: $0.asksTeamManager,
                     asksRunner: $0.asksRunner,
                     asksGoalUmpire: $0.asksGoalUmpire,
-                    asksFieldUmpire: $0.asksFieldUmpire,
-                    asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
-                    asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
-                    asksTrainers: $0.asksTrainers,
+                            asksFieldUmpire: $0.asksFieldUmpire,
+                            asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
+                            asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
+                            asksTrainers: $0.asksTrainers,
+                            asksTrainer1: $0.asksTrainer1,
+                            asksTrainer2: $0.asksTrainer2,
+                            asksTrainer3: $0.asksTrainer3,
+                            asksTrainer4: $0.asksTrainer4,
                             asksNotes: $0.asksNotes,
                             asksGoalKickers: $0.asksGoalKickers,
                             bestPlayersCount: $0.bestPlayersCount,
-                            asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
+                            asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                            quarterLengthMinutes: $0.quarterLengthMinutes
                         )
                     }
 
@@ -726,10 +763,15 @@ private struct ClubGradesSettingsView: View {
                                 asksBoundaryUmpire1: item.asksBoundaryUmpire1,
                                 asksBoundaryUmpire2: item.asksBoundaryUmpire2,
                                 asksTrainers: item.asksTrainers,
+                                asksTrainer1: item.asksTrainer1,
+                                asksTrainer2: item.asksTrainer2,
+                                asksTrainer3: item.asksTrainer3,
+                                asksTrainer4: item.asksTrainer4,
                                 asksNotes: item.asksNotes,
                                 asksGoalKickers: item.asksGoalKickers,
                                 bestPlayersCount: item.bestPlayersCount,
-                                asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan
+                                asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan,
+                                quarterLengthMinutes: item.quarterLengthMinutes
                             )
                         )
                     }
@@ -764,10 +806,15 @@ private struct ClubGradesSettingsView: View {
                     asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                     asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
                     asksTrainers: $0.asksTrainers,
+                    asksTrainer1: $0.asksTrainer1,
+                    asksTrainer2: $0.asksTrainer2,
+                    asksTrainer3: $0.asksTrainer3,
+                    asksTrainer4: $0.asksTrainer4,
                     asksNotes: $0.asksNotes,
                     asksGoalKickers: $0.asksGoalKickers,
                     bestPlayersCount: $0.bestPlayersCount,
-                    asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan
+                    asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                    quarterLengthMinutes: $0.quarterLengthMinutes
                 )
             }
         }
@@ -789,6 +836,121 @@ private struct AppAppearanceSettingsView: View {
             }
         }
         .navigationTitle("App Appearance")
+    }
+}
+
+private struct NewGradeDraft {
+    var name = ""
+    var asksHeadCoach = true
+    var asksAssistantCoach = true
+    var asksTeamManager = true
+    var asksRunner = true
+    var asksGoalUmpire = true
+    var asksFieldUmpire = true
+    var asksBoundaryUmpire1 = true
+    var asksBoundaryUmpire2 = true
+    var asksTrainer1 = true
+    var asksTrainer2 = true
+    var asksTrainer3 = true
+    var asksTrainer4 = true
+    var asksGoalKickers = true
+    var bestPlayersCount = 6
+    var asksGuestBestFairestVotesScan = false
+    var quarterLengthMinutes = 20
+
+    var hasAnyTrainerEnabled: Bool {
+        asksTrainer1 || asksTrainer2 || asksTrainer3 || asksTrainer4
+    }
+}
+
+private struct AddGradeWizardView: View {
+    enum Step: Int {
+        case gradeName
+        case coaches
+        case officials
+        case trainers
+        case awards
+    }
+
+    @Binding var draft: NewGradeDraft
+    let onSave: (NewGradeDraft) -> Void
+    let onCancel: () -> Void
+
+    @State private var step: Step = .gradeName
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                switch step {
+                case .gradeName:
+                    Section("Grade") {
+                        TextField("Grade name", text: $draft.name)
+                            .textInputAutocapitalization(.words)
+                    }
+                case .coaches:
+                    Section("Coaches") {
+                        Toggle("Head Coach", isOn: $draft.asksHeadCoach)
+                        Toggle("Assistant Coach", isOn: $draft.asksAssistantCoach)
+                        Toggle("Team Manager", isOn: $draft.asksTeamManager)
+                        Toggle("Runner", isOn: $draft.asksRunner)
+                    }
+                case .officials:
+                    Section("Officials") {
+                        Toggle("Goal Umpire", isOn: $draft.asksGoalUmpire)
+                        Toggle("Field Umpire", isOn: $draft.asksFieldUmpire)
+                        Toggle("Boundary Umpire 1", isOn: $draft.asksBoundaryUmpire1)
+                        Toggle("Boundary Umpire 2", isOn: $draft.asksBoundaryUmpire2)
+                    }
+                case .trainers:
+                    Section("Trainers") {
+                        Toggle("Trainer 1", isOn: $draft.asksTrainer1)
+                        Toggle("Trainer 2", isOn: $draft.asksTrainer2)
+                        Toggle("Trainer 3", isOn: $draft.asksTrainer3)
+                        Toggle("Trainer 4", isOn: $draft.asksTrainer4)
+                    }
+                case .awards:
+                    Section("Awards") {
+                        Toggle("Goal Kickers", isOn: $draft.asksGoalKickers)
+                        Picker("Best Players", selection: $draft.bestPlayersCount) {
+                            ForEach(1...10, id: \.self) { count in
+                                Text("\(count)").tag(count)
+                            }
+                        }
+                        Toggle("Guest B & F Votes", isOn: $draft.asksGuestBestFairestVotesScan)
+                        Picker("Length of Quarters", selection: $draft.quarterLengthMinutes) {
+                            ForEach(10...30, id: \.self) { minute in
+                                Text("\(minute) min").tag(minute)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Add Grade")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    HStack {
+                        if step != .gradeName {
+                            Button("Back") {
+                                step = Step(rawValue: step.rawValue - 1) ?? .gradeName
+                            }
+                        }
+                        Spacer()
+                        if step == .awards {
+                            Button("Save") { onSave(draft) }
+                                .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        } else {
+                            Button("Next") {
+                                step = Step(rawValue: step.rawValue + 1) ?? .awards
+                            }
+                            .disabled(step == .gradeName && draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
