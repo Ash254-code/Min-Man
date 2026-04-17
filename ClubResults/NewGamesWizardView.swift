@@ -413,8 +413,12 @@ struct NewGameWizardView: View {
         min(max(selectedGrade?.bestPlayersCount ?? 6, 0), 10)
     }
 
+    private var supportsLiveGameView: Bool {
+        selectedGrade?.asksLiveGameView ?? true
+    }
+
     private var shouldAskForEntryMode: Bool {
-        (selectedGrade?.asksLiveGameView ?? true)
+        supportsLiveGameView
         && (selectedGrade?.asksScore ?? true || (selectedGrade?.asksGoalKickers ?? true) || requiredBestPlayersCount > 0)
     }
 
