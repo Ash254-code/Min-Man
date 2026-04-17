@@ -2119,6 +2119,7 @@ struct NewGameWizardView: View {
         @State private var showPlayerPicker = false
         @State private var showPointPicker = false
         @State private var showTimerAdjuster = false
+        @State private var showGoalKickerEditor = false
         @State private var pointScorers: [UUID: Int] = [:]
         @State private var rushedPoints: Int = 0
         @State private var periodSnapshots: [PeriodSnapshot] = []
@@ -2202,6 +2203,51 @@ struct NewGameWizardView: View {
                     if lhsTotal != rhsTotal { return lhsTotal > rhsTotal }
                     return playerName(lhs.id) < playerName(rhs.id)
                 }
+        }
+
+        private struct GoalKickerEditorState: Equatable {
+            struct Row: Identifiable, Equatable {
+                let id: UUID
+                var goals: Int
+                var points: Int
+            }
+
+            var rows: [Row]
+            var rushedPoints: Int
+        }
+
+        private func makeGoalKickerEditorState() -> GoalKickerEditorState {
+            GoalKickerEditorState(
+                rows: scorerTally.map { scorer in
+                    GoalKickerEditorState.Row(id: scorer.id, goals: scorer.goals, points: scorer.points)
+                },
+                rushedPoints: rushedPoints
+            )
+        }
+
+        private func applyGoalKickerEditorState(_ state: GoalKickerEditorState) {
+            let normalizedRows = state.rows
+                .map { row in
+                    GoalKickerEditorState.Row(
+                        id: row.id,
+                        goals: max(0, row.goals),
+                        points: max(0, row.points)
+                    )
+                }
+                .filter { $0.goals > 0 || $0.points > 0 }
+
+            goalKickers = normalizedRows
+                .filter { $0.goals > 0 }
+                .map { WizardGoalKickerEntry(playerID: $0.id, goals: $0.goals) }
+
+            pointScorers = Dictionary(uniqueKeysWithValues: normalizedRows.compactMap { row in
+                guard row.points > 0 else { return nil }
+                return (row.id, row.points)
+            })
+
+            rushedPoints = max(0, state.rushedPoints)
+            ourGoals = goalKickers.reduce(0) { $0 + $1.goals }
+            ourBehinds = pointScorers.values.reduce(0, +) + rushedPoints
         }
 
         private var allRequiredBestPlayersSelected: Bool {
@@ -2443,6 +2489,15 @@ struct NewGameWizardView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showGoalKickerEditor) {
+                GoalKickerEditorSheet(
+                    eligiblePlayers: eligiblePlayers,
+                    playerName: playerName,
+                    initialState: makeGoalKickerEditorState()
+                ) { updatedState in
+                    applyGoalKickerEditorState(updatedState)
+                }
+            }
             .onDisappear {
                 pauseTimer()
             }
@@ -2583,7 +2638,20 @@ struct NewGameWizardView: View {
 
         private func goalKickerSummaryCard(width: CGFloat) -> some View {
             VStack(alignment: .leading, spacing: 10) {
-                ScorePill("Goal Kickers", style: ourStyle)
+                HStack {
+                    ScorePill("Goal Kickers", style: ourStyle)
+                    Spacer()
+                    Button {
+                        showGoalKickerEditor = true
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.headline.weight(.semibold))
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Edit goal kickers")
+                }
                 if scorerTally.isEmpty, rushedPoints == 0 {
                     Text("No scorers yet.")
                         .foregroundStyle(.secondary)
@@ -2611,6 +2679,177 @@ struct NewGameWizardView: View {
             .padding()
             .frame(maxWidth: width, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+
+        private struct StepAdjuster: View {
+            let value: Int
+            let onDecrement: () -> Void
+            let onIncrement: () -> Void
+
+            var body: some View {
+                HStack(spacing: 10) {
+                    Button(action: onDecrement) {
+                        Image(systemName: "minus")
+                            .font(.headline.weight(.bold))
+                            .frame(width: 42, height: 42)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(value == 0)
+
+                    Text("\(value)")
+                        .font(.title3.weight(.bold))
+                        .monospacedDigit()
+                        .frame(minWidth: 34)
+
+                    Button(action: onIncrement) {
+                        Image(systemName: "plus")
+                            .font(.headline.weight(.bold))
+                            .frame(width: 42, height: 42)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+
+        private struct GoalKickerEditorSheet: View {
+            @Environment(\.dismiss) private var dismiss
+
+            let eligiblePlayers: [Player]
+            let playerName: (UUID) -> String
+            let initialState: GoalKickerEditorState
+            let onSave: (GoalKickerEditorState) -> Void
+
+            @State private var draftState: GoalKickerEditorState
+            @State private var selectedPlayerID: UUID?
+
+            init(
+                eligiblePlayers: [Player],
+                playerName: @escaping (UUID) -> String,
+                initialState: GoalKickerEditorState,
+                onSave: @escaping (GoalKickerEditorState) -> Void
+            ) {
+                self.eligiblePlayers = eligiblePlayers
+                self.playerName = playerName
+                self.initialState = initialState
+                self.onSave = onSave
+                _draftState = State(initialValue: initialState)
+            }
+
+            private var hasChanges: Bool { draftState != initialState }
+
+            private var addablePlayers: [Player] {
+                let existing = Set(draftState.rows.map(\.id))
+                return eligiblePlayers.filter { !existing.contains($0.id) }
+            }
+
+            var body: some View {
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            HStack(spacing: 12) {
+                                Picker("Add goal kicker", selection: $selectedPlayerID) {
+                                    Text("Select player").tag(nil as UUID?)
+                                    ForEach(addablePlayers) { player in
+                                        Text(player.name).tag(Optional(player.id))
+                                    }
+                                }
+                                .pickerStyle(.menu)
+
+                                Button("Add") {
+                                    guard let playerID = selectedPlayerID else { return }
+                                    draftState.rows.append(.init(id: playerID, goals: 0, points: 0))
+                                    selectedPlayerID = nil
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(selectedPlayerID == nil)
+                            }
+
+                            if draftState.rows.isEmpty {
+                                Text("No goal kickers added yet.")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                VStack(spacing: 14) {
+                                    ForEach(Array(draftState.rows.enumerated()), id: \.element.id) { index, row in
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            HStack {
+                                                Text(playerName(row.id))
+                                                    .font(.headline)
+                                                Spacer()
+                                                Button {
+                                                    draftState.rows.remove(at: index)
+                                                } label: {
+                                                    Image(systemName: "trash")
+                                                }
+                                                .buttonStyle(.plain)
+                                                .foregroundStyle(.red)
+                                                .accessibilityLabel("Remove \(playerName(row.id))")
+                                            }
+
+                                            HStack {
+                                                Text("Goals")
+                                                Spacer()
+                                                StepAdjuster(
+                                                    value: row.goals,
+                                                    onDecrement: { draftState.rows[index].goals = max(0, row.goals - 1) },
+                                                    onIncrement: { draftState.rows[index].goals = row.goals + 1 }
+                                                )
+                                            }
+
+                                            HStack {
+                                                Text("Points")
+                                                Spacer()
+                                                StepAdjuster(
+                                                    value: row.points,
+                                                    onDecrement: { draftState.rows[index].points = max(0, row.points - 1) },
+                                                    onIncrement: { draftState.rows[index].points = row.points + 1 }
+                                                )
+                                            }
+                                        }
+                                        .padding(16)
+                                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                                    }
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Rushed points")
+                                    .font(.headline)
+                                HStack {
+                                    Text("Rushed")
+                                    Spacer()
+                                    StepAdjuster(
+                                        value: draftState.rushedPoints,
+                                        onDecrement: { draftState.rushedPoints = max(0, draftState.rushedPoints - 1) },
+                                        onIncrement: { draftState.rushedPoints += 1 }
+                                    )
+                                }
+                                .padding(16)
+                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                            }
+                        }
+                        .padding(20)
+                    }
+                    .navigationTitle("Edit Goal Kickers")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") { dismiss() }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Save") {
+                                onSave(draftState)
+                                dismiss()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(hasChanges ? .blue : .gray)
+                            .disabled(!hasChanges)
+                        }
+                    }
+                }
+                .presentationSizing(.page)
+            }
         }
 
         private func bestPlayersCard(width: CGFloat) -> some View {
