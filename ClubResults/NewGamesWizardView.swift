@@ -279,7 +279,7 @@ struct NewGameWizardView: View {
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
     @State private var scannerErrorMessage: String?
-    @State private var pendingStepAfterVotesScan: Step?
+    @State private var hasAutoPromptedVotesScanner = false
     @State private var hasAppliedInitialGrade = false
     @State private var hasAppliedDraftRestore = false
     @State private var isRestoringDraft = false
@@ -554,10 +554,6 @@ struct NewGameWizardView: View {
         selectedGrade?.asksLiveGameView ?? true
     }
 
-    private var shouldRequireVotesScanBeforeReview: Bool {
-        selectedGrade?.asksGuestBestFairestVotesScan ?? false
-    }
-
     private var shouldAskForEntryMode: Bool {
         supportsLiveGameView
     }
@@ -592,6 +588,7 @@ struct NewGameWizardView: View {
             steps.append(.goals)
         }
         if grade.bestPlayersCount > 0 && entryMode != .live { steps.append(.best) }
+        if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
         steps.append(.review)
         return steps
     }
@@ -879,6 +876,13 @@ struct NewGameWizardView: View {
             applyDefaults(for: gradeID)
             applyPreviewStateIfNeeded()
         }
+        .onChange(of: step) { _, newStep in
+            guard !isPreviewMode else { return }
+            if newStep == .votes && guestBestFairestVotesScanPDF == nil && !hasAutoPromptedVotesScanner {
+                openVotesScanner()
+                hasAutoPromptedVotesScanner = true
+            }
+        }
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
             guard !isRestoringDraft else { return }
@@ -889,6 +893,8 @@ struct NewGameWizardView: View {
             liveGameSessionSaved = false
             liveGameSession = LiveGameSessionState()
             editingGame = nil
+            guestBestFairestVotesScanPDF = nil
+            hasAutoPromptedVotesScanner = false
         }
         .onAppear {
             guard !hasAppliedInitialGrade else { return }
@@ -930,13 +936,16 @@ struct NewGameWizardView: View {
             VotesScannerSheet { data in
                 guestBestFairestVotesScanPDF = data
                 showVotesScanner = false
-                if let pendingStepAfterVotesScan {
-                    step = pendingStepAfterVotesScan
-                    self.pendingStepAfterVotesScan = nil
+                hasAutoPromptedVotesScanner = true
+                if step == .votes, let currentIndex = activeSteps.firstIndex(of: .votes) {
+                    let nextIndex = currentIndex + 1
+                    if activeSteps.indices.contains(nextIndex) {
+                        step = activeSteps[nextIndex]
+                    }
                 }
             } onCancel: {
                 showVotesScanner = false
-                pendingStepAfterVotesScan = nil
+                hasAutoPromptedVotesScanner = true
             }
         }
         .alert("Scanner unavailable", isPresented: Binding(
@@ -949,7 +958,7 @@ struct NewGameWizardView: View {
         )) {
             Button("OK", role: .cancel) {
                 scannerErrorMessage = nil
-                pendingStepAfterVotesScan = nil
+                hasAutoPromptedVotesScanner = true
             }
         } message: {
             Text(scannerErrorMessage ?? "")
@@ -1135,16 +1144,7 @@ struct NewGameWizardView: View {
         guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
-        let targetStep = activeSteps[nextIndex]
-        if targetStep == .review &&
-            shouldRequireVotesScanBeforeReview &&
-            guestBestFairestVotesScanPDF == nil {
-            pendingStepAfterVotesScan = .review
-            openVotesScanner()
-            return
-        }
-
-        step = targetStep
+        step = activeSteps[nextIndex]
     }
 
     private func back() {
@@ -1168,6 +1168,8 @@ struct NewGameWizardView: View {
     private func proceedAfterLiveSave() {
         if activeSteps.contains(.best) {
             step = .best
+        } else if activeSteps.contains(.votes) {
+            step = .votes
         } else {
             step = .review
         }
@@ -2077,22 +2079,6 @@ struct NewGameWizardView: View {
                     .font(.headline)
             }
 
-            if shouldRequireVotesScanBeforeReview {
-                Section("Guest Best & Fairest votes") {
-                    if guestBestFairestVotesScanPDF == nil {
-                        Text("No scan captured yet.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Label("Votes scan captured", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    }
-
-                    Button(guestBestFairestVotesScanPDF == nil ? "Scan votes" : "Rescan votes") {
-                        openVotesScanner()
-                    }
-                }
-            }
-
             if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Section("Notes") { Text(notes) }
             }
@@ -2117,6 +2103,13 @@ struct NewGameWizardView: View {
                 Button(guestBestFairestVotesScanPDF == nil ? "Scan votes" : "Rescan votes") {
                     openVotesScanner()
                 }
+            }
+        }
+        .onAppear {
+            guard !isPreviewMode else { return }
+            if guestBestFairestVotesScanPDF == nil && !hasAutoPromptedVotesScanner {
+                openVotesScanner()
+                hasAutoPromptedVotesScanner = true
             }
         }
         .font(wizardBodyFont)
