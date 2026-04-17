@@ -775,6 +775,8 @@ struct NewGameWizardView: View {
                 theirGoals: $theirGoals,
                 theirBehinds: $theirBehinds,
                 goalKickers: $goalKickers,
+                bestRanked: $bestRanked,
+                requiredBestPlayersCount: requiredBestPlayersCount,
                 ourTeamName: clubConfiguration.clubTeam.name,
                 oppTeamName: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
                 ourStyle: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration),
@@ -2096,7 +2098,9 @@ struct NewGameWizardView: View {
         @Binding var theirGoals: Int
         @Binding var theirBehinds: Int
         @Binding var goalKickers: [WizardGoalKickerEntry]
+        @Binding var bestRanked: [UUID?]
 
+        let requiredBestPlayersCount: Int
         let ourTeamName: String
         let oppTeamName: String
         let ourStyle: ClubStyle.Style
@@ -2118,11 +2122,12 @@ struct NewGameWizardView: View {
         @State private var periodSnapshots: [PeriodSnapshot] = []
         @State private var showEndOfPeriodPrompt = false
         @State private var showManualSavePrompt = false
+        @State private var bestPlayerPickerPrompt: Int?
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
         private var isDangerTime: Bool { secondsRemaining <= 120 }
-        private var canSaveAndContinue: Bool { periodSnapshots.count == 4 }
+        private var canSaveAndContinue: Bool { periodSnapshots.count == 4 && allRequiredBestPlayersSelected }
         private var nextPeriodLabel: String? {
             switch periodSnapshots.count {
             case 0: return "Quarter Time"
@@ -2152,6 +2157,37 @@ struct NewGameWizardView: View {
                     if lhsTotal != rhsTotal { return lhsTotal > rhsTotal }
                     return playerName(lhs.id) < playerName(rhs.id)
                 }
+        }
+
+        private var allRequiredBestPlayersSelected: Bool {
+            guard requiredBestPlayersCount > 0 else { return true }
+            let selected = Array(bestRanked.prefix(requiredBestPlayersCount)).compactMap { $0 }
+            return selected.count == requiredBestPlayersCount && Set(selected).count == requiredBestPlayersCount
+        }
+
+        private func syncBestPlayersSelectionCount() {
+            if bestRanked.count < requiredBestPlayersCount {
+                bestRanked.append(contentsOf: Array(repeating: nil, count: requiredBestPlayersCount - bestRanked.count))
+            } else if bestRanked.count > requiredBestPlayersCount {
+                bestRanked = Array(bestRanked.prefix(requiredBestPlayersCount))
+            }
+        }
+
+        private func selectedBestPlayerName(for rank: Int) -> String {
+            guard bestRanked.indices.contains(rank), let playerID = bestRanked[rank] else { return "Select…" }
+            return eligiblePlayers.first(where: { $0.id == playerID })?.name ?? "Select…"
+        }
+
+        private func bestLabel(for index: Int) -> String {
+            let position = index + 1
+            switch position {
+            case 1: return "Best"
+            case 2: return "2nd"
+            case 3: return "3rd"
+            default:
+                let suffix = (11...13).contains(position % 100) ? "th" : ([1: "st", 2: "nd", 3: "rd"][position % 10] ?? "th")
+                return "\(position)\(suffix)"
+            }
         }
 
         var body: some View {
@@ -2200,6 +2236,7 @@ struct NewGameWizardView: View {
                                     pointAction: { theirBehinds += 1 },
                                     minHeight: sharedCardHeight
                                 )
+                                bestPlayersCard(width: proxy.size.width)
                             } else {
                                 VStack(spacing: 0) {
                                     VStack(spacing: 10) {
@@ -2234,16 +2271,19 @@ struct NewGameWizardView: View {
                                         .frame(width: timerWidth, alignment: .top)
                                         .padding(.top, centerCardTopOffset)
 
-                                        teamScoreCard(
-                                            title: oppTeamName,
-                                            style: oppStyle,
-                                            goals: $theirGoals,
-                                            behinds: $theirBehinds,
-                                            score: theirScore,
-                                            goalAction: { theirGoals += 1 },
-                                            pointAction: { theirBehinds += 1 },
-                                            minHeight: sharedCardHeight
-                                        )
+                                        VStack(spacing: cardSpacing) {
+                                            teamScoreCard(
+                                                title: oppTeamName,
+                                                style: oppStyle,
+                                                goals: $theirGoals,
+                                                behinds: $theirBehinds,
+                                                score: theirScore,
+                                                goalAction: { theirGoals += 1 },
+                                                pointAction: { theirBehinds += 1 },
+                                                minHeight: sharedCardHeight
+                                            )
+                                            bestPlayersCard(width: teamCardWidth)
+                                        }
                                         .frame(width: teamCardWidth, alignment: .topTrailing)
                                         .padding(.top, sideCardTopOffset)
                                     }
@@ -2270,10 +2310,43 @@ struct NewGameWizardView: View {
                     }
                 }
             }
+            .sheet(
+                isPresented: Binding(
+                    get: { bestPlayerPickerPrompt != nil },
+                    set: { if !$0 { bestPlayerPickerPrompt = nil } }
+                )
+            ) {
+                NavigationStack {
+                    List(eligiblePlayers) { player in
+                        Button(player.name) {
+                            guard let rank = bestPlayerPickerPrompt else { return }
+                            if bestRanked.indices.contains(rank) {
+                                for idx in 0..<requiredBestPlayersCount where idx != rank && bestRanked.indices.contains(idx) {
+                                    if bestRanked[idx] == player.id {
+                                        bestRanked[idx] = nil
+                                    }
+                                }
+                                bestRanked[rank] = player.id
+                            }
+                            bestPlayerPickerPrompt = nil
+                        }
+                    }
+                    .navigationTitle("Select Best Player")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { bestPlayerPickerPrompt = nil }
+                        }
+                    }
+                }
+            }
             .onChange(of: periodMinutes) { _, newValue in
                 if !timerRunning {
                     secondsRemaining = max(1, newValue) * 60
                 }
+            }
+            .onAppear {
+                syncBestPlayersSelectionCount()
             }
             .sheet(isPresented: $showPlayerPicker) {
                 NavigationStack {
@@ -2483,6 +2556,41 @@ struct NewGameWizardView: View {
                                 .font(.headline)
                                 .monospacedDigit()
                         }
+                    }
+                }
+            }
+            .padding()
+            .frame(maxWidth: width, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+
+        private func bestPlayersCard(width: CGFloat) -> some View {
+            VStack(alignment: .leading, spacing: 10) {
+                ScorePill("Best Players", style: ourStyle)
+
+                if requiredBestPlayersCount == 0 {
+                    Text("No best players required.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
+                        Button {
+                            bestPlayerPickerPrompt = idx
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text("\(idx + 1).")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 26, alignment: .leading)
+                                Text(selectedBestPlayerName(for: idx))
+                                    .foregroundStyle(bestRanked[idx] == nil ? .secondary : .primary)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(bestLabel(for: idx)) best player")
                     }
                 }
             }
