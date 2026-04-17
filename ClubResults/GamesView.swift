@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 
+private typealias NewGameStarter = @MainActor @Sendable (UUID) -> Void
+
 struct GamesView: View {
     private struct NewGameWizardPresentation: Identifiable {
         let id = UUID()
@@ -69,7 +71,7 @@ struct GamesView: View {
                         NewGameQuickStartSection(
                             grades: orderedGrades,
                             minHeight: geometry.size.height * 0.33,
-                            onStartNewGame: { gradeID in
+                            onStartNewGame: { (gradeID: UUID) in
                                 newGameWizardPresentation = NewGameWizardPresentation(initialGradeID: gradeID)
                             }
                         )
@@ -124,7 +126,7 @@ struct GamesView: View {
 private struct NewGameQuickStartSection: View {
     let grades: [Grade]
     let minHeight: CGFloat
-    let onStartNewGame: (UUID) -> Void
+    let onStartNewGame: NewGameStarter
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
