@@ -670,7 +670,11 @@ struct NewGameWizardView: View {
                     .background(.ultraThinMaterial)
                 }
             }
-            .navigationTitle(step == .score ? "Live Game View" : (step == .setup ? "" : "New Game"))
+            .navigationTitle(
+                step == .score
+                    ? (supportsLiveGameView ? "Live Game View" : "Final Score")
+                    : (step == .setup ? "" : "New Game")
+            )
             .navigationBarTitleDisplayMode((step == .setup || step == .score) ? .inline : .large)
 
             // ✅ Cancel in top-left ONLY on first step
@@ -1292,7 +1296,16 @@ struct NewGameWizardView: View {
         .background(Color(.systemGroupedBackground))
     }
 
+    @ViewBuilder
     private var scoreStep: some View {
+        if supportsLiveGameView {
+            liveScoreStep
+        } else {
+            postGameScoreStep
+        }
+    }
+
+    private var liveScoreStep: some View {
         GeometryReader { proxy in
             ScrollView {
                 let cardSpacing: CGFloat = isCompactLayout ? 14 : 18
@@ -1349,6 +1362,46 @@ struct NewGameWizardView: View {
                 isTimerRunning = false
             }
         }
+    }
+
+    private var postGameScoreStep: some View {
+        Form {
+            Section("Final score") {
+                scoreEntryRow(title: clubConfiguration.clubTeam.name, goals: $ourGoals, behinds: $ourBehinds)
+                scoreEntryRow(title: finalOpponent.isEmpty ? "Opponent" : finalOpponent, goals: $theirGoals, behinds: $theirBehinds)
+            }
+
+            Section("Totals") {
+                HStack {
+                    Text(clubConfiguration.clubTeam.name)
+                    Spacer()
+                    Text("\(ourGoals).\(ourBehinds) (\(ourScore))")
+                        .font(.headline)
+                }
+                HStack {
+                    Text(finalOpponent.isEmpty ? "Opponent" : finalOpponent)
+                    Spacer()
+                    Text("\(theirGoals).\(theirBehinds) (\(theirScore))")
+                        .font(.headline)
+                }
+            }
+
+            Section {
+                Button("Save and Continue") { next() }
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+    }
+
+    private func scoreEntryRow(title: String, goals: Binding<Int>, behinds: Binding<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            Stepper("Goals: \(goals.wrappedValue)", value: goals, in: 0...50)
+            Stepper("Behinds: \(behinds.wrappedValue)", value: behinds, in: 0...50)
+        }
+        .padding(.vertical, 4)
     }
 
     private var timerTick: Timer.TimerPublisher {
