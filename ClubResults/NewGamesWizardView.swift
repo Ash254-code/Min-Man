@@ -776,6 +776,7 @@ struct NewGameWizardView: View {
                 theirBehinds: $theirBehinds,
                 goalKickers: $goalKickers,
                 bestRanked: $bestRanked,
+                initialPeriodMinutes: min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30),
                 requiredBestPlayersCount: requiredBestPlayersCount,
                 ourTeamName: clubConfiguration.clubTeam.name,
                 oppTeamName: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
@@ -2110,8 +2111,8 @@ struct NewGameWizardView: View {
         let onSaveAndContinue: () -> Void
         let onCancel: () -> Void
 
-        @State private var periodMinutes: Int = 20
-        @State private var secondsRemaining: Int = 20 * 60
+        @State private var periodMinutes: Int
+        @State private var secondsRemaining: Int
         @State private var timerRunning = false
         @State private var timerTask: Task<Void, Never>?
         @State private var showPlayerPicker = false
@@ -2123,6 +2124,48 @@ struct NewGameWizardView: View {
         @State private var showEndOfPeriodPrompt = false
         @State private var showManualSavePrompt = false
         @State private var bestPlayerPickerPrompt: Int?
+
+        init(
+            date: Binding<Date>,
+            ourGoals: Binding<Int>,
+            ourBehinds: Binding<Int>,
+            theirGoals: Binding<Int>,
+            theirBehinds: Binding<Int>,
+            goalKickers: Binding<[WizardGoalKickerEntry]>,
+            bestRanked: Binding<[UUID?]>,
+            initialPeriodMinutes: Int,
+            requiredBestPlayersCount: Int,
+            ourTeamName: String,
+            oppTeamName: String,
+            ourStyle: ClubStyle.Style,
+            oppStyle: ClubStyle.Style,
+            eligiblePlayers: [Player],
+            playerName: @escaping (UUID) -> String,
+            onSaveAndContinue: @escaping () -> Void,
+            onCancel: @escaping () -> Void
+        ) {
+            _date = date
+            _ourGoals = ourGoals
+            _ourBehinds = ourBehinds
+            _theirGoals = theirGoals
+            _theirBehinds = theirBehinds
+            _goalKickers = goalKickers
+            _bestRanked = bestRanked
+
+            let boundedPeriodMinutes = min(max(initialPeriodMinutes, 1), 30)
+            _periodMinutes = State(initialValue: boundedPeriodMinutes)
+            _secondsRemaining = State(initialValue: boundedPeriodMinutes * 60)
+
+            self.requiredBestPlayersCount = requiredBestPlayersCount
+            self.ourTeamName = ourTeamName
+            self.oppTeamName = oppTeamName
+            self.ourStyle = ourStyle
+            self.oppStyle = oppStyle
+            self.eligiblePlayers = eligiblePlayers
+            self.playerName = playerName
+            self.onSaveAndContinue = onSaveAndContinue
+            self.onCancel = onCancel
+        }
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
