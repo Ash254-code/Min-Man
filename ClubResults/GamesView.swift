@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct GamesView: View {
-    fileprivate enum QuickStartGradeStatus {
+    enum QuickStartGradeStatus {
         case noGameSaved
         case draftOnly
         case gameSaved
@@ -21,7 +21,6 @@ struct GamesView: View {
             }
         }
     }
-    typealias GradeRecentStatus = QuickStartGradeStatus
 
     private struct NewGameWizardPresentation: Identifiable {
         let id = UUID()
@@ -205,7 +204,7 @@ struct GamesView: View {
 }
 
 private struct NewGameQuickStartSection: View {
-    typealias GradeStatus = GamesView.GradeRecentStatus
+    typealias GradeStatus = GamesView.QuickStartGradeStatus
 
     let grades: [Grade]
     let games: [Game]
