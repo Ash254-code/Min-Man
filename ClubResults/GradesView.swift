@@ -14,6 +14,7 @@ final class Grade {
     var asksTeamManager: Bool
     var asksRunner: Bool
     var asksGoalUmpire: Bool
+    var asksFieldUmpire: Bool
     var asksBoundaryUmpire1: Bool
     var asksBoundaryUmpire2: Bool
     var asksTrainers: Bool
@@ -32,6 +33,7 @@ final class Grade {
         asksTeamManager: Bool = true,
         asksRunner: Bool = true,
         asksGoalUmpire: Bool = true,
+        asksFieldUmpire: Bool = true,
         asksBoundaryUmpire1: Bool = true,
         asksBoundaryUmpire2: Bool = true,
         asksTrainers: Bool = true,
@@ -49,6 +51,7 @@ final class Grade {
         self.asksTeamManager = asksTeamManager
         self.asksRunner = asksRunner
         self.asksGoalUmpire = asksGoalUmpire
+        self.asksFieldUmpire = asksFieldUmpire
         self.asksBoundaryUmpire1 = asksBoundaryUmpire1
         self.asksBoundaryUmpire2 = asksBoundaryUmpire2
         self.asksTrainers = asksTrainers

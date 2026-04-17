@@ -74,6 +74,7 @@ struct NewGameWizardView: View {
     @State private var runnerName: String = ""
 
     @State private var goalUmpireName: String = ""
+    @State private var fieldUmpireName: String = ""
 
     // Boundary umpires are chosen from a configured grade's players, or entered manually.
     @State private var boundaryUmpire1ID: UUID?
@@ -135,6 +136,7 @@ struct NewGameWizardView: View {
     private var finalRunner: String { clean(runnerName) }
 
     private var finalGoalUmpire: String { clean(goalUmpireName) }
+    private var finalFieldUmpire: String { clean(fieldUmpireName) }
 
     private func playerName(for id: UUID?) -> String {
         guard let id else { return "" }
@@ -285,6 +287,7 @@ struct NewGameWizardView: View {
         case teamManager
         case runner
         case goalUmpire
+        case fieldUmpire
         case trainer1
         case trainer2
         case trainer3
@@ -322,6 +325,7 @@ struct NewGameWizardView: View {
         assignDefault(for: .teamManager, role: .teamManager, gradeID: gradeID) { teamManagerName = $0 }
         assignDefault(for: .runner, role: .runner, gradeID: gradeID) { runnerName = $0 }
         assignDefault(for: .goalUmpire, role: .goalUmpire, gradeID: gradeID) { goalUmpireName = $0 }
+        assignDefault(for: .fieldUmpire, role: .fieldUmpire, gradeID: gradeID) { fieldUmpireName = $0 }
         assignDefault(for: .trainer1, role: .trainer, gradeID: gradeID) { trainer1Name = $0 }
         assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { trainer2Name = $0 }
         assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { trainer3Name = $0 }
@@ -334,6 +338,7 @@ struct NewGameWizardView: View {
         saveLastSelection(teamManagerName, for: .teamManager, gradeID: gradeID)
         saveLastSelection(runnerName, for: .runner, gradeID: gradeID)
         saveLastSelection(goalUmpireName, for: .goalUmpire, gradeID: gradeID)
+        saveLastSelection(fieldUmpireName, for: .fieldUmpire, gradeID: gradeID)
         saveLastSelection(trainer1Name, for: .trainer1, gradeID: gradeID)
         saveLastSelection(trainer2Name, for: .trainer2, gradeID: gradeID)
         saveLastSelection(trainer3Name, for: .trainer3, gradeID: gradeID)
@@ -413,6 +418,7 @@ struct NewGameWizardView: View {
             steps.append(.staff)
         }
         if grade.asksGoalUmpire ||
+            grade.asksFieldUmpire ||
             grade.asksBoundaryUmpire1 ||
             grade.asksBoundaryUmpire2 ||
             grade.asksTrainers ||
@@ -1007,6 +1013,9 @@ struct NewGameWizardView: View {
                 StaffCard(title: "Officials", systemImage: "flag.fill") {
                     if selectedGrade?.asksGoalUmpire ?? true {
                         StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
+                    }
+                    if selectedGrade?.asksFieldUmpire ?? true {
+                        StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $fieldUmpireName)
                     }
 
                     let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
@@ -1930,6 +1939,7 @@ struct NewGameWizardView: View {
             existingGame.teamManagerName = finalTeamManager
             existingGame.runnerName = finalRunner
             existingGame.goalUmpireName = finalGoalUmpire
+            existingGame.fieldUmpireName = finalFieldUmpire
             existingGame.boundaryUmpire1Name = finalBoundary1
             existingGame.boundaryUmpire2Name = finalBoundary2
             existingGame.trainers = selectedTrainerNames
@@ -1955,6 +1965,7 @@ struct NewGameWizardView: View {
                 teamManagerName: finalTeamManager,
                 runnerName: finalRunner,
                 goalUmpireName: finalGoalUmpire,
+                fieldUmpireName: finalFieldUmpire,
                 boundaryUmpire1Name: finalBoundary1,
                 boundaryUmpire2Name: finalBoundary2,
                 trainers: selectedTrainerNames,

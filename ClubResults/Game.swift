@@ -30,6 +30,7 @@ final class Game: Identifiable {
     var teamManagerName: String
     var runnerName: String
     var goalUmpireName: String
+    var fieldUmpireName: String
     var boundaryUmpire1Name: String
     var boundaryUmpire2Name: String
     var trainers: [String]
@@ -56,6 +57,7 @@ final class Game: Identifiable {
         teamManagerName: String = "",
         runnerName: String = "",
         goalUmpireName: String = "",
+        fieldUmpireName: String = "",
         boundaryUmpire1Name: String = "",
         boundaryUmpire2Name: String = "",
         trainers: [String] = [],
@@ -79,6 +81,7 @@ final class Game: Identifiable {
         self.teamManagerName = teamManagerName
         self.runnerName = runnerName
         self.goalUmpireName = goalUmpireName
+        self.fieldUmpireName = fieldUmpireName
         self.boundaryUmpire1Name = boundaryUmpire1Name
         self.boundaryUmpire2Name = boundaryUmpire2Name
         self.trainers = trainers
