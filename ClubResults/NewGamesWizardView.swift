@@ -2242,21 +2242,21 @@ struct NewGameWizardView: View {
                                         .frame(width: timerWidth, alignment: .top)
                                         .padding(.top, centerCardTopOffset)
 
-                                        teamScoreCard(
-                                            title: oppTeamName,
-                                            style: oppStyle,
-                                            goals: $theirGoals,
-                                            behinds: $theirBehinds,
-                                            score: theirScore,
-                                            goalAction: { theirGoals += 1 },
-                                            pointAction: { theirBehinds += 1 },
-                                            minHeight: sharedCardHeight
-                                        )
+                                        VStack(spacing: cardSpacing) {
+                                            teamScoreCard(
+                                                title: oppTeamName,
+                                                style: oppStyle,
+                                                goals: $theirGoals,
+                                                behinds: $theirBehinds,
+                                                score: theirScore,
+                                                goalAction: { theirGoals += 1 },
+                                                pointAction: { theirBehinds += 1 },
+                                                minHeight: sharedCardHeight
+                                            )
+                                            bestPlayersCard(width: teamCardWidth)
+                                        }
                                         .frame(width: teamCardWidth, alignment: .topTrailing)
                                         .padding(.top, sideCardTopOffset)
-
-                                        bestPlayersCard(width: teamCardWidth)
-                                            .frame(width: teamCardWidth, alignment: .topTrailing)
                                     }
                                 }
                             }
