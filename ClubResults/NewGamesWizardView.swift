@@ -45,7 +45,7 @@ struct NewGameWizardPreviewData {
         trainers: ["Trainer 1", "Trainer 2", "Trainer 3", "Trainer 4"],
         selectedPlayers: ["Tom Hill", "Jack Stone"],
         selectedCoaches: ["Ben Coach"],
-        selectedTrainers: []
+        selectedTrainers: [String]()
     )
 }
 
