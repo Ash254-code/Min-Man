@@ -279,6 +279,7 @@ struct NewGameWizardView: View {
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
     @State private var scannerErrorMessage: String?
+    @State private var pendingStepAfterVotesScan: Step?
     @State private var hasAppliedInitialGrade = false
     @State private var hasAppliedDraftRestore = false
     @State private var isRestoringDraft = false
@@ -553,6 +554,10 @@ struct NewGameWizardView: View {
         selectedGrade?.asksLiveGameView ?? true
     }
 
+    private var shouldRequireVotesScanBeforeReview: Bool {
+        selectedGrade?.asksGuestBestFairestVotesScan ?? false
+    }
+
     private var shouldAskForEntryMode: Bool {
         supportsLiveGameView
     }
@@ -587,7 +592,6 @@ struct NewGameWizardView: View {
             steps.append(.goals)
         }
         if grade.bestPlayersCount > 0 && entryMode != .live { steps.append(.best) }
-        if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
         steps.append(.review)
         return steps
     }
@@ -922,6 +926,34 @@ struct NewGameWizardView: View {
                 }
             }
         }
+        .sheet(isPresented: $showVotesScanner) {
+            VotesScannerSheet { data in
+                guestBestFairestVotesScanPDF = data
+                showVotesScanner = false
+                if let pendingStepAfterVotesScan {
+                    step = pendingStepAfterVotesScan
+                    self.pendingStepAfterVotesScan = nil
+                }
+            } onCancel: {
+                showVotesScanner = false
+                pendingStepAfterVotesScan = nil
+            }
+        }
+        .alert("Scanner unavailable", isPresented: Binding(
+            get: { scannerErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    scannerErrorMessage = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {
+                scannerErrorMessage = nil
+                pendingStepAfterVotesScan = nil
+            }
+        } message: {
+            Text(scannerErrorMessage ?? "")
+        }
         .sheet(isPresented: $showEntryModePrompt) {
             NavigationStack {
                 List {
@@ -1103,7 +1135,16 @@ struct NewGameWizardView: View {
         guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
-        step = activeSteps[nextIndex]
+        let targetStep = activeSteps[nextIndex]
+        if targetStep == .review &&
+            shouldRequireVotesScanBeforeReview &&
+            guestBestFairestVotesScanPDF == nil {
+            pendingStepAfterVotesScan = .review
+            openVotesScanner()
+            return
+        }
+
+        step = targetStep
     }
 
     private func back() {
@@ -1127,8 +1168,6 @@ struct NewGameWizardView: View {
     private func proceedAfterLiveSave() {
         if activeSteps.contains(.best) {
             step = .best
-        } else if activeSteps.contains(.votes) {
-            step = .votes
         } else {
             step = .review
         }
@@ -2038,6 +2077,22 @@ struct NewGameWizardView: View {
                     .font(.headline)
             }
 
+            if shouldRequireVotesScanBeforeReview {
+                Section("Guest Best & Fairest votes") {
+                    if guestBestFairestVotesScanPDF == nil {
+                        Text("No scan captured yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Label("Votes scan captured", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+
+                    Button(guestBestFairestVotesScanPDF == nil ? "Scan votes" : "Rescan votes") {
+                        openVotesScanner()
+                    }
+                }
+            }
+
             if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Section("Notes") { Text(notes) }
             }
@@ -2052,7 +2107,7 @@ struct NewGameWizardView: View {
         Form {
             Section("Guest Best & Fairest votes") {
                 if guestBestFairestVotesScanPDF == nil {
-                    Text("Scan the paper votes before saving.")
+                    Text("Scan the paper votes before continuing.")
                         .foregroundStyle(.secondary)
                 } else {
                     Label("Votes scan captured", systemImage: "checkmark.circle.fill")
@@ -2067,28 +2122,6 @@ struct NewGameWizardView: View {
         .font(wizardBodyFont)
         .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
         .dynamicTypeSize(.large ... .accessibility2)
-        .sheet(isPresented: $showVotesScanner) {
-            VotesScannerSheet { data in
-                guestBestFairestVotesScanPDF = data
-                showVotesScanner = false
-            } onCancel: {
-                showVotesScanner = false
-            }
-        }
-        .alert("Scanner unavailable", isPresented: Binding(
-            get: { scannerErrorMessage != nil },
-            set: { isPresented in
-                if !isPresented {
-                    scannerErrorMessage = nil
-                }
-            }
-        )) {
-            Button("OK", role: .cancel) {
-                scannerErrorMessage = nil
-            }
-        } message: {
-            Text(scannerErrorMessage ?? "")
-        }
         .scrollContentBackground(.hidden)
     }
 
