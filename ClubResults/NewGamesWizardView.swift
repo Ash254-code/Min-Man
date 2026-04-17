@@ -8,6 +8,7 @@ import VisionKit
 #endif
 #if canImport(AVFoundation)
 import AVFoundation
+internal import Combine
 #endif
 
 // Local model for goal kickers used by this wizard
