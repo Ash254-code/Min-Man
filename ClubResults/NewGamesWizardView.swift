@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import AudioToolbox
 import MessageUI
 #if canImport(VisionKit)
 import VisionKit
@@ -41,7 +42,16 @@ struct NewGameWizardView: View {
 
     // ✅ UPDATED: first screen is Setup (grade + date + opponent + venue)
     enum Step: Int { case setup, staff, medical, score, goals, best, votes, review }
+    private enum EntryMode {
+        case postGame
+        case live
+    }
     @State private var step: Step = .setup
+    @State private var entryMode: EntryMode?
+    @State private var showEntryModePrompt = false
+    @State private var showLiveGameView = false
+    @State private var liveGameSessionSaved = false
+    @State private var editingGame: Game?
 
     // MARK: Setup
     @State private var gradeID: UUID?
@@ -403,12 +413,20 @@ struct NewGameWizardView: View {
             grade.asksNotes {
             steps.append(.medical)
         }
-        steps.append(.score)
-        if grade.asksGoalKickers { steps.append(.goals) }
+        if entryMode != .live {
+            steps.append(.score)
+            if grade.asksGoalKickers { steps.append(.goals) }
+        }
         if grade.bestPlayersCount > 0 { steps.append(.best) }
         if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
         steps.append(.review)
         return steps
+    }
+
+    private var entryModeTriggerStep: Step {
+        if activeSteps.contains(.medical) { return .medical }
+        if activeSteps.contains(.staff) { return .staff }
+        return .setup
     }
 
     // MARK: - Uniform row styling
@@ -643,6 +661,9 @@ struct NewGameWizardView: View {
             applyDefaults(for: newGrade)
             syncBestPlayersSelectionCount()
             step = .setup
+            entryMode = nil
+            liveGameSessionSaved = false
+            editingGame = nil
         }
         .onAppear {
             guard !hasAppliedInitialGrade else { return }
@@ -678,6 +699,47 @@ struct NewGameWizardView: View {
                 }
             }
         }
+        .confirmationDialog("Live entry or Post-Game entry?", isPresented: $showEntryModePrompt, titleVisibility: .visible) {
+            Button("Post-Game entry") {
+                entryMode = .postGame
+                liveGameSessionSaved = false
+                proceedAfterEntryModeSelection()
+            }
+            Button("Live entry") {
+                entryMode = .live
+                liveGameSessionSaved = false
+                showLiveGameView = true
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .fullScreenCover(isPresented: $showLiveGameView) {
+            LiveGameView(
+                date: $date,
+                ourGoals: $ourGoals,
+                ourBehinds: $ourBehinds,
+                theirGoals: $theirGoals,
+                theirBehinds: $theirBehinds,
+                goalKickers: $goalKickers,
+                eligiblePlayers: eligiblePlayers,
+                playerName: { playerID in
+                    players.first(where: { $0.id == playerID })?.name ?? "Unknown"
+                },
+                onSaveAndContinue: {
+                    let saved = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
+                    if saved != nil {
+                        liveGameSessionSaved = true
+                        showLiveGameView = false
+                        proceedAfterLiveSave()
+                    }
+                },
+                onCancel: {
+                    showLiveGameView = false
+                    if entryMode == .live && !liveGameSessionSaved {
+                        entryMode = nil
+                    }
+                }
+            )
+        }
         .alert(
             "Report status",
             isPresented: Binding(
@@ -696,6 +758,16 @@ struct NewGameWizardView: View {
     }
 
     private func next() {
+        if step == entryModeTriggerStep && entryMode == nil {
+            showEntryModePrompt = true
+            return
+        }
+
+        if step == entryModeTriggerStep && entryMode == .live && !liveGameSessionSaved {
+            showLiveGameView = true
+            return
+        }
+
         guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
@@ -705,6 +777,28 @@ struct NewGameWizardView: View {
     private func back() {
         guard let currentIndex = activeSteps.firstIndex(of: step), currentIndex > 0 else { return }
         step = activeSteps[currentIndex - 1]
+    }
+
+    private func proceedAfterEntryModeSelection() {
+        guard step == entryModeTriggerStep else { return }
+        if entryMode == .live {
+            showLiveGameView = true
+            return
+        }
+        guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
+        let nextIndex = currentIndex + 1
+        guard activeSteps.indices.contains(nextIndex) else { return }
+        step = activeSteps[nextIndex]
+    }
+
+    private func proceedAfterLiveSave() {
+        if activeSteps.contains(.best) {
+            step = .best
+        } else if activeSteps.contains(.votes) {
+            step = .votes
+        } else {
+            step = .review
+        }
     }
 
     // MARK: Steps
@@ -739,7 +833,7 @@ struct NewGameWizardView: View {
                 }
 
                 Section("Game details") {
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                    DatePicker("Date & time", selection: $date, displayedComponents: [.date, .hourAndMinute])
 
                     formSelectorRow(title: "Opponent", value: opponentName) {
                         setupPickerPrompt = .opponent
@@ -1520,7 +1614,7 @@ struct NewGameWizardView: View {
 
     // MARK: Save
     @discardableResult
-    private func saveGame(asDraft: Bool, dismissOnSuccess: Bool) -> Game? {
+    private func saveGame(asDraft: Bool, dismissOnSuccess: Bool, enforceCompletionRequirements: Bool = true) -> Game? {
         guard let gid = gradeID else { return nil }
         guard !finalOpponent.isEmpty else { return nil }
         guard !finalVenue.isEmpty else { return nil }
@@ -1531,10 +1625,10 @@ struct NewGameWizardView: View {
         let asksVotesScan = selectedGrade?.asksGuestBestFairestVotesScan ?? false
 
         let bestIDs = bestPlayersCount > 0 ? Array(bestRanked.prefix(bestPlayersCount)).compactMap { $0 } : []
-        if bestPlayersCount > 0 {
+        if enforceCompletionRequirements && bestPlayersCount > 0 {
             guard bestIDs.count == bestPlayersCount, Set(bestIDs).count == bestPlayersCount else { return nil }
         }
-        if asksVotesScan {
+        if enforceCompletionRequirements && asksVotesScan {
             guard guestBestFairestVotesScanPDF != nil else { return nil }
         }
 
@@ -1545,38 +1639,66 @@ struct NewGameWizardView: View {
             return GameGoalKickerEntry(playerID: pid, goals: entry.goals)
         } : []
 
-        let game = Game(
-            id: UUID(),
-            gradeID: gid,
-            date: date,
-            opponent: finalOpponent,
-            venue: finalVenue,
-            ourGoals: ourGoals,
-            ourBehinds: ourBehinds,
-            theirGoals: theirGoals,
-            theirBehinds: theirBehinds,
-            goalKickers: modelGoalKickers,
-            bestPlayersRanked: bestIDs,
-            headCoachName: finalHeadCoach,
-            assistantCoachName: finalAssCoach,
-            teamManagerName: finalTeamManager,
-            runnerName: finalRunner,
-            goalUmpireName: finalGoalUmpire,
-            boundaryUmpire1Name: finalBoundary1,
-            boundaryUmpire2Name: finalBoundary2,
-            trainers: selectedTrainerNames,
-            notes: cleanedNotes,
-            guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF,
-            isDraft: asDraft
-        )
-
-        modelContext.insert(game)
+        let game: Game
+        if let existingGame = editingGame {
+            existingGame.gradeID = gid
+            existingGame.date = date
+            existingGame.opponent = finalOpponent
+            existingGame.venue = finalVenue
+            existingGame.ourGoals = ourGoals
+            existingGame.ourBehinds = ourBehinds
+            existingGame.theirGoals = theirGoals
+            existingGame.theirBehinds = theirBehinds
+            existingGame.goalKickers = modelGoalKickers
+            existingGame.bestPlayersRanked = bestIDs
+            existingGame.headCoachName = finalHeadCoach
+            existingGame.assistantCoachName = finalAssCoach
+            existingGame.teamManagerName = finalTeamManager
+            existingGame.runnerName = finalRunner
+            existingGame.goalUmpireName = finalGoalUmpire
+            existingGame.boundaryUmpire1Name = finalBoundary1
+            existingGame.boundaryUmpire2Name = finalBoundary2
+            existingGame.trainers = selectedTrainerNames
+            existingGame.notes = cleanedNotes
+            existingGame.guestBestFairestVotesScanPDF = guestBestFairestVotesScanPDF
+            existingGame.isDraft = asDraft
+            game = existingGame
+        } else {
+            let newGame = Game(
+                id: UUID(),
+                gradeID: gid,
+                date: date,
+                opponent: finalOpponent,
+                venue: finalVenue,
+                ourGoals: ourGoals,
+                ourBehinds: ourBehinds,
+                theirGoals: theirGoals,
+                theirBehinds: theirBehinds,
+                goalKickers: modelGoalKickers,
+                bestPlayersRanked: bestIDs,
+                headCoachName: finalHeadCoach,
+                assistantCoachName: finalAssCoach,
+                teamManagerName: finalTeamManager,
+                runnerName: finalRunner,
+                goalUmpireName: finalGoalUmpire,
+                boundaryUmpire1Name: finalBoundary1,
+                boundaryUmpire2Name: finalBoundary2,
+                trainers: selectedTrainerNames,
+                notes: cleanedNotes,
+                guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF,
+                isDraft: asDraft
+            )
+            modelContext.insert(newGame)
+            game = newGame
+        }
 
         // Persist the last selected staff for this grade so new entries can default to them.
         persistCurrentStaffSelections(for: gid)
 
         do { try modelContext.save() }
         catch { print("❌ Failed to save game: \(error)"); return nil }
+
+        editingGame = game
 
         if dismissOnSuccess {
             dismiss()
@@ -1653,6 +1775,225 @@ struct NewGameWizardView: View {
     }
 
     // MARK: - AFL-ish card container
+    private struct LiveGameView: View {
+        @Binding var date: Date
+        @Binding var ourGoals: Int
+        @Binding var ourBehinds: Int
+        @Binding var theirGoals: Int
+        @Binding var theirBehinds: Int
+        @Binding var goalKickers: [WizardGoalKickerEntry]
+
+        let eligiblePlayers: [Player]
+        let playerName: (UUID) -> String
+        let onSaveAndContinue: () -> Void
+        let onCancel: () -> Void
+
+        @State private var periodMinutes: Int = 20
+        @State private var secondsRemaining: Int = 20 * 60
+        @State private var timerRunning = false
+        @State private var timerTask: Task<Void, Never>?
+        @State private var showPlayerPicker = false
+
+        private var ourScore: Int { ourGoals * 6 + ourBehinds }
+        private var theirScore: Int { theirGoals * 6 + theirBehinds }
+        private var isDangerTime: Bool { secondsRemaining <= 120 }
+
+        private var scorerTally: [(id: UUID, goals: Int)] {
+            goalKickers
+                .compactMap { entry -> (UUID, Int)? in
+                    guard let id = entry.playerID, entry.goals > 0 else { return nil }
+                    return (id, entry.goals)
+                }
+                .sorted { lhs, rhs in
+                    if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+                    return playerName(lhs.0) < playerName(rhs.0)
+                }
+        }
+
+        var body: some View {
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        VStack(spacing: 10) {
+                            Text("Live Game View")
+                                .font(.title.bold())
+                            Text(date.formatted(date: .abbreviated, time: .shortened))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        VStack(spacing: 12) {
+                            Text(timeText(secondsRemaining))
+                                .font(.system(size: 56, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(isDangerTime ? .red : .primary)
+
+                            Stepper("Period minutes: \(periodMinutes)", value: $periodMinutes, in: 10...30)
+                                .onChange(of: periodMinutes) { _, newValue in
+                                    if !timerRunning {
+                                        secondsRemaining = newValue * 60
+                                    }
+                                }
+
+                            HStack {
+                                Button("Start") { startTimer() }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(timerRunning || secondsRemaining == 0)
+                                Button("Pause") { pauseTimer() }
+                                    .buttonStyle(.bordered)
+                                    .disabled(!timerRunning)
+                                Button("Reset") { resetTimer() }
+                                    .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding()
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+
+                        VStack(spacing: 12) {
+                            Text("Scoreboard")
+                                .font(.headline)
+                            HStack {
+                                scoreColumn(title: "Us", goals: $ourGoals, behinds: $ourBehinds, score: ourScore)
+                                scoreColumn(title: "Opp", goals: $theirGoals, behinds: $theirBehinds, score: theirScore)
+                            }
+
+                            HStack {
+                                Button("Our Goal") { showPlayerPicker = true }
+                                    .buttonStyle(.borderedProminent)
+                                Button("Our Point") { ourBehinds += 1 }
+                                    .buttonStyle(.bordered)
+                                Button("Opp Goal") { theirGoals += 1 }
+                                    .buttonStyle(.bordered)
+                                Button("Opp Point") { theirBehinds += 1 }
+                                    .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding()
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Goal scorers")
+                                .font(.headline)
+                            if scorerTally.isEmpty {
+                                Text("No goal scorers yet.")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(scorerTally, id: \.id) { scorer in
+                                    HStack {
+                                        Text(playerName(scorer.id))
+                                        Spacer()
+                                        Text("\(scorer.goals)")
+                                            .font(.headline)
+                                            .monospacedDigit()
+                                    }
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+
+                        Button("Save and Continue") {
+                            pauseTimer()
+                            onSaveAndContinue()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .font(.headline)
+                        .padding(.top, 8)
+                    }
+                    .padding()
+                }
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Close") {
+                            pauseTimer()
+                            onCancel()
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showPlayerPicker) {
+                NavigationStack {
+                    List(eligiblePlayers) { player in
+                        Button(player.name) {
+                            recordGoal(for: player.id)
+                            showPlayerPicker = false
+                        }
+                    }
+                    .navigationTitle("Who kicked the goal?")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showPlayerPicker = false }
+                        }
+                    }
+                }
+            }
+            .onDisappear {
+                pauseTimer()
+            }
+        }
+
+        @ViewBuilder
+        private func scoreColumn(title: String, goals: Binding<Int>, behinds: Binding<Int>, score: Int) -> some View {
+            VStack(spacing: 8) {
+                Text(title)
+                    .font(.headline)
+                Stepper("Goals \(goals.wrappedValue)", value: goals, in: 0...200)
+                Stepper("Points \(behinds.wrappedValue)", value: behinds, in: 0...200)
+                Text("Total \(score)")
+                    .font(.title3.bold())
+            }
+            .frame(maxWidth: .infinity)
+        }
+
+        private func recordGoal(for playerID: UUID) {
+            ourGoals += 1
+            if let index = goalKickers.firstIndex(where: { $0.playerID == playerID }) {
+                goalKickers[index].goals += 1
+            } else {
+                goalKickers.append(WizardGoalKickerEntry(playerID: playerID, goals: 1))
+            }
+        }
+
+        private func startTimer() {
+            guard !timerRunning else { return }
+            timerRunning = true
+            timerTask?.cancel()
+            timerTask = Task {
+                while !Task.isCancelled && timerRunning && secondsRemaining > 0 {
+                    try? await Task.sleep(for: .seconds(1))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        guard timerRunning else { return }
+                        secondsRemaining = max(0, secondsRemaining - 1)
+                        if secondsRemaining == 0 {
+                            timerRunning = false
+                            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                        }
+                    }
+                }
+            }
+        }
+
+        private func pauseTimer() {
+            timerRunning = false
+            timerTask?.cancel()
+            timerTask = nil
+        }
+
+        private func resetTimer() {
+            pauseTimer()
+            secondsRemaining = periodMinutes * 60
+        }
+
+        private func timeText(_ seconds: Int) -> String {
+            let mins = seconds / 60
+            let secs = seconds % 60
+            return String(format: "%02d:%02d", mins, secs)
+        }
+    }
+
     private struct MailComposeView: UIViewControllerRepresentable {
         let recipients: [String]
         let subject: String
