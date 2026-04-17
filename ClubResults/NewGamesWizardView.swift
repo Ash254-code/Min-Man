@@ -2355,10 +2355,9 @@ struct NewGameWizardView: View {
                         let teamCardWidth = max(300, proxy.size.width * 0.35)
                         let timerWidth = max(280, proxy.size.width * 0.22)
                         let sharedCardHeight = max(368, proxy.size.height * 0.46)
-                        let headingHeight: CGFloat = 86
                         let centerCardTopOffset: CGFloat = 16
                         let sideCardTopOffset: CGFloat = 8
-                        let centerTimerHeight = max(300, sharedCardHeight - headingHeight - centerCardTopOffset + 32)
+                        let centerTimerHeight = max(300, sharedCardHeight + sideCardTopOffset - centerCardTopOffset)
 
                         ScrollView {
                             VStack(spacing: cardSpacing) {
