@@ -27,6 +27,7 @@ struct GameEditView: View {
     @State private var teamManagerName: String
     @State private var runnerName: String
     @State private var goalUmpireName: String
+    @State private var fieldUmpireName: String
     @State private var boundaryUmpire1Name: String
     @State private var boundaryUmpire2Name: String
     @State private var trainer1Name: String
@@ -58,6 +59,7 @@ struct GameEditView: View {
         _teamManagerName = State(initialValue: game.teamManagerName)
         _runnerName = State(initialValue: game.runnerName)
         _goalUmpireName = State(initialValue: game.goalUmpireName)
+        _fieldUmpireName = State(initialValue: game.fieldUmpireName)
         _boundaryUmpire1Name = State(initialValue: game.boundaryUmpire1Name)
         _boundaryUmpire2Name = State(initialValue: game.boundaryUmpire2Name)
         _trainer1Name = State(initialValue: game.trainers.indices.contains(0) ? game.trainers[0] : "")
@@ -100,6 +102,7 @@ struct GameEditView: View {
                     TextField("Team Manager", text: $teamManagerName)
                     TextField("Runner", text: $runnerName)
                     TextField("Goal Umpire", text: $goalUmpireName)
+                    TextField("Field Umpire", text: $fieldUmpireName)
                     TextField("Boundary Umpire 1", text: $boundaryUmpire1Name)
                     TextField("Boundary Umpire 2", text: $boundaryUmpire2Name)
                 }
@@ -203,6 +206,7 @@ struct GameEditView: View {
                         game.teamManagerName = teamManagerName
                         game.runnerName = runnerName
                         game.goalUmpireName = goalUmpireName
+                        game.fieldUmpireName = fieldUmpireName
                         game.boundaryUmpire1Name = boundaryUmpire1Name
                         game.boundaryUmpire2Name = boundaryUmpire2Name
                         game.trainers = [

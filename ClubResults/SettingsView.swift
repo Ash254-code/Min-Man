@@ -318,6 +318,7 @@ private struct ClubGradesSettingsView: View {
                         Toggle("Team Manager", isOn: bind(grade, \.asksTeamManager))
                         Toggle("Runner", isOn: bind(grade, \.asksRunner))
                         Toggle("Goal Umpire", isOn: bind(grade, \.asksGoalUmpire))
+                        Toggle("Field Umpire", isOn: bind(grade, \.asksFieldUmpire))
                         Toggle("Boundary Umpire 1", isOn: bind(grade, \.asksBoundaryUmpire1))
                         Toggle("Boundary Umpire 2", isOn: bind(grade, \.asksBoundaryUmpire2))
                         Toggle("Trainers", isOn: bind(grade, \.asksTrainers))
@@ -497,6 +498,7 @@ private struct ClubGradesSettingsView: View {
                     asksTeamManager: $0.asksTeamManager,
                     asksRunner: $0.asksRunner,
                     asksGoalUmpire: $0.asksGoalUmpire,
+                    asksFieldUmpire: $0.asksFieldUmpire,
                     asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                     asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
                     asksTrainers: $0.asksTrainers,
@@ -519,6 +521,7 @@ private struct ClubGradesSettingsView: View {
                                 asksTeamManager: item.asksTeamManager,
                                 asksRunner: item.asksRunner,
                                 asksGoalUmpire: item.asksGoalUmpire,
+                                asksFieldUmpire: item.asksFieldUmpire,
                                 asksBoundaryUmpire1: item.asksBoundaryUmpire1,
                                 asksBoundaryUmpire2: item.asksBoundaryUmpire2,
                                 asksTrainers: item.asksTrainers,
@@ -556,6 +559,7 @@ private struct ClubGradesSettingsView: View {
                     asksTeamManager: $0.asksTeamManager,
                     asksRunner: $0.asksRunner,
                     asksGoalUmpire: $0.asksGoalUmpire,
+                    asksFieldUmpire: $0.asksFieldUmpire,
                     asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                     asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
                     asksTrainers: $0.asksTrainers,

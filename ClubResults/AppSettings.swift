@@ -10,6 +10,7 @@ struct GradeBackup: Codable {
     let asksTeamManager: Bool
     let asksRunner: Bool
     let asksGoalUmpire: Bool
+    let asksFieldUmpire: Bool
     let asksBoundaryUmpire1: Bool
     let asksBoundaryUmpire2: Bool
     let asksTrainers: Bool
@@ -28,6 +29,7 @@ struct GradeBackup: Codable {
         asksTeamManager: Bool = true,
         asksRunner: Bool = true,
         asksGoalUmpire: Bool = true,
+        asksFieldUmpire: Bool = true,
         asksBoundaryUmpire1: Bool = true,
         asksBoundaryUmpire2: Bool = true,
         asksTrainers: Bool = true,
@@ -45,6 +47,7 @@ struct GradeBackup: Codable {
         self.asksTeamManager = asksTeamManager
         self.asksRunner = asksRunner
         self.asksGoalUmpire = asksGoalUmpire
+        self.asksFieldUmpire = asksFieldUmpire
         self.asksBoundaryUmpire1 = asksBoundaryUmpire1
         self.asksBoundaryUmpire2 = asksBoundaryUmpire2
         self.asksTrainers = asksTrainers
@@ -57,6 +60,7 @@ struct GradeBackup: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, name, isActive, displayOrder
         case asksHeadCoach, asksAssistantCoach, asksTeamManager, asksRunner, asksGoalUmpire
+        case asksFieldUmpire
         case asksBoundaryUmpire1, asksBoundaryUmpire2, asksBoundaryUmpires
         case asksTrainers, asksNotes, asksGoalKickers
         case bestPlayersCount, asksBestPlayers
@@ -74,6 +78,7 @@ struct GradeBackup: Codable {
         asksTeamManager = try c.decodeIfPresent(Bool.self, forKey: .asksTeamManager) ?? true
         asksRunner = try c.decodeIfPresent(Bool.self, forKey: .asksRunner) ?? true
         asksGoalUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksGoalUmpire) ?? true
+        asksFieldUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksFieldUmpire) ?? true
         let legacyAsksBoundaryUmpires = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpires) ?? true
         asksBoundaryUmpire1 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire1) ?? legacyAsksBoundaryUmpires
         asksBoundaryUmpire2 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire2) ?? legacyAsksBoundaryUmpires
@@ -100,6 +105,7 @@ struct GradeBackup: Codable {
         try c.encode(asksTeamManager, forKey: .asksTeamManager)
         try c.encode(asksRunner, forKey: .asksRunner)
         try c.encode(asksGoalUmpire, forKey: .asksGoalUmpire)
+        try c.encode(asksFieldUmpire, forKey: .asksFieldUmpire)
         try c.encode(asksBoundaryUmpire1, forKey: .asksBoundaryUmpire1)
         try c.encode(asksBoundaryUmpire2, forKey: .asksBoundaryUmpire2)
         try c.encode(asksTrainers, forKey: .asksTrainers)
@@ -144,6 +150,7 @@ enum SettingsBackupStore {
                 asksTeamManager: $0.asksTeamManager,
                 asksRunner: $0.asksRunner,
                 asksGoalUmpire: $0.asksGoalUmpire,
+                asksFieldUmpire: $0.asksFieldUmpire,
                 asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                 asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
                 asksTrainers: $0.asksTrainers,
@@ -246,6 +253,7 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 asksTeamManager: backup.asksTeamManager,
                 asksRunner: backup.asksRunner,
                 asksGoalUmpire: backup.asksGoalUmpire,
+                asksFieldUmpire: backup.asksFieldUmpire,
                 asksBoundaryUmpire1: backup.asksBoundaryUmpire1,
                 asksBoundaryUmpire2: backup.asksBoundaryUmpire2,
                 asksTrainers: backup.asksTrainers,
