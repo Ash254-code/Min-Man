@@ -706,7 +706,25 @@ struct NewGameWizardView: View {
 
             return coachingOK
 
-        case .officials, .medical:
+        case .officials:
+            let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
+            let asksFieldUmpire = selectedGrade?.asksFieldUmpire ?? true
+            let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
+            let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
+
+            let officialsCompleted =
+                (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
+                (!asksFieldUmpire || !finalFieldUmpire.isEmpty) &&
+                (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
+                (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty)
+
+            let boundarySelectionIsUnique =
+                !(asksBoundaryUmpire1 && asksBoundaryUmpire2 &&
+                  !finalBoundary1.isEmpty && finalBoundary1 == finalBoundary2)
+
+            return officialsCompleted && boundarySelectionIsUnique
+
+        case .medical:
             // This step is informational/optional; never block navigation here.
             return true
 
@@ -731,7 +749,7 @@ struct NewGameWizardView: View {
     }
 
     private var canProceedOnCurrentStep: Bool {
-        (step == .officials || step == .medical) ? true : canProceed
+        canProceed
     }
 
     // MARK: Body
