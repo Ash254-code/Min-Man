@@ -107,6 +107,7 @@ struct GamesView: View {
 
                         NewGameQuickStartSection(
                             grades: orderedGrades,
+                            games: games,
                             minHeight: geometry.size.height * 0.33,
                             statusForGrade: gradeStatus(for:),
                             onStartNewGame: { gradeID in
@@ -183,9 +184,22 @@ struct GamesView: View {
 }
 
 private struct NewGameQuickStartSection: View {
-    typealias GradeStatus = GamesView.GradeRecentStatus
+    private enum GradeSaveStatus {
+        case noGameSaved
+        case draftOnly
+        case gameSaved
+
+        var color: Color {
+            switch self {
+            case .noGameSaved: return .secondary
+            case .draftOnly: return .orange
+            case .gameSaved: return .green
+            }
+        }
+    }
 
     let grades: [Grade]
+    let games: [Game]
     let minHeight: CGFloat
     let statusForGrade: (UUID) -> GradeStatus
     let onStartNewGame: (UUID) -> Void
@@ -195,6 +209,17 @@ private struct NewGameQuickStartSection: View {
     private var columns: [GridItem] {
         let count = horizontalSizeClass == .compact ? 2 : 3
         return Array(repeating: GridItem(.flexible(), spacing: 14), count: count)
+    }
+
+    private func status(for gradeID: UUID) -> GradeSaveStatus {
+        let gradeGames = games.filter { $0.gradeID == gradeID }
+        if gradeGames.contains(where: { !$0.isDraft }) {
+            return .gameSaved
+        }
+        if !gradeGames.isEmpty {
+            return .draftOnly
+        }
+        return .noGameSaved
     }
 
     var body: some View {
@@ -213,10 +238,18 @@ private struct NewGameQuickStartSection: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 14) {
                     ForEach(grades) { grade in
+                        let status = status(for: grade.id)
                         Button {
                             onStartNewGame(grade.id)
                         } label: {
                             VStack(spacing: 10) {
+                                HStack {
+                                    Spacer()
+                                    Circle()
+                                        .fill(status.color)
+                                        .frame(width: 14, height: 14)
+                                }
+
                                 Text(grade.name)
                                     .font(.system(size: horizontalSizeClass == .compact ? 20 : 34, weight: .bold))
                                     .multilineTextAlignment(.center)
