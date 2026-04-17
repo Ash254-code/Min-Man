@@ -2086,10 +2086,22 @@ struct NewGameWizardView: View {
         @State private var showTimerAdjuster = false
         @State private var pointScorers: [UUID: Int] = [:]
         @State private var rushedPoints: Int = 0
+        @State private var periodSnapshots: [PeriodSnapshot] = []
+        @State private var showEndOfPeriodPrompt = false
+        @State private var showManualSavePrompt = false
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
         private var isDangerTime: Bool { secondsRemaining <= 120 }
+        private var nextPeriodLabel: String? {
+            switch periodSnapshots.count {
+            case 0: return "Quarter Time"
+            case 1: return "Half Time"
+            case 2: return "3 Quarter Time"
+            case 3: return "Full Time"
+            default: return nil
+            }
+        }
 
         private var scorerTally: [(id: UUID, goals: Int, points: Int)] {
             var goalCounts: [UUID: Int] = [:]
@@ -2146,7 +2158,9 @@ struct NewGameWizardView: View {
                                     pointAction: { showPointPicker = true },
                                     minHeight: sharedCardHeight
                                 )
+                                goalKickerSummaryCard(width: proxy.size.width)
                                 timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
+                                periodScoresCard(width: proxy.size.width)
                                 teamScoreCard(
                                     title: oppTeamName,
                                     style: oppStyle,
@@ -2167,23 +2181,29 @@ struct NewGameWizardView: View {
                                     }
                                     .frame(width: timerWidth)
 
-                                    HStack(alignment: .bottom, spacing: cardSpacing) {
-                                        teamScoreCard(
-                                            title: ourTeamName,
-                                            style: ourStyle,
-                                            goals: $ourGoals,
-                                            behinds: $ourBehinds,
-                                            score: ourScore,
-                                            goalAction: { showPlayerPicker = true },
-                                            pointAction: { showPointPicker = true },
-                                            minHeight: sharedCardHeight
-                                        )
+                                    HStack(alignment: .top, spacing: cardSpacing) {
+                                        VStack(spacing: cardSpacing) {
+                                            teamScoreCard(
+                                                title: ourTeamName,
+                                                style: ourStyle,
+                                                goals: $ourGoals,
+                                                behinds: $ourBehinds,
+                                                score: ourScore,
+                                                goalAction: { showPlayerPicker = true },
+                                                pointAction: { showPointPicker = true },
+                                                minHeight: sharedCardHeight
+                                            )
+                                            goalKickerSummaryCard(width: teamCardWidth)
+                                        }
                                         .frame(width: teamCardWidth, alignment: .topLeading)
                                         .padding(.top, sideCardTopOffset)
 
-                                        timerCard(minHeight: centerTimerHeight, width: timerWidth)
-                                            .frame(width: timerWidth, alignment: .bottom)
-                                            .padding(.top, centerCardTopOffset + centerCardExtraDrop)
+                                        VStack(spacing: cardSpacing) {
+                                            timerCard(minHeight: centerTimerHeight, width: timerWidth)
+                                            periodScoresCard(width: timerWidth)
+                                        }
+                                        .frame(width: timerWidth, alignment: .top)
+                                        .padding(.top, centerCardTopOffset)
 
                                         teamScoreCard(
                                             title: oppTeamName,
@@ -2227,9 +2247,6 @@ struct NewGameWizardView: View {
                                     }
                                 }
                             }
-                        }
-                        .padding()
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
 
                         Button("Save and Continue") {
                             pauseTimer()
@@ -2307,10 +2324,28 @@ struct NewGameWizardView: View {
             .onDisappear {
                 pauseTimer()
             }
+            .alert("Period complete", isPresented: $showEndOfPeriodPrompt) {
+                Button("No, keep editing", role: .cancel) {
+                    showManualSavePrompt = false
+                }
+                Button("Yes, save score") {
+                    saveCurrentPeriodSnapshot()
+                }
+            } message: {
+                Text("Are the current scores correct for \(nextPeriodLabel ?? "this period")?")
+            }
+            .alert("Save updated score?", isPresented: $showManualSavePrompt) {
+                Button("Cancel", role: .cancel) {}
+                Button("Save score") {
+                    saveCurrentPeriodSnapshot()
+                }
+            } message: {
+                Text("Save \(nextPeriodLabel ?? "period") using the updated live scores?")
+            }
         }
 
         private func timerCard(minHeight: CGFloat, width: CGFloat) -> some View {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     Text("Timer")
                         .font(.title3.weight(.semibold))
@@ -2343,9 +2378,12 @@ struct NewGameWizardView: View {
                 }
 
                 Text(timeText(secondsRemaining))
-                    .font(.system(size: 62, weight: .heavy, design: .rounded))
+                    .font(.system(size: 78, weight: .heavy, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(isDangerTime ? .red : .primary)
+                    .minimumScaleFactor(0.55)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .center)
 
                 HStack(spacing: 10) {
                     Button {
@@ -2372,12 +2410,83 @@ struct NewGameWizardView: View {
                     .accessibilityLabel("Reset")
                         .buttonStyle(.bordered)
                 }
-                .font(.headline)
+                .font(.title3.weight(.semibold))
                 .controlSize(.large)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
             .padding(18)
             .frame(maxWidth: width, minHeight: minHeight, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+
+        private func periodScoresCard(width: CGFloat) -> some View {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Period scores")
+                    .font(.headline)
+
+                if periodSnapshots.isEmpty {
+                    Text("No period scores saved yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(periodSnapshots) { snapshot in
+                        HStack {
+                            Text(snapshot.label)
+                            Spacer()
+                            Text("\(snapshot.ourGoals).\(snapshot.ourBehinds) (\(snapshot.ourScore))")
+                                .monospacedDigit()
+                            Text("–")
+                                .foregroundStyle(.secondary)
+                            Text("\(snapshot.theirGoals).\(snapshot.theirBehinds) (\(snapshot.theirScore))")
+                                .monospacedDigit()
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                }
+
+                if nextPeriodLabel != nil {
+                    Button("Save \(nextPeriodLabel ?? "period") score") {
+                        showManualSavePrompt = true
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: width, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+
+        private func goalKickerSummaryCard(width: CGFloat) -> some View {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Scoring contributors")
+                    .font(.headline)
+                if scorerTally.isEmpty, rushedPoints == 0 {
+                    Text("No scorers yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(scorerTally, id: \.id) { scorer in
+                        HStack {
+                            Text(playerName(scorer.id))
+                            Spacer()
+                            Text("\(scorer.goals)G \(scorer.points)P")
+                                .font(.headline)
+                                .monospacedDigit()
+                        }
+                    }
+                    if rushedPoints > 0 {
+                        HStack {
+                            Text("Rushed")
+                            Spacer()
+                            Text("\(rushedPoints)P")
+                                .font(.headline)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+            .padding()
+            .frame(maxWidth: width, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
 
         private func teamScoreCard(
@@ -2482,6 +2591,7 @@ struct NewGameWizardView: View {
                             timerRunning = false
                             AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
                             UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                            showEndOfPeriodPrompt = true
                         }
                     }
                 }
@@ -2504,6 +2614,31 @@ struct NewGameWizardView: View {
             let secs = seconds % 60
             return String(format: "%02d:%02d", mins, secs)
         }
+
+        private func saveCurrentPeriodSnapshot() {
+            guard let label = nextPeriodLabel else { return }
+            periodSnapshots.append(
+                PeriodSnapshot(
+                    label: label,
+                    ourGoals: ourGoals,
+                    ourBehinds: ourBehinds,
+                    theirGoals: theirGoals,
+                    theirBehinds: theirBehinds
+                )
+            )
+        }
+    }
+
+    private struct PeriodSnapshot: Identifiable {
+        let id = UUID()
+        let label: String
+        let ourGoals: Int
+        let ourBehinds: Int
+        let theirGoals: Int
+        let theirBehinds: Int
+
+        var ourScore: Int { ourGoals * 6 + ourBehinds }
+        var theirScore: Int { theirGoals * 6 + theirBehinds }
     }
 
     private struct MailComposeView: UIViewControllerRepresentable {
