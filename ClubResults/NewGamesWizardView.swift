@@ -2101,6 +2101,7 @@ struct NewGameWizardView: View {
         @Binding var goalKickers: [WizardGoalKickerEntry]
         @Binding var bestRanked: [UUID?]
 
+        let initialPeriodMinutes: Int
         let requiredBestPlayersCount: Int
         let ourTeamName: String
         let oppTeamName: String
@@ -2153,6 +2154,7 @@ struct NewGameWizardView: View {
             _bestRanked = bestRanked
 
             let boundedPeriodMinutes = min(max(initialPeriodMinutes, 1), 30)
+            self.initialPeriodMinutes = boundedPeriodMinutes
             _periodMinutes = State(initialValue: boundedPeriodMinutes)
             _secondsRemaining = State(initialValue: boundedPeriodMinutes * 60)
 
@@ -2389,7 +2391,11 @@ struct NewGameWizardView: View {
                 }
             }
             .onAppear {
+                applyConfiguredInitialPeriod()
                 syncBestPlayersSelectionCount()
+            }
+            .onChange(of: initialPeriodMinutes) { _, _ in
+                applyConfiguredInitialPeriod()
             }
             .sheet(isPresented: $showPlayerPicker) {
                 NavigationStack {
@@ -2783,6 +2789,12 @@ struct NewGameWizardView: View {
                     theirBehinds: theirBehinds
                 )
             )
+        }
+
+        private func applyConfiguredInitialPeriod() {
+            guard !timerRunning, periodSnapshots.isEmpty else { return }
+            periodMinutes = initialPeriodMinutes
+            secondsRemaining = initialPeriodMinutes * 60
         }
     }
 
