@@ -147,6 +147,13 @@ private struct AdminNameResetView: View {
                         .buttonStyle(.plain)
                     }
                 }
+            } footer: {
+                if !orderedGrades.isEmpty {
+                    sectionBulkSelectionControls(
+                        onSelectAll: selectAllGrades,
+                        onUnselectAll: unselectAllGrades
+                    )
+                }
             }
 
             Section("Pickers") {
@@ -161,6 +168,11 @@ private struct AdminNameResetView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            } footer: {
+                sectionBulkSelectionControls(
+                    onSelectAll: selectAllPickerTypes,
+                    onUnselectAll: unselectAllPickerTypes
+                )
             }
 
             Section {
@@ -210,6 +222,22 @@ private struct AdminNameResetView: View {
         }
     }
 
+    private func selectAllGrades() {
+        selectedGradeIDs = Set(orderedGrades.map(\.id))
+    }
+
+    private func unselectAllGrades() {
+        selectedGradeIDs.removeAll()
+    }
+
+    private func selectAllPickerTypes() {
+        selectedPickerTypes = Set(AdminPickerType.allCases)
+    }
+
+    private func unselectAllPickerTypes() {
+        selectedPickerTypes.removeAll()
+    }
+
     private func clearSelections() {
         guard canClear else { return }
 
@@ -251,6 +279,21 @@ private struct AdminNameResetView: View {
             Spacer()
         }
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func sectionBulkSelectionControls(
+        onSelectAll: @escaping () -> Void,
+        onUnselectAll: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 16) {
+            Button("Select All", action: onSelectAll)
+                .buttonStyle(.plain)
+            Button("Unselect All", action: onUnselectAll)
+                .buttonStyle(.plain)
+        }
+        .font(.subheadline.weight(.semibold))
+        .padding(.top, 8)
     }
 }
 
