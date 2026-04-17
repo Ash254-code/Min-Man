@@ -184,7 +184,7 @@ struct GamesView: View {
 }
 
 private struct NewGameQuickStartSection: View {
-    private enum GradeSaveStatus {
+    private enum GradeStatus {
         case noGameSaved
         case draftOnly
         case gameSaved
@@ -211,7 +211,7 @@ private struct NewGameQuickStartSection: View {
         return Array(repeating: GridItem(.flexible(), spacing: 14), count: count)
     }
 
-    private func status(for gradeID: UUID) -> GradeSaveStatus {
+    private func status(for gradeID: UUID) -> GradeStatus {
         let gradeGames = games.filter { $0.gradeID == gradeID }
         if gradeGames.contains(where: { !$0.isDraft }) {
             return .gameSaved
