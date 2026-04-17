@@ -1005,21 +1005,21 @@ struct NewGameWizardView: View {
                     let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
 
                     if asksBoundaryUmpire1 {
-                        formSelectorRow(
+                        StaffPickerField(
                             title: "Boundary Umpire 1",
-                            value: finalBoundary1
-                        ) {
-                            boundaryUmpirePickerPrompt = .one
-                        }
+                            role: .boundaryUmpire,
+                            gradeID: gradeID,
+                            value: $boundaryUmpire1Name
+                        )
                     }
 
                     if asksBoundaryUmpire2 {
-                        formSelectorRow(
+                        StaffPickerField(
                             title: "Boundary Umpire 2",
-                            value: finalBoundary2
-                        ) {
-                            boundaryUmpirePickerPrompt = .two
-                        }
+                            role: .boundaryUmpire,
+                            gradeID: gradeID,
+                            value: $boundaryUmpire2Name
+                        )
                     }
 
                     if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalBoundary1.isEmpty, finalBoundary1 == finalBoundary2 {
