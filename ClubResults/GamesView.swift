@@ -29,12 +29,6 @@ struct GamesView: View {
         let reopenLiveView: Bool
     }
 
-    fileprivate enum GradeRecentStatus {
-        case noneRecent
-        case inProgressDraft
-        case finalizedRecent
-    }
-
     private enum DraftResumeStore {
         private static let openLivePrefix = "resume.openLive."
 
@@ -83,16 +77,16 @@ struct GamesView: View {
             .first
     }
 
-    private func gradeStatus(for gradeID: UUID) -> GradeRecentStatus {
+    private func gradeStatus(for gradeID: UUID) -> QuickStartGradeStatus {
         if latestDraft(for: gradeID) != nil {
-            return .inProgressDraft
+            return .draftOnly
         }
 
         let cutoff = Date().addingTimeInterval(-48 * 60 * 60)
         let hasRecentFinalized = games.contains { game in
             game.gradeID == gradeID && !game.isDraft && game.date >= cutoff
         }
-        return hasRecentFinalized ? .finalizedRecent : .noneRecent
+        return hasRecentFinalized ? .gameSaved : .noGameSaved
     }
 
     private var standardPillWidth: CGFloat {
@@ -303,9 +297,9 @@ private struct NewGameQuickStartSection: View {
     private var statusLegend: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
-                legendItem(status: .noneRecent, text: "No Game Saved")
-                legendItem(status: .inProgressDraft, text: "Game in Draft")
-                legendItem(status: .finalizedRecent, text: "Game Saved")
+                legendItem(status: .noGameSaved, text: "No Game Saved")
+                legendItem(status: .draftOnly, text: "Game in Draft")
+                legendItem(status: .gameSaved, text: "Game Saved")
             }
         }
         .font(.system(size: horizontalSizeClass == .compact ? 11 : 13, weight: .semibold))
@@ -323,15 +317,15 @@ private struct NewGameQuickStartSection: View {
     @ViewBuilder
     private func statusDot(_ status: GradeStatus, size: CGFloat = 14) -> some View {
         switch status {
-        case .inProgressDraft:
+        case .draftOnly:
             Circle()
                 .fill(Color.orange)
                 .frame(width: size, height: size)
-        case .finalizedRecent:
+        case .gameSaved:
             Circle()
                 .fill(Color.green)
                 .frame(width: size, height: size)
-        case .noneRecent:
+        case .noGameSaved:
             Circle()
                 .stroke(Color.secondary.opacity(0.75), lineWidth: 2)
                 .frame(width: size, height: size)
