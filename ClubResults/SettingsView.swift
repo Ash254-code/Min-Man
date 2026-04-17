@@ -10,7 +10,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Settings") {
+                Section {
                     NavigationLink {
                         ClubGradesSettingsView()
                     } label: {
@@ -46,14 +46,18 @@ struct SettingsView: View {
                     } label: {
                         settingsRow(title: "Contacts", icon: "person.crop.rectangle")
                     }
+                } header: {
+                    Text("Settings")
                 }
 
-                Section("Admin") {
+                Section {
                     NavigationLink {
                         AdminNameResetView()
                     } label: {
                         settingsRow(title: "Clear Saved Picker Names", icon: "trash")
                     }
+                } header: {
+                    Text("Admin")
                 }
             }
             .navigationTitle("Settings")
