@@ -2349,6 +2349,19 @@ struct NewGameWizardView: View {
                         .padding(.top, 8)
                         .padding(.bottom, 8)
 
+                    HStack {
+                        Spacer()
+                        Button("Save Game") {
+                            pauseTimer()
+                            onSaveAndContinue()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(canSaveAndContinue ? .blue : .gray)
+                        .disabled(!canSaveAndContinue)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 8)
+
                     GeometryReader { proxy in
                         let compact = proxy.size.width < 980
                         let cardSpacing: CGFloat = compact ? 14 : 18
@@ -2453,17 +2466,6 @@ struct NewGameWizardView: View {
                 .background(Color(.systemGroupedBackground))
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save Game") {
-                        pauseTimer()
-                        onSaveAndContinue()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(canSaveAndContinue ? .blue : .gray)
-                    .disabled(!canSaveAndContinue)
-                }
-            }
             .sheet(
                 isPresented: Binding(
                     get: { bestPlayerPickerPrompt != nil },
