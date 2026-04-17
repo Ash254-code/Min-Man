@@ -862,6 +862,7 @@ private struct ContactsSettingsView: View {
         .sheet(isPresented: $showAddContact) {
             ContactEditSheet(
                 title: "Add Contact",
+                allowsSaveAndAddAnother: true,
                 onSave: { name, mobile, email in
                     let newContact = Contact(name: name, mobile: mobile, email: email)
                     modelContext.insert(newContact)
@@ -1006,6 +1007,7 @@ private struct ContactEditSheet: View {
     let initialName: String
     let initialMobile: String
     let initialEmail: String
+    let allowsSaveAndAddAnother: Bool
     let onSave: (String, String, String) -> Bool
     let onDelete: (() -> Void)?
 
@@ -1018,6 +1020,7 @@ private struct ContactEditSheet: View {
         initialName: String = "",
         initialMobile: String = "",
         initialEmail: String = "",
+        allowsSaveAndAddAnother: Bool = false,
         onSave: @escaping (String, String, String) -> Bool,
         onDelete: (() -> Void)? = nil
     ) {
@@ -1025,6 +1028,7 @@ private struct ContactEditSheet: View {
         self.initialName = initialName
         self.initialMobile = initialMobile
         self.initialEmail = initialEmail
+        self.allowsSaveAndAddAnother = allowsSaveAndAddAnother
         self.onSave = onSave
         self.onDelete = onDelete
 
@@ -1071,22 +1075,25 @@ private struct ContactEditSheet: View {
                         }
                     }
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 12) {
-                    Spacer()
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 8) {
+                        if allowsSaveAndAddAnother {
+                            Button("Save & Add Another") {
+                                saveAndAddAnother()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(canSave ? .blue : .gray)
+                            .disabled(!canSave)
+                        }
 
-                    Button("Save") {
-                        saveAndClose()
+                        Button("Save") {
+                            saveAndClose()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(canSave ? .blue : .gray)
+                        .disabled(!canSave)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(canSave ? .blue : .gray)
-                    .disabled(!canSave)
                 }
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                .background(.ultraThinMaterial)
             }
         }
     }
@@ -1094,6 +1101,13 @@ private struct ContactEditSheet: View {
     private func saveAndClose() {
         guard onSave(clean(name), clean(mobile), clean(email)) else { return }
         dismiss()
+    }
+
+    private func saveAndAddAnother() {
+        guard onSave(clean(name), clean(mobile), clean(email)) else { return }
+        name = ""
+        mobile = ""
+        email = ""
     }
 
     private func clean(_ text: String) -> String {
