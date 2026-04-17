@@ -2093,6 +2093,7 @@ struct NewGameWizardView: View {
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
         private var isDangerTime: Bool { secondsRemaining <= 120 }
+        private var canSaveAndContinue: Bool { periodSnapshots.count == 4 }
         private var nextPeriodLabel: String? {
             switch periodSnapshots.count {
             case 0: return "Quarter Time"
@@ -2219,43 +2220,6 @@ struct NewGameWizardView: View {
                                     }
                                 }
                             }
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            ScorePill("Goal Kickers", style: ourStyle)
-                            if scorerTally.isEmpty, rushedPoints == 0 {
-                                Text("No scorers yet.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(scorerTally, id: \.id) { scorer in
-                                    HStack {
-                                        Text(playerName(scorer.id))
-                                        Spacer()
-                                        Text(playerContribution(goals: scorer.goals, points: scorer.points))
-                                            .font(.headline)
-                                            .monospacedDigit()
-                                    }
-                                }
-                                if rushedPoints > 0 {
-                                    HStack {
-                                        Text("Rushed")
-                                        Spacer()
-                                        Text(playerContribution(goals: 0, points: rushedPoints))
-                                            .font(.headline)
-                                            .monospacedDigit()
-                                    }
-                                }
-                            }
-
-                            Button("Save and Continue") {
-                                pauseTimer()
-                                onSaveAndContinue()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .font(.headline)
-                            .padding(.top, 8)
-                        }
-                        .padding(.horizontal, compact ? 14 : 24)
-                        .padding(.vertical, compact ? 12 : 18)
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
@@ -2265,6 +2229,15 @@ struct NewGameWizardView: View {
                             pauseTimer()
                             onCancel()
                         }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Save and Continue") {
+                            pauseTimer()
+                            onSaveAndContinue()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(canSaveAndContinue ? .blue : .gray)
+                        .disabled(!canSaveAndContinue)
                     }
                 }
             }
