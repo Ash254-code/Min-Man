@@ -2119,17 +2119,20 @@ struct NewGameWizardView: View {
                     let teamCardWidth = max(300, proxy.size.width * 0.35)
                     let timerWidth = max(280, proxy.size.width * 0.22)
                     let sharedCardHeight = max(380, proxy.size.height * 0.48)
+                    let headingHeight: CGFloat = 86
+                    let centerCardTopOffset: CGFloat = 16
+                    let centerTimerHeight = max(280, sharedCardHeight - headingHeight - centerCardTopOffset)
 
                     ScrollView {
                         VStack(spacing: cardSpacing) {
-                            VStack(spacing: 10) {
-                                Text("Live Game View")
-                                    .font(.title.bold())
-                                Text(date.formatted(date: .abbreviated, time: .shortened))
-                                    .foregroundStyle(.secondary)
-                            }
-
                             if compact {
+                                VStack(spacing: 10) {
+                                    Text("Live Game View")
+                                        .font(.title.bold())
+                                    Text(date.formatted(date: .abbreviated, time: .shortened))
+                                        .foregroundStyle(.secondary)
+                                }
+
                                 teamScoreCard(
                                     title: ourTeamName,
                                     style: ourStyle,
@@ -2152,33 +2155,44 @@ struct NewGameWizardView: View {
                                     minHeight: sharedCardHeight
                                 )
                             } else {
-                                HStack(alignment: .top, spacing: cardSpacing) {
-                                    teamScoreCard(
-                                        title: ourTeamName,
-                                        style: ourStyle,
-                                        goals: $ourGoals,
-                                        behinds: $ourBehinds,
-                                        score: ourScore,
-                                        goalAction: { showPlayerPicker = true },
-                                        pointAction: { showPointPicker = true },
-                                        minHeight: sharedCardHeight
-                                    )
-                                    .frame(width: teamCardWidth, alignment: .topLeading)
+                                VStack(spacing: 0) {
+                                    VStack(spacing: 10) {
+                                        Text("Live Game View")
+                                            .font(.title.bold())
+                                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: timerWidth)
 
-                                    timerCard(minHeight: sharedCardHeight, width: timerWidth)
-                                        .frame(width: timerWidth, alignment: .top)
+                                    HStack(alignment: .top, spacing: cardSpacing) {
+                                        teamScoreCard(
+                                            title: ourTeamName,
+                                            style: ourStyle,
+                                            goals: $ourGoals,
+                                            behinds: $ourBehinds,
+                                            score: ourScore,
+                                            goalAction: { showPlayerPicker = true },
+                                            pointAction: { showPointPicker = true },
+                                            minHeight: sharedCardHeight
+                                        )
+                                        .frame(width: teamCardWidth, alignment: .topLeading)
 
-                                    teamScoreCard(
-                                        title: oppTeamName,
-                                        style: oppStyle,
-                                        goals: $theirGoals,
-                                        behinds: $theirBehinds,
-                                        score: theirScore,
-                                        goalAction: { theirGoals += 1 },
-                                        pointAction: { theirBehinds += 1 },
-                                        minHeight: sharedCardHeight
-                                    )
-                                    .frame(width: teamCardWidth, alignment: .topTrailing)
+                                        timerCard(minHeight: centerTimerHeight, width: timerWidth)
+                                            .frame(width: timerWidth, alignment: .bottom)
+                                            .padding(.top, centerCardTopOffset)
+
+                                        teamScoreCard(
+                                            title: oppTeamName,
+                                            style: oppStyle,
+                                            goals: $theirGoals,
+                                            behinds: $theirBehinds,
+                                            score: theirScore,
+                                            goalAction: { theirGoals += 1 },
+                                            pointAction: { theirBehinds += 1 },
+                                            minHeight: sharedCardHeight
+                                        )
+                                        .frame(width: teamCardWidth, alignment: .topTrailing)
+                                    }
                                 }
                             }
 
@@ -2290,15 +2304,8 @@ struct NewGameWizardView: View {
             }
         }
 
-        private var periodMinutesEditor: Binding<String> {
-            Binding(
-                get: { String(periodMinutes) },
-                set: { newValue in
-                    let digitsOnly = newValue.filter(\.isNumber)
-                    guard let value = Int(digitsOnly), (1...99).contains(value) else { return }
-                    periodMinutes = value
-                }
-            )
+        private func adjustPeriodMinutes(by delta: Int) {
+            periodMinutes = min(99, max(1, periodMinutes + delta))
         }
 
         private func timerCard(minHeight: CGFloat, width: CGFloat) -> some View {
@@ -2307,15 +2314,31 @@ struct NewGameWizardView: View {
                     Text("Timer")
                         .font(.title3.weight(.semibold))
                     Spacer()
-                    HStack(spacing: 8) {
-                        Text("Period minutes")
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text("Period")
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        TextField("20", text: periodMinutesEditor)
-                            .keyboardType(.numberPad)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 72)
-                        Stepper("", value: $periodMinutes, in: 1...99)
-                            .labelsHidden()
+                        HStack(spacing: 10) {
+                            Button {
+                                adjustPeriodMinutes(by: -1)
+                            } label: {
+                                Image(systemName: "minus")
+                            }
+                            .buttonStyle(.bordered)
+
+                            Text("\(periodMinutes) min")
+                                .font(.headline.monospacedDigit())
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(.ultraThinMaterial, in: Capsule())
+
+                            Button {
+                                adjustPeriodMinutes(by: 1)
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
                 }
 
@@ -2354,7 +2377,7 @@ struct NewGameWizardView: View {
         ) -> some View {
             VStack(alignment: .leading, spacing: 18) {
                 scoreColumn(title: title, style: style, goals: goals, behinds: behinds, score: score)
-                teamActionSection(title: title, style: style, goalAction: goalAction, pointAction: pointAction)
+                teamActionSection(style: style, goalAction: goalAction, pointAction: pointAction)
             }
             .padding(20)
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
@@ -2383,14 +2406,11 @@ struct NewGameWizardView: View {
         }
 
         private func teamActionSection(
-            title: String,
             style: ClubStyle.Style,
             goalAction: @escaping () -> Void,
             pointAction: @escaping () -> Void
         ) -> some View {
             VStack(alignment: .leading, spacing: 10) {
-                ScorePill(title, style: style, fixedWidth: 170)
-
                 HStack(spacing: 10) {
                     prominentActionButton(title: "Goal", background: style.background, textColor: style.text, action: goalAction)
                     prominentActionButton(title: "Point", background: style.background, textColor: style.text, action: pointAction)
