@@ -10,41 +10,50 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                NavigationLink {
-                    ClubGradesSettingsView()
-                } label: {
-                    settingsRow(title: "Club Grades", icon: "list.number")
+                Section("Settings") {
+                    NavigationLink {
+                        ClubGradesSettingsView()
+                    } label: {
+                        settingsRow(title: "Club Grades", icon: "list.number")
+                    }
+
+                    NavigationLink {
+                        BoundaryUmpiresSettingsView()
+                    } label: {
+                        settingsRow(title: "Boundary Umpires", icon: "flag.pattern.checkered")
+                    }
+
+                    NavigationLink {
+                        AppAppearanceSettingsView()
+                    } label: {
+                        settingsRow(title: "App Appearance", icon: "circle.lefthalf.filled")
+                    }
+
+                    NavigationLink {
+                        TeamsAndVenuesSettingsView()
+                    } label: {
+                        settingsRow(title: "Teams & Venues", icon: "flag.2.crossed")
+                    }
+
+                    NavigationLink {
+                        ReportsSettingsView()
+                    } label: {
+                        settingsRow(title: "Reports", icon: "doc.text")
+                    }
+
+                    NavigationLink {
+                        ContactsSettingsView()
+                    } label: {
+                        settingsRow(title: "Contacts", icon: "person.crop.rectangle")
+                    }
                 }
 
-                NavigationLink {
-                    BoundaryUmpiresSettingsView()
-                } label: {
-                    settingsRow(title: "Boundary Umpires", icon: "flag.pattern.checkered")
-                }
-
-                NavigationLink {
-                    AppAppearanceSettingsView()
-                } label: {
-                    settingsRow(title: "App Appearance", icon: "circle.lefthalf.filled")
-                }
-
-
-                NavigationLink {
-                    TeamsAndVenuesSettingsView()
-                } label: {
-                    settingsRow(title: "Teams & Venues", icon: "flag.2.crossed")
-                }
-
-                NavigationLink {
-                    ReportsSettingsView()
-                } label: {
-                    settingsRow(title: "Reports", icon: "doc.text")
-                }
-
-                NavigationLink {
-                    ContactsSettingsView()
-                } label: {
-                    settingsRow(title: "Contacts", icon: "person.crop.rectangle")
+                Section("Admin") {
+                    NavigationLink {
+                        AdminNameResetView()
+                    } label: {
+                        settingsRow(title: "Clear Saved Picker Names", icon: "trash")
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -97,6 +106,198 @@ struct SettingsView: View {
             try modelContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct AdminNameResetView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var grades: [Grade]
+    @Query private var staffMembers: [StaffMember]
+
+    @State private var selectedGradeIDs: Set<UUID> = []
+    @State private var selectedPickerTypes: Set<AdminPickerType> = Set(AdminPickerType.allCases)
+    @State private var showConfirmClear = false
+    @State private var clearFeedbackMessage: String?
+
+    private var orderedGrades: [Grade] {
+        orderedGradesForDisplay(resolvedConfiguredGrades(from: grades), includeInactive: true)
+    }
+
+    private var canClear: Bool {
+        !selectedGradeIDs.isEmpty && !selectedPickerTypes.isEmpty
+    }
+
+    var body: some View {
+        List {
+            Section("Grades") {
+                if orderedGrades.isEmpty {
+                    Text("No grades available.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(orderedGrades) { grade in
+                        Button {
+                            toggleGrade(grade.id)
+                        } label: {
+                            checkboxRow(
+                                title: grade.name,
+                                isSelected: selectedGradeIDs.contains(grade.id)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Section("Pickers") {
+                ForEach(AdminPickerType.allCases) { pickerType in
+                    Button {
+                        togglePickerType(pickerType)
+                    } label: {
+                        checkboxRow(
+                            title: pickerType.title,
+                            isSelected: selectedPickerTypes.contains(pickerType)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Section {
+                Button("Clear Selected Names", role: .destructive) {
+                    showConfirmClear = true
+                }
+                .disabled(!canClear)
+            } footer: {
+                if let clearFeedbackMessage {
+                    Text(clearFeedbackMessage)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Select one or more grades and picker types, then clear.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Admin")
+        .alert("Clear Saved Names?", isPresented: $showConfirmClear) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear", role: .destructive) {
+                clearSelections()
+            }
+        } message: {
+            Text("This will remove saved picker names for the selected grades and picker types.")
+        }
+        .onAppear {
+            if selectedGradeIDs.isEmpty {
+                selectedGradeIDs = Set(orderedGrades.map(\.id))
+            }
+        }
+    }
+
+    private func toggleGrade(_ gradeID: UUID) {
+        if selectedGradeIDs.contains(gradeID) {
+            selectedGradeIDs.remove(gradeID)
+        } else {
+            selectedGradeIDs.insert(gradeID)
+        }
+    }
+
+    private func togglePickerType(_ pickerType: AdminPickerType) {
+        if selectedPickerTypes.contains(pickerType) {
+            selectedPickerTypes.remove(pickerType)
+        } else {
+            selectedPickerTypes.insert(pickerType)
+        }
+    }
+
+    private func clearSelections() {
+        guard canClear else { return }
+
+        let selectedRoles = Set(selectedPickerTypes.map(\.role))
+        let selectedLastSelectionFields = selectedPickerTypes.flatMap(\.lastSelectionFieldKeys)
+        let selectedGradeIDs = self.selectedGradeIDs
+
+        let matchingStaffMembers = staffMembers.filter {
+            selectedGradeIDs.contains($0.gradeID) && selectedRoles.contains($0.role)
+        }
+
+        for staffMember in matchingStaffMembers {
+            modelContext.delete(staffMember)
+        }
+
+        for gradeID in selectedGradeIDs {
+            for fieldKey in selectedLastSelectionFields {
+                let key = "lastStaffSelection.\(gradeID.uuidString).\(fieldKey)"
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+
+        do {
+            try modelContext.save()
+            let removedCount = matchingStaffMembers.count
+            clearFeedbackMessage = "Cleared \(removedCount) saved name\(removedCount == 1 ? "" : "s")."
+        } catch {
+            clearFeedbackMessage = "Could not clear names: \(error.localizedDescription)"
+        }
+    }
+
+    @ViewBuilder
+    private func checkboxRow(title: String, isSelected: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                .foregroundStyle(isSelected ? .tint : .secondary)
+            Text(title)
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private enum AdminPickerType: String, CaseIterable, Identifiable, Hashable {
+    case headCoach
+    case assistantCoach
+    case teamManager
+    case runner
+    case goalUmpire
+    case fieldUmpire
+    case trainer
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .headCoach: return "Head Coach"
+        case .assistantCoach: return "Assistant Coach"
+        case .teamManager: return "Team Manager"
+        case .runner: return "Runner"
+        case .goalUmpire: return "Goal Umpire"
+        case .fieldUmpire: return "Field Umpire"
+        case .trainer: return "Trainers"
+        }
+    }
+
+    var role: StaffRole {
+        switch self {
+        case .headCoach: return .headCoach
+        case .assistantCoach: return .assistantCoach
+        case .teamManager: return .teamManager
+        case .runner: return .runner
+        case .goalUmpire: return .goalUmpire
+        case .fieldUmpire: return .fieldUmpire
+        case .trainer: return .trainer
+        }
+    }
+
+    var lastSelectionFieldKeys: [String] {
+        switch self {
+        case .headCoach: return ["headCoach"]
+        case .assistantCoach: return ["assistantCoach"]
+        case .teamManager: return ["teamManager"]
+        case .runner: return ["runner"]
+        case .goalUmpire: return ["goalUmpire"]
+        case .fieldUmpire: return ["fieldUmpire"]
+        case .trainer: return ["trainer1", "trainer2", "trainer3", "trainer4"]
         }
     }
 }
