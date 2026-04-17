@@ -134,7 +134,7 @@ private struct AdminNameResetView: View {
 
     var body: some View {
         List {
-            Section("Grades") {
+            Section {
                 if orderedGrades.isEmpty {
                     Text("No grades available.")
                         .foregroundStyle(.secondary)
@@ -151,6 +151,8 @@ private struct AdminNameResetView: View {
                         .buttonStyle(.plain)
                     }
                 }
+            } header: {
+                Text("Grades")
             } footer: {
                 if !orderedGrades.isEmpty {
                     sectionBulkSelectionControls(
@@ -160,7 +162,7 @@ private struct AdminNameResetView: View {
                 }
             }
 
-            Section("Pickers") {
+            Section {
                 ForEach(AdminPickerType.allCases) { pickerType in
                     Button {
                         togglePickerType(pickerType)
@@ -172,6 +174,8 @@ private struct AdminNameResetView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            } header: {
+                Text("Pickers")
             } footer: {
                 sectionBulkSelectionControls(
                     onSelectAll: selectAllPickerTypes,
@@ -900,13 +904,15 @@ private struct AppAppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            Section("App Appearance") {
+            Section {
                 Picker("Theme", selection: $appAppearance) {
                     ForEach(AppAppearance.allCases) { item in
                         Text(item.title).tag(item.rawValue)
                     }
                 }
                 .pickerStyle(.inline)
+            } header: {
+                Text("App Appearance")
             }
         }
         .navigationTitle("App Appearance")
@@ -960,33 +966,41 @@ private struct AddGradeWizardView: View {
             Form {
                 switch step {
                 case .gradeName:
-                    Section("Grade") {
+                    Section {
                         TextField("Grade name", text: $draft.name)
                             .textInputAutocapitalization(.words)
+                    } header: {
+                        Text("Grade")
                     }
                 case .coaches:
-                    Section("Coaches") {
+                    Section {
                         Toggle("Head Coach", isOn: $draft.asksHeadCoach)
                         Toggle("Assistant Coach", isOn: $draft.asksAssistantCoach)
                         Toggle("Team Manager", isOn: $draft.asksTeamManager)
                         Toggle("Runner", isOn: $draft.asksRunner)
+                    } header: {
+                        Text("Coaches")
                     }
                 case .officials:
-                    Section("Officials") {
+                    Section {
                         Toggle("Goal Umpire", isOn: $draft.asksGoalUmpire)
                         Toggle("Field Umpire", isOn: $draft.asksFieldUmpire)
                         Toggle("Boundary Umpire 1", isOn: $draft.asksBoundaryUmpire1)
                         Toggle("Boundary Umpire 2", isOn: $draft.asksBoundaryUmpire2)
+                    } header: {
+                        Text("Officials")
                     }
                 case .trainers:
-                    Section("Trainers") {
+                    Section {
                         Toggle("Trainer 1", isOn: $draft.asksTrainer1)
                         Toggle("Trainer 2", isOn: $draft.asksTrainer2)
                         Toggle("Trainer 3", isOn: $draft.asksTrainer3)
                         Toggle("Trainer 4", isOn: $draft.asksTrainer4)
+                    } header: {
+                        Text("Trainers")
                     }
                 case .awards:
-                    Section("Awards") {
+                    Section {
                         Toggle("Notes", isOn: $draft.asksNotes)
                         Toggle("Goal Kickers", isOn: $draft.asksGoalKickers)
                         Picker("Best Players", selection: $draft.bestPlayersCount) {
@@ -995,9 +1009,11 @@ private struct AddGradeWizardView: View {
                             }
                         }
                         Toggle("Guest B & F Votes", isOn: $draft.asksGuestBestFairestVotesScan)
+                    } header: {
+                        Text("Awards")
                     }
                 case .settings:
-                    Section("Settings") {
+                    Section {
                         Toggle("Notes", isOn: $draft.asksNotes)
                         Toggle("Live Game View", isOn: $draft.allowsLiveGameView)
                         Picker("Length of Quarters", selection: $draft.quarterLengthMinutes) {
@@ -1005,6 +1021,8 @@ private struct AddGradeWizardView: View {
                                 Text("\(minute) min").tag(minute)
                             }
                         }
+                    } header: {
+                        Text("Settings")
                     }
                 }
             }
@@ -1085,7 +1103,7 @@ private struct ContactsSettingsView: View {
                 Text("Required fields: Name, Mobile, Email")
             }
 
-            Section("Report Delivery") {
+            Section {
                 NavigationLink {
                     ReportRecipientsSettingsView()
                 } label: {
@@ -1101,6 +1119,8 @@ private struct ContactsSettingsView: View {
                 Text("Move report contacts here: choose who receives each grade's game report by Email and/or Text.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } header: {
+                Text("Report Delivery")
             }
         }
         .navigationTitle("Contacts")
@@ -1658,7 +1678,7 @@ private struct CustomReportShareView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Select Contacts") {
+                Section {
                     if contacts.isEmpty {
                         Text("No contacts found. Add contacts in Settings > Contacts first.")
                             .font(.caption)
@@ -1688,6 +1708,8 @@ private struct CustomReportShareView: View {
                             }
                         }
                     }
+                } header: {
+                    Text("Select Contacts")
                 }
             }
             .navigationTitle("Share Report")
@@ -2087,11 +2109,13 @@ private struct CustomReportEditView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Template") {
+                Section {
                     TextField("Report name", text: $name)
+                } header: {
+                    Text("Template")
                 }
 
-                Section("Grades") {
+                Section {
                     ForEach(grades) { grade in
                         Button {
                             if selectedGradeIDs.contains(grade.id) {
@@ -2114,9 +2138,11 @@ private struct CustomReportEditView: View {
                     Text("No grade selected means all grades.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                } header: {
+                    Text("Grades")
                 }
 
-                Section("Data Included") {
+                Section {
                     Toggle("Best players", isOn: $includeBestPlayers)
                     Toggle("Player grades", isOn: $includePlayerGrades)
                     Toggle("Goal kickers", isOn: $includeGoalKickers)
@@ -2125,9 +2151,11 @@ private struct CustomReportEditView: View {
                     Toggle("Staff roles", isOn: $includeStaffRoles)
                     Toggle("Trainers", isOn: $includeTrainers)
                     Toggle("Match notes", isOn: $includeMatchNotes)
+                } header: {
+                    Text("Data Included")
                 }
 
-                Section("Filters") {
+                Section {
                     Picker("Report layout", selection: $groupingMode) {
                         ForEach(ReportGroupingMode.allCases) { mode in
                             Text(mode.title).tag(mode)
@@ -2135,6 +2163,8 @@ private struct CustomReportEditView: View {
                     }
                     Toggle("Only active grades", isOn: $includeOnlyActiveGrades)
                     Stepper("Minimum games played: \(minimumGamesPlayed)", value: $minimumGamesPlayed, in: 0...100)
+                } header: {
+                    Text("Filters")
                 }
             }
             .navigationTitle("Custom Report")
@@ -2205,7 +2235,7 @@ private struct ReportRecipientsSettingsView: View {
             }
 
             ForEach(configuredGrades) { grade in
-                Section(grade.name) {
+                Section {
                     let recipients = recipientsForGrade(grade.id)
 
                     if recipients.isEmpty {
@@ -2300,6 +2330,8 @@ private struct ReportRecipientsSettingsView: View {
                     } label: {
                         Label("Add Contact", systemImage: "plus")
                     }
+                } header: {
+                    Text(grade.name)
                 }
             }
         }
