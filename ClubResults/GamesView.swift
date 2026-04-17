@@ -16,7 +16,9 @@ struct GamesView: View {
 
     // MARK: - Ordered grades (your seeded order + remaining A→Z)
     private var orderedGrades: [Grade] {
-        orderedGradesForDisplay(resolvedConfiguredGrades(from: grades))
+        // Show all configured grades (including ones marked inactive) so rebuilt club
+        // grade lists still expose quick-start buttons immediately.
+        orderedGradesForDisplay(resolvedConfiguredGrades(from: grades), includeInactive: true)
     }
 
     private var gradeNameByID: [UUID: String] {
@@ -137,7 +139,7 @@ private struct NewGameQuickStartSection: View {
                 .font(.system(size: 34, weight: .bold))
 
             if grades.isEmpty {
-                ContentUnavailableView("No active grades", systemImage: "list.bullet.clipboard")
+                ContentUnavailableView("No grades configured", systemImage: "list.bullet.clipboard")
             } else {
                 LazyVGrid(columns: columns, spacing: 14) {
                     ForEach(grades) { grade in
