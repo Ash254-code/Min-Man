@@ -498,29 +498,37 @@ private struct ClubGradesSettingsView: View {
                     TextField("Grade name", text: $editGradeName)
                         .textInputAutocapitalization(.words)
 
-                    Section("New Game Wizard Fields") {
-                        Text("Coaches")
+                    Section {
+                        Label("Coaches", systemImage: "person.2.fill")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Head Coach", isOn: bind(grade, \.asksHeadCoach))
                         Toggle("Assistant Coach", isOn: bind(grade, \.asksAssistantCoach))
                         Toggle("Team Manager", isOn: bind(grade, \.asksTeamManager))
                         Toggle("Runner", isOn: bind(grade, \.asksRunner))
+                    } header: {
+                        Text("New Game Wizard Fields")
+                    }
 
-                        Text("Officials")
+                    Section {
+                        Label("Officials", systemImage: "flag.fill")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Goal Umpire", isOn: bind(grade, \.asksGoalUmpire))
                         Toggle("Field Umpire", isOn: bind(grade, \.asksFieldUmpire))
                         Toggle("Boundary Umpire 1", isOn: bind(grade, \.asksBoundaryUmpire1))
                         Toggle("Boundary Umpire 2", isOn: bind(grade, \.asksBoundaryUmpire2))
+                    }
 
-                        Text("Trainers")
+                    Section {
+                        Label("Trainers", systemImage: "cross.case.fill")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Trainer 1", isOn: bind(grade, \.asksTrainer1))
                         Toggle("Trainer 2", isOn: bind(grade, \.asksTrainer2))
                         Toggle("Trainer 3", isOn: bind(grade, \.asksTrainer3))
                         Toggle("Trainer 4", isOn: bind(grade, \.asksTrainer4))
+                    }
 
-                        Text("Awards")
+                    Section {
+                        Label("Awards", systemImage: "rosette")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Notes", isOn: bind(grade, \.asksNotes))
                         Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
