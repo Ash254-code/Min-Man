@@ -760,6 +760,10 @@ struct NewGameWizardView: View {
                 theirGoals: $theirGoals,
                 theirBehinds: $theirBehinds,
                 goalKickers: $goalKickers,
+                ourTeamName: clubConfiguration.clubTeam.name,
+                oppTeamName: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
+                ourStyle: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration),
+                oppStyle: ClubStyle.style(for: finalOpponent.isEmpty ? "Opponent" : finalOpponent, configuration: clubConfiguration),
                 eligiblePlayers: eligiblePlayers,
                 playerName: { playerID in
                     players.first(where: { $0.id == playerID })?.name ?? "Unknown"
@@ -2053,6 +2057,10 @@ struct NewGameWizardView: View {
         @Binding var theirBehinds: Int
         @Binding var goalKickers: [WizardGoalKickerEntry]
 
+        let ourTeamName: String
+        let oppTeamName: String
+        let ourStyle: ClubStyle.Style
+        let oppStyle: ClubStyle.Style
         let eligiblePlayers: [Player]
         let playerName: (UUID) -> String
         let onSaveAndContinue: () -> Void
@@ -2082,8 +2090,15 @@ struct NewGameWizardView: View {
 
         var body: some View {
             NavigationStack {
-                ScrollView {
-                    VStack(spacing: 16) {
+                GeometryReader { proxy in
+                    let compact = proxy.size.width < 860
+                    let cardSpacing: CGFloat = compact ? 14 : 18
+                    let timerWidth = max(280, proxy.size.width * 0.33)
+                    let timerHeight = max(220, proxy.size.height * 0.25)
+                    let scoreboardHeight = max(330, proxy.size.height * 0.5)
+
+                    ScrollView {
+                        VStack(spacing: cardSpacing) {
                         VStack(spacing: 10) {
                             Text("Live Game View")
                                 .font(.title.bold())
@@ -2091,54 +2106,17 @@ struct NewGameWizardView: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        VStack(spacing: 12) {
-                            Text(timeText(secondsRemaining))
-                                .font(.system(size: 56, weight: .bold, design: .rounded))
-                                .monospacedDigit()
-                                .foregroundStyle(isDangerTime ? .red : .primary)
-
-                            Stepper("Period minutes: \(periodMinutes)", value: $periodMinutes, in: 10...30)
-                                .onChange(of: periodMinutes) { _, newValue in
-                                    if !timerRunning {
-                                        secondsRemaining = newValue * 60
-                                    }
+                            if compact {
+                                scoreboardCard(minHeight: scoreboardHeight)
+                                timerCard(minHeight: timerHeight, width: proxy.size.width)
+                            } else {
+                                HStack(alignment: .top, spacing: cardSpacing) {
+                                    scoreboardCard(minHeight: scoreboardHeight)
+                                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                                    timerCard(minHeight: timerHeight, width: timerWidth)
+                                        .frame(width: timerWidth, alignment: .topTrailing)
                                 }
-
-                            HStack {
-                                Button("Start") { startTimer() }
-                                    .buttonStyle(.borderedProminent)
-                                    .disabled(timerRunning || secondsRemaining == 0)
-                                Button("Pause") { pauseTimer() }
-                                    .buttonStyle(.bordered)
-                                    .disabled(!timerRunning)
-                                Button("Reset") { resetTimer() }
-                                    .buttonStyle(.bordered)
                             }
-                        }
-                        .padding()
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-
-                        VStack(spacing: 12) {
-                            Text("Scoreboard")
-                                .font(.headline)
-                            HStack {
-                                scoreColumn(title: "Us", goals: $ourGoals, behinds: $ourBehinds, score: ourScore)
-                                scoreColumn(title: "Opp", goals: $theirGoals, behinds: $theirBehinds, score: theirScore)
-                            }
-
-                            HStack {
-                                Button("Our Goal") { showPlayerPicker = true }
-                                    .buttonStyle(.borderedProminent)
-                                Button("Our Point") { ourBehinds += 1 }
-                                    .buttonStyle(.bordered)
-                                Button("Opp Goal") { theirGoals += 1 }
-                                    .buttonStyle(.bordered)
-                                Button("Opp Point") { theirBehinds += 1 }
-                                    .buttonStyle(.bordered)
-                            }
-                        }
-                        .padding()
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
 
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Goal scorers")
@@ -2169,7 +2147,9 @@ struct NewGameWizardView: View {
                         .font(.headline)
                         .padding(.top, 8)
                     }
-                    .padding()
+                    .padding(.horizontal, compact ? 14 : 24)
+                    .padding(.vertical, compact ? 12 : 18)
+                    }
                 }
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -2179,6 +2159,11 @@ struct NewGameWizardView: View {
                             onCancel()
                         }
                     }
+                }
+            }
+            .onChange(of: periodMinutes) { _, newValue in
+                if !timerRunning {
+                    secondsRemaining = max(1, newValue) * 60
                 }
             }
             .sheet(isPresented: $showPlayerPicker) {
@@ -2203,17 +2188,129 @@ struct NewGameWizardView: View {
             }
         }
 
-        @ViewBuilder
-        private func scoreColumn(title: String, goals: Binding<Int>, behinds: Binding<Int>, score: Int) -> some View {
-            VStack(spacing: 8) {
-                Text(title)
-                    .font(.headline)
-                Stepper("Goals \(goals.wrappedValue)", value: goals, in: 0...200)
-                Stepper("Points \(behinds.wrappedValue)", value: behinds, in: 0...200)
-                Text("Total \(score)")
-                    .font(.title3.bold())
+        private var periodMinutesEditor: Binding<String> {
+            Binding(
+                get: { String(periodMinutes) },
+                set: { newValue in
+                    let digitsOnly = newValue.filter(\.isNumber)
+                    guard let value = Int(digitsOnly), (1...99).contains(value) else { return }
+                    periodMinutes = value
+                }
+            )
+        }
+
+        private func timerCard(minHeight: CGFloat, width: CGFloat) -> some View {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Timer")
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Text("Period minutes")
+                            .foregroundStyle(.secondary)
+                        TextField("20", text: periodMinutesEditor)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 72)
+                        Stepper("", value: $periodMinutes, in: 1...99)
+                            .labelsHidden()
+                    }
+                }
+
+                Text(timeText(secondsRemaining))
+                    .font(.system(size: 62, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(isDangerTime ? .red : .primary)
+
+                HStack(spacing: 10) {
+                    Button("Start") { startTimer() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(timerRunning || secondsRemaining == 0)
+                    Button("Pause") { pauseTimer() }
+                        .buttonStyle(.bordered)
+                        .disabled(!timerRunning)
+                    Button("Reset") { resetTimer() }
+                        .buttonStyle(.bordered)
+                }
+                .font(.headline)
+                .controlSize(.large)
             }
-            .frame(maxWidth: .infinity)
+            .padding(18)
+            .frame(maxWidth: width, minHeight: minHeight, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+
+        private func scoreboardCard(minHeight: CGFloat) -> some View {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Scoreboard")
+                    .font(.title2.bold())
+
+                HStack(alignment: .top, spacing: 16) {
+                    scoreColumn(title: ourTeamName, style: ourStyle, goals: $ourGoals, behinds: $ourBehinds, score: ourScore)
+                    scoreColumn(title: oppTeamName, style: oppStyle, goals: $theirGoals, behinds: $theirBehinds, score: theirScore)
+                }
+
+                HStack(alignment: .top, spacing: 14) {
+                    teamActionSection(title: ourTeamName, style: ourStyle, goalAction: { showPlayerPicker = true }, pointAction: { ourBehinds += 1 })
+                    teamActionSection(title: oppTeamName, style: oppStyle, goalAction: { theirGoals += 1 }, pointAction: { theirBehinds += 1 })
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+
+        @ViewBuilder
+        private func scoreColumn(title: String, style: ClubStyle.Style, goals: Binding<Int>, behinds: Binding<Int>, score: Int) -> some View {
+            VStack(alignment: .leading, spacing: 10) {
+                ScorePill(title, style: style, fixedWidth: 170)
+
+                Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
+                    .font(.system(size: 46, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text("\(score)")
+                    .font(.system(size: 88, weight: .black, design: .rounded))
+                    .monospacedDigit()
+
+                HStack(spacing: 12) {
+                    Stepper("Goals: \(goals.wrappedValue)", value: goals, in: 0...200)
+                    Stepper("Points: \(behinds.wrappedValue)", value: behinds, in: 0...200)
+                }
+                .labelsHidden()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private func teamActionSection(
+            title: String,
+            style: ClubStyle.Style,
+            goalAction: @escaping () -> Void,
+            pointAction: @escaping () -> Void
+        ) -> some View {
+            VStack(alignment: .leading, spacing: 10) {
+                ScorePill(title, style: style, fixedWidth: 170)
+
+                HStack(spacing: 10) {
+                    prominentActionButton(title: "Goal", background: style.background, textColor: style.text, action: goalAction)
+                    prominentActionButton(title: "Point", background: style.background, textColor: style.text, action: pointAction)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private func prominentActionButton(title: String, background: Color, textColor: Color, action: @escaping () -> Void) -> some View {
+            Button(action: action) {
+                Text(title)
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+            }
+            .buttonStyle(.plain)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(background.opacity(0.95))
+            )
+            .foregroundStyle(textColor)
         }
 
         private func recordGoal(for playerID: UUID) {
