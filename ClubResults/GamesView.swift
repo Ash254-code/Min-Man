@@ -199,8 +199,14 @@ private struct NewGameQuickStartSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Start New Game")
-                .font(.system(size: 34, weight: .bold))
+            HStack(alignment: .center, spacing: 12) {
+                Text("Start New Game")
+                    .font(.system(size: 34, weight: .bold))
+
+                Spacer(minLength: 8)
+
+                statusLegend
+            }
 
             if grades.isEmpty {
                 ContentUnavailableView("No grades configured", systemImage: "list.bullet.clipboard")
@@ -249,9 +255,28 @@ private struct NewGameQuickStartSection: View {
         )
     }
 
+    private var statusLegend: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                legendItem(status: .noneRecent, text: "No Game Saved")
+                legendItem(status: .inProgressDraft, text: "Game in Draft")
+                legendItem(status: .finalizedRecent, text: "Game Saved")
+            }
+        }
+        .font(.system(size: horizontalSizeClass == .compact ? 11 : 13, weight: .semibold))
+        .foregroundStyle(.secondary)
+    }
+
+    private func legendItem(status: GradeStatus, text: String) -> some View {
+        HStack(spacing: 6) {
+            statusDot(status, size: 12)
+            Text(text)
+                .lineLimit(1)
+        }
+    }
+
     @ViewBuilder
-    private func statusDot(_ status: GradeStatus) -> some View {
-        let size: CGFloat = 14
+    private func statusDot(_ status: GradeStatus, size: CGFloat = 14) -> some View {
         switch status {
         case .inProgressDraft:
             Circle()
