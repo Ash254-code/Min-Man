@@ -2107,24 +2107,20 @@ struct NewGameWizardView: View {
                     let timerWidth = max(280, proxy.size.width * 0.33)
                     let timerHeight = max(220, proxy.size.height * 0.25)
                     let scoreboardHeight = max(330, proxy.size.height * 0.5)
+                    let sharedCardHeight = max(scoreboardHeight, timerHeight)
 
                     ScrollView {
                         VStack(spacing: cardSpacing) {
-                        VStack(spacing: 10) {
-                            Text("Live Game View")
-                                .font(.title.bold())
-                            Text(date.formatted(date: .abbreviated, time: .shortened))
-                                .foregroundStyle(.secondary)
-                        }
+                            liveHeader(compact: compact)
 
                             if compact {
-                                scoreboardCard(minHeight: scoreboardHeight)
-                                timerCard(minHeight: timerHeight, width: proxy.size.width)
+                                scoreboardCard(minHeight: sharedCardHeight)
+                                timerCard(minHeight: sharedCardHeight, width: proxy.size.width)
                             } else {
                                 HStack(alignment: .top, spacing: cardSpacing) {
-                                    scoreboardCard(minHeight: scoreboardHeight)
+                                    scoreboardCard(minHeight: sharedCardHeight)
                                         .frame(maxWidth: .infinity, alignment: .topLeading)
-                                    timerCard(minHeight: timerHeight, width: timerWidth)
+                                    timerCard(minHeight: sharedCardHeight, width: timerWidth)
                                         .frame(width: timerWidth, alignment: .topTrailing)
                                 }
                             }
@@ -2199,6 +2195,48 @@ struct NewGameWizardView: View {
             }
         }
 
+        private func liveHeader(compact: Bool) -> some View {
+            VStack(spacing: compact ? 8 : 12) {
+                HStack(alignment: .top) {
+                    headerScoreCard(title: ourTeamName, score: ourScore, style: ourStyle, alignment: .leading)
+
+                    Spacer(minLength: 12)
+
+                    VStack(spacing: 6) {
+                        Text("Live Game View")
+                            .font(.title.bold())
+                            .multilineTextAlignment(.center)
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Text(timeText(secondsRemaining))
+                            .font(.system(size: compact ? 34 : 42, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(isDangerTime ? .red : .primary)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    headerScoreCard(title: oppTeamName, score: theirScore, style: oppStyle, alignment: .trailing)
+                }
+            }
+        }
+
+        private func headerScoreCard(title: String, score: Int, style: ClubStyle.Style, alignment: HorizontalAlignment) -> some View {
+            VStack(alignment: alignment, spacing: 6) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text("\(score)")
+                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(style.text)
+            }
+            .frame(maxWidth: 190, alignment: alignment == .leading ? .leading : .trailing)
+        }
+
         private var periodMinutesEditor: Binding<String> {
             Binding(
                 get: { String(periodMinutes) },
@@ -2227,11 +2265,6 @@ struct NewGameWizardView: View {
                             .labelsHidden()
                     }
                 }
-
-                Text(timeText(secondsRemaining))
-                    .font(.system(size: 62, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(isDangerTime ? .red : .primary)
 
                 HStack(spacing: 10) {
                     Button("Start") { startTimer() }
