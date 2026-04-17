@@ -42,7 +42,7 @@ struct NewGameWizardView: View {
     @Query private var staffDefaults: [StaffDefault]
 
     // ✅ UPDATED: first screen is Setup (grade + date + opponent + venue)
-    enum Step: Int { case setup, staff, medical, score, goals, best, votes, review }
+    enum Step: Int { case setup, staff, officials, medical, score, goals, best, votes, review }
     private enum EntryMode {
         case postGame
         case live
@@ -77,14 +77,8 @@ struct NewGameWizardView: View {
     @State private var fieldUmpireName: String = ""
 
     // Boundary umpires are chosen from a configured grade's players, or entered manually.
-    @State private var boundaryUmpire1ID: UUID?
-    @State private var boundaryUmpire2ID: UUID?
-    @State private var boundaryUmpire1CustomName: String = ""
-    @State private var boundaryUmpire2CustomName: String = ""
-    @State private var boundaryUmpirePickerPrompt: BoundaryUmpireSlot?
-    @State private var boundaryUmpirePickerDetent: PresentationDetent = .large
-    @State private var boundaryUmpireNamePrompt: BoundaryUmpireSlot?
-    @State private var boundaryUmpireNameDraft: String = ""
+    @State private var boundaryUmpire1Name: String = ""
+    @State private var boundaryUmpire2Name: String = ""
 
     @State private var trainer1Name: String = ""
     @State private var trainer2Name: String = ""
@@ -138,17 +132,11 @@ struct NewGameWizardView: View {
     private var finalGoalUmpire: String { clean(goalUmpireName) }
     private var finalFieldUmpire: String { clean(fieldUmpireName) }
 
-    private func playerName(for id: UUID?) -> String {
-        guard let id else { return "" }
-        return players.first(where: { $0.id == id })?.name ?? ""
-    }
     private var finalBoundary1: String {
-        let custom = clean(boundaryUmpire1CustomName)
-        return custom.isEmpty ? playerName(for: boundaryUmpire1ID) : custom
+        clean(boundaryUmpire1Name)
     }
     private var finalBoundary2: String {
-        let custom = clean(boundaryUmpire2CustomName)
-        return custom.isEmpty ? playerName(for: boundaryUmpire2ID) : custom
+        clean(boundaryUmpire2Name)
     }
     private var selectedTrainerNames: [String] {
         [trainer1Name, trainer2Name, trainer3Name, trainer4Name]
@@ -209,36 +197,6 @@ struct NewGameWizardView: View {
         )
     }
 
-    private var boundaryPickerRowHeight: CGFloat { isCompactLayout ? 56 : 72 }
-
-    private var boundaryPickerHeaderAndPaddingHeight: CGFloat { isCompactLayout ? 128 : 148 }
-
-    private var boundaryPickerOptionsCount: Int {
-        let availablePlayers: [Player]
-
-        switch boundaryUmpirePickerPrompt {
-        case .one:
-            availablePlayers = boundaryUmpirePlayers.filter { $0.id != boundaryUmpire2ID }
-        case .two:
-            availablePlayers = boundaryUmpirePlayers.filter { $0.id != boundaryUmpire1ID }
-        case .none:
-            availablePlayers = []
-        }
-
-        // "Select…" + available players + "Enter Different Name"
-        return availablePlayers.count + 2
-    }
-
-    private var boundaryPickerHeight: CGFloat {
-        PickerSheetPresentation.preferredHeight(
-            optionCount: boundaryPickerOptionsCount,
-            rowHeight: boundaryPickerRowHeight,
-            chromeHeight: boundaryPickerHeaderAndPaddingHeight,
-            minVisibleRows: 3,
-            isCompactLayout: isCompactLayout
-        )
-    }
-
     private var setupPickerExpandedDetent: PresentationDetent {
         PickerSheetPresentation.expandedDetent(isCompactLayout: isCompactLayout)
     }
@@ -288,6 +246,8 @@ struct NewGameWizardView: View {
         case runner
         case goalUmpire
         case fieldUmpire
+        case boundaryUmpire1
+        case boundaryUmpire2
         case trainer1
         case trainer2
         case trainer3
@@ -326,6 +286,8 @@ struct NewGameWizardView: View {
         assignDefault(for: .runner, role: .runner, gradeID: gradeID) { runnerName = $0 }
         assignDefault(for: .goalUmpire, role: .goalUmpire, gradeID: gradeID) { goalUmpireName = $0 }
         assignDefault(for: .fieldUmpire, role: .fieldUmpire, gradeID: gradeID) { fieldUmpireName = $0 }
+        assignDefault(for: .boundaryUmpire1, role: .boundaryUmpire, gradeID: gradeID) { boundaryUmpire1Name = $0 }
+        assignDefault(for: .boundaryUmpire2, role: .boundaryUmpire, gradeID: gradeID) { boundaryUmpire2Name = $0 }
         assignDefault(for: .trainer1, role: .trainer, gradeID: gradeID) { trainer1Name = $0 }
         assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { trainer2Name = $0 }
         assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { trainer3Name = $0 }
@@ -345,6 +307,8 @@ struct NewGameWizardView: View {
         saveLastSelection(runnerName, for: .runner, gradeID: gradeID)
         saveLastSelection(goalUmpireName, for: .goalUmpire, gradeID: gradeID)
         saveLastSelection(fieldUmpireName, for: .fieldUmpire, gradeID: gradeID)
+        saveLastSelection(boundaryUmpire1Name, for: .boundaryUmpire1, gradeID: gradeID)
+        saveLastSelection(boundaryUmpire2Name, for: .boundaryUmpire2, gradeID: gradeID)
         saveLastSelection(trainer1Name, for: .trainer1, gradeID: gradeID)
         saveLastSelection(trainer2Name, for: .trainer2, gradeID: gradeID)
         saveLastSelection(trainer3Name, for: .trainer3, gradeID: gradeID)
@@ -364,25 +328,6 @@ struct NewGameWizardView: View {
     private var eligiblePlayers: [Player] {
         guard let gid = gradeID else { return [] }
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
-    }
-
-    private var boundaryUmpireSourceGradeIDs: [UUID] {
-        guard let gid = gradeID else { return [] }
-        let configured = SettingsBackupStore.loadBoundaryUmpireGradeMappings()[gid] ?? [gid]
-        return configured.isEmpty ? [gid] : configured
-    }
-
-    private var boundaryUmpirePlayers: [Player] {
-        let sourceGradeIDs = Set(boundaryUmpireSourceGradeIDs)
-        guard !sourceGradeIDs.isEmpty else { return [] }
-        return players.filter { player in
-            player.isActive && !sourceGradeIDs.isDisjoint(with: Set(player.gradeIDs))
-        }
-    }
-
-    private enum BoundaryUmpireSlot {
-        case one
-        case two
     }
 
     private enum SetupPickerPrompt {
@@ -435,8 +380,10 @@ struct NewGameWizardView: View {
         if grade.asksGoalUmpire ||
             grade.asksFieldUmpire ||
             grade.asksBoundaryUmpire1 ||
-            grade.asksBoundaryUmpire2 ||
-            grade.asksTrainer1 ||
+            grade.asksBoundaryUmpire2 {
+            steps.append(.officials)
+        }
+        if grade.asksTrainer1 ||
             grade.asksTrainer2 ||
             grade.asksTrainer3 ||
             grade.asksTrainer4 ||
@@ -458,6 +405,7 @@ struct NewGameWizardView: View {
     private var entryModeTriggerStep: Step {
         if !shouldAskForEntryMode { return .review }
         if activeSteps.contains(.medical) { return .medical }
+        if activeSteps.contains(.officials) { return .officials }
         if activeSteps.contains(.staff) { return .staff }
         return .setup
     }
@@ -580,6 +528,21 @@ struct NewGameWizardView: View {
 
             return coachingOK
 
+        case .officials:
+            let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
+            let asksFieldUmpire = selectedGrade?.asksFieldUmpire ?? true
+            let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
+            let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
+
+            let officialsOK =
+                (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
+                (!asksFieldUmpire || !finalFieldUmpire.isEmpty) &&
+                (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
+                (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty)
+
+            let boundaryUnique = !(asksBoundaryUmpire1 && asksBoundaryUmpire2 && finalBoundary1 == finalBoundary2)
+            return officialsOK && boundaryUnique
+
         case .medical:
             // This step is informational/optional; never block navigation here.
             return true
@@ -627,6 +590,7 @@ struct NewGameWizardView: View {
                     switch step {
                     case .setup: setupStep
                     case .staff: staffStep
+                    case .officials: officialsStep
                     case .medical: medicalStepView
                     case .score: scoreStep
                     case .goals: goalsStep
@@ -1030,7 +994,7 @@ struct NewGameWizardView: View {
         .background(Color(.systemGroupedBackground))
     }
 
-    private var medicalStep: some View {
+    private var officialsStep: some View {
         ScrollView {
             VStack(spacing: 14) {
                 StaffCard(title: "Officials", systemImage: "flag.fill") {
@@ -1045,82 +1009,28 @@ struct NewGameWizardView: View {
                     let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
 
                     if asksBoundaryUmpire1 {
-                        HStack(spacing: 12) {
-                            rowLabel("Boundary Umpire 1")
-                            Spacer()
-                            Button {
-                                boundaryUmpirePickerPrompt = .one
-                            } label: {
-                                HStack(spacing: 6) {
-                                    rowValue(finalBoundary1)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.vertical, 4)
+                        StaffPickerField(
+                            title: "Boundary Umpire 1",
+                            role: .boundaryUmpire,
+                            gradeID: gradeID,
+                            value: $boundaryUmpire1Name
+                        )
                     }
 
                     if asksBoundaryUmpire2 {
-                        HStack(spacing: 12) {
-                            rowLabel("Boundary Umpire 2")
-                            Spacer()
-                            Button {
-                                boundaryUmpirePickerPrompt = .two
-                            } label: {
-                                HStack(spacing: 6) {
-                                    rowValue(finalBoundary2)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.vertical, 4)
+                        StaffPickerField(
+                            title: "Boundary Umpire 2",
+                            role: .boundaryUmpire,
+                            gradeID: gradeID,
+                            value: $boundaryUmpire2Name
+                        )
                     }
 
-                    if asksBoundaryUmpire1, asksBoundaryUmpire2, boundaryUmpire1ID != nil, boundaryUmpire1ID == boundaryUmpire2ID {
+                    if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalBoundary1.isEmpty, finalBoundary1 == finalBoundary2 {
                         Text("Boundary Umpire 1 and 2 can’t be the same.")
                             .font(.caption)
                             .foregroundStyle(.red)
                             .padding(.top, 6)
-                    }
-                }
-
-                StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
-                    if selectedGrade?.asksTrainer1 ?? true {
-                        StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
-                    }
-                    if selectedGrade?.asksTrainer2 ?? true {
-                        StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
-                    }
-                    if selectedGrade?.asksTrainer3 ?? true {
-                        StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
-                    }
-                    if selectedGrade?.asksTrainer4 ?? true {
-                        StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
-                    }
-                    if !(selectedGrade?.asksTrainer1 ?? true) &&
-                        !(selectedGrade?.asksTrainer2 ?? true) &&
-                        !(selectedGrade?.asksTrainer3 ?? true) &&
-                        !(selectedGrade?.asksTrainer4 ?? true) {
-                        Text("Trainer fields are disabled for this grade.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if selectedGrade?.asksNotes ?? true {
-                    StaffCard(title: "Notes", systemImage: "note.text") {
-                        TextField("Notes (optional)", text: $notes, axis: .vertical)
-                            .lineLimit(3...6)
-                            .padding(12)
-                            .background(Color(.systemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                 }
             }
@@ -1131,122 +1041,6 @@ struct NewGameWizardView: View {
         .font(wizardBodyFont)
         .dynamicTypeSize(.large ... .accessibility2)
         .background(Color(.systemGroupedBackground))
-        .sheet(
-            isPresented: Binding(
-                get: { boundaryUmpirePickerPrompt != nil },
-                set: { if !$0 { boundaryUmpirePickerPrompt = nil } }
-            )
-        ) {
-            NavigationStack {
-                List {
-                    Button {
-                        if boundaryUmpirePickerPrompt == .one {
-                            boundaryUmpire1ID = nil
-                            boundaryUmpire1CustomName = ""
-                        } else if boundaryUmpirePickerPrompt == .two {
-                            boundaryUmpire2ID = nil
-                            boundaryUmpire2CustomName = ""
-                        }
-                        boundaryUmpirePickerPrompt = nil
-                    } label: {
-                        selectorListRow(
-                            title: "Select…",
-                            selected: boundaryUmpirePickerPrompt == .one ? finalBoundary1.isEmpty : finalBoundary2.isEmpty
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    ForEach(boundaryUmpirePlayers) { person in
-                        if (boundaryUmpirePickerPrompt == .one && person.id != boundaryUmpire2ID) ||
-                            (boundaryUmpirePickerPrompt == .two && person.id != boundaryUmpire1ID) {
-                            Button {
-                                if boundaryUmpirePickerPrompt == .one {
-                                    boundaryUmpire1ID = person.id
-                                    boundaryUmpire1CustomName = ""
-                                } else if boundaryUmpirePickerPrompt == .two {
-                                    boundaryUmpire2ID = person.id
-                                    boundaryUmpire2CustomName = ""
-                                }
-                                boundaryUmpirePickerPrompt = nil
-                            } label: {
-                                selectorListRow(
-                                    title: person.name,
-                                    selected: boundaryUmpirePickerPrompt == .one ? boundaryUmpire1ID == person.id : boundaryUmpire2ID == person.id
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    Section {
-                        Button {
-                            if boundaryUmpirePickerPrompt == .one {
-                                boundaryUmpireNameDraft = boundaryUmpire1CustomName
-                                boundaryUmpireNamePrompt = .one
-                            } else if boundaryUmpirePickerPrompt == .two {
-                                boundaryUmpireNameDraft = boundaryUmpire2CustomName
-                                boundaryUmpireNamePrompt = .two
-                            }
-                            boundaryUmpirePickerPrompt = nil
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "pencil.circle.fill")
-                                    .font(.system(size: isCompactLayout ? 22 : 26, weight: .semibold))
-                                    .foregroundStyle(.tint)
-                                Text("Enter Different Name")
-                                    .font(selectorListFont)
-                                    .foregroundStyle(.primary)
-                            }
-                            .padding(.vertical, isCompactLayout ? 8 : 12)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .navigationTitle(boundaryUmpirePickerPrompt == .two ? "Boundary Umpire 2" : "Boundary Umpire 1")
-                .navigationBarTitleDisplayMode(.inline)
-                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { boundaryUmpirePickerPrompt = nil }
-                    }
-                }
-            }
-            .presentationDetents([.height(boundaryPickerHeight), setupPickerExpandedDetent], selection: $boundaryUmpirePickerDetent)
-            .presentationDragIndicator(.visible)
-            .onAppear {
-                boundaryUmpirePickerDetent = setupPickerExpandedDetent
-            }
-            .onChange(of: boundaryUmpirePickerPrompt) { _, _ in
-                boundaryUmpirePickerDetent = setupPickerExpandedDetent
-            }
-        }
-        .alert(
-            boundaryUmpireNamePrompt == .one ? "Boundary Umpire 1" : "Boundary Umpire 2",
-            isPresented: Binding(
-                get: { boundaryUmpireNamePrompt != nil },
-                set: { if !$0 { boundaryUmpireNamePrompt = nil } }
-            )
-        ) {
-            TextField("Name", text: $boundaryUmpireNameDraft)
-                .textInputAutocapitalization(.words)
-            Button("Cancel", role: .cancel) {
-                boundaryUmpireNamePrompt = nil
-            }
-            Button("Save") {
-                let enteredName = clean(boundaryUmpireNameDraft)
-                if boundaryUmpireNamePrompt == .one {
-                    boundaryUmpire1CustomName = enteredName
-                    boundaryUmpire1ID = nil
-                } else if boundaryUmpireNamePrompt == .two {
-                    boundaryUmpire2CustomName = enteredName
-                    boundaryUmpire2ID = nil
-                }
-                boundaryUmpireNamePrompt = nil
-            }
-        } message: {
-            Text("Enter a name if no listed player was the boundary umpire.")
-        }
     }
 
     private var medicalStepView: some View {
