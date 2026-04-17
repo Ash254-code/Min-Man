@@ -42,7 +42,7 @@ struct NewGameWizardView: View {
     @Query private var staffDefaults: [StaffDefault]
 
     // ✅ UPDATED: first screen is Setup (grade + date + opponent + venue)
-    enum Step: Int { case setup, staff, medical, score, goals, best, votes, review }
+    enum Step: Int { case setup, staff, officials, medical, score, goals, best, votes, review }
     private enum EntryMode {
         case postGame
         case live
@@ -434,8 +434,10 @@ struct NewGameWizardView: View {
         if grade.asksGoalUmpire ||
             grade.asksFieldUmpire ||
             grade.asksBoundaryUmpire1 ||
-            grade.asksBoundaryUmpire2 ||
-            grade.asksTrainer1 ||
+            grade.asksBoundaryUmpire2 {
+            steps.append(.officials)
+        }
+        if grade.asksTrainer1 ||
             grade.asksTrainer2 ||
             grade.asksTrainer3 ||
             grade.asksTrainer4 ||
@@ -456,6 +458,7 @@ struct NewGameWizardView: View {
 
     private var entryModeTriggerStep: Step {
         if !shouldAskForEntryMode { return .review }
+        if activeSteps.contains(.officials) { return .officials }
         if activeSteps.contains(.medical) { return .medical }
         if activeSteps.contains(.staff) { return .staff }
         return .setup
@@ -579,7 +582,7 @@ struct NewGameWizardView: View {
 
             return coachingOK
 
-        case .medical:
+        case .officials, .medical:
             // This step is informational/optional; never block navigation here.
             return true
 
@@ -604,7 +607,7 @@ struct NewGameWizardView: View {
     }
 
     private var canProceedOnCurrentStep: Bool {
-        step == .medical ? true : canProceed
+        (step == .officials || step == .medical) ? true : canProceed
     }
 
     // MARK: Body
@@ -626,6 +629,7 @@ struct NewGameWizardView: View {
                     switch step {
                     case .setup: setupStep
                     case .staff: staffStep
+                    case .officials: officialsStep
                     case .medical: medicalStep
                     case .score: scoreStep
                     case .goals: goalsStep
@@ -1033,7 +1037,7 @@ struct NewGameWizardView: View {
         .background(Color(.systemGroupedBackground))
     }
 
-    private var medicalStep: some View {
+    private var officialsStep: some View {
         ScrollView {
             VStack(spacing: 14) {
                 StaffCard(title: "Officials", systemImage: "flag.fill") {
@@ -1048,43 +1052,21 @@ struct NewGameWizardView: View {
                     let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
 
                     if asksBoundaryUmpire1 {
-                        HStack(spacing: 12) {
-                            rowLabel("Boundary Umpire 1")
-                            Spacer()
-                            Button {
-                                boundaryUmpirePickerPrompt = .one
-                            } label: {
-                                HStack(spacing: 6) {
-                                    rowValue(finalBoundary1)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
+                        formSelectorRow(
+                            title: "Boundary Umpire 1",
+                            value: finalBoundary1
+                        ) {
+                            boundaryUmpirePickerPrompt = .one
                         }
-                        .padding(.vertical, 4)
                     }
 
                     if asksBoundaryUmpire2 {
-                        HStack(spacing: 12) {
-                            rowLabel("Boundary Umpire 2")
-                            Spacer()
-                            Button {
-                                boundaryUmpirePickerPrompt = .two
-                            } label: {
-                                HStack(spacing: 6) {
-                                    rowValue(finalBoundary2)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
+                        formSelectorRow(
+                            title: "Boundary Umpire 2",
+                            value: finalBoundary2
+                        ) {
+                            boundaryUmpirePickerPrompt = .two
                         }
-                        .padding(.vertical, 4)
                     }
 
                     if asksBoundaryUmpire1, asksBoundaryUmpire2, boundaryUmpire1ID != nil, boundaryUmpire1ID == boundaryUmpire2ID {
@@ -1095,37 +1077,6 @@ struct NewGameWizardView: View {
                     }
                 }
 
-                StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
-                    if selectedGrade?.asksTrainer1 ?? true {
-                        StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
-                    }
-                    if selectedGrade?.asksTrainer2 ?? true {
-                        StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
-                    }
-                    if selectedGrade?.asksTrainer3 ?? true {
-                        StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
-                    }
-                    if selectedGrade?.asksTrainer4 ?? true {
-                        StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
-                    }
-                    if !(selectedGrade?.asksTrainer1 ?? true) &&
-                        !(selectedGrade?.asksTrainer2 ?? true) &&
-                        !(selectedGrade?.asksTrainer3 ?? true) &&
-                        !(selectedGrade?.asksTrainer4 ?? true) {
-                        Text("Trainer fields are disabled for this grade.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if selectedGrade?.asksNotes ?? true {
-                    StaffCard(title: "Notes", systemImage: "note.text") {
-                        TextField("Notes (optional)", text: $notes, axis: .vertical)
-                            .lineLimit(3...6)
-                            .padding(12)
-                            .background(Color(.systemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                }
             }
             .padding(.horizontal, isCompactLayout ? 16 : 26)
             .padding(.top, isCompactLayout ? 12 : 18)
@@ -1252,7 +1203,7 @@ struct NewGameWizardView: View {
         }
     }
 
-    private var medicalStepView: some View {
+    private var medicalStep: some View {
         ScrollView {
             VStack(spacing: 14) {
                 StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
