@@ -162,15 +162,10 @@ struct GamesView: View {
         return gradeByID[gradeID]?.asksScore ?? true
     }
 
-    private func normalizedGoalKickerSignature(_ game: Game) -> [(UUID?, Int)] {
+    private func normalizedGoalKickerSignature(_ game: Game) -> [String] {
         game.goalKickers
-            .map { ($0.playerID, $0.goals) }
-            .sorted { lhs, rhs in
-                let leftID = lhs.0?.uuidString ?? ""
-                let rightID = rhs.0?.uuidString ?? ""
-                if leftID == rightID { return lhs.1 < rhs.1 }
-                return leftID < rightID
-            }
+            .map { "\($0.playerID?.uuidString ?? "nil"):\($0.goals)" }
+            .sorted()
     }
 
     private func arePairedTwoGames(_ first: Game, _ second: Game) -> Bool {
