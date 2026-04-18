@@ -215,6 +215,13 @@ struct NewGameWizardView: View {
         case postGame
         case live
     }
+    private enum GameCountSelection: String, CaseIterable, Identifiable {
+        case one
+        case two
+
+        var id: String { rawValue }
+        var label: String { self == .one ? "One game" : "Two games" }
+    }
     @State private var step: Step = .setup
     @State private var entryMode: EntryMode?
     @State private var showEntryModePrompt = false
@@ -227,6 +234,7 @@ struct NewGameWizardView: View {
     // MARK: Setup
     @State private var gradeID: UUID?
     @State private var date = Date()
+    @State private var gameCountSelection: GameCountSelection = .one
 
     @State private var clubConfiguration: ClubConfiguration = ClubConfigurationStore.load()
 
@@ -255,6 +263,18 @@ struct NewGameWizardView: View {
     @State private var trainer4Name: String = ""
 
     @State private var notes = ""
+    @State private var game2HeadCoachName: String = ""
+    @State private var game2AssCoachName: String = ""
+    @State private var game2TeamManagerName: String = ""
+    @State private var game2RunnerName: String = ""
+    @State private var game2GoalUmpireName: String = ""
+    @State private var game2FieldUmpireName: String = ""
+    @State private var game2BoundaryUmpire1Name: String = ""
+    @State private var game2BoundaryUmpire2Name: String = ""
+    @State private var game2Trainer1Name: String = ""
+    @State private var game2Trainer2Name: String = ""
+    @State private var game2Trainer3Name: String = ""
+    @State private var game2Trainer4Name: String = ""
 
     // MARK: Score (AFL: goals * 6 + behinds)
     @State private var ourGoals = 0
@@ -274,7 +294,9 @@ struct NewGameWizardView: View {
     @State private var goalKickerPickerPrompt: UUID?
     @State private var goalKickerPickerDetent: PresentationDetent = .large
     @State private var bestRanked: [UUID?] = Array(repeating: nil, count: 6)
+    @State private var bestRankedGame2: [UUID?] = Array(repeating: nil, count: 6)
     @State private var bestPlayerPickerPrompt: Int?
+    @State private var bestPlayerPickerGameNumber: Int = 1
     @State private var bestPlayerPickerDetent: PresentationDetent = .large
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
@@ -311,6 +333,12 @@ struct NewGameWizardView: View {
 
     private var finalGoalUmpire: String { clean(goalUmpireName) }
     private var finalFieldUmpire: String { clean(fieldUmpireName) }
+    private var finalGame2HeadCoach: String { clean(game2HeadCoachName) }
+    private var finalGame2AssCoach: String { clean(game2AssCoachName) }
+    private var finalGame2TeamManager: String { clean(game2TeamManagerName) }
+    private var finalGame2Runner: String { clean(game2RunnerName) }
+    private var finalGame2GoalUmpire: String { clean(game2GoalUmpireName) }
+    private var finalGame2FieldUmpire: String { clean(game2FieldUmpireName) }
 
     private func playerName(for id: UUID?) -> String {
         guard let id else { return "" }
@@ -327,8 +355,19 @@ struct NewGameWizardView: View {
     private var finalBoundary2: String {
         clean(boundaryUmpire2Name)
     }
+    private var finalGame2Boundary1: String {
+        clean(game2BoundaryUmpire1Name)
+    }
+    private var finalGame2Boundary2: String {
+        clean(game2BoundaryUmpire2Name)
+    }
     private var selectedTrainerNames: [String] {
         [trainer1Name, trainer2Name, trainer3Name, trainer4Name]
+            .map(clean)
+            .filter { !$0.isEmpty }
+    }
+    private var selectedGame2TrainerNames: [String] {
+        [game2Trainer1Name, game2Trainer2Name, game2Trainer3Name, game2Trainer4Name]
             .map(clean)
             .filter { !$0.isEmpty }
     }
@@ -481,6 +520,18 @@ struct NewGameWizardView: View {
         assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { trainer2Name = $0 }
         assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { trainer3Name = $0 }
         assignDefault(for: .trainer4, role: .trainer, gradeID: gradeID) { trainer4Name = $0 }
+        assignDefault(for: .headCoach, role: .headCoach, gradeID: gradeID) { game2HeadCoachName = $0 }
+        assignDefault(for: .assistantCoach, role: .assistantCoach, gradeID: gradeID) { game2AssCoachName = $0 }
+        assignDefault(for: .teamManager, role: .teamManager, gradeID: gradeID) { game2TeamManagerName = $0 }
+        assignDefault(for: .runner, role: .runner, gradeID: gradeID) { game2RunnerName = $0 }
+        assignDefault(for: .goalUmpire, role: .goalUmpire, gradeID: gradeID) { game2GoalUmpireName = $0 }
+        assignDefault(for: .fieldUmpire, role: .fieldUmpire, gradeID: gradeID) { game2FieldUmpireName = $0 }
+        assignDefault(for: .boundaryUmpire1, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire1Name = $0 }
+        assignDefault(for: .boundaryUmpire2, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire2Name = $0 }
+        assignDefault(for: .trainer1, role: .trainer, gradeID: gradeID) { game2Trainer1Name = $0 }
+        assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { game2Trainer2Name = $0 }
+        assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { game2Trainer3Name = $0 }
+        assignDefault(for: .trainer4, role: .trainer, gradeID: gradeID) { game2Trainer4Name = $0 }
         if let gradeID, let grade = resolvedGrades.first(where: { $0.id == gradeID }) {
             periodMinutes = min(max(grade.quarterLengthMinutes, 10), 30)
             if !isTimerRunning {
@@ -502,6 +553,20 @@ struct NewGameWizardView: View {
         saveLastSelection(trainer2Name, for: .trainer2, gradeID: gradeID)
         saveLastSelection(trainer3Name, for: .trainer3, gradeID: gradeID)
         saveLastSelection(trainer4Name, for: .trainer4, gradeID: gradeID)
+        if isTwoGameFlow {
+            saveLastSelection(game2HeadCoachName, for: .headCoach, gradeID: gradeID)
+            saveLastSelection(game2AssCoachName, for: .assistantCoach, gradeID: gradeID)
+            saveLastSelection(game2TeamManagerName, for: .teamManager, gradeID: gradeID)
+            saveLastSelection(game2RunnerName, for: .runner, gradeID: gradeID)
+            saveLastSelection(game2GoalUmpireName, for: .goalUmpire, gradeID: gradeID)
+            saveLastSelection(game2FieldUmpireName, for: .fieldUmpire, gradeID: gradeID)
+            saveLastSelection(game2BoundaryUmpire1Name, for: .boundaryUmpire1, gradeID: gradeID)
+            saveLastSelection(game2BoundaryUmpire2Name, for: .boundaryUmpire2, gradeID: gradeID)
+            saveLastSelection(game2Trainer1Name, for: .trainer1, gradeID: gradeID)
+            saveLastSelection(game2Trainer2Name, for: .trainer2, gradeID: gradeID)
+            saveLastSelection(game2Trainer3Name, for: .trainer3, gradeID: gradeID)
+            saveLastSelection(game2Trainer4Name, for: .trainer4, gradeID: gradeID)
+        }
     }
 
     // MARK: Ordering helpers
@@ -544,6 +609,16 @@ struct NewGameWizardView: View {
     private var selectedGrade: Grade? {
         guard let gid = gradeID else { return nil }
         return resolvedGrades.first(where: { $0.id == gid })
+    }
+
+    private var shouldAskGameCount: Bool {
+        guard let grade = selectedGrade else { return false }
+        let normalized = grade.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "under 9's" || normalized == "under 12's"
+    }
+
+    private var isTwoGameFlow: Bool {
+        shouldAskGameCount && gameCountSelection == .two
     }
 
     private var requiredBestPlayersCount: Int {
@@ -689,12 +764,19 @@ struct NewGameWizardView: View {
 
     private func selectedBestPlayerID(for rankIndex: Int?) -> UUID? {
         guard let rankIndex, bestRanked.indices.contains(rankIndex) else { return nil }
-        return bestRanked[rankIndex]
+        let source = bestPlayerPickerGameNumber == 2 ? bestRankedGame2 : bestRanked
+        return source[rankIndex]
     }
 
     private func clearBestPlayer(at rankIndex: Int?) {
-        guard let rankIndex, bestRanked.indices.contains(rankIndex) else { return }
-        bestRanked[rankIndex] = nil
+        guard let rankIndex else { return }
+        if bestPlayerPickerGameNumber == 2 {
+            guard bestRankedGame2.indices.contains(rankIndex) else { return }
+            bestRankedGame2[rankIndex] = nil
+        } else {
+            guard bestRanked.indices.contains(rankIndex) else { return }
+            bestRanked[rankIndex] = nil
+        }
     }
 
     // MARK: Validation
@@ -718,7 +800,14 @@ struct NewGameWizardView: View {
                 (!asksTeamManager || !finalTeamManager.isEmpty) &&
                 (!asksRunner || !finalRunner.isEmpty)
 
-            return coachingOK
+            if !isTwoGameFlow { return coachingOK }
+            let coachingGame2OK =
+                (!asksHeadCoach || !finalGame2HeadCoach.isEmpty) &&
+                (!asksAssistantCoach || !finalGame2AssCoach.isEmpty) &&
+                (!asksTeamManager || !finalGame2TeamManager.isEmpty) &&
+                (!asksRunner || !finalGame2Runner.isEmpty)
+
+            return coachingOK && coachingGame2OK
 
         case .officials:
             let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
@@ -736,7 +825,18 @@ struct NewGameWizardView: View {
                 !(asksBoundaryUmpire1 && asksBoundaryUmpire2 &&
                   !finalBoundary1.isEmpty && finalBoundary1 == finalBoundary2)
 
-            return officialsCompleted && boundarySelectionIsUnique
+            if !isTwoGameFlow { return officialsCompleted && boundarySelectionIsUnique }
+            let officialsGame2Completed =
+                (!asksGoalUmpire || !finalGame2GoalUmpire.isEmpty) &&
+                (!asksFieldUmpire || !finalGame2FieldUmpire.isEmpty) &&
+                (!asksBoundaryUmpire1 || !finalGame2Boundary1.isEmpty) &&
+                (!asksBoundaryUmpire2 || !finalGame2Boundary2.isEmpty)
+
+            let boundaryGame2SelectionIsUnique =
+                !(asksBoundaryUmpire1 && asksBoundaryUmpire2 &&
+                  !finalGame2Boundary1.isEmpty && finalGame2Boundary1 == finalGame2Boundary2)
+
+            return officialsCompleted && boundarySelectionIsUnique && officialsGame2Completed && boundaryGame2SelectionIsUnique
 
         case .medical:
             // This step is informational/optional; never block navigation here.
@@ -752,7 +852,11 @@ struct NewGameWizardView: View {
 
         case .best:
             let ids = bestRanked.compactMap { $0 }
-            return ids.count == requiredBestPlayersCount && Set(ids).count == requiredBestPlayersCount
+            let game1OK = ids.count == requiredBestPlayersCount && Set(ids).count == requiredBestPlayersCount
+            if !isTwoGameFlow { return game1OK }
+            let game2IDs = bestRankedGame2.compactMap { $0 }
+            let game2OK = game2IDs.count == requiredBestPlayersCount && Set(game2IDs).count == requiredBestPlayersCount
+            return game1OK && game2OK
 
         case .votes:
             return guestBestFairestVotesScanPDF != nil
@@ -888,6 +992,7 @@ struct NewGameWizardView: View {
             guard !isRestoringDraft else { return }
             applyDefaults(for: newGrade)
             syncBestPlayersSelectionCount()
+            gameCountSelection = .one
             step = .setup
             entryMode = nil
             liveGameSessionSaved = false
@@ -1220,6 +1325,7 @@ struct NewGameWizardView: View {
 
         isRestoringDraft = true
         editingGame = draft
+        gameCountSelection = .one
         gradeID = draft.gradeID
         date = draft.date
         opponentName = draft.opponent
@@ -1298,6 +1404,14 @@ struct NewGameWizardView: View {
                 }
 
                 Section("Game details") {
+                    if shouldAskGameCount {
+                        Picker("How many games?", selection: $gameCountSelection) {
+                            ForEach(GameCountSelection.allCases) { option in
+                                Text(option.label).tag(option)
+                            }
+                        }
+                    }
+
                     DatePicker("Date & time", selection: $date, displayedComponents: [.date, .hourAndMinute])
 
                     formSelectorRow(title: "Opponent", value: opponentName) {
@@ -1400,7 +1514,7 @@ struct NewGameWizardView: View {
         ScrollView {
             VStack(spacing: 14) {
 
-                StaffCard(title: "Coaching", systemImage: "person.2.fill") {
+                StaffCard(title: isTwoGameFlow ? "Game 1 · Coaching" : "Coaching", systemImage: "person.2.fill") {
                     if selectedGrade?.asksHeadCoach ?? true {
                         StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $headCoachName)
                     }
@@ -1414,6 +1528,23 @@ struct NewGameWizardView: View {
                         StaffPickerField(title: "Runner", role: .runner, gradeID: gradeID, value: $runnerName)
                     }
                 }
+
+                if isTwoGameFlow {
+                    StaffCard(title: "Game 2 · Coaching", systemImage: "person.2.fill") {
+                        if selectedGrade?.asksHeadCoach ?? true {
+                            StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $game2HeadCoachName)
+                        }
+                        if selectedGrade?.asksAssistantCoach ?? true {
+                            StaffPickerField(title: "Assistant Coach", role: .assistantCoach, gradeID: gradeID, value: $game2AssCoachName)
+                        }
+                        if selectedGrade?.asksTeamManager ?? true {
+                            StaffPickerField(title: "Team Manager", role: .teamManager, gradeID: gradeID, value: $game2TeamManagerName)
+                        }
+                        if selectedGrade?.asksRunner ?? true {
+                            StaffPickerField(title: "Runner", role: .runner, gradeID: gradeID, value: $game2RunnerName)
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -1425,7 +1556,7 @@ struct NewGameWizardView: View {
     private var officialsStep: some View {
         ScrollView {
             VStack(spacing: 14) {
-                StaffCard(title: "Officials", systemImage: "flag.fill") {
+                StaffCard(title: isTwoGameFlow ? "Game 1 · Officials" : "Officials", systemImage: "flag.fill") {
                     if selectedGrade?.asksGoalUmpire ?? true {
                         StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
                     }
@@ -1462,6 +1593,45 @@ struct NewGameWizardView: View {
                     }
                 }
 
+                if isTwoGameFlow {
+                    StaffCard(title: "Game 2 · Officials", systemImage: "flag.fill") {
+                        if selectedGrade?.asksGoalUmpire ?? true {
+                            StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $game2GoalUmpireName)
+                        }
+                        if selectedGrade?.asksFieldUmpire ?? true {
+                            StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $game2FieldUmpireName)
+                        }
+
+                        let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
+                        let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
+
+                        if asksBoundaryUmpire1 {
+                            StaffPickerField(
+                                title: "Boundary Umpire 1",
+                                role: .boundaryUmpire,
+                                gradeID: gradeID,
+                                value: $game2BoundaryUmpire1Name
+                            )
+                        }
+
+                        if asksBoundaryUmpire2 {
+                            StaffPickerField(
+                                title: "Boundary Umpire 2",
+                                role: .boundaryUmpire,
+                                gradeID: gradeID,
+                                value: $game2BoundaryUmpire2Name
+                            )
+                        }
+
+                        if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalGame2Boundary1.isEmpty, finalGame2Boundary1 == finalGame2Boundary2 {
+                            Text("Boundary Umpire 1 and 2 can’t be the same.")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .padding(.top, 6)
+                        }
+                    }
+                }
+
             }
             .padding(.horizontal, isCompactLayout ? 16 : 26)
             .padding(.top, isCompactLayout ? 12 : 18)
@@ -1475,7 +1645,7 @@ struct NewGameWizardView: View {
     private var medicalStep: some View {
         ScrollView {
             VStack(spacing: 14) {
-                StaffCard(title: "Medical & Trainers", systemImage: "cross.case.fill") {
+                StaffCard(title: isTwoGameFlow ? "Game 1 · Medical & Trainers" : "Medical & Trainers", systemImage: "cross.case.fill") {
                     if selectedGrade?.asksTrainer1 ?? true {
                         StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
                     }
@@ -1494,6 +1664,30 @@ struct NewGameWizardView: View {
                         !(selectedGrade?.asksTrainer4 ?? true) {
                         Text("Trainer fields are disabled for this grade.")
                             .foregroundStyle(.secondary)
+                    }
+                }
+
+                if isTwoGameFlow {
+                    StaffCard(title: "Game 2 · Medical & Trainers", systemImage: "cross.case.fill") {
+                        if selectedGrade?.asksTrainer1 ?? true {
+                            StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $game2Trainer1Name)
+                        }
+                        if selectedGrade?.asksTrainer2 ?? true {
+                            StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $game2Trainer2Name)
+                        }
+                        if selectedGrade?.asksTrainer3 ?? true {
+                            StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $game2Trainer3Name)
+                        }
+                        if selectedGrade?.asksTrainer4 ?? true {
+                            StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $game2Trainer4Name)
+                        }
+                        if !(selectedGrade?.asksTrainer1 ?? true) &&
+                            !(selectedGrade?.asksTrainer2 ?? true) &&
+                            !(selectedGrade?.asksTrainer3 ?? true) &&
+                            !(selectedGrade?.asksTrainer4 ?? true) {
+                            Text("Trainer fields are disabled for this grade.")
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -1976,13 +2170,14 @@ struct NewGameWizardView: View {
 
     private var bestStep: some View {
         Form {
-            Section("Best players (ranked 1–\(requiredBestPlayersCount))") {
+            Section(isTwoGameFlow ? "Game 1 · Best players (ranked 1–\(requiredBestPlayersCount))" : "Best players (ranked 1–\(requiredBestPlayersCount))") {
                 if eligiblePlayers.isEmpty {
                     Text("Add players to this grade first.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
                         Button {
+                            bestPlayerPickerGameNumber = 1
                             bestPlayerPickerPrompt = idx
                         } label: {
                             HStack(spacing: 12) {
@@ -1998,6 +2193,32 @@ struct NewGameWizardView: View {
                         .buttonStyle(.plain)
                     }
                     if hasDuplicateBestPlayers {
+                        Text("Duplicate players selected. Each rank must be a different player.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            if isTwoGameFlow {
+                Section("Game 2 · Best players (ranked 1–\(requiredBestPlayersCount))") {
+                    ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
+                        Button {
+                            bestPlayerPickerGameNumber = 2
+                            bestPlayerPickerPrompt = idx
+                        } label: {
+                            HStack(spacing: 12) {
+                                rowLabel(bestLabel(for: idx))
+                                Spacer()
+                                rowValue(playerName(for: bestRankedGame2[idx]))
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if hasDuplicateBestPlayersGame2 {
                         Text("Duplicate players selected. Each rank must be a different player.")
                             .font(.caption)
                             .foregroundStyle(.red)
@@ -2031,7 +2252,7 @@ struct NewGameWizardView: View {
                     ForEach(eligiblePlayers) { player in
                         Button {
                             if let rank = bestPlayerPickerPrompt {
-                                setBestPlayer(player.id, at: rank)
+                                setBestPlayer(player.id, at: rank, gameNumber: bestPlayerPickerGameNumber)
                             }
                             bestPlayerPickerPrompt = nil
                         } label: {
@@ -2044,7 +2265,7 @@ struct NewGameWizardView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
-                .navigationTitle("Select Best Player")
+                .navigationTitle(isTwoGameFlow ? "Select Best Player · Game \(bestPlayerPickerGameNumber)" : "Select Best Player")
                 .navigationBarTitleDisplayMode(.inline)
                 .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
                 .toolbar {
@@ -2154,10 +2375,22 @@ struct NewGameWizardView: View {
         return ids.count != Set(ids).count
     }
 
-    private func setBestPlayer(_ id: UUID, at index: Int) {
-        bestRanked[index] = id
-        for i in 0..<requiredBestPlayersCount where i != index {
-            if bestRanked[i] == id { bestRanked[i] = nil }
+    private var hasDuplicateBestPlayersGame2: Bool {
+        let ids = Array(bestRankedGame2.prefix(requiredBestPlayersCount)).compactMap { $0 }
+        return ids.count != Set(ids).count
+    }
+
+    private func setBestPlayer(_ id: UUID, at index: Int, gameNumber: Int) {
+        if gameNumber == 2 {
+            bestRankedGame2[index] = id
+            for i in 0..<requiredBestPlayersCount where i != index {
+                if bestRankedGame2[i] == id { bestRankedGame2[i] = nil }
+            }
+        } else {
+            bestRanked[index] = id
+            for i in 0..<requiredBestPlayersCount where i != index {
+                if bestRanked[i] == id { bestRanked[i] = nil }
+            }
         }
     }
 
@@ -2179,6 +2412,11 @@ struct NewGameWizardView: View {
             bestRanked.append(contentsOf: Array(repeating: nil, count: targetCount - bestRanked.count))
         } else if bestRanked.count > targetCount {
             bestRanked = Array(bestRanked.prefix(targetCount))
+        }
+        if bestRankedGame2.count < targetCount {
+            bestRankedGame2.append(contentsOf: Array(repeating: nil, count: targetCount - bestRankedGame2.count))
+        } else if bestRankedGame2.count > targetCount {
+            bestRankedGame2 = Array(bestRankedGame2.prefix(targetCount))
         }
     }
 
@@ -2208,8 +2446,12 @@ struct NewGameWizardView: View {
         let asksVotesScan = selectedGrade?.asksGuestBestFairestVotesScan ?? false
 
         let bestIDs = bestPlayersCount > 0 ? Array(bestRanked.prefix(bestPlayersCount)).compactMap { $0 } : []
+        let game2BestIDs = bestPlayersCount > 0 ? Array(bestRankedGame2.prefix(bestPlayersCount)).compactMap { $0 } : []
         if enforceCompletionRequirements && bestPlayersCount > 0 {
             guard bestIDs.count == bestPlayersCount, Set(bestIDs).count == bestPlayersCount else { return nil }
+            if isTwoGameFlow {
+                guard game2BestIDs.count == bestPlayersCount, Set(game2BestIDs).count == bestPlayersCount else { return nil }
+            }
         }
         if enforceCompletionRequirements && asksVotesScan {
             guard guestBestFairestVotesScanPDF != nil else { return nil }
@@ -2275,6 +2517,35 @@ struct NewGameWizardView: View {
             )
             modelContext.insert(newGame)
             game = newGame
+
+            if isTwoGameFlow {
+                let game2 = Game(
+                    id: UUID(),
+                    gradeID: gid,
+                    date: date,
+                    opponent: finalOpponent,
+                    venue: finalVenue,
+                    ourGoals: ourGoals,
+                    ourBehinds: ourBehinds,
+                    theirGoals: theirGoals,
+                    theirBehinds: theirBehinds,
+                    goalKickers: modelGoalKickers,
+                    bestPlayersRanked: game2BestIDs,
+                    headCoachName: finalGame2HeadCoach,
+                    assistantCoachName: finalGame2AssCoach,
+                    teamManagerName: finalGame2TeamManager,
+                    runnerName: finalGame2Runner,
+                    goalUmpireName: finalGame2GoalUmpire,
+                    fieldUmpireName: finalGame2FieldUmpire,
+                    boundaryUmpire1Name: finalGame2Boundary1,
+                    boundaryUmpire2Name: finalGame2Boundary2,
+                    trainers: selectedGame2TrainerNames,
+                    notes: cleanedNotes,
+                    guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF,
+                    isDraft: asDraft
+                )
+                modelContext.insert(game2)
+            }
         }
 
         // Persist the last selected staff for this grade so new entries can default to them.
