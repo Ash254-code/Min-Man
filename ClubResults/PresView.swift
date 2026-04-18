@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct PresView: View {
-    private struct GradePresentationSection: Identifiable {
+    fileprivate struct GradePresentationSection: Identifiable {
         let grade: Grade
         let games: [Game]
 
@@ -13,17 +13,11 @@ struct PresView: View {
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: \Player.name) private var players: [Player]   // ✅ ADD
 
-    @State private var selectedPresentationGame: Game?
-    @State private var expandedGradeIDs: Set<UUID> = []
+    @State private var selectedPresentationGrade: GradePresentationSection?
 
     // MARK: - Ordered grades (U9 → A Grade)
     private var orderedGrades: [Grade] {
         orderedGradesForDisplay(grades)
-    }
-
-    // Grade lookup helpers
-    private var gradeNameByID: [UUID: String] {
-        Dictionary(uniqueKeysWithValues: orderedGrades.map { ($0.id, $0.name) })
     }
 
     private var gradeOrderIndex: [UUID: Int] {
@@ -75,19 +69,11 @@ struct PresView: View {
         return playerNameByID[id] ?? "Unknown"
     }
 
-    private func goalKickerSummary(for game: Game) -> String {
-        goalKickerItems(for: game).joined(separator: ", ")
-    }
-
     private func goalKickerItems(for game: Game) -> [String] {
         guard !game.goalKickers.isEmpty else { return ["None recorded"] }
         return game.goalKickers
             .sorted { $0.goals > $1.goals }
             .map { "\(playerName(for: $0.playerID)) \($0.goals)" }
-    }
-
-    private func bestPlayersSummary(for game: Game) -> String {
-        bestPlayerItems(for: game).joined(separator: " • ")
     }
 
     private func bestPlayerItems(for game: Game) -> [String] {
@@ -125,49 +111,26 @@ struct PresView: View {
                     } else {
                         ForEach(gradeSections) { section in
                             Button {
-                                if expandedGradeIDs.contains(section.id) {
-                                    expandedGradeIDs.remove(section.id)
-                                } else {
-                                    expandedGradeIDs.insert(section.id)
-                                }
+                                selectedPresentationGrade = section
                             } label: {
                                 PresGradeRow(
                                     gradeName: section.grade.name,
-                                    gameCount: section.games.count,
-                                    isExpanded: expandedGradeIDs.contains(section.id)
+                                    gameCount: section.games.count
                                 )
                             }
                             .buttonStyle(.plain)
-
-                            if expandedGradeIDs.contains(section.id) {
-                                ForEach(section.games) { game in
-                                    Button {
-                                        selectedPresentationGame = game
-                                    } label: {
-                                        PresentationExpandableGameCard(
-                                            game: game,
-                                            showScore: shouldShowScore(for: section.id),
-                                            goalKickers: goalKickerSummary(for: game),
-                                            bestPlayers: bestPlayersSummary(for: game)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 8, trailing: 16))
-                                }
-                            }
                         }
                     }
                 }
             }
             .navigationTitle("Pres")
-            .fullScreenCover(item: $selectedPresentationGame) { game in
-                PresentationGameFullScreenView(
-                    game: game,
-                    gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
-                    showScore: shouldShowScore(for: game.gradeID),
+            .fullScreenCover(item: $selectedPresentationGrade) { selectedGrade in
+                PresentationGradeFullScreenView(
+                    section: selectedGrade,
+                    shouldShowScore: shouldShowScore(for: selectedGrade.id),
                     ourTeamName: clubConfiguration.clubTeam.name,
-                    goalKickers: goalKickerItems(for: game),
-                    bestPlayers: bestPlayerItems(for: game),
+                    goalKickerItems: goalKickerItems(for:),
+                    bestPlayerItems: bestPlayerItems(for:),
                     clubConfiguration: clubConfiguration
                 )
             }
@@ -178,7 +141,6 @@ struct PresView: View {
 private struct PresGradeRow: View {
     let gradeName: String
     let gameCount: Int
-    let isExpanded: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -188,7 +150,7 @@ private struct PresGradeRow: View {
             Text("\(gameCount) game\(gameCount == 1 ? "" : "s")")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+            Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(.secondary)
         }
@@ -196,70 +158,19 @@ private struct PresGradeRow: View {
     }
 }
 
-private struct PresentationExpandableGameCard: View {
-    let game: Game
-    let showScore: Bool
-    let goalKickers: String
-    let bestPlayers: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("vs \(game.opponent)")
-                    .font(.system(size: 18, weight: .bold))
-                Spacer()
-                Text(game.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-
-            if showScore {
-                Text("Score: \(game.ourGoals).\(game.ourBehinds) (\(game.ourScore)) — \(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
-                    .font(.system(size: 16, weight: .semibold))
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Goal Kickers")
-                    .font(.system(size: 14, weight: .bold))
-                Text(goalKickers)
-                    .font(.system(size: 14))
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Best Players")
-                    .font(.system(size: 14, weight: .bold))
-                Text(bestPlayers)
-                    .font(.system(size: 14))
-            }
-        }
-        .padding(12)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-private struct PresentationGameFullScreenView: View {
+private struct PresentationGradeFullScreenView: View {
     @Environment(\.dismiss) private var dismiss
 
-    let game: Game
-    let gradeName: String
-    let showScore: Bool
+    let section: PresView.GradePresentationSection
+    let shouldShowScore: Bool
     let ourTeamName: String
-    let goalKickers: [String]
-    let bestPlayers: [String]
+    let goalKickerItems: (Game) -> [String]
+    let bestPlayerItems: (Game) -> [String]
     let clubConfiguration: ClubConfiguration
 
     private var ourTeamLabel: String {
         let cleaned = ourTeamName.trimmingCharacters(in: .whitespacesAndNewlines)
         return cleaned.isEmpty ? "Our Team" : cleaned
-    }
-
-    private var ourScoreline: String {
-        "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
-    }
-
-    private var theirScoreline: String {
-        "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
     }
 
     var body: some View {
@@ -268,62 +179,23 @@ private struct PresentationGameFullScreenView: View {
                 Color(.systemBackground)
                     .ignoresSafeArea()
 
-                VStack(alignment: .leading, spacing: 26) {
-                    HStack(alignment: .center, spacing: 20) {
-                        ScorePill(
-                            ourTeamLabel,
-                            style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
-                        )
-                        .scaleEffect(proxy.size.width > 1000 ? 1.8 : 1.6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(section.grade.name)
+                        .font(.system(size: proxy.size.width > 1000 ? 56 : 42, weight: .black))
+                        .padding(.top, 8)
 
-                        if showScore {
-                            HStack(spacing: 18) {
-                                Text(ourScoreline)
-                                    .font(.system(size: proxy.size.width > 1000 ? 76 : 56, weight: .black))
-                                    .minimumScaleFactor(0.65)
-                                Text("—")
-                                    .font(.system(size: proxy.size.width > 1000 ? 58 : 44, weight: .heavy))
-                                    .foregroundStyle(.secondary)
-                                Text(theirScoreline)
-                                    .font(.system(size: proxy.size.width > 1000 ? 76 : 56, weight: .black))
-                                    .minimumScaleFactor(0.65)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 28) {
+                            ForEach(section.games) { game in
+                                presentationGameCard(
+                                    game: game,
+                                    width: proxy.size.width
+                                )
                             }
-                            .frame(maxWidth: .infinity)
                         }
-
-                        ScorePill(
-                            game.opponent,
-                            style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
-                        )
-                        .scaleEffect(proxy.size.width > 1000 ? 1.8 : 1.6)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.bottom, 10)
                     }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(gradeName) • vs \(game.opponent)")
-                            .font(.system(size: 30, weight: .bold))
-                            .minimumScaleFactor(0.8)
-                        Text(game.date.formatted(date: .complete, time: .omitted))
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Divider()
-
-                    HStack(alignment: .top, spacing: 28) {
-                        presentationListColumn(
-                            title: "Goal Kickers",
-                            items: goalKickers,
-                            style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
-                        )
-                        presentationListColumn(
-                            title: "Best Players",
-                            items: bestPlayers,
-                            style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
-                        )
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .scrollIndicators(.hidden)
                 }
                 .padding(.horizontal, 32)
                 .padding(.top, 34)
@@ -342,33 +214,87 @@ private struct PresentationGameFullScreenView: View {
     }
 
     @ViewBuilder
-    private func presentationListColumn(title: String, items: [String], style: ClubStyle.Style) -> some View {
+    private func presentationGameCard(game: Game, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .center, spacing: 20) {
+                ScorePill(
+                    ourTeamLabel,
+                    style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
+                )
+                .scaleEffect(width > 1000 ? 1.5 : 1.3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if shouldShowScore {
+                    HStack(spacing: 14) {
+                        Text("\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))")
+                            .font(.system(size: width > 1000 ? 52 : 42, weight: .black))
+                            .minimumScaleFactor(0.7)
+                        Text("—")
+                            .font(.system(size: width > 1000 ? 42 : 34, weight: .heavy))
+                            .foregroundStyle(.secondary)
+                        Text("\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
+                            .font(.system(size: width > 1000 ? 52 : 42, weight: .black))
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                ScorePill(
+                    game.opponent,
+                    style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
+                )
+                .scaleEffect(width > 1000 ? 1.5 : 1.3)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            Text(game.date.formatted(date: .complete, time: .omitted))
+                .font(.system(size: width > 1000 ? 28 : 22, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .top, spacing: 28) {
+                presentationListColumn(
+                    title: "Goal Kickers",
+                    items: goalKickerItems(game),
+                    style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration),
+                    width: width
+                )
+                presentationListColumn(
+                    title: "Best Players",
+                    items: bestPlayerItems(game),
+                    style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration),
+                    width: width
+                )
+            }
+        }
+        .padding(24)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func presentationListColumn(title: String, items: [String], style: ClubStyle.Style, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(title)
-                .font(.system(size: 36, weight: .heavy))
+                .font(.system(size: width > 1000 ? 38 : 32, weight: .heavy))
                 .foregroundStyle(style.text)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                        HStack(alignment: .top, spacing: 10) {
-                            Text("\(index + 1).")
-                                .font(.system(size: 28, weight: .black))
-                                .foregroundStyle(style.text)
-                            Text(item)
-                                .font(.system(size: 32, weight: .semibold))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .padding(.vertical, 8)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("\(index + 1).")
+                            .font(.system(size: width > 1000 ? 30 : 26, weight: .black))
+                            .foregroundStyle(style.text)
+                        Text(item)
+                            .font(.system(size: width > 1000 ? 34 : 28, weight: .semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .font(.system(size: 26, weight: .bold))
+                    .padding(.vertical, 8)
                 }
-                .padding(20)
             }
-            .scrollIndicators(.hidden)
+            .padding(20)
             .background(style.background.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
