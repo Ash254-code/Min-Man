@@ -210,7 +210,6 @@ struct GamesView: View {
 
                         NewGameQuickStartSection(
                             grades: orderedGrades,
-                            games: games,
                             minHeight: geometry.size.height * 0.33,
                             statusForGrade: gradeStatus(for:),
                             onStartNewGame: { gradeID in
@@ -373,8 +372,6 @@ private struct NewGameQuickStartSection: View {
     typealias GradeStatus = GamesView.QuickStartGradeStatus
 
     let grades: [Grade]
-    let games: [Game]
-    let statusProvider: (@Sendable (UUID) -> GradeStatus)? = nil
     let minHeight: CGFloat
     let statusForGrade: (UUID) -> GradeStatus
     let onStartNewGame: (UUID) -> Void
@@ -384,20 +381,6 @@ private struct NewGameQuickStartSection: View {
     private var columns: [GridItem] {
         let count = horizontalSizeClass == .compact ? 2 : 3
         return Array(repeating: GridItem(.flexible(), spacing: 14), count: count)
-    }
-
-    private func status(for gradeID: UUID) -> GradeStatus {
-        if let statusProvider {
-            return statusProvider(gradeID)
-        }
-        let gradeGames = games.filter { $0.gradeID == gradeID }
-        if gradeGames.contains(where: { !$0.isDraft }) {
-            return .gameSaved
-        }
-        if !gradeGames.isEmpty {
-            return .draftOnly
-        }
-        return .noGameSaved
     }
 
     var body: some View {
@@ -416,7 +399,6 @@ private struct NewGameQuickStartSection: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 14) {
                     ForEach(grades) { grade in
-                        let status = status(for: grade.id)
                         Button {
                             onStartNewGame(grade.id)
                         } label: {
