@@ -4,7 +4,7 @@ import PDFKit
 import UIKit
 
 struct SettingsView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
     @State private var saveErrorMessage: String?
 
     var body: some View {
@@ -115,7 +115,7 @@ struct SettingsView: View {
 }
 
 private struct AdminNameResetView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
     @Query private var grades: [Grade]
     @Query private var staffMembers: [StaffMember]
 
@@ -454,7 +454,7 @@ private struct BoundaryUmpiresSettingsView: View {
 }
 
 private struct ClubGradesSettingsView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
 
     @State private var grades: [Grade] = []
     @Query private var players: [Player]
@@ -1056,7 +1056,7 @@ private struct AddGradeWizardView: View {
 }
 
 private struct ContactsSettingsView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
 
     @State private var contacts: [Contact] = []
     @Query private var reportRecipients: [ReportRecipient]
@@ -1380,7 +1380,7 @@ private struct ContactEditSheet: View {
 }
 
 private struct ReportsSettingsView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
     @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
@@ -2200,7 +2200,7 @@ private struct CustomReportEditView: View {
 }
 
 private struct ReportRecipientsSettingsView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
 
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
