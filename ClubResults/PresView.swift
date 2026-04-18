@@ -254,87 +254,72 @@ private struct PresentationGameFullScreenView: View {
         return cleaned.isEmpty ? "Our Team" : cleaned
     }
 
+    private var ourScoreline: String {
+        "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
+    }
+
+    private var theirScoreline: String {
+        "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
+    }
+
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(gradeName)
-                                .font(.system(size: 52, weight: .black))
-                            Text("vs \(game.opponent)")
-                                .font(.system(size: 36, weight: .bold))
-                            Text(game.date.formatted(date: .complete, time: .omitted))
-                                .font(.system(size: 24, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(gradeName)
+                            .font(.system(size: 52, weight: .black))
+                            .minimumScaleFactor(0.8)
+                        Text("vs \(game.opponent)")
+                            .font(.system(size: 36, weight: .bold))
+                            .minimumScaleFactor(0.8)
+                        Text(game.date.formatted(date: .complete, time: .omitted))
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack(alignment: .center, spacing: 20) {
+                        ScorePill(
+                            ourTeamLabel,
+                            style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
+                        )
+                        .scaleEffect(1.6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                         if showScore {
-                            VStack(spacing: 14) {
-                                Text("\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))")
-                                    .font(.system(size: 72, weight: .black))
+                            HStack(spacing: 18) {
+                                Text(ourScoreline)
+                                    .font(.system(size: proxy.size.width > 900 ? 72 : 54, weight: .black))
                                     .minimumScaleFactor(0.7)
-                                Text("-")
-                                    .font(.system(size: 44, weight: .bold))
+                                Text("—")
+                                    .font(.system(size: proxy.size.width > 900 ? 56 : 42, weight: .heavy))
                                     .foregroundStyle(.secondary)
-                                Text("\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
-                                    .font(.system(size: 72, weight: .black))
+                                Text(theirScoreline)
+                                    .font(.system(size: proxy.size.width > 900 ? 72 : 54, weight: .black))
                                     .minimumScaleFactor(0.7)
-                                    .foregroundStyle(.secondary)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
                         }
 
-                        HStack(spacing: 20) {
-                            ScorePill(
-                                ourTeamLabel,
-                                style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
-                            )
-                            .scaleEffect(1.4)
-
-                            ScorePill(
-                                game.opponent,
-                                style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
-                            )
-                            .scaleEffect(1.4)
-                        }
-                        .padding(.top, 4)
-                        .padding(.bottom, 12)
-
-                        HStack(alignment: .top, spacing: 36) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                Text("Goal Kickers")
-                                    .font(.system(size: 34, weight: .heavy))
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(Array(goalKickers.enumerated()), id: \.offset) { _, item in
-                                        Text(item)
-                                            .font(.system(size: 30, weight: .medium))
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            VStack(alignment: .leading, spacing: 14) {
-                                Text("Best Players")
-                                    .font(.system(size: 34, weight: .heavy))
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(Array(bestPlayers.enumerated()), id: \.offset) { _, item in
-                                        Text(item)
-                                            .font(.system(size: 30, weight: .medium))
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(
-                            maxWidth: .infinity,
-                            alignment: proxy.size.width > 900 ? .center : .leading
+                        ScorePill(
+                            game.opponent,
+                            style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
                         )
+                        .scaleEffect(1.6)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(32)
+                    .padding(.vertical, 8)
+
+                    Divider()
+
+                    HStack(alignment: .top, spacing: 32) {
+                        presentationListColumn(title: "Goal Kickers", items: goalKickers)
+                        presentationListColumn(title: "Best Players", items: bestPlayers)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(32)
             }
             .background(Color(.systemBackground))
             .toolbar {
@@ -348,5 +333,26 @@ private struct PresentationGameFullScreenView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func presentationListColumn(title: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.system(size: 36, weight: .heavy))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                        Text(item)
+                            .font(.system(size: 32, weight: .semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
