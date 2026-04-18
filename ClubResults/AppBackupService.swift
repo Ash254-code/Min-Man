@@ -322,6 +322,7 @@ enum AppBackupImportError: LocalizedError {
     }
 }
 
+@MainActor
 enum AppBackupService {
     static let backupFormatVersion = 1
 
@@ -580,9 +581,9 @@ enum AppBackupService {
         ClubConfigurationStore.save(settings.clubConfiguration)
 
         let boundaryMappings = Dictionary(
-            uniqueKeysWithValues: settings.boundaryUmpireGradeMappings.compactMap { key, value in
-                guard let id = UUID(uuidString: key) else { return nil }
-                return (id, value)
+            uniqueKeysWithValues: settings.boundaryUmpireGradeMappings.compactMap { item in
+                guard let id = UUID(uuidString: item.key) else { return nil }
+                return (id, item.value)
             }
         )
         SettingsBackupStore.saveBoundaryUmpireGradeMappings(boundaryMappings)
