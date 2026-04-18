@@ -9,7 +9,7 @@ struct StaffPickerField: View {
 
     @Binding var value: String
 
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var staffMembers: [StaffMember]
 
@@ -202,7 +202,7 @@ struct StaffPickerField: View {
             gradeID: gradeID
         )
 
-        modelContext.insert(newStaff)
+        dataContext.insert(newStaff)
         value = trimmedNewName
 
         showAdd = false

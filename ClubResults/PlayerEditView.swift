@@ -3,7 +3,7 @@ import SwiftData
 
 struct PlayerEditView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
 
     @Bindable var player: Player
 
@@ -116,7 +116,7 @@ struct PlayerEditView: View {
                     let split = Player.splitName(nameTrimmed)
                     player.setName(firstName: split.first, lastName: split.last)
                     player.number = parsedNumber
-                    try? modelContext.save()
+                    try? dataContext.save()
                     dismiss()
                 }
                 .disabled(!canSave)

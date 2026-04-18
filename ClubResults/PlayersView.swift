@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - Players List
 
 struct PlayersView: View {
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
     @Query(sort: \Player.name) private var queriedPlayers: [Player]
     @Query private var grades: [Grade]
     @State private var playersForDisplay: [Player] = []
@@ -311,8 +311,8 @@ struct PlayersView: View {
             return
         }
 
-        modelContext.delete(player)
-        try? modelContext.save()
+        dataContext.delete(player)
+        try? dataContext.save()
         reloadPlayersFromStore()
 
         playerPendingDelete = nil
@@ -414,7 +414,7 @@ struct PlayersView: View {
         }
 
         if mode == .replaceAll {
-            for p in persistedPlayers { modelContext.delete(p) }
+            for p in persistedPlayers { dataContext.delete(p) }
         }
 
         for row in parsedRows {
@@ -458,13 +458,13 @@ struct PlayersView: View {
                     gradeIDs: gradeIDs,
                     isActive: true
                 )
-                modelContext.insert(newPlayer)
+                dataContext.insert(newPlayer)
                 existingByName[normName] = newPlayer
                 result.imported += 1
             }
         }
 
-        do { try modelContext.save() }
+        do { try dataContext.save() }
         catch { throw CSVImportError.saveFailed(error.localizedDescription) }
 
         reloadPlayersFromStore()
@@ -495,13 +495,13 @@ struct PlayersView: View {
         }
 
         let p = Player(name: trimmed, number: number, gradeIDs: gradeIDs)
-        modelContext.insert(p)
+        dataContext.insert(p)
 
         do {
-            try modelContext.save()
+            try dataContext.save()
             reloadPlayersFromStore()
         } catch {
-            modelContext.delete(p)
+            dataContext.delete(p)
             addErrorMessage = error.localizedDescription
             showAddError = true
         }
@@ -517,7 +517,7 @@ struct PlayersView: View {
         )
         // Force a read from persisted storage so the UI reflects what was truly saved.
         descriptor.includePendingChanges = false
-        return (try? modelContext.fetch(descriptor)) ?? []
+        return (try? dataContext.fetch(descriptor)) ?? []
     }
 }
 

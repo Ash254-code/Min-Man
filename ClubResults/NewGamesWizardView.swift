@@ -196,7 +196,7 @@ struct NewGameWizardView: View {
     private let clubNavy = Color(red: 0.05, green: 0.15, blue: 0.35)
     private let clubYellow = Color(red: 1.0, green: 0.82, blue: 0.0)
 
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
     @Environment(\.dismiss) private var dismiss   // ✅ allow Cancel / dismiss sheet
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -971,7 +971,7 @@ struct NewGameWizardView: View {
         }
         // ✅ Seed staff + defaults once
         .onAppear {
-            StaffSeeder.seedIfNeeded(modelContext: modelContext, grades: grades)
+            StaffSeeder.seedIfNeeded(modelContext: dataContext, grades: grades)
             clubConfiguration = ClubConfigurationStore.load()
             if !opponentName.isEmpty && !opponentNames.contains(opponentName) {
                 opponentName = ""
@@ -2515,7 +2515,7 @@ struct NewGameWizardView: View {
                 guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF,
                 isDraft: asDraft
             )
-            modelContext.insert(newGame)
+            dataContext.insert(newGame)
             game = newGame
 
             if isTwoGameFlow {
@@ -2544,14 +2544,14 @@ struct NewGameWizardView: View {
                     guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF,
                     isDraft: asDraft
                 )
-                modelContext.insert(game2)
+                dataContext.insert(game2)
             }
         }
 
         // Persist the last selected staff for this grade so new entries can default to them.
         persistCurrentStaffSelections(for: gid)
 
-        do { try modelContext.save() }
+        do { try dataContext.save() }
         catch { print("❌ Failed to save game: \(error)"); return nil }
 
         editingGame = game
