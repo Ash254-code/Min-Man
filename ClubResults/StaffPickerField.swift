@@ -9,7 +9,7 @@ struct StaffPickerField: View {
 
     @Binding var value: String
 
-    @Environment(\.modelContext) private var dataContext: ModelContext
+    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var staffMembers: [StaffMember]
 

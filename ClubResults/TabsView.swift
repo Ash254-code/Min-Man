@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct TabsView: View {
-    @Environment(\.modelContext) private var dataContext: ModelContext
+    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
 
     var body: some View {
         TabView {
