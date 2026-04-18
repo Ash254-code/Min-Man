@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import UIKit
+import UniformTypeIdentifiers
 
 struct AppBackupEnvelope: Codable {
     let appName: String
@@ -288,6 +289,11 @@ struct FullBackupExportResult {
     let fileSizeBytes: UInt64
 }
 
+struct FullBackupImportResult {
+    let importedAt: Date
+    let itemCounts: AppBackupItemCounts
+}
+
 enum AppBackupExportError: LocalizedError {
     case failedToReadFileSize
 
@@ -295,6 +301,23 @@ enum AppBackupExportError: LocalizedError {
         switch self {
         case .failedToReadFileSize:
             return "Backup was created, but the file size could not be read."
+        }
+    }
+}
+
+enum AppBackupImportError: LocalizedError {
+    case invalidFileType
+    case unsupportedBackupFormat(version: Int)
+    case unsupportedSchema(version: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidFileType:
+            return "Please select a valid JSON backup file."
+        case let .unsupportedBackupFormat(version):
+            return "This backup format (\(version)) is not supported by this app version."
+        case let .unsupportedSchema(version):
+            return "This backup schema (\(version)) is not supported by this app version."
         }
     }
 }
@@ -364,6 +387,223 @@ enum AppBackupService {
         }
 
         return FullBackupExportResult(fileURL: fileURL, itemCounts: counts, exportedAt: now, fileSizeBytes: fileSize)
+    }
+
+    static func previewBackupFile(url: URL) throws -> AppBackupEnvelope {
+        guard url.pathExtension.lowercased() == "json"
+                || UTType(filenameExtension: url.pathExtension)?.conforms(to: .json) == true else {
+            throw AppBackupImportError.invalidFileType
+        }
+
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let envelope = try decoder.decode(AppBackupEnvelope.self, from: data)
+        try validateEnvelope(envelope)
+        return envelope
+    }
+
+    static func importFullBackupFile(url: URL, modelContext: ModelContext) throws -> FullBackupImportResult {
+        let envelope = try previewBackupFile(url: url)
+
+        clearExistingData(modelContext: modelContext)
+        importPayload(envelope.payload, into: modelContext)
+        applySettings(envelope.payload.appSettings)
+        try modelContext.save()
+
+        return FullBackupImportResult(importedAt: Date(), itemCounts: envelope.itemCounts)
+    }
+
+    private static func validateEnvelope(_ envelope: AppBackupEnvelope) throws {
+        guard envelope.backupFormatVersion <= backupFormatVersion else {
+            throw AppBackupImportError.unsupportedBackupFormat(version: envelope.backupFormatVersion)
+        }
+        guard envelope.schemaVersion <= backupFormatVersion else {
+            throw AppBackupImportError.unsupportedSchema(version: envelope.schemaVersion)
+        }
+    }
+
+    private static func clearExistingData(modelContext: ModelContext) {
+        let grades = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
+        grades.forEach { modelContext.delete($0) }
+
+        let players = (try? modelContext.fetch(FetchDescriptor<Player>())) ?? []
+        players.forEach { modelContext.delete($0) }
+
+        let games = (try? modelContext.fetch(FetchDescriptor<Game>())) ?? []
+        games.forEach { modelContext.delete($0) }
+
+        let contacts = (try? modelContext.fetch(FetchDescriptor<Contact>())) ?? []
+        contacts.forEach { modelContext.delete($0) }
+
+        let recipients = (try? modelContext.fetch(FetchDescriptor<ReportRecipient>())) ?? []
+        recipients.forEach { modelContext.delete($0) }
+
+        let templates = (try? modelContext.fetch(FetchDescriptor<CustomReportTemplate>())) ?? []
+        templates.forEach { modelContext.delete($0) }
+
+        let staffMembers = (try? modelContext.fetch(FetchDescriptor<StaffMember>())) ?? []
+        staffMembers.forEach { modelContext.delete($0) }
+
+        let staffDefaults = (try? modelContext.fetch(FetchDescriptor<StaffDefault>())) ?? []
+        staffDefaults.forEach { modelContext.delete($0) }
+    }
+
+    private static func importPayload(_ payload: AppBackupPayload, into modelContext: ModelContext) {
+        payload.grades.forEach {
+            modelContext.insert(
+                Grade(
+                    id: $0.id,
+                    name: $0.name,
+                    isActive: $0.isActive,
+                    displayOrder: $0.displayOrder,
+                    asksHeadCoach: $0.asksHeadCoach,
+                    asksAssistantCoach: $0.asksAssistantCoach,
+                    asksTeamManager: $0.asksTeamManager,
+                    asksRunner: $0.asksRunner,
+                    asksGoalUmpire: $0.asksGoalUmpire,
+                    asksFieldUmpire: $0.asksFieldUmpire,
+                    asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
+                    asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
+                    asksTrainers: $0.asksTrainers,
+                    asksTrainer1: $0.asksTrainer1,
+                    asksTrainer2: $0.asksTrainer2,
+                    asksTrainer3: $0.asksTrainer3,
+                    asksTrainer4: $0.asksTrainer4,
+                    asksNotes: $0.asksNotes,
+                    asksScore: $0.asksScore,
+                    asksLiveGameView: $0.asksLiveGameView,
+                    asksGoalKickers: $0.asksGoalKickers,
+                    bestPlayersCount: $0.bestPlayersCount,
+                    asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                    allowsLiveGameView: $0.allowsLiveGameView,
+                    quarterLengthMinutes: $0.quarterLengthMinutes
+                )
+            )
+        }
+
+        payload.players.forEach {
+            modelContext.insert(
+                Player(
+                    id: $0.id,
+                    firstName: $0.firstName,
+                    lastName: $0.lastName,
+                    number: $0.number,
+                    gradeIDs: $0.gradeIDs,
+                    isActive: $0.isActive
+                )
+            )
+        }
+
+        payload.games.forEach {
+            modelContext.insert(
+                Game(
+                    id: $0.id,
+                    gradeID: $0.gradeID,
+                    date: $0.date,
+                    opponent: $0.opponent,
+                    venue: $0.venue,
+                    ourGoals: $0.ourGoals,
+                    ourBehinds: $0.ourBehinds,
+                    theirGoals: $0.theirGoals,
+                    theirBehinds: $0.theirBehinds,
+                    goalKickers: $0.goalKickers.map {
+                        GameGoalKickerEntry(id: $0.id, playerID: $0.playerID, goals: $0.goals)
+                    },
+                    bestPlayersRanked: $0.bestPlayersRanked,
+                    headCoachName: $0.headCoachName,
+                    assistantCoachName: $0.assistantCoachName,
+                    teamManagerName: $0.teamManagerName,
+                    runnerName: $0.runnerName,
+                    goalUmpireName: $0.goalUmpireName,
+                    fieldUmpireName: $0.fieldUmpireName,
+                    boundaryUmpire1Name: $0.boundaryUmpire1Name,
+                    boundaryUmpire2Name: $0.boundaryUmpire2Name,
+                    trainers: $0.trainers,
+                    notes: $0.notes,
+                    guestBestFairestVotesScanPDF: $0.guestBestFairestVotesScanPDF,
+                    isDraft: $0.isDraft
+                )
+            )
+        }
+
+        payload.contacts.forEach {
+            modelContext.insert(Contact(id: $0.id, name: $0.name, mobile: $0.mobile, email: $0.email))
+        }
+
+        payload.reportRecipients.forEach {
+            modelContext.insert(
+                ReportRecipient(
+                    id: $0.id,
+                    gradeID: $0.gradeID,
+                    contactID: $0.contactID,
+                    sendEmail: $0.sendEmail,
+                    sendText: $0.sendText
+                )
+            )
+        }
+
+        payload.customReportTemplates.forEach {
+            modelContext.insert(
+                CustomReportTemplate(
+                    id: $0.id,
+                    name: $0.name,
+                    gradeIDs: $0.gradeIDs,
+                    includeBestPlayers: $0.includeBestPlayers,
+                    includePlayerGrades: $0.includePlayerGrades,
+                    includeGoalKickers: $0.includeGoalKickers,
+                    includeGuernseyNumbers: $0.includeGuernseyNumbers,
+                    includeBestAndFairestVotes: $0.includeBestAndFairestVotes,
+                    includeStaffRoles: $0.includeStaffRoles,
+                    includeTrainers: $0.includeTrainers,
+                    includeMatchNotes: $0.includeMatchNotes,
+                    includeOnlyActiveGrades: $0.includeOnlyActiveGrades,
+                    minimumGamesPlayed: $0.minimumGamesPlayed,
+                    groupingModeRawValue: $0.groupingModeRawValue
+                )
+            )
+        }
+
+        payload.staffMembers.forEach { item in
+            guard let role = StaffRole(rawValue: item.role) else { return }
+            modelContext.insert(StaffMember(id: item.id, name: item.name, role: role, gradeID: item.gradeID))
+        }
+
+        payload.staffDefaults.forEach { item in
+            guard let role = StaffRole(rawValue: item.role) else { return }
+            modelContext.insert(StaffDefault(id: item.id, gradeID: item.gradeID, role: role, name: item.name))
+        }
+    }
+
+    private static func applySettings(_ settings: AppSettingsRecord) {
+        UserDefaults.standard.set(settings.appAppearanceRawValue, forKey: "appAppearance")
+        ClubConfigurationStore.save(settings.clubConfiguration)
+
+        let boundaryMappings = Dictionary(
+            uniqueKeysWithValues: settings.boundaryUmpireGradeMappings.compactMap { key, value in
+                guard let id = UUID(uuidString: key) else { return nil }
+                return (id, value)
+            }
+        )
+        SettingsBackupStore.saveBoundaryUmpireGradeMappings(boundaryMappings)
+
+        UserDefaults.standard.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix("lastStaffSelection.") || $0.hasPrefix("resume.openLive.") }
+            .forEach { UserDefaults.standard.removeObject(forKey: $0) }
+
+        settings.lastStaffSelections.forEach {
+            UserDefaults.standard.set($0.value, forKey: $0.key)
+        }
+        settings.draftResumeOpenLiveFlags.forEach {
+            UserDefaults.standard.set($0.value, forKey: $0.key)
+        }
+
+        if let gradesData = try? JSONEncoder().encode(settings.legacyGradesBackup) {
+            UserDefaults.standard.set(gradesData, forKey: SettingsBackupStore.gradesKey)
+        }
+        if let contactsData = try? JSONEncoder().encode(settings.legacyContactsBackup) {
+            UserDefaults.standard.set(contactsData, forKey: SettingsBackupStore.contactsKey)
+        }
     }
 
     private static func exportSettings() -> AppSettingsRecord {

@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import PDFKit
 import UIKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
@@ -127,6 +128,12 @@ private struct BackupAndRestoreSettingsView: View {
     @State private var exportSuccessMessage: String?
     @State private var exportErrorMessage: String?
     @State private var isExporting = false
+    @State private var isImportPickerPresented = false
+    @State private var pendingImportURL: URL?
+    @State private var pendingImportEnvelope: AppBackupEnvelope?
+    @State private var importSuccessMessage: String?
+    @State private var importErrorMessage: String?
+    @State private var isImporting = false
 
     var body: some View {
         Form {
@@ -147,19 +154,42 @@ private struct BackupAndRestoreSettingsView: View {
                     }
                 }
                 .disabled(isExporting)
+
+                Button(role: .destructive) {
+                    isImportPickerPresented = true
+                } label: {
+                    HStack {
+                        if isImporting {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                        }
+                        Text(isImporting ? "Importing…" : "Import Backup File")
+                    }
+                }
+                .disabled(isImporting || isExporting)
             } header: {
                 Text("Data Safety")
             } footer: {
                 if let exportSuccessMessage {
                     Text(exportSuccessMessage)
                         .foregroundStyle(.secondary)
+                } else if let importSuccessMessage {
+                    Text(importSuccessMessage)
+                        .foregroundStyle(.secondary)
                 } else {
-                    Text("Exports all user-entered app data into one versioned JSON backup file.")
+                    Text("Export creates a full JSON backup. Import restores a backup and replaces all current app data.")
                         .foregroundStyle(.secondary)
                 }
             }
         }
         .navigationTitle("Backup & Restore")
+        .fileImporter(
+            isPresented: $isImportPickerPresented,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImportSelection(result)
+        }
         .sheet(isPresented: Binding(
             get: { shareURL != nil },
             set: { shouldPresent in
@@ -183,6 +213,52 @@ private struct BackupAndRestoreSettingsView: View {
         } message: {
             Text(exportErrorMessage ?? "An unknown error occurred.")
         }
+        .alert(
+            "Replace Existing Data?",
+            isPresented: Binding(
+                get: { pendingImportEnvelope != nil && pendingImportURL != nil },
+                set: { shouldPresent in
+                    if !shouldPresent {
+                        pendingImportEnvelope = nil
+                        pendingImportURL = nil
+                    }
+                }
+            )
+        ) {
+            Button("Cancel", role: .cancel) {
+                pendingImportEnvelope = nil
+                pendingImportURL = nil
+            }
+            Button("Import", role: .destructive) {
+                confirmImport()
+            }
+        } message: {
+            if let envelope = pendingImportEnvelope {
+                Text(
+                    """
+                    This will replace all current data with the selected backup.
+
+                    Players: \(envelope.itemCounts.players)
+                    Games: \(envelope.itemCounts.games)
+                    Grades: \(envelope.itemCounts.grades)
+                    Exported: \(envelope.exportedAt.formatted(date: .abbreviated, time: .shortened))
+                    """
+                )
+            }
+        }
+        .alert(
+            "Import Failed",
+            isPresented: Binding(
+                get: { importErrorMessage != nil },
+                set: { if !$0 { importErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                importErrorMessage = nil
+            }
+        } message: {
+            Text(importErrorMessage ?? "An unknown error occurred.")
+        }
     }
 
     private func exportAllData() {
@@ -198,8 +274,54 @@ private struct BackupAndRestoreSettingsView: View {
             \(ByteCountFormatter.string(fromByteCount: Int64(result.fileSizeBytes), countStyle: .file)) • \
             \(result.itemCounts.players) players • \(result.itemCounts.games) games • \(result.itemCounts.grades) grades
             """
+            importSuccessMessage = nil
         } catch {
             exportErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func handleImportSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case let .success(urls):
+            guard let url = urls.first else { return }
+            do {
+                guard url.startAccessingSecurityScopedResource() else {
+                    throw AppBackupImportError.invalidFileType
+                }
+                defer { url.stopAccessingSecurityScopedResource() }
+                pendingImportEnvelope = try AppBackupService.previewBackupFile(url: url)
+                pendingImportURL = url
+            } catch {
+                importErrorMessage = error.localizedDescription
+            }
+        case let .failure(error):
+            importErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func confirmImport() {
+        guard let url = pendingImportURL else { return }
+        pendingImportEnvelope = nil
+        pendingImportURL = nil
+
+        guard !isImporting else { return }
+        isImporting = true
+        defer { isImporting = false }
+
+        do {
+            guard url.startAccessingSecurityScopedResource() else {
+                throw AppBackupImportError.invalidFileType
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+
+            let result = try AppBackupService.importFullBackupFile(url: url, modelContext: modelContext)
+            importSuccessMessage = """
+            Backup imported on \(result.importedAt.formatted(date: .abbreviated, time: .shortened))
+            \(result.itemCounts.players) players • \(result.itemCounts.games) games • \(result.itemCounts.grades) grades
+            """
+            exportSuccessMessage = nil
+        } catch {
+            importErrorMessage = error.localizedDescription
         }
     }
 }
