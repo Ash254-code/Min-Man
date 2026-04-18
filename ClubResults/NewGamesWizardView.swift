@@ -1101,9 +1101,10 @@ struct NewGameWizardView: View {
             Button("Scan now") {
                 openVotesScanner()
             }
-            Button("Skip scan", role: .cancel) {
+            Button("Skip without scan") {
                 proceedFromVotesStep()
             }
+            Button("Cancel", role: .cancel) { }
         } message: {
             Text("Manual guest votes are already saved in the ranking. You can optionally attach a scan.")
         }
