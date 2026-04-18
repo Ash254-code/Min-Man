@@ -2,6 +2,8 @@ import SwiftUI
 import SwiftData
 
 struct GamesView: View {
+    @Environment(\.modelContext) private var modelContext
+
     private struct GameListItem: Identifiable {
         let primary: Game
         let secondary: Game?
