@@ -2,6 +2,8 @@ import SwiftUI
 import SwiftData
 
 struct GamesView: View {
+    @Environment(\.modelContext) private var modelContext
+
     enum QuickStartGradeStatus {
         case noGameSaved
         case draftOnly
@@ -47,6 +49,22 @@ struct GamesView: View {
 
     @State private var selectedGradeID: UUID? = nil
     @State private var newGameWizardPresentation: NewGameWizardPresentation?
+    @State private var selectedGameForSummary: Game?
+    @State private var selectedGameForEdit: Game?
+    @State private var gamePendingDelete: Game?
+    @State private var codePromptGame: Game?
+    @State private var codePromptValue = ""
+    @State private var showCodePrompt = false
+    @State private var showWrongCodeAlert = false
+    @State private var showDeleteConfirmAlert = false
+    @State private var pendingProtectedAction: ProtectedGameAction?
+
+    private enum ProtectedGameAction {
+        case edit
+        case delete
+    }
+
+    private let requiredActionCode = "1234"
 
     // MARK: - Ordered grades (your seeded order + remaining A→Z)
     private var orderedGrades: [Grade] {
@@ -151,8 +169,8 @@ struct GamesView: View {
                             } else {
                                 VStack(spacing: 14) {
                                     ForEach(filteredGames) { game in
-                                        NavigationLink {
-                                            GameDetailView(game: game, grades: orderedGrades, players: players)
+                                        Button {
+                                            selectedGameForSummary = game
                                         } label: {
                                             GameCardRow(
                                                 game: game,
@@ -161,6 +179,21 @@ struct GamesView: View {
                                             )
                                         }
                                         .buttonStyle(.plain)
+                                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                            Button {
+                                                requestProtectedAction(.delete, for: game)
+                                            } label: {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+                                            .tint(.red)
+
+                                            Button {
+                                                requestProtectedAction(.edit, for: game)
+                                            } label: {
+                                                Label("Edit", systemImage: "pencil")
+                                            }
+                                            .tint(.orange)
+                                        }
                                     }
                                 }
                             }
@@ -193,7 +226,72 @@ struct GamesView: View {
                 )
                     .appPopupStyle()
             }
+            .navigationDestination(item: $selectedGameForSummary) { game in
+                GameDetailView(game: game, grades: orderedGrades, players: players)
+            }
+            .sheet(item: $selectedGameForEdit) { game in
+                GameEditView(game: game, grades: orderedGrades)
+                    .appPopupStyle()
+            }
+            .alert("Enter code", isPresented: $showCodePrompt) {
+                SecureField("Code", text: $codePromptValue)
+                Button("Cancel", role: .cancel) {
+                    pendingProtectedAction = nil
+                    codePromptGame = nil
+                }
+                Button("Continue") {
+                    handleCodeSubmission()
+                }
+            } message: {
+                Text("Editing and deleting previously saved games is protected.")
+            }
+            .alert("Wrong code", isPresented: $showWrongCodeAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("That code is incorrect.")
+            }
+            .alert("Delete game?", isPresented: $showDeleteConfirmAlert, presenting: gamePendingDelete) { game in
+                Button("Delete", role: .destructive) {
+                    delete(game)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: { game in
+                Text("Delete \(game.opponent) permanently? This cannot be undone.")
+            }
         }
+    }
+
+    private func requestProtectedAction(_ action: ProtectedGameAction, for game: Game) {
+        pendingProtectedAction = action
+        codePromptGame = game
+        codePromptValue = ""
+        showCodePrompt = true
+    }
+
+    private func handleCodeSubmission() {
+        let trimmed = codePromptValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed == requiredActionCode else {
+            showWrongCodeAlert = true
+            return
+        }
+
+        guard let action = pendingProtectedAction, let game = codePromptGame else { return }
+        switch action {
+        case .edit:
+            selectedGameForEdit = game
+        case .delete:
+            gamePendingDelete = game
+            showDeleteConfirmAlert = true
+        }
+
+        pendingProtectedAction = nil
+        codePromptGame = nil
+    }
+
+    private func delete(_ game: Game) {
+        modelContext.delete(game)
+        try? modelContext.save()
+        gamePendingDelete = nil
     }
 }
 

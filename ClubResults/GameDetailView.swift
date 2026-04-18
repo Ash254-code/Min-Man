@@ -2,22 +2,28 @@ import SwiftUI
 import SwiftData
 
 struct GameDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
     let game: Game
     let grades: [Grade]
     let players: [Player]
 
-    // ✅ Code gate
-    @State private var showEditPrompt = false
-    @State private var editCode = ""
-    @State private var showWrongEditCode = false
-
-    // ✅ Edit sheet
+    @State private var protectedCode = ""
+    @State private var showProtectedCodePrompt = false
+    @State private var showWrongCodeAlert = false
+    @State private var pendingProtectedAction: ProtectedGameAction?
+    @State private var showDeleteConfirmation = false
     @State private var showEditSheet = false
     @State private var shareItems: [Any] = []
     @State private var showShareSheet = false
 
-    // 🔐 Change this
-    private let requiredEditCode = "1234"
+    private enum ProtectedGameAction {
+        case edit
+        case delete
+    }
+
+    private let requiredActionCode = "1234"
 
     private var gradeName: String {
         grades.first(where: { $0.id == game.gradeID })?.name ?? "Unknown"
@@ -125,34 +131,41 @@ struct GameDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Edit") {
-                    editCode = ""
-                    showEditPrompt = true
+                    requestProtectedAction(.edit)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    requestProtectedAction(.delete)
+                } label: {
+                    Image(systemName: "trash")
                 }
             }
         }
-        // ✅ Prompt for code when Edit tapped
-        .alert("Enter edit code", isPresented: $showEditPrompt) {
-            SecureField("Code", text: $editCode)
-
+        .alert("Enter code", isPresented: $showProtectedCodePrompt) {
+            SecureField("Code", text: $protectedCode)
             Button("Cancel", role: .cancel) { }
-
             Button("Continue") {
-                let trimmed = editCode.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard trimmed == requiredEditCode else {
-                    showWrongEditCode = true
-                    return
-                }
-                showEditSheet = true
+                handleProtectedCodeSubmission()
             }
         } message: {
-            Text("Editing previous games is protected.")
+            Text("Editing and deleting previously saved games is protected.")
         }
-        .alert("Wrong code", isPresented: $showWrongEditCode) {
+        .alert("Wrong code", isPresented: $showWrongCodeAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("That code is incorrect.")
         }
-        // ✅ Only opens after correct code
+        .alert("Delete game?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                modelContext.delete(game)
+                try? modelContext.save()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Delete \(game.opponent) permanently? This cannot be undone.")
+        }
         .sheet(isPresented: $showEditSheet) {
             GameEditView(game: game, grades: grades)
                 .appPopupStyle()
@@ -204,6 +217,30 @@ struct GameDetailView: View {
             shareItems = [ExportService.gameSummaryText(game: game, gradeName: gradeName, playerName: playerLookup)]
             showShareSheet = true
         }
+    }
+
+    private func requestProtectedAction(_ action: ProtectedGameAction) {
+        pendingProtectedAction = action
+        protectedCode = ""
+        showProtectedCodePrompt = true
+    }
+
+    private func handleProtectedCodeSubmission() {
+        let trimmed = protectedCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed == requiredActionCode else {
+            showWrongCodeAlert = true
+            return
+        }
+
+        switch pendingProtectedAction {
+        case .edit:
+            showEditSheet = true
+        case .delete:
+            showDeleteConfirmation = true
+        case .none:
+            break
+        }
+        pendingProtectedAction = nil
     }
 }
 
