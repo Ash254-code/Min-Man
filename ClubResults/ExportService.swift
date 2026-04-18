@@ -22,7 +22,7 @@ enum ExportService {
         goals * 6 + behinds
     }
 
-    static func gameSummaryText(game: ExportableGame, gradeName: String, playerName: (UUID) -> String) -> String {
+    static func gameSummaryText(game: ExportableGame, gradeName: String, includeScore: Bool = true, playerName: (UUID) -> String) -> String {
         let ourTotal = points(goals: game.ourGoals, behinds: game.ourBehinds)
         let theirTotal = points(goals: game.theirGoals, behinds: game.theirBehinds)
 
@@ -31,7 +31,9 @@ enum ExportService {
         lines.append("Date: \(game.date.formatted(date: Date.FormatStyle.DateStyle.long, time: Date.FormatStyle.TimeStyle.omitted))")
         lines.append("Opponent: \(game.opponent)")
         if !game.venue.isEmpty { lines.append("Venue: \(game.venue)") }
-        lines.append("Score: \(game.ourGoals).\(game.ourBehinds) (\(ourTotal)) — \(game.theirGoals).\(game.theirBehinds) (\(theirTotal))")
+        if includeScore {
+            lines.append("Score: \(game.ourGoals).\(game.ourBehinds) (\(ourTotal)) — \(game.theirGoals).\(game.theirBehinds) (\(theirTotal))")
+        }
         lines.append("")
 
         if !game.goalKickers.isEmpty {
@@ -114,16 +116,16 @@ enum ExportService {
         return url
     }
 
-    static func makeGameSummaryTextFile(game: ExportableGame, gradeName: String, playerName: (UUID) -> String) throws -> URL {
-        let text = gameSummaryText(game: game, gradeName: gradeName, playerName: playerName)
+    static func makeGameSummaryTextFile(game: ExportableGame, gradeName: String, includeScore: Bool = true, playerName: (UUID) -> String) throws -> URL {
+        let text = gameSummaryText(game: game, gradeName: gradeName, includeScore: includeScore, playerName: playerName)
         let filename = fileSafe("\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted))_vs_\(game.opponent).txt")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         try text.write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 
-    static func makeGameSummaryPDF(game: ExportableGame, gradeName: String, playerName: (UUID) -> String) throws -> URL {
-        let summary = gameSummaryText(game: game, gradeName: gradeName, playerName: playerName)
+    static func makeGameSummaryPDF(game: ExportableGame, gradeName: String, includeScore: Bool = true, playerName: (UUID) -> String) throws -> URL {
+        let summary = gameSummaryText(game: game, gradeName: gradeName, includeScore: includeScore, playerName: playerName)
         let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter at 72 dpi
         let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
 

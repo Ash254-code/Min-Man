@@ -2,6 +2,14 @@ import SwiftUI
 import SwiftData
 
 struct GamesView: View {
+    private struct GameListItem: Identifiable {
+        let primary: Game
+        let secondary: Game?
+
+        var id: UUID { primary.id }
+        var hasTwoGames: Bool { secondary != nil }
+    }
+
     enum QuickStartGradeStatus {
         case noGameSaved
         case draftOnly
@@ -70,6 +78,36 @@ struct GamesView: View {
         return base.filter { $0.gradeID == gid }
     }
 
+    private var gradeByID: [UUID: Grade] {
+        Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
+    }
+
+    private var displayedGames: [GameListItem] {
+        var result: [GameListItem] = []
+        var used = Set<UUID>()
+
+        for game in filteredGames {
+            guard !used.contains(game.id) else { continue }
+
+            if isTwoGameGrade(for: game.gradeID),
+               let partner = filteredGames.first(where: { candidate in
+                   candidate.id != game.id &&
+                   !used.contains(candidate.id) &&
+                   arePairedTwoGames(game, candidate)
+               }) {
+                let ordered = [game, partner].sorted { $0.id.uuidString < $1.id.uuidString }
+                result.append(GameListItem(primary: ordered[0], secondary: ordered[1]))
+                used.insert(game.id)
+                used.insert(partner.id)
+            } else {
+                result.append(GameListItem(primary: game, secondary: nil))
+                used.insert(game.id)
+            }
+        }
+
+        return result
+    }
+
     private func latestDraft(for gradeID: UUID) -> Game? {
         games
             .filter { $0.gradeID == gradeID && $0.isDraft }
@@ -91,6 +129,46 @@ struct GamesView: View {
 
     private var standardPillWidth: CGFloat {
         ClubStyle.standardPillWidth(configuration: ClubConfigurationStore.load())
+    }
+
+    private func normalizedGradeName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func isTwoGameGrade(for gradeID: UUID) -> Bool {
+        guard let grade = gradeByID[gradeID] else { return false }
+        let normalized = normalizedGradeName(grade.name)
+        return normalized == "under 9's" || normalized == "under 12's"
+    }
+
+    private func shouldShowScore(for gradeID: UUID) -> Bool {
+        guard isTwoGameGrade(for: gradeID) else { return true }
+        return gradeByID[gradeID]?.asksScore ?? true
+    }
+
+    private func normalizedGoalKickerSignature(_ game: Game) -> [(UUID?, Int)] {
+        game.goalKickers
+            .map { ($0.playerID, $0.goals) }
+            .sorted { lhs, rhs in
+                let leftID = lhs.0?.uuidString ?? ""
+                let rightID = rhs.0?.uuidString ?? ""
+                if leftID == rightID { return lhs.1 < rhs.1 }
+                return leftID < rightID
+            }
+    }
+
+    private func arePairedTwoGames(_ first: Game, _ second: Game) -> Bool {
+        guard first.gradeID == second.gradeID else { return false }
+        guard abs(first.date.timeIntervalSince(second.date)) < 1 else { return false }
+        guard first.opponent == second.opponent else { return false }
+        guard first.venue == second.venue else { return false }
+        guard first.isDraft == second.isDraft else { return false }
+        guard first.ourGoals == second.ourGoals,
+              first.ourBehinds == second.ourBehinds,
+              first.theirGoals == second.theirGoals,
+              first.theirBehinds == second.theirBehinds else { return false }
+        guard first.notes == second.notes else { return false }
+        return normalizedGoalKickerSignature(first) == normalizedGoalKickerSignature(second)
     }
 
     var body: some View {
@@ -150,14 +228,17 @@ struct GamesView: View {
                                     .padding(.vertical, 36)
                             } else {
                                 VStack(spacing: 14) {
-                                    ForEach(filteredGames) { game in
+                                    ForEach(displayedGames) { item in
+                                        let game = item.primary
                                         NavigationLink {
                                             GameDetailView(game: game, grades: orderedGrades, players: players)
                                         } label: {
                                             GameCardRow(
                                                 game: game,
                                                 gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
-                                                opponentWidth: standardPillWidth
+                                                opponentWidth: standardPillWidth,
+                                                showScore: shouldShowScore(for: game.gradeID),
+                                                hasTwoGames: item.hasTwoGames
                                             )
                                         }
                                         .buttonStyle(.plain)
@@ -388,6 +469,8 @@ private struct GameCardRow: View {
     let game: Game
     let gradeName: String
     let opponentWidth: CGFloat
+    let showScore: Bool
+    let hasTwoGames: Bool
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -400,6 +483,11 @@ private struct GameCardRow: View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 10) {
                         OpponentBadge(opponent: game.opponent, fixedWidth: nil)
+                        if hasTwoGames {
+                            Text("Two games")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
                         Text(game.date.formatted(date: .abbreviated, time: .omitted))
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(.secondary)
@@ -409,10 +497,12 @@ private struct GameCardRow: View {
 
                     VStack(alignment: .trailing, spacing: 8) {
                         ResultPill(win: didWin)
-                        Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
-                            .font(.system(size: 22, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
+                        if showScore {
+                            Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
+                                .font(.system(size: 22, weight: .semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        }
                         Text(gradeName)
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(.secondary)
@@ -423,14 +513,23 @@ private struct GameCardRow: View {
                 HStack(spacing: 12) {
 
                     // ✅ opponent pills all same width
-                    OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth)
+                    VStack(alignment: .leading, spacing: 6) {
+                        OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth)
+                        if hasTwoGames {
+                            Text("Two games")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     Spacer(minLength: 10)
 
-                    Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
-                        .font(.system(size: 24, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                    if showScore {
+                        Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
+                            .font(.system(size: 24, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
 
                     Spacer(minLength: 10)
 
