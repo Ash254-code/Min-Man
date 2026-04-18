@@ -295,7 +295,7 @@ private struct PresentationGradeFullScreenView: View {
                 ForEach(items) { item in
                     HStack(alignment: .top, spacing: 10) {
                         if item.goals > 0 {
-                            Text("\(item.goals) \(item.goals == 1 ? "goal" : "goals") -")
+                            Text("\(item.goals) -")
                                 .font(.system(size: width > 1000 ? 30 : 26, weight: .black))
                                 .foregroundStyle(style.text)
                         }
