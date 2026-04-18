@@ -33,6 +33,15 @@ struct TotalsView: View {
         }
     }
 
+    private var leaderboardSections: [(title: String, rows: [LeaderRow])] {
+        [
+            ("Best Player", topBestPlayers()),
+            ("Guest Votes", topGuestVotes()),
+            ("Best & Fairest", topBestAndFairest()),
+            ("Goal Kickers", topGoalKickers())
+        ]
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -45,20 +54,11 @@ struct TotalsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
-                // Best Player (glass card)
-                leaderboardCard(title: "Best Player", rows: topBestPlayers())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-
-                // Guest Votes (glass card)
-                leaderboardCard(title: "Guest Votes", rows: topGuestVotes())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-
-                // Goal Kickers (glass card)
-                leaderboardCard(title: "Goal Kickers", rows: topGoalKickers())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                ForEach(Array(leaderboardSections.enumerated()), id: \.offset) { _, section in
+                    leaderboardCard(title: section.title, rows: section.rows)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -266,6 +266,53 @@ private extension TotalsView {
     func topGuestVotes() -> [LeaderRow] {
         var points: [UUID: Int] = [:]
 
+        for game in filteredGames {
+            for vote in game.guestVotesRanked {
+                let add: Int
+                switch vote.rank {
+                case 1: add = 3
+                case 2: add = 2
+                case 3: add = 1
+                default: add = 0
+                }
+                points[vote.playerID, default: 0] += add
+            }
+        }
+
+        let sorted = points
+            .sorted { a, b in
+                if a.value != b.value { return a.value > b.value }
+                return playerName(for: a.key)
+                    .localizedCaseInsensitiveCompare(playerName(for: b.key)) == .orderedAscending
+            }
+            .prefix(3)
+
+        return sorted.enumerated().map { i, item in
+            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) pts")
+        }
+    }
+
+    // Best & Fairest leaderboard:
+    // Combines Best Player points + Guest Votes points
+    func topBestAndFairest() -> [LeaderRow] {
+        var points: [UUID: Int] = [:]
+
+        // Best Player points (1st=3, 2nd=2, 3rd=1)
+        for game in filteredGames {
+            let ranked = Array(game.bestPlayersRanked.prefix(3))
+            for (idx, pid) in ranked.enumerated() {
+                let add: Int
+                switch idx {
+                case 0: add = 3
+                case 1: add = 2
+                case 2: add = 1
+                default: add = 0
+                }
+                points[pid, default: 0] += add
+            }
+        }
+
+        // Guest Votes points (rank 1=3, 2=2, 3=1)
         for game in filteredGames {
             for vote in game.guestVotesRanked {
                 let add: Int
