@@ -2,6 +2,17 @@ import SwiftUI
 import UIKit
 
 enum PickerSheetPresentation {
+    private static var contextScreenHeight: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .screen
+            .bounds
+            .height
+            ?? 844
+    }
+
     static func preferredHeight(
         optionCount: Int,
         rowHeight: CGFloat,
@@ -9,7 +20,7 @@ enum PickerSheetPresentation {
         minVisibleRows: Int = 3,
         isCompactLayout: Bool
     ) -> CGFloat {
-        let screenHeight = UIScreen.main.bounds.height
+        let screenHeight = contextScreenHeight
         let topAndBottomMargin: CGFloat = isCompactLayout ? 20 : 56
         let maxHeight = max(
             chromeHeight + (rowHeight * CGFloat(minVisibleRows)),

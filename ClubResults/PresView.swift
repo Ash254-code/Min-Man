@@ -355,25 +355,4 @@ private struct PresentationGameFullScreenView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-
-    @ViewBuilder
-    private func presentationListColumn(title: String, items: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.system(size: 36, weight: .heavy))
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                        Text(item)
-                            .font(.system(size: 32, weight: .semibold))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-            .scrollIndicators(.hidden)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
 }
