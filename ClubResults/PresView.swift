@@ -2,20 +2,19 @@ import SwiftUI
 import SwiftData
 
 struct PresView: View {
-    private struct PresListItem: Identifiable {
-        let primary: Game
-        let secondary: Game?
-        let showsScore: Bool
+    private struct GradePresentationSection: Identifiable {
+        let grade: Grade
+        let games: [Game]
 
-        var id: UUID { primary.id }
-        var hasTwoGames: Bool { secondary != nil }
+        var id: UUID { grade.id }
     }
 
     @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: \Player.name) private var players: [Player]   // ✅ ADD
 
-    @State private var selectedGame: Game?
+    @State private var selectedPresentationGame: Game?
+    @State private var expandedGradeIDs: Set<UUID> = []
 
     // MARK: - Ordered grades (U9 → A Grade)
     private var orderedGrades: [Grade] {
@@ -53,28 +52,39 @@ struct PresView: View {
         Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
     }
 
-    private var displayItems: [PresListItem] {
-        var result: [PresListItem] = []
-        var used = Set<UUID>()
+    private var playerNameByID: [UUID: String] {
+        Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0.name) })
+    }
 
-        for game in sortedGames {
-            guard !used.contains(game.id) else { continue }
-            if isTwoGameGrade(game.gradeID),
-               let partner = sortedGames.first(where: { candidate in
-                   candidate.id != game.id &&
-                   !used.contains(candidate.id) &&
-                   arePairedTwoGames(game, candidate)
-               }) {
-                let ordered = [game, partner].sorted { $0.id.uuidString < $1.id.uuidString }
-                result.append(PresListItem(primary: ordered[0], secondary: ordered[1], showsScore: shouldShowScore(for: game.gradeID)))
-                used.insert(game.id)
-                used.insert(partner.id)
-            } else {
-                result.append(PresListItem(primary: game, secondary: nil, showsScore: shouldShowScore(for: game.gradeID)))
-                used.insert(game.id)
-            }
+    private var gradeSections: [GradePresentationSection] {
+        orderedGrades.compactMap { grade in
+            let gradeGames = sortedGames
+                .filter { $0.gradeID == grade.id }
+                .sorted { $0.date > $1.date }
+            guard !gradeGames.isEmpty else { return nil }
+            return GradePresentationSection(grade: grade, games: gradeGames)
         }
-        return result
+    }
+
+    private func playerName(for id: UUID?) -> String {
+        guard let id else { return "Unknown" }
+        return playerNameByID[id] ?? "Unknown"
+    }
+
+    private func goalKickerSummary(for game: Game) -> String {
+        guard !game.goalKickers.isEmpty else { return "None recorded" }
+        return game.goalKickers
+            .sorted { $0.goals > $1.goals }
+            .map { "\(playerName(for: $0.playerID)) \($0.goals)" }
+            .joined(separator: ", ")
+    }
+
+    private func bestPlayersSummary(for game: Game) -> String {
+        guard !game.bestPlayersRanked.isEmpty else { return "None recorded" }
+        return game.bestPlayersRanked
+            .enumerated()
+            .map { index, playerID in "\(index + 1). \(playerNameByID[playerID] ?? "Unknown")" }
+            .joined(separator: " • ")
     }
 
     private func normalizedGradeName(_ name: String) -> String {
@@ -92,26 +102,6 @@ struct PresView: View {
         return gradeByID[gradeID]?.asksScore ?? true
     }
 
-    private func normalizedGoalKickerSignature(_ game: Game) -> [String] {
-        game.goalKickers
-            .map { "\($0.playerID?.uuidString ?? "nil"):\($0.goals)" }
-            .sorted()
-    }
-
-    private func arePairedTwoGames(_ first: Game, _ second: Game) -> Bool {
-        guard first.gradeID == second.gradeID else { return false }
-        guard abs(first.date.timeIntervalSince(second.date)) < 1 else { return false }
-        guard first.opponent == second.opponent else { return false }
-        guard first.venue == second.venue else { return false }
-        guard first.isDraft == second.isDraft else { return false }
-        guard first.ourGoals == second.ourGoals,
-              first.ourBehinds == second.ourBehinds,
-              first.theirGoals == second.theirGoals,
-              first.theirBehinds == second.theirBehinds else { return false }
-        guard first.notes == second.notes else { return false }
-        return normalizedGoalKickerSignature(first) == normalizedGoalKickerSignature(second)
-    }
-
     var body: some View {
         NavigationStack {
             List {
@@ -123,79 +113,182 @@ struct PresView: View {
                             description: Text("Recent games will appear here.")
                         )
                     } else {
-                        ForEach(displayItems) { item in
-                            let game = item.primary
+                        ForEach(gradeSections) { section in
                             Button {
-                                selectedGame = game
+                                if expandedGradeIDs.contains(section.id) {
+                                    expandedGradeIDs.remove(section.id)
+                                } else {
+                                    expandedGradeIDs.insert(section.id)
+                                }
                             } label: {
-                                PresGameRow(
-                                    gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
-                                    opponent: game.opponent,
-                                    date: game.date,
-                                    ourScore: "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))",
-                                    theirScore: "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))",
-                                    showScore: item.showsScore,
-                                    hasTwoGames: item.hasTwoGames
+                                PresGradeRow(
+                                    gradeName: section.grade.name,
+                                    gameCount: section.games.count,
+                                    isExpanded: expandedGradeIDs.contains(section.id)
                                 )
                             }
                             .buttonStyle(.plain)
+
+                            if expandedGradeIDs.contains(section.id) {
+                                ForEach(section.games) { game in
+                                    Button {
+                                        selectedPresentationGame = game
+                                    } label: {
+                                        PresentationExpandableGameCard(
+                                            game: game,
+                                            showScore: shouldShowScore(for: section.id),
+                                            goalKickers: goalKickerSummary(for: game),
+                                            bestPlayers: bestPlayersSummary(for: game)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 8, trailing: 16))
+                                }
+                            }
                         }
                     }
                 }
             }
             .navigationTitle("Pres")
-            .sheet(item: $selectedGame) { game in
-                // ✅ FIX: pass grades + players
-                GameDetailView(game: game, grades: orderedGrades, players: players)
-                    .appPopupStyle()
+            .fullScreenCover(item: $selectedPresentationGame) { game in
+                PresentationGameFullScreenView(
+                    game: game,
+                    gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
+                    showScore: shouldShowScore(for: game.gradeID),
+                    goalKickers: goalKickerSummary(for: game),
+                    bestPlayers: bestPlayersSummary(for: game)
+                )
             }
         }
     }
 }
 
-// MARK: - Row (GRADE IS MOST PROMINENT)
-private struct PresGameRow: View {
+private struct PresGradeRow: View {
     let gradeName: String
-    let opponent: String
-    let date: Date
-    let ourScore: String
-    let theirScore: String
-    let showScore: Bool
-    let hasTwoGames: Bool
+    let gameCount: Int
+    let isExpanded: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-
-            // ⭐ MAIN TITLE = GRADE
+        HStack(spacing: 12) {
             Text(gradeName)
                 .font(.system(size: 20, weight: .bold))
+            Spacer()
+            Text("\(gameCount) game\(gameCount == 1 ? "" : "s")")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 10)
+    }
+}
 
-            // opponent + date
+private struct PresentationExpandableGameCard: View {
+    let game: Game
+    let showScore: Bool
+    let goalKickers: String
+    let bestPlayers: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(opponent)
-                    .font(.system(size: 16, weight: .semibold))
-                if hasTwoGames {
-                    Text("• Two games")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
+                Text("vs \(game.opponent)")
+                    .font(.system(size: 18, weight: .bold))
                 Spacer()
-                Text(date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.system(size: 13, weight: .medium))
+                Text(game.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
 
             if showScore {
-                HStack {
-                    Text("Us: \(ourScore)")
-                        .font(.system(size: 14, weight: .semibold))
-                    Spacer()
-                    Text("Them: \(theirScore)")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                Text("Score: \(game.ourGoals).\(game.ourBehinds) (\(game.ourScore)) — \(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Goal Kickers")
+                    .font(.system(size: 14, weight: .bold))
+                Text(goalKickers)
+                    .font(.system(size: 14))
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Best Players")
+                    .font(.system(size: 14, weight: .bold))
+                Text(bestPlayers)
+                    .font(.system(size: 14))
+            }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct PresentationGameFullScreenView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let game: Game
+    let gradeName: String
+    let showScore: Bool
+    let goalKickers: String
+    let bestPlayers: String
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(gradeName)
+                            .font(.system(size: 52, weight: .black))
+                        Text("vs \(game.opponent)")
+                            .font(.system(size: 36, weight: .bold))
+                        Text(game.date.formatted(date: .complete, time: .omitted))
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if showScore {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Score")
+                                .font(.system(size: 30, weight: .heavy))
+                            Text("\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))")
+                                .font(.system(size: 42, weight: .heavy))
+                            Text("\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
+                                .font(.system(size: 42, weight: .heavy))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Goal Kickers")
+                            .font(.system(size: 30, weight: .heavy))
+                        Text(goalKickers)
+                            .font(.system(size: 28, weight: .medium))
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Best Players")
+                            .font(.system(size: 30, weight: .heavy))
+                        Text(bestPlayers)
+                            .font(.system(size: 28, weight: .medium))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(32)
+            }
+            .background(Color(.systemBackground))
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                    .font(.system(size: 22, weight: .bold))
                 }
             }
         }
-        .padding(.vertical, 10)
     }
 }
