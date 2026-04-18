@@ -631,6 +631,11 @@ struct NewGameWizardView: View {
         min(max(selectedGrade?.bestPlayersCount ?? 6, 0), 10)
     }
 
+    private var requiredGuestBestPlayersCount: Int {
+        guard selectedGrade?.asksGuestBestFairestVotesScan ?? false else { return 0 }
+        return min(max(selectedGrade?.guestBestPlayersCount ?? 3, 1), 10)
+    }
+
     private var supportsLiveGameView: Bool {
         selectedGrade?.asksLiveGameView ?? true
     }
@@ -883,10 +888,10 @@ struct NewGameWizardView: View {
 
         case .votes:
             let ids = guestVotesRanked.compactMap { $0 }
-            let game1OK = ids.count == requiredBestPlayersCount && Set(ids).count == requiredBestPlayersCount
+            let game1OK = ids.count == requiredGuestBestPlayersCount && Set(ids).count == requiredGuestBestPlayersCount
             if !isTwoGameFlow { return game1OK }
             let game2IDs = guestVotesRankedGame2.compactMap { $0 }
-            let game2OK = game2IDs.count == requiredBestPlayersCount && Set(game2IDs).count == requiredBestPlayersCount
+            let game2OK = game2IDs.count == requiredGuestBestPlayersCount && Set(game2IDs).count == requiredGuestBestPlayersCount
             return game1OK && game2OK
 
         case .review:
@@ -1021,8 +1026,8 @@ struct NewGameWizardView: View {
             liveGameSession = LiveGameSessionState()
             editingGame = nil
             guestBestFairestVotesScanPDF = nil
-            guestVotesRanked = Array(repeating: nil, count: requiredBestPlayersCount)
-            guestVotesRankedGame2 = Array(repeating: nil, count: requiredBestPlayersCount)
+            guestVotesRanked = Array(repeating: nil, count: requiredGuestBestPlayersCount)
+            guestVotesRankedGame2 = Array(repeating: nil, count: requiredGuestBestPlayersCount)
             hasAutoPromptedVotesScanner = false
         }
         .onAppear {
@@ -2373,12 +2378,12 @@ struct NewGameWizardView: View {
 
     private var votesStep: some View {
         Form {
-            Section(isTwoGameFlow ? "Game 1 · Guest votes (ranked 1–\(requiredBestPlayersCount))" : "Guest votes (ranked 1–\(requiredBestPlayersCount))") {
+            Section(isTwoGameFlow ? "Game 1 · Guest votes (ranked 1–\(requiredGuestBestPlayersCount))" : "Guest votes (ranked 1–\(requiredGuestBestPlayersCount))") {
                 if eligiblePlayers.isEmpty {
                     Text("Add players to this grade first.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
+                    ForEach(0..<requiredGuestBestPlayersCount, id: \.self) { idx in
                         Button {
                             guestVotePickerGameNumber = 1
                             guestVotePickerPrompt = idx
@@ -2403,8 +2408,8 @@ struct NewGameWizardView: View {
                 }
             }
             if isTwoGameFlow {
-                Section("Game 2 · Guest votes (ranked 1–\(requiredBestPlayersCount))") {
-                    ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
+                Section("Game 2 · Guest votes (ranked 1–\(requiredGuestBestPlayersCount))") {
+                    ForEach(0..<requiredGuestBestPlayersCount, id: \.self) { idx in
                         Button {
                             guestVotePickerGameNumber = 2
                             guestVotePickerPrompt = idx
@@ -2544,12 +2549,12 @@ struct NewGameWizardView: View {
     }
 
     private var hasDuplicateGuestVotes: Bool {
-        let ids = Array(guestVotesRanked.prefix(requiredBestPlayersCount)).compactMap { $0 }
+        let ids = Array(guestVotesRanked.prefix(requiredGuestBestPlayersCount)).compactMap { $0 }
         return ids.count != Set(ids).count
     }
 
     private var hasDuplicateGuestVotesGame2: Bool {
-        let ids = Array(guestVotesRankedGame2.prefix(requiredBestPlayersCount)).compactMap { $0 }
+        let ids = Array(guestVotesRankedGame2.prefix(requiredGuestBestPlayersCount)).compactMap { $0 }
         return ids.count != Set(ids).count
     }
 
@@ -2570,12 +2575,12 @@ struct NewGameWizardView: View {
     private func setGuestVotePlayer(_ id: UUID, at index: Int, gameNumber: Int) {
         if gameNumber == 2 {
             guestVotesRankedGame2[index] = id
-            for i in 0..<requiredBestPlayersCount where i != index {
+            for i in 0..<requiredGuestBestPlayersCount where i != index {
                 if guestVotesRankedGame2[i] == id { guestVotesRankedGame2[i] = nil }
             }
         } else {
             guestVotesRanked[index] = id
-            for i in 0..<requiredBestPlayersCount where i != index {
+            for i in 0..<requiredGuestBestPlayersCount where i != index {
                 if guestVotesRanked[i] == id { guestVotesRanked[i] = nil }
             }
         }
@@ -2608,7 +2613,7 @@ struct NewGameWizardView: View {
     }
 
     private func syncGuestVotesSelectionCount() {
-        let targetCount = requiredBestPlayersCount
+        let targetCount = requiredGuestBestPlayersCount
         if guestVotesRanked.count < targetCount {
             guestVotesRanked.append(contentsOf: Array(repeating: nil, count: targetCount - guestVotesRanked.count))
         } else if guestVotesRanked.count > targetCount {
@@ -2642,23 +2647,24 @@ struct NewGameWizardView: View {
         guard !finalVenue.isEmpty else { return nil }
 
         let bestPlayersCount = requiredBestPlayersCount
+        let guestBestPlayersCount = requiredGuestBestPlayersCount
         let asksGoalKickers = selectedGrade?.asksGoalKickers ?? true
         let asksNotes = selectedGrade?.asksNotes ?? true
 
         let bestIDs = bestPlayersCount > 0 ? Array(bestRanked.prefix(bestPlayersCount)).compactMap { $0 } : []
         let game2BestIDs = bestPlayersCount > 0 ? Array(bestRankedGame2.prefix(bestPlayersCount)).compactMap { $0 } : []
-        let guestVoteIDs = bestPlayersCount > 0 ? Array(guestVotesRanked.prefix(bestPlayersCount)).compactMap { $0 } : []
-        let game2GuestVoteIDs = bestPlayersCount > 0 ? Array(guestVotesRankedGame2.prefix(bestPlayersCount)).compactMap { $0 } : []
+        let guestVoteIDs = guestBestPlayersCount > 0 ? Array(guestVotesRanked.prefix(guestBestPlayersCount)).compactMap { $0 } : []
+        let game2GuestVoteIDs = guestBestPlayersCount > 0 ? Array(guestVotesRankedGame2.prefix(guestBestPlayersCount)).compactMap { $0 } : []
         if enforceCompletionRequirements && bestPlayersCount > 0 {
             guard bestIDs.count == bestPlayersCount, Set(bestIDs).count == bestPlayersCount else { return nil }
             if isTwoGameFlow {
                 guard game2BestIDs.count == bestPlayersCount, Set(game2BestIDs).count == bestPlayersCount else { return nil }
             }
         }
-        if enforceCompletionRequirements && bestPlayersCount > 0 {
-            guard guestVoteIDs.count == bestPlayersCount, Set(guestVoteIDs).count == bestPlayersCount else { return nil }
+        if enforceCompletionRequirements && guestBestPlayersCount > 0 {
+            guard guestVoteIDs.count == guestBestPlayersCount, Set(guestVoteIDs).count == guestBestPlayersCount else { return nil }
             if isTwoGameFlow {
-                guard game2GuestVoteIDs.count == bestPlayersCount, Set(game2GuestVoteIDs).count == bestPlayersCount else { return nil }
+                guard game2GuestVoteIDs.count == guestBestPlayersCount, Set(game2GuestVoteIDs).count == guestBestPlayersCount else { return nil }
             }
         }
         let guestVotes = guestVoteIDs.enumerated().map { GameGuestVoteEntry(rank: $0.offset + 1, playerID: $0.element) }

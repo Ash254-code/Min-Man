@@ -28,6 +28,7 @@ final class Grade {
     var asksGoalKickers: Bool
     var bestPlayersCount: Int
     var asksGuestBestFairestVotesScan: Bool
+    var guestBestPlayersCount: Int
     var allowsLiveGameView: Bool
     var quarterLengthMinutes: Int
 
@@ -55,6 +56,7 @@ final class Grade {
         asksGoalKickers: Bool = true,
         bestPlayersCount: Int = 6,
         asksGuestBestFairestVotesScan: Bool = false,
+        guestBestPlayersCount: Int = 3,
         allowsLiveGameView: Bool = true,
         quarterLengthMinutes: Int = 20
     ) {
@@ -81,6 +83,7 @@ final class Grade {
         self.asksGoalKickers = asksGoalKickers
         self.bestPlayersCount = min(max(bestPlayersCount, 0), 10)
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
+        self.guestBestPlayersCount = min(max(guestBestPlayersCount, 1), 10)
         self.allowsLiveGameView = allowsLiveGameView
         self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
     }

@@ -64,6 +64,7 @@ struct GradeRecord: Codable {
     let asksGoalKickers: Bool
     let bestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
+    let guestBestPlayersCount: Int
     let allowsLiveGameView: Bool
     let quarterLengthMinutes: Int
 
@@ -91,6 +92,7 @@ struct GradeRecord: Codable {
         asksGoalKickers = grade.asksGoalKickers
         bestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
+        guestBestPlayersCount = grade.guestBestPlayersCount
         allowsLiveGameView = grade.allowsLiveGameView
         quarterLengthMinutes = grade.quarterLengthMinutes
     }
@@ -518,6 +520,7 @@ enum AppBackupService {
                     asksGoalKickers: $0.asksGoalKickers,
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                    guestBestPlayersCount: $0.guestBestPlayersCount,
                     allowsLiveGameView: $0.allowsLiveGameView,
                     quarterLengthMinutes: $0.quarterLengthMinutes
                 )

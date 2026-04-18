@@ -801,7 +801,14 @@ private struct ClubGradesSettingsView: View {
                                 Text("\(count)").tag(count)
                             }
                         }
-                        Toggle("Guest Best & Fairest Votes Scan", isOn: bind(grade, \.asksGuestBestFairestVotesScan))
+                        Toggle("Guest Best & Fairest Votes", isOn: bind(grade, \.asksGuestBestFairestVotesScan))
+                        if grade.asksGuestBestFairestVotesScan {
+                            Picker("Guest Best Players", selection: bind(grade, \.guestBestPlayersCount)) {
+                                ForEach(1...10, id: \.self) { count in
+                                    Text("\(count)").tag(count)
+                                }
+                            }
+                        }
                     }
 
                     Section {
@@ -895,6 +902,7 @@ private struct ClubGradesSettingsView: View {
             asksGoalKickers: draft.asksGoalKickers,
             bestPlayersCount: draft.bestPlayersCount,
             asksGuestBestFairestVotesScan: draft.asksGuestBestFairestVotesScan,
+            guestBestPlayersCount: draft.guestBestPlayersCount,
             allowsLiveGameView: draft.allowsLiveGameView,
             quarterLengthMinutes: draft.quarterLengthMinutes
         )
@@ -1026,6 +1034,7 @@ private struct ClubGradesSettingsView: View {
                             asksGoalKickers: $0.asksGoalKickers,
                             bestPlayersCount: $0.bestPlayersCount,
                             asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                            guestBestPlayersCount: $0.guestBestPlayersCount,
                             allowsLiveGameView: $0.allowsLiveGameView,
                             quarterLengthMinutes: $0.quarterLengthMinutes
                         )
@@ -1057,6 +1066,7 @@ private struct ClubGradesSettingsView: View {
                                 asksGoalKickers: item.asksGoalKickers,
                                 bestPlayersCount: item.bestPlayersCount,
                                 asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan,
+                                guestBestPlayersCount: item.guestBestPlayersCount,
                                 allowsLiveGameView: item.allowsLiveGameView,
                                 quarterLengthMinutes: item.quarterLengthMinutes
                             )
@@ -1103,6 +1113,7 @@ private struct ClubGradesSettingsView: View {
                     asksGoalKickers: $0.asksGoalKickers,
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
+                    guestBestPlayersCount: $0.guestBestPlayersCount,
                     allowsLiveGameView: $0.allowsLiveGameView,
                     quarterLengthMinutes: $0.quarterLengthMinutes
                 )
@@ -1149,6 +1160,7 @@ private struct NewGradeDraft {
     var asksGoalKickers = true
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = false
+    var guestBestPlayersCount = 3
     var allowsLiveGameView = true
     var quarterLengthMinutes = 20
 
@@ -1221,6 +1233,13 @@ private struct AddGradeWizardView: View {
                             }
                         }
                         Toggle("Guest B & F Votes", isOn: $draft.asksGuestBestFairestVotesScan)
+                        if draft.asksGuestBestFairestVotesScan {
+                            Picker("Guest Best Players", selection: $draft.guestBestPlayersCount) {
+                                ForEach(1...10, id: \.self) { count in
+                                    Text("\(count)").tag(count)
+                                }
+                            }
+                        }
                     } header: {
                         Text("Awards")
                     }
