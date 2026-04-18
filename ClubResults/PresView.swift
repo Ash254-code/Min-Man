@@ -263,40 +263,31 @@ private struct PresentationGameFullScreenView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            GeometryReader { proxy in
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(gradeName)
-                            .font(.system(size: 52, weight: .black))
-                            .minimumScaleFactor(0.8)
-                        Text("vs \(game.opponent)")
-                            .font(.system(size: 36, weight: .bold))
-                            .minimumScaleFactor(0.8)
-                        Text(game.date.formatted(date: .complete, time: .omitted))
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
 
+                VStack(alignment: .leading, spacing: 26) {
                     HStack(alignment: .center, spacing: 20) {
                         ScorePill(
                             ourTeamLabel,
                             style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
                         )
-                        .scaleEffect(1.6)
+                        .scaleEffect(proxy.size.width > 1000 ? 1.8 : 1.6)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                         if showScore {
                             HStack(spacing: 18) {
                                 Text(ourScoreline)
-                                    .font(.system(size: proxy.size.width > 900 ? 72 : 54, weight: .black))
-                                    .minimumScaleFactor(0.7)
+                                    .font(.system(size: proxy.size.width > 1000 ? 76 : 56, weight: .black))
+                                    .minimumScaleFactor(0.65)
                                 Text("—")
-                                    .font(.system(size: proxy.size.width > 900 ? 56 : 42, weight: .heavy))
+                                    .font(.system(size: proxy.size.width > 1000 ? 58 : 44, weight: .heavy))
                                     .foregroundStyle(.secondary)
                                 Text(theirScoreline)
-                                    .font(.system(size: proxy.size.width > 900 ? 72 : 54, weight: .black))
-                                    .minimumScaleFactor(0.7)
+                                    .font(.system(size: proxy.size.width > 1000 ? 76 : 56, weight: .black))
+                                    .minimumScaleFactor(0.65)
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -305,34 +296,64 @@ private struct PresentationGameFullScreenView: View {
                             game.opponent,
                             style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
                         )
-                        .scaleEffect(1.6)
+                        .scaleEffect(proxy.size.width > 1000 ? 1.8 : 1.6)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .padding(.vertical, 8)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(gradeName) • vs \(game.opponent)")
+                            .font(.system(size: 30, weight: .bold))
+                            .minimumScaleFactor(0.8)
+                        Text(game.date.formatted(date: .complete, time: .omitted))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
 
                     Divider()
 
-                    HStack(alignment: .top, spacing: 32) {
+                    HStack(alignment: .top, spacing: 28) {
                         presentationListColumn(title: "Goal Kickers", items: goalKickers)
                         presentationListColumn(title: "Best Players", items: bestPlayers)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(32)
+                .padding(.horizontal, 32)
+                .padding(.top, 34)
+                .padding(.bottom, 20)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.system(size: 24, weight: .bold))
+                }
+                .padding(.leading, 18)
+                .padding(.top, 10)
             }
-            .background(Color(.systemBackground))
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
+        }
+    }
+
+    @ViewBuilder
+    private func presentationListColumn(title: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.system(size: 36, weight: .heavy))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                        Text(item)
+                            .font(.system(size: 32, weight: .semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
                     }
                     .font(.system(size: 26, weight: .bold))
                 }
+                .padding(.vertical, 4)
             }
+            .scrollIndicators(.hidden)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
