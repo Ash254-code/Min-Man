@@ -83,16 +83,22 @@ struct StaffPickerField: View {
             Button {
                 showChooser = true
             } label: {
-                Text(value.isEmpty ? "Select…" : value)
-                    .font(fieldFont)
-                    .foregroundStyle(value.isEmpty ? .secondary : .primary)
-                    .lineLimit(1)
-                    .padding(.horizontal, horizontalSizeClass == .compact ? 14 : 18)
-                    .padding(.vertical, horizontalSizeClass == .compact ? 10 : 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color(.secondarySystemBackground))
-                    )
+                HStack(spacing: 8) {
+                    Text(value.isEmpty ? "Select…" : value)
+                        .font(fieldFont)
+                        .foregroundStyle(value.isEmpty ? .secondary : .primary)
+                        .lineLimit(1)
+
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: horizontalSizeClass == .compact ? 13 : 16, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, horizontalSizeClass == .compact ? 14 : 18)
+                .padding(.vertical, horizontalSizeClass == .compact ? 10 : 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
             }
             .buttonStyle(.plain)
             .disabled(gradeID == nil)
