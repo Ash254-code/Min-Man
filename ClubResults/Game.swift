@@ -23,6 +23,7 @@ final class Game: Identifiable {
     // Goal kickers and best players
     var goalKickers: [GameGoalKickerEntry]
     var bestPlayersRanked: [UUID]
+    var guestVotesRanked: [GameGuestVoteEntry]
 
     // Staff and officials
     var headCoachName: String
@@ -52,6 +53,7 @@ final class Game: Identifiable {
         theirBehinds: Int,
         goalKickers: [GameGoalKickerEntry],
         bestPlayersRanked: [UUID],
+        guestVotesRanked: [GameGuestVoteEntry] = [],
         headCoachName: String = "",
         assistantCoachName: String = "",
         teamManagerName: String = "",
@@ -76,6 +78,7 @@ final class Game: Identifiable {
         self.theirBehinds = theirBehinds
         self.goalKickers = goalKickers
         self.bestPlayersRanked = bestPlayersRanked
+        self.guestVotesRanked = guestVotesRanked
         self.headCoachName = headCoachName
         self.assistantCoachName = assistantCoachName
         self.teamManagerName = teamManagerName
@@ -99,6 +102,12 @@ struct GameGoalKickerEntry: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var playerID: UUID?
     var goals: Int
+}
+
+struct GameGuestVoteEntry: Identifiable, Codable, Hashable {
+    var id: UUID = UUID()
+    var rank: Int
+    var playerID: UUID
 }
 
 extension Game: ExportableGame {}

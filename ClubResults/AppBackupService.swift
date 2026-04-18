@@ -140,6 +140,7 @@ struct GameRecord: Codable {
     let theirBehinds: Int
     let goalKickers: [GameGoalKickerRecord]
     let bestPlayersRanked: [UUID]
+    let guestVotesRanked: [GameGuestVoteEntry]
     let headCoachName: String
     let assistantCoachName: String
     let teamManagerName: String
@@ -153,6 +154,15 @@ struct GameRecord: Codable {
     let guestBestFairestVotesScanPDF: Data?
     let isDraft: Bool
 
+    private enum CodingKeys: String, CodingKey {
+        case id, gradeID, date, opponent, venue
+        case ourGoals, ourBehinds, theirGoals, theirBehinds
+        case goalKickers, bestPlayersRanked, guestVotesRanked
+        case headCoachName, assistantCoachName, teamManagerName, runnerName
+        case goalUmpireName, fieldUmpireName, boundaryUmpire1Name, boundaryUmpire2Name
+        case trainers, notes, guestBestFairestVotesScanPDF, isDraft
+    }
+
     init(_ game: Game) {
         id = game.id
         gradeID = game.gradeID
@@ -165,6 +175,7 @@ struct GameRecord: Codable {
         theirBehinds = game.theirBehinds
         goalKickers = game.goalKickers.map(GameGoalKickerRecord.init)
         bestPlayersRanked = game.bestPlayersRanked
+        guestVotesRanked = game.guestVotesRanked
         headCoachName = game.headCoachName
         assistantCoachName = game.assistantCoachName
         teamManagerName = game.teamManagerName
@@ -177,6 +188,34 @@ struct GameRecord: Codable {
         notes = game.notes
         guestBestFairestVotesScanPDF = game.guestBestFairestVotesScanPDF
         isDraft = game.isDraft
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        gradeID = try c.decode(UUID.self, forKey: .gradeID)
+        date = try c.decode(Date.self, forKey: .date)
+        opponent = try c.decode(String.self, forKey: .opponent)
+        venue = try c.decode(String.self, forKey: .venue)
+        ourGoals = try c.decode(Int.self, forKey: .ourGoals)
+        ourBehinds = try c.decode(Int.self, forKey: .ourBehinds)
+        theirGoals = try c.decode(Int.self, forKey: .theirGoals)
+        theirBehinds = try c.decode(Int.self, forKey: .theirBehinds)
+        goalKickers = try c.decode([GameGoalKickerRecord].self, forKey: .goalKickers)
+        bestPlayersRanked = try c.decode([UUID].self, forKey: .bestPlayersRanked)
+        guestVotesRanked = try c.decodeIfPresent([GameGuestVoteEntry].self, forKey: .guestVotesRanked) ?? []
+        headCoachName = try c.decode(String.self, forKey: .headCoachName)
+        assistantCoachName = try c.decode(String.self, forKey: .assistantCoachName)
+        teamManagerName = try c.decode(String.self, forKey: .teamManagerName)
+        runnerName = try c.decode(String.self, forKey: .runnerName)
+        goalUmpireName = try c.decode(String.self, forKey: .goalUmpireName)
+        fieldUmpireName = try c.decode(String.self, forKey: .fieldUmpireName)
+        boundaryUmpire1Name = try c.decode(String.self, forKey: .boundaryUmpire1Name)
+        boundaryUmpire2Name = try c.decode(String.self, forKey: .boundaryUmpire2Name)
+        trainers = try c.decode([String].self, forKey: .trainers)
+        notes = try c.decode(String.self, forKey: .notes)
+        guestBestFairestVotesScanPDF = try c.decodeIfPresent(Data.self, forKey: .guestBestFairestVotesScanPDF)
+        isDraft = try c.decode(Bool.self, forKey: .isDraft)
     }
 }
 
@@ -514,6 +553,7 @@ enum AppBackupService {
                         GameGoalKickerEntry(id: $0.id, playerID: $0.playerID, goals: $0.goals)
                     },
                     bestPlayersRanked: $0.bestPlayersRanked,
+                    guestVotesRanked: $0.guestVotesRanked,
                     headCoachName: $0.headCoachName,
                     assistantCoachName: $0.assistantCoachName,
                     teamManagerName: $0.teamManagerName,

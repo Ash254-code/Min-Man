@@ -50,6 +50,11 @@ struct TotalsView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
 
+                // Guest Votes (glass card)
+                leaderboardCard(title: "Guest Votes", rows: topGuestVotes())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+
                 // Goal Kickers (glass card)
                 leaderboardCard(title: "Goal Kickers", rows: topGoalKickers())
                     .listRowBackground(Color.clear)
@@ -253,6 +258,37 @@ private extension TotalsView {
 
         return sorted.enumerated().map { i, item in
             LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value)")
+        }
+    }
+
+    // Guest Votes leaderboard:
+    // 1st=3 pts, 2nd=2 pts, 3rd=1 pt per game
+    func topGuestVotes() -> [LeaderRow] {
+        var points: [UUID: Int] = [:]
+
+        for game in filteredGames {
+            for vote in game.guestVotesRanked {
+                let add: Int
+                switch vote.rank {
+                case 1: add = 3
+                case 2: add = 2
+                case 3: add = 1
+                default: add = 0
+                }
+                points[vote.playerID, default: 0] += add
+            }
+        }
+
+        let sorted = points
+            .sorted { a, b in
+                if a.value != b.value { return a.value > b.value }
+                return playerName(for: a.key)
+                    .localizedCaseInsensitiveCompare(playerName(for: b.key)) == .orderedAscending
+            }
+            .prefix(3)
+
+        return sorted.enumerated().map { i, item in
+            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) pts")
         }
     }
 }

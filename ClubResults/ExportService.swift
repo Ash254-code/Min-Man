@@ -12,6 +12,7 @@ protocol ExportableGame {
     var theirBehinds: Int { get }
     var goalKickers: [GameGoalKickerEntry] { get }
     var bestPlayersRanked: [UUID] { get }
+    var guestVotesRanked: [GameGuestVoteEntry] { get }
     var notes: String { get }
     var guestBestFairestVotesScanPDF: Data? { get }
 }
@@ -52,6 +53,14 @@ enum ExportService {
             lines.append("")
         }
 
+        if !game.guestVotesRanked.isEmpty {
+            lines.append("Guest Votes Ranking:")
+            for vote in game.guestVotesRanked.sorted(by: { $0.rank < $1.rank }) {
+                lines.append("\(vote.rank). \(playerName(vote.playerID))")
+            }
+            lines.append("")
+        }
+
         let trimmedNotes = (game.notes).trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedNotes.isEmpty {
             lines.append("Notes:")
@@ -75,6 +84,10 @@ enum ExportService {
         let best = game.bestPlayersRanked.enumerated()
             .map { "\($0.offset + 1):\(playerName($0.element))" }
             .joined(separator: "; ")
+        let guestVotes = game.guestVotesRanked
+            .sorted(by: { $0.rank < $1.rank })
+            .map { "\($0.rank):\(playerName($0.playerID))" }
+            .joined(separator: "; ")
 
         let kickers = game.goalKickers
             .map { "\(playerName($0.playerID!))=\($0.goals)" }
@@ -92,7 +105,7 @@ enum ExportService {
             "Grade","Date","Opponent","Venue",
             "OurGoals","OurBehinds","OurTotal",
             "TheirGoals","TheirBehinds","TheirTotal",
-            "BestPlayers","GoalKickers","Notes"
+            "BestPlayers","GuestVotes","GoalKickers","Notes"
         ].joined(separator: ",")
 
         let row = [
@@ -103,6 +116,7 @@ enum ExportService {
             "\(game.ourGoals)","\(game.ourBehinds)","\(ourTotal)",
             "\(game.theirGoals)","\(game.theirBehinds)","\(theirTotal)",
             esc(best),
+            esc(guestVotes),
             esc(kickers),
             esc(game.notes)
         ].joined(separator: ",")

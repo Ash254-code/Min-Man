@@ -162,6 +162,19 @@ struct GameDetailView: View {
                     }
                 }
 
+                if !game.guestVotesRanked.isEmpty {
+                    Section(header: Text("Guest Votes Ranking")) {
+                        ForEach(game.guestVotesRanked.sorted(by: { $0.rank < $1.rank })) { vote in
+                            HStack {
+                                Text(placeLabel(vote.rank - 1))
+                                    .frame(width: 28, alignment: .leading)
+                                    .foregroundStyle(.secondary)
+                                Text(playerName(for: vote.playerID))
+                            }
+                        }
+                    }
+                }
+
                 if !game.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Section(header: Text("Notes")) {
                         Text(game.notes)

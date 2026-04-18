@@ -298,8 +298,14 @@ struct NewGameWizardView: View {
     @State private var bestPlayerPickerPrompt: Int?
     @State private var bestPlayerPickerGameNumber: Int = 1
     @State private var bestPlayerPickerDetent: PresentationDetent = .large
+    @State private var guestVotesRanked: [UUID?] = Array(repeating: nil, count: 6)
+    @State private var guestVotesRankedGame2: [UUID?] = Array(repeating: nil, count: 6)
+    @State private var guestVotePickerPrompt: Int?
+    @State private var guestVotePickerGameNumber: Int = 1
+    @State private var guestVotePickerDetent: PresentationDetent = .large
     @State private var guestBestFairestVotesScanPDF: Data?
     @State private var showVotesScanner = false
+    @State private var showGuestVotesScanPrompt = false
     @State private var scannerErrorMessage: String?
     @State private var hasAutoPromptedVotesScanner = false
     @State private var hasAppliedInitialGrade = false
@@ -779,6 +785,23 @@ struct NewGameWizardView: View {
         }
     }
 
+    private func selectedGuestVotePlayerID(for rankIndex: Int?) -> UUID? {
+        guard let rankIndex, guestVotesRanked.indices.contains(rankIndex) else { return nil }
+        let source = guestVotePickerGameNumber == 2 ? guestVotesRankedGame2 : guestVotesRanked
+        return source[rankIndex]
+    }
+
+    private func clearGuestVote(at rankIndex: Int?) {
+        guard let rankIndex else { return }
+        if guestVotePickerGameNumber == 2 {
+            guard guestVotesRankedGame2.indices.contains(rankIndex) else { return }
+            guestVotesRankedGame2[rankIndex] = nil
+        } else {
+            guard guestVotesRanked.indices.contains(rankIndex) else { return }
+            guestVotesRanked[rankIndex] = nil
+        }
+    }
+
     // MARK: Validation
     private var canProceed: Bool {
         switch step {
@@ -859,7 +882,12 @@ struct NewGameWizardView: View {
             return game1OK && game2OK
 
         case .votes:
-            return guestBestFairestVotesScanPDF != nil
+            let ids = guestVotesRanked.compactMap { $0 }
+            let game1OK = ids.count == requiredBestPlayersCount && Set(ids).count == requiredBestPlayersCount
+            if !isTwoGameFlow { return game1OK }
+            let game2IDs = guestVotesRankedGame2.compactMap { $0 }
+            let game2OK = game2IDs.count == requiredBestPlayersCount && Set(game2IDs).count == requiredBestPlayersCount
+            return game1OK && game2OK
 
         case .review:
             return true
@@ -980,18 +1008,12 @@ struct NewGameWizardView: View {
             applyDefaults(for: gradeID)
             applyPreviewStateIfNeeded()
         }
-        .onChange(of: step) { _, newStep in
-            guard !isPreviewMode else { return }
-            if newStep == .votes && guestBestFairestVotesScanPDF == nil && !hasAutoPromptedVotesScanner {
-                openVotesScanner()
-                hasAutoPromptedVotesScanner = true
-            }
-        }
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
             guard !isRestoringDraft else { return }
             applyDefaults(for: newGrade)
             syncBestPlayersSelectionCount()
+            syncGuestVotesSelectionCount()
             gameCountSelection = .one
             step = .setup
             entryMode = nil
@@ -999,6 +1021,8 @@ struct NewGameWizardView: View {
             liveGameSession = LiveGameSessionState()
             editingGame = nil
             guestBestFairestVotesScanPDF = nil
+            guestVotesRanked = Array(repeating: nil, count: requiredBestPlayersCount)
+            guestVotesRankedGame2 = Array(repeating: nil, count: requiredBestPlayersCount)
             hasAutoPromptedVotesScanner = false
         }
         .onAppear {
@@ -1008,6 +1032,7 @@ struct NewGameWizardView: View {
                 gradeID = initialGradeID
                 applyDefaults(for: initialGradeID)
                 syncBestPlayersSelectionCount()
+                syncGuestVotesSelectionCount()
             }
             applyPreviewStateIfNeeded()
             restoreDraftIfNeeded()
@@ -1042,15 +1067,15 @@ struct NewGameWizardView: View {
                 guestBestFairestVotesScanPDF = data
                 showVotesScanner = false
                 hasAutoPromptedVotesScanner = true
-                if step == .votes, let currentIndex = activeSteps.firstIndex(of: .votes) {
-                    let nextIndex = currentIndex + 1
-                    if activeSteps.indices.contains(nextIndex) {
-                        step = activeSteps[nextIndex]
-                    }
+                if step == .votes {
+                    proceedFromVotesStep()
                 }
             } onCancel: {
                 showVotesScanner = false
                 hasAutoPromptedVotesScanner = true
+                if step == .votes {
+                    proceedFromVotesStep()
+                }
             }
         }
         .alert("Scanner unavailable", isPresented: Binding(
@@ -1067,6 +1092,20 @@ struct NewGameWizardView: View {
             }
         } message: {
             Text(scannerErrorMessage ?? "")
+        }
+        .confirmationDialog(
+            "Scan guest votes?",
+            isPresented: $showGuestVotesScanPrompt,
+            titleVisibility: .visible
+        ) {
+            Button("Scan now") {
+                openVotesScanner()
+            }
+            Button("Skip scan", role: .cancel) {
+                proceedFromVotesStep()
+            }
+        } message: {
+            Text("Manual guest votes are already saved in the ranking. You can optionally attach a scan.")
         }
         .sheet(isPresented: $showEntryModePrompt) {
             NavigationStack {
@@ -1235,6 +1274,11 @@ struct NewGameWizardView: View {
     }
 
     private func next() {
+        if step == .votes {
+            showGuestVotesScanPrompt = true
+            return
+        }
+
         if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == nil {
             showEntryModePrompt = true
             return
@@ -1247,6 +1291,13 @@ struct NewGameWizardView: View {
         }
 
         guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
+        let nextIndex = currentIndex + 1
+        guard activeSteps.indices.contains(nextIndex) else { return }
+        step = activeSteps[nextIndex]
+    }
+
+    private func proceedFromVotesStep() {
+        guard let currentIndex = activeSteps.firstIndex(of: .votes) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
         step = activeSteps[nextIndex]
@@ -1311,8 +1362,12 @@ struct NewGameWizardView: View {
         if !selectedPlayerIDs.isEmpty {
             goalKickers = selectedPlayerIDs.map { WizardGoalKickerEntry(playerID: $0, goals: 1) }
             syncBestPlayersSelectionCount()
+            syncGuestVotesSelectionCount()
             for idx in bestRanked.indices {
                 bestRanked[idx] = idx < selectedPlayerIDs.count ? selectedPlayerIDs[idx] : nil
+            }
+            for idx in guestVotesRanked.indices {
+                guestVotesRanked[idx] = idx < selectedPlayerIDs.count ? selectedPlayerIDs[idx] : nil
             }
         }
     }
@@ -1356,6 +1411,11 @@ struct NewGameWizardView: View {
         let bestIDs = draft.bestPlayersRanked
         for idx in bestRanked.indices {
             bestRanked[idx] = bestIDs.indices.contains(idx) ? bestIDs[idx] : nil
+        }
+        syncGuestVotesSelectionCount()
+        let guestVotesByRank = Dictionary(uniqueKeysWithValues: draft.guestVotesRanked.map { ($0.rank, $0.playerID) })
+        for idx in guestVotesRanked.indices {
+            guestVotesRanked[idx] = guestVotesByRank[idx + 1]
         }
 
         if reopenLiveViewOnAppear {
@@ -2312,9 +2372,65 @@ struct NewGameWizardView: View {
 
     private var votesStep: some View {
         Form {
-            Section("Guest Best & Fairest votes") {
+            Section(isTwoGameFlow ? "Game 1 · Guest votes (ranked 1–\(requiredBestPlayersCount))" : "Guest votes (ranked 1–\(requiredBestPlayersCount))") {
+                if eligiblePlayers.isEmpty {
+                    Text("Add players to this grade first.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
+                        Button {
+                            guestVotePickerGameNumber = 1
+                            guestVotePickerPrompt = idx
+                        } label: {
+                            HStack(spacing: 12) {
+                                rowLabel(bestLabel(for: idx))
+                                Spacer()
+                                rowValue(playerName(for: guestVotesRanked[idx]))
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if hasDuplicateGuestVotes {
+                        Text("Duplicate players selected. Each rank must be a different player.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            if isTwoGameFlow {
+                Section("Game 2 · Guest votes (ranked 1–\(requiredBestPlayersCount))") {
+                    ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
+                        Button {
+                            guestVotePickerGameNumber = 2
+                            guestVotePickerPrompt = idx
+                        } label: {
+                            HStack(spacing: 12) {
+                                rowLabel(bestLabel(for: idx))
+                                Spacer()
+                                rowValue(playerName(for: guestVotesRankedGame2[idx]))
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if hasDuplicateGuestVotesGame2 {
+                        Text("Duplicate players selected. Each rank must be a different player.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+
+            Section("Optional scan attachment") {
                 if guestBestFairestVotesScanPDF == nil {
-                    Text("Scan the paper votes before continuing.")
+                    Text("You can attach a guest votes scan after manual entry.")
                         .foregroundStyle(.secondary)
                 } else {
                     Label("Votes scan captured", systemImage: "checkmark.circle.fill")
@@ -2326,17 +2442,63 @@ struct NewGameWizardView: View {
                 }
             }
         }
-        .onAppear {
-            guard !isPreviewMode else { return }
-            if guestBestFairestVotesScanPDF == nil && !hasAutoPromptedVotesScanner {
-                openVotesScanner()
-                hasAutoPromptedVotesScanner = true
-            }
-        }
         .font(wizardBodyFont)
         .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
         .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
+        .sheet(
+            isPresented: Binding(
+                get: { guestVotePickerPrompt != nil },
+                set: { if !$0 { guestVotePickerPrompt = nil } }
+            )
+        ) {
+            NavigationStack {
+                List {
+                    Button {
+                        clearGuestVote(at: guestVotePickerPrompt)
+                        guestVotePickerPrompt = nil
+                    } label: {
+                        selectorListRow(
+                            title: "Select…",
+                            selected: selectedGuestVotePlayerID(for: guestVotePickerPrompt) == nil
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(eligiblePlayers) { player in
+                        Button {
+                            if let rank = guestVotePickerPrompt {
+                                setGuestVotePlayer(player.id, at: rank, gameNumber: guestVotePickerGameNumber)
+                            }
+                            guestVotePickerPrompt = nil
+                        } label: {
+                            selectorListRow(
+                                title: player.name,
+                                selected: selectedGuestVotePlayerID(for: guestVotePickerPrompt) == player.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .navigationTitle(isTwoGameFlow ? "Select Guest Vote · Game \(guestVotePickerGameNumber)" : "Select Guest Vote")
+                .navigationBarTitleDisplayMode(.inline)
+                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { guestVotePickerPrompt = nil }
+                    }
+                }
+            }
+            .presentationDetents([.height(bestPlayerPickerHeight), setupPickerExpandedDetent], selection: $guestVotePickerDetent)
+            .presentationDragIndicator(.visible)
+            .onAppear {
+                guestVotePickerDetent = setupPickerExpandedDetent
+            }
+            .onChange(of: guestVotePickerPrompt) { _, _ in
+                guestVotePickerDetent = setupPickerExpandedDetent
+            }
+        }
     }
 
     private func openVotesScanner() {
@@ -2380,6 +2542,16 @@ struct NewGameWizardView: View {
         return ids.count != Set(ids).count
     }
 
+    private var hasDuplicateGuestVotes: Bool {
+        let ids = Array(guestVotesRanked.prefix(requiredBestPlayersCount)).compactMap { $0 }
+        return ids.count != Set(ids).count
+    }
+
+    private var hasDuplicateGuestVotesGame2: Bool {
+        let ids = Array(guestVotesRankedGame2.prefix(requiredBestPlayersCount)).compactMap { $0 }
+        return ids.count != Set(ids).count
+    }
+
     private func setBestPlayer(_ id: UUID, at index: Int, gameNumber: Int) {
         if gameNumber == 2 {
             bestRankedGame2[index] = id
@@ -2390,6 +2562,20 @@ struct NewGameWizardView: View {
             bestRanked[index] = id
             for i in 0..<requiredBestPlayersCount where i != index {
                 if bestRanked[i] == id { bestRanked[i] = nil }
+            }
+        }
+    }
+
+    private func setGuestVotePlayer(_ id: UUID, at index: Int, gameNumber: Int) {
+        if gameNumber == 2 {
+            guestVotesRankedGame2[index] = id
+            for i in 0..<requiredBestPlayersCount where i != index {
+                if guestVotesRankedGame2[i] == id { guestVotesRankedGame2[i] = nil }
+            }
+        } else {
+            guestVotesRanked[index] = id
+            for i in 0..<requiredBestPlayersCount where i != index {
+                if guestVotesRanked[i] == id { guestVotesRanked[i] = nil }
             }
         }
     }
@@ -2420,6 +2606,20 @@ struct NewGameWizardView: View {
         }
     }
 
+    private func syncGuestVotesSelectionCount() {
+        let targetCount = requiredBestPlayersCount
+        if guestVotesRanked.count < targetCount {
+            guestVotesRanked.append(contentsOf: Array(repeating: nil, count: targetCount - guestVotesRanked.count))
+        } else if guestVotesRanked.count > targetCount {
+            guestVotesRanked = Array(guestVotesRanked.prefix(targetCount))
+        }
+        if guestVotesRankedGame2.count < targetCount {
+            guestVotesRankedGame2.append(contentsOf: Array(repeating: nil, count: targetCount - guestVotesRankedGame2.count))
+        } else if guestVotesRankedGame2.count > targetCount {
+            guestVotesRankedGame2 = Array(guestVotesRankedGame2.prefix(targetCount))
+        }
+    }
+
     private var totalGoalsKicked: Int { goalKickers.reduce(0) { $0 + $1.goals } }
     private var remainingGoalsToAllocate: Int { ourGoals - totalGoalsKicked }
     private var overAllocatedGoals: Bool { remainingGoalsToAllocate < 0 }
@@ -2443,19 +2643,25 @@ struct NewGameWizardView: View {
         let bestPlayersCount = requiredBestPlayersCount
         let asksGoalKickers = selectedGrade?.asksGoalKickers ?? true
         let asksNotes = selectedGrade?.asksNotes ?? true
-        let asksVotesScan = selectedGrade?.asksGuestBestFairestVotesScan ?? false
 
         let bestIDs = bestPlayersCount > 0 ? Array(bestRanked.prefix(bestPlayersCount)).compactMap { $0 } : []
         let game2BestIDs = bestPlayersCount > 0 ? Array(bestRankedGame2.prefix(bestPlayersCount)).compactMap { $0 } : []
+        let guestVoteIDs = bestPlayersCount > 0 ? Array(guestVotesRanked.prefix(bestPlayersCount)).compactMap { $0 } : []
+        let game2GuestVoteIDs = bestPlayersCount > 0 ? Array(guestVotesRankedGame2.prefix(bestPlayersCount)).compactMap { $0 } : []
         if enforceCompletionRequirements && bestPlayersCount > 0 {
             guard bestIDs.count == bestPlayersCount, Set(bestIDs).count == bestPlayersCount else { return nil }
             if isTwoGameFlow {
                 guard game2BestIDs.count == bestPlayersCount, Set(game2BestIDs).count == bestPlayersCount else { return nil }
             }
         }
-        if enforceCompletionRequirements && asksVotesScan {
-            guard guestBestFairestVotesScanPDF != nil else { return nil }
+        if enforceCompletionRequirements && bestPlayersCount > 0 {
+            guard guestVoteIDs.count == bestPlayersCount, Set(guestVoteIDs).count == bestPlayersCount else { return nil }
+            if isTwoGameFlow {
+                guard game2GuestVoteIDs.count == bestPlayersCount, Set(game2GuestVoteIDs).count == bestPlayersCount else { return nil }
+            }
         }
+        let guestVotes = guestVoteIDs.enumerated().map { GameGuestVoteEntry(rank: $0.offset + 1, playerID: $0.element) }
+        let game2GuestVotes = game2GuestVoteIDs.enumerated().map { GameGuestVoteEntry(rank: $0.offset + 1, playerID: $0.element) }
 
         let cleanedNotes = asksNotes ? notes.trimmingCharacters(in: .whitespacesAndNewlines) : ""
 
@@ -2476,6 +2682,7 @@ struct NewGameWizardView: View {
             existingGame.theirBehinds = theirBehinds
             existingGame.goalKickers = modelGoalKickers
             existingGame.bestPlayersRanked = bestIDs
+            existingGame.guestVotesRanked = guestVotes
             existingGame.headCoachName = finalHeadCoach
             existingGame.assistantCoachName = finalAssCoach
             existingGame.teamManagerName = finalTeamManager
@@ -2502,6 +2709,7 @@ struct NewGameWizardView: View {
                 theirBehinds: theirBehinds,
                 goalKickers: modelGoalKickers,
                 bestPlayersRanked: bestIDs,
+                guestVotesRanked: guestVotes,
                 headCoachName: finalHeadCoach,
                 assistantCoachName: finalAssCoach,
                 teamManagerName: finalTeamManager,
@@ -2531,6 +2739,7 @@ struct NewGameWizardView: View {
                     theirBehinds: theirBehinds,
                     goalKickers: modelGoalKickers,
                     bestPlayersRanked: game2BestIDs,
+                    guestVotesRanked: game2GuestVotes,
                     headCoachName: finalGame2HeadCoach,
                     assistantCoachName: finalGame2AssCoach,
                     teamManagerName: finalGame2TeamManager,
