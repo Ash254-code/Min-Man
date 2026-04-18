@@ -19,12 +19,18 @@ struct StaffPickerField: View {
     @State private var chooserDetent: PresentationDetent = .large
 
     private var options: [String] {
-        guard let gradeID else { return [] }
+        let savedForRole = persistedNames(for: role)
 
-        return staffMembers
-            .filter { $0.gradeID == gradeID && $0.role == role }
-            .map { $0.name }
-            .sorted()
+        let namesFromDataStore: [String]
+        if let gradeID {
+            namesFromDataStore = staffMembers
+                .filter { $0.gradeID == gradeID && $0.role == role }
+                .map(\.name)
+        } else {
+            namesFromDataStore = []
+        }
+
+        return deduplicatedNames(from: namesFromDataStore + savedForRole)
     }
 
     private var trimmedNewName: String {
@@ -32,7 +38,7 @@ struct StaffPickerField: View {
     }
 
     private var canSaveNewStaff: Bool {
-        gradeID != nil && !trimmedNewName.isEmpty
+        !trimmedNewName.isEmpty
     }
 
     private var fieldFont: Font {
@@ -193,18 +199,63 @@ struct StaffPickerField: View {
         }
     }
 
+
+
+    private func persistedNames(for role: StaffRole) -> [String] {
+        let key = "staffPickerNames.\(role.rawValue)"
+        let names = UserDefaults.standard.stringArray(forKey: key) ?? []
+        return deduplicatedNames(from: names)
+    }
+
+    private func persistName(_ name: String, for role: StaffRole) {
+        let key = "staffPickerNames.\(role.rawValue)"
+        var names = UserDefaults.standard.stringArray(forKey: key) ?? []
+        names.append(name)
+        UserDefaults.standard.set(deduplicatedNames(from: names), forKey: key)
+    }
+
+    private func deduplicatedNames(from names: [String]) -> [String] {
+        var seen = Set<String>()
+        var unique: [String] = []
+
+        for rawName in names {
+            let cleanedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanedName.isEmpty else { continue }
+
+            let normalized = cleanedName.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            guard !seen.contains(normalized) else { continue }
+
+            seen.insert(normalized)
+            unique.append(cleanedName)
+        }
+
+        return unique.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     private func saveNewStaff() {
-        guard let gradeID, canSaveNewStaff else { return }
+        guard canSaveNewStaff else { return }
 
-        let newStaff = StaffMember(
-            name: trimmedNewName,
-            role: role,
-            gradeID: gradeID
-        )
+        let cleanedName = trimmedNewName
+        persistName(cleanedName, for: role)
 
-        dataContext.insert(newStaff)
-        value = trimmedNewName
+        if let gradeID {
+            let nameAlreadyExists = staffMembers.contains { member in
+                member.gradeID == gradeID
+                    && member.role == role
+                    && member.name.compare(cleanedName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }
 
+            if !nameAlreadyExists {
+                let newStaff = StaffMember(
+                    name: cleanedName,
+                    role: role,
+                    gradeID: gradeID
+                )
+                dataContext.insert(newStaff)
+            }
+        }
+
+        value = cleanedName
         showAdd = false
     }
 
