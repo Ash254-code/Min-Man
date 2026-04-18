@@ -33,6 +33,15 @@ struct TotalsView: View {
         }
     }
 
+    private var leaderboardSections: [(title: String, rows: [LeaderRow])] {
+        [
+            ("Best Player", topBestPlayers()),
+            ("Guest Votes", topGuestVotes()),
+            ("Best & Fairest", topBestAndFairest()),
+            ("Goal Kickers", topGoalKickers())
+        ]
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -45,25 +54,11 @@ struct TotalsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
-                // Best Player (glass card)
-                leaderboardCard(title: "Best Player", rows: topBestPlayers())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-
-                // Guest Votes (glass card)
-                leaderboardCard(title: "Guest Votes", rows: topGuestVotes())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-
-                // Best & Fairest (Best Player + Guest Votes)
-                leaderboardCard(title: "Best & Fairest", rows: topBestAndFairest())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-
-                // Goal Kickers (glass card)
-                leaderboardCard(title: "Goal Kickers", rows: topGoalKickers())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                ForEach(Array(leaderboardSections.enumerated()), id: \.offset) { _, section in
+                    leaderboardCard(title: section.title, rows: section.rows)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
