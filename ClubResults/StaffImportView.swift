@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct StaffImportView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
     @Query private var grades: [Grade]
     @Query private var staff: [StaffMember]
 

@@ -3,7 +3,7 @@ import SwiftData
 
 struct EditGameView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
 
     @Query(sort: [SortDescriptor(\Player.name)]) private var players: [Player]
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]

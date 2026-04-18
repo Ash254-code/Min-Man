@@ -3,7 +3,7 @@ import SwiftData
 
 struct PlayerEditView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext: ModelContext
 
     @Bindable var player: Player
 
