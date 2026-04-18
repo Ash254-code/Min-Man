@@ -2,6 +2,11 @@ import SwiftUI
 import SwiftData
 
 struct GameEditView: View {
+    private enum SetupPickerPrompt {
+        case opponent
+        case venue
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Query(sort: [SortDescriptor(\Player.name)]) private var players: [Player]
 
@@ -37,9 +42,15 @@ struct GameEditView: View {
 
     @State private var notes: String
 
+    @State private var setupPickerPrompt: SetupPickerPrompt?
+    @State private var setupPickerDetent: PresentationDetent = .large
+
+    private let clubConfiguration: ClubConfiguration
+
     init(game: Game, grades: [Grade]) {
         self.game = game
         self.grades = grades
+        self.clubConfiguration = ClubConfigurationStore.load()
 
         _gradeID = State(initialValue: game.gradeID)
         _date = State(initialValue: game.date)
@@ -75,6 +86,31 @@ struct GameEditView: View {
         !venue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var hasChanges: Bool {
+        guard canSave else { return false }
+
+        return game.gradeID != gradeID ||
+        game.date != date ||
+        game.opponent != opponent ||
+        game.venue != venue ||
+        game.ourGoals != ourGoals ||
+        game.ourBehinds != ourBehinds ||
+        game.theirGoals != theirGoals ||
+        game.theirBehinds != theirBehinds ||
+        game.goalKickers != goalKickers ||
+        game.bestPlayersRanked != bestPlayersRanked ||
+        game.headCoachName != headCoachName ||
+        game.assistantCoachName != assistantCoachName ||
+        game.teamManagerName != teamManagerName ||
+        game.runnerName != runnerName ||
+        game.goalUmpireName != goalUmpireName ||
+        game.fieldUmpireName != fieldUmpireName ||
+        game.boundaryUmpire1Name != boundaryUmpire1Name ||
+        game.boundaryUmpire2Name != boundaryUmpire2Name ||
+        game.trainers != selectedTrainerNames ||
+        game.notes != notes
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -85,8 +121,21 @@ struct GameEditView: View {
                         }
                     }
                     DatePicker("Date", selection: $date)
-                    TextField("Opponent", text: $opponent)
-                    TextField("Venue", text: $venue)
+
+                    Button {
+                        setupPickerPrompt = .opponent
+                    } label: {
+                        selectorRow(title: "Opponent", value: opponent)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        setupPickerPrompt = .venue
+                    } label: {
+                        selectorRow(title: "Venue", value: venue)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(venuesForSelection.isEmpty)
                 }
 
                 Section("Score") {
@@ -97,21 +146,21 @@ struct GameEditView: View {
                 }
 
                 Section("Staff & Officials") {
-                    TextField("Head Coach", text: $headCoachName)
-                    TextField("Assistant Coach", text: $assistantCoachName)
-                    TextField("Team Manager", text: $teamManagerName)
-                    TextField("Runner", text: $runnerName)
-                    TextField("Goal Umpire", text: $goalUmpireName)
-                    TextField("Field Umpire", text: $fieldUmpireName)
-                    TextField("Boundary Umpire 1", text: $boundaryUmpire1Name)
-                    TextField("Boundary Umpire 2", text: $boundaryUmpire2Name)
+                    StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $headCoachName)
+                    StaffPickerField(title: "Assistant Coach", role: .assistantCoach, gradeID: gradeID, value: $assistantCoachName)
+                    StaffPickerField(title: "Team Manager", role: .teamManager, gradeID: gradeID, value: $teamManagerName)
+                    StaffPickerField(title: "Runner", role: .runner, gradeID: gradeID, value: $runnerName)
+                    StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
+                    StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $fieldUmpireName)
+                    StaffPickerField(title: "Boundary Umpire 1", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire1Name)
+                    StaffPickerField(title: "Boundary Umpire 2", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire2Name)
                 }
 
                 Section("Trainers") {
-                    TextField("Trainer 1", text: $trainer1Name)
-                    TextField("Trainer 2", text: $trainer2Name)
-                    TextField("Trainer 3", text: $trainer3Name)
-                    TextField("Trainer 4", text: $trainer4Name)
+                    StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
+                    StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
+                    StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
+                    StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
                 }
 
                 Section("Goal Kickers") {
@@ -147,24 +196,21 @@ struct GameEditView: View {
                         Text("No players yet.")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(players) { p in
-                            Button {
-                                toggleBestPlayer(p.id)
-                            } label: {
-                                HStack {
-                                    Text(p.name)
-                                    Spacer()
-                                    if let idx = bestPlayersRanked.firstIndex(of: p.id) {
-                                        Text("#\(idx + 1)")
-                                            .foregroundStyle(.secondary)
-                                        Image(systemName: "checkmark.circle.fill")
-                                    } else {
-                                        Image(systemName: "circle")
-                                            .foregroundStyle(.secondary)
-                                    }
+                        ForEach(bestPlayerRanks, id: \.self) { index in
+                            Picker(bestPlayerLabel(for: index), selection: bestPlayerBinding(for: index)) {
+                                Text("Select…").tag(UUID?.none)
+                                ForEach(players) { p in
+                                    Text(p.name).tag(UUID?.some(p.id))
                                 }
                             }
                         }
+
+                        Button {
+                            bestPlayersRanked.append(players.first?.id ?? UUID())
+                        } label: {
+                            Label("Add best player", systemImage: "plus")
+                        }
+                        .disabled(bestPlayersRanked.count >= players.count)
 
                         if !bestPlayersRanked.isEmpty {
                             Button(role: .destructive) {
@@ -182,54 +228,223 @@ struct GameEditView: View {
                 }
             }
             .navigationTitle("Edit Game")
+            .sheet(
+                isPresented: Binding(
+                    get: { setupPickerPrompt != nil },
+                    set: { if !$0 { setupPickerPrompt = nil } }
+                )
+            ) {
+                setupPickerSheet
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        game.gradeID = gradeID
-                        game.date = date
-                        game.opponent = opponent
-                        game.venue = venue
-
-                        game.ourGoals = ourGoals
-                        game.ourBehinds = ourBehinds
-                        game.theirGoals = theirGoals
-                        game.theirBehinds = theirBehinds
-
-                        game.goalKickers = goalKickers
-                        game.bestPlayersRanked = bestPlayersRanked
-
-                        game.headCoachName = headCoachName
-                        game.assistantCoachName = assistantCoachName
-                        game.teamManagerName = teamManagerName
-                        game.runnerName = runnerName
-                        game.goalUmpireName = goalUmpireName
-                        game.fieldUmpireName = fieldUmpireName
-                        game.boundaryUmpire1Name = boundaryUmpire1Name
-                        game.boundaryUmpire2Name = boundaryUmpire2Name
-                        game.trainers = [
-                            trainer1Name.trimmingCharacters(in: .whitespacesAndNewlines),
-                            trainer2Name.trimmingCharacters(in: .whitespacesAndNewlines),
-                            trainer3Name.trimmingCharacters(in: .whitespacesAndNewlines),
-                            trainer4Name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        ].filter { !$0.isEmpty }
-
-                        game.notes = notes
+                        saveGame()
                         dismiss()
                     }
-                    .disabled(!canSave)
+                    .foregroundStyle(hasChanges ? .blue : .secondary)
+                    .disabled(!hasChanges)
                 }
             }
         }
     }
 
-    private func toggleBestPlayer(_ id: UUID) {
-        if let idx = bestPlayersRanked.firstIndex(of: id) {
-            bestPlayersRanked.remove(at: idx)
-        } else {
-            bestPlayersRanked.append(id)
+    private var bestPlayerRanks: [Int] {
+        Array(bestPlayersRanked.indices)
+    }
+
+    private var opponentNames: [String] {
+        clubConfiguration.sortedOppositions.map(\.name)
+    }
+
+    private var selectedOpposition: OppositionTeamProfile? {
+        clubConfiguration.sortedOppositions.first(where: { $0.name == opponent.trimmingCharacters(in: .whitespacesAndNewlines) })
+    }
+
+    private var venuesForSelection: [String] {
+        let combined = clubConfiguration.clubTeam.sanitizedVenues + (selectedOpposition?.sanitizedVenues ?? [])
+        var seen = Set<String>()
+        return combined.filter { seen.insert($0).inserted }
+    }
+
+    private var selectedTrainerNames: [String] {
+        [trainer1Name, trainer2Name, trainer3Name, trainer4Name]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    @ViewBuilder
+    private var setupPickerSheet: some View {
+        NavigationStack {
+            List {
+                switch setupPickerPrompt {
+                case .opponent:
+                    Button {
+                        opponent = ""
+                        venue = ""
+                        setupPickerPrompt = nil
+                    } label: {
+                        selectorListRow(title: "Select…", selected: opponent.isEmpty)
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(opponentNames, id: \.self) { option in
+                        Button {
+                            opponent = option
+                            if !venuesForSelection.contains(venue) {
+                                venue = ""
+                            }
+                            setupPickerPrompt = nil
+                        } label: {
+                            selectorListRow(title: option, selected: opponent == option)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                case .venue:
+                    Button {
+                        venue = ""
+                        setupPickerPrompt = nil
+                    } label: {
+                        selectorListRow(title: "Select…", selected: venue.isEmpty)
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(venuesForSelection, id: \.self) { option in
+                        Button {
+                            venue = option
+                            setupPickerPrompt = nil
+                        } label: {
+                            selectorListRow(title: option, selected: venue == option)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                case .none:
+                    EmptyView()
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle(setupPickerPrompt == .venue ? "Select Venue" : "Select Opponent")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { setupPickerPrompt = nil }
+                }
+            }
         }
+        .presentationDetents([.height(setupPickerHeight), .large], selection: $setupPickerDetent)
+        .presentationDragIndicator(.visible)
+        .onAppear {
+            setupPickerDetent = .large
+        }
+    }
+
+    @ViewBuilder
+    private func selectorRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value.isEmpty ? "Select…" : value)
+                .foregroundStyle(value.isEmpty ? .secondary : .primary)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func selectorListRow(title: String, selected: Bool) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.tint)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var setupPickerHeight: CGFloat {
+        let count: Int
+        switch setupPickerPrompt {
+        case .opponent:
+            count = opponentNames.count + 1
+        case .venue:
+            count = venuesForSelection.count + 1
+        case .none:
+            count = 2
+        }
+
+        return PickerSheetPresentation.preferredHeight(
+            optionCount: count,
+            rowHeight: 56,
+            chromeHeight: 112,
+            minVisibleRows: 2,
+            isCompactLayout: true
+        )
+    }
+
+    private func bestPlayerLabel(for index: Int) -> String {
+        switch index {
+        case 0: return "1st Best Player"
+        case 1: return "2nd Best Player"
+        case 2: return "3rd Best Player"
+        default: return "\(index + 1)th Best Player"
+        }
+    }
+
+    private func bestPlayerBinding(for index: Int) -> Binding<UUID?> {
+        Binding<UUID?>(
+            get: {
+                guard bestPlayersRanked.indices.contains(index) else { return nil }
+                return bestPlayersRanked[index]
+            },
+            set: { selectedID in
+                guard bestPlayersRanked.indices.contains(index) else { return }
+                if let selectedID {
+                    if let existingIndex = bestPlayersRanked.firstIndex(of: selectedID), existingIndex != index {
+                        bestPlayersRanked.remove(at: existingIndex)
+                        let adjusted = existingIndex < index ? index - 1 : index
+                        bestPlayersRanked[adjusted] = selectedID
+                    } else {
+                        bestPlayersRanked[index] = selectedID
+                    }
+                } else {
+                    bestPlayersRanked.remove(at: index)
+                }
+            }
+        )
+    }
+
+    private func saveGame() {
+        game.gradeID = gradeID
+        game.date = date
+        game.opponent = opponent
+        game.venue = venue
+
+        game.ourGoals = ourGoals
+        game.ourBehinds = ourBehinds
+        game.theirGoals = theirGoals
+        game.theirBehinds = theirBehinds
+
+        game.goalKickers = goalKickers
+        game.bestPlayersRanked = bestPlayersRanked
+
+        game.headCoachName = headCoachName
+        game.assistantCoachName = assistantCoachName
+        game.teamManagerName = teamManagerName
+        game.runnerName = runnerName
+        game.goalUmpireName = goalUmpireName
+        game.fieldUmpireName = fieldUmpireName
+        game.boundaryUmpire1Name = boundaryUmpire1Name
+        game.boundaryUmpire2Name = boundaryUmpire2Name
+        game.trainers = selectedTrainerNames
+
+        game.notes = notes
     }
 }
