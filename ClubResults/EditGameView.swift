@@ -3,7 +3,7 @@ import SwiftData
 
 struct EditGameView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
 
     @Query(sort: [SortDescriptor(\Player.name)]) private var players: [Player]
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
@@ -112,7 +112,7 @@ struct EditGameView: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                    try? modelContext.save()
+                    try? dataContext.save()
                     dismiss()
                 }
             }

@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct StaffImportView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
     @Query private var grades: [Grade]
     @Query private var staff: [StaffMember]
 
@@ -154,10 +154,10 @@ struct StaffImportView: View {
                 toInsert.append(StaffMember(name: name, role: role, gradeID: grade.id))
             }
 
-            for item in toInsert { modelContext.insert(item) }
+            for item in toInsert { dataContext.insert(item) }
 
             do {
-                try modelContext.save()
+                try dataContext.save()
                 importedCount = toInsert.count
                 log.insert("✅ Imported \(importedCount) staff names.", at: 0)
             } catch {

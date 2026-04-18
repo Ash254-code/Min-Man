@@ -4,7 +4,7 @@ import PDFKit
 import UIKit
 
 struct SettingsView: View {
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
     @State private var saveErrorMessage: String?
 
     var body: some View {
@@ -90,7 +90,7 @@ struct SettingsView: View {
     }
 
     private func seedInitialGradesIfNeeded() {
-        let existing = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
+        let existing = (try? dataContext.fetch(FetchDescriptor<Grade>())) ?? []
         guard existing.isEmpty else { return }
 
         let defaults = [
@@ -103,11 +103,11 @@ struct SettingsView: View {
         ]
 
         for (index, name) in defaults.enumerated() {
-            modelContext.insert(Grade(name: name, isActive: true, displayOrder: index))
+            dataContext.insert(Grade(name: name, isActive: true, displayOrder: index))
         }
 
         do {
-            try modelContext.save()
+            try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
         }
@@ -115,7 +115,7 @@ struct SettingsView: View {
 }
 
 private struct AdminNameResetView: View {
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
     @Query private var grades: [Grade]
     @Query private var staffMembers: [StaffMember]
 
@@ -258,7 +258,7 @@ private struct AdminNameResetView: View {
         }
 
         for staffMember in matchingStaffMembers {
-            modelContext.delete(staffMember)
+            dataContext.delete(staffMember)
         }
 
         for gradeID in selectedGradeIDs {
@@ -269,7 +269,7 @@ private struct AdminNameResetView: View {
         }
 
         do {
-            try modelContext.save()
+            try dataContext.save()
             let removedCount = matchingStaffMembers.count
             clearFeedbackMessage = "Cleared \(removedCount) saved name\(removedCount == 1 ? "" : "s")."
         } catch {
@@ -454,7 +454,7 @@ private struct BoundaryUmpiresSettingsView: View {
 }
 
 private struct ClubGradesSettingsView: View {
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
 
     @State private var grades: [Grade] = []
     @Query private var players: [Player]
@@ -686,7 +686,7 @@ private struct ClubGradesSettingsView: View {
             allowsLiveGameView: draft.allowsLiveGameView,
             quarterLengthMinutes: draft.quarterLengthMinutes
         )
-        modelContext.insert(newGrade)
+        dataContext.insert(newGrade)
         grades.append(newGrade)
 
         SettingsBackupStore.saveGrades(grades)
@@ -744,10 +744,10 @@ private struct ClubGradesSettingsView: View {
         }
 
         for recipient in reportRecipients where recipient.gradeID == grade.id {
-            modelContext.delete(recipient)
+            dataContext.delete(recipient)
         }
 
-        modelContext.delete(grade)
+        dataContext.delete(grade)
 
         let remaining = orderedGradesForDisplay(
             grades.filter { $0.id != grade.id },
@@ -770,7 +770,7 @@ private struct ClubGradesSettingsView: View {
 
     private func saveContext() {
         do {
-            try modelContext.save()
+            try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
         }
@@ -784,7 +784,7 @@ private struct ClubGradesSettingsView: View {
                     SortDescriptor(\Grade.name)
                 ]
             )
-            let fetched = try modelContext.fetch(descriptor)
+            let fetched = try dataContext.fetch(descriptor)
 
             if fetched.isEmpty {
                 let backups = SettingsBackupStore.loadGrades()
@@ -820,7 +820,7 @@ private struct ClubGradesSettingsView: View {
                     }
 
                     for item in backups {
-                        modelContext.insert(
+                        dataContext.insert(
                             Grade(
                                 id: item.id,
                                 name: item.name,
@@ -851,9 +851,9 @@ private struct ClubGradesSettingsView: View {
                         )
                     }
 
-                    try? modelContext.save()
+                    try? dataContext.save()
 
-                    let afterRestore = (try? modelContext.fetch(descriptor)) ?? []
+                    let afterRestore = (try? dataContext.fetch(descriptor)) ?? []
                     if !afterRestore.isEmpty {
                         grades = afterRestore
                     }
@@ -1056,7 +1056,7 @@ private struct AddGradeWizardView: View {
 }
 
 private struct ContactsSettingsView: View {
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
 
     @State private var contacts: [Contact] = []
     @Query private var reportRecipients: [ReportRecipient]
@@ -1130,7 +1130,7 @@ private struct ContactsSettingsView: View {
                 allowsSaveAndAddAnother: true,
                 onSave: { name, mobile, email in
                     let newContact = Contact(name: name, mobile: mobile, email: email)
-                    modelContext.insert(newContact)
+                    dataContext.insert(newContact)
                     contacts.append(newContact)
                     contacts.sort {
                         $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -1181,10 +1181,10 @@ private struct ContactsSettingsView: View {
 
     private func deleteContact(_ contact: Contact) {
         for recipient in reportRecipients where recipient.contactID == contact.id {
-            modelContext.delete(recipient)
+            dataContext.delete(recipient)
         }
 
-        modelContext.delete(contact)
+        dataContext.delete(contact)
         contacts.removeAll { $0.id == contact.id }
 
         SettingsBackupStore.saveContacts(contacts)
@@ -1194,7 +1194,7 @@ private struct ContactsSettingsView: View {
 
     private func saveContext() {
         do {
-            try modelContext.save()
+            try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
             let backups = SettingsBackupStore.loadContacts()
@@ -1218,7 +1218,7 @@ private struct ContactsSettingsView: View {
             let descriptor = FetchDescriptor<Contact>(
                 sortBy: [SortDescriptor(\Contact.name)]
             )
-            let fetched = try modelContext.fetch(descriptor)
+            let fetched = try dataContext.fetch(descriptor)
 
             if fetched.isEmpty {
                 let backups = SettingsBackupStore.loadContacts()
@@ -1237,7 +1237,7 @@ private struct ContactsSettingsView: View {
                         }
 
                     for item in backups {
-                        modelContext.insert(
+                        dataContext.insert(
                             Contact(
                                 id: item.id,
                                 name: item.name,
@@ -1247,9 +1247,9 @@ private struct ContactsSettingsView: View {
                         )
                     }
 
-                    try? modelContext.save()
+                    try? dataContext.save()
 
-                    let afterRestore = (try? modelContext.fetch(descriptor)) ?? []
+                    let afterRestore = (try? dataContext.fetch(descriptor)) ?? []
                     if !afterRestore.isEmpty {
                         contacts = afterRestore
                     }
@@ -1380,7 +1380,7 @@ private struct ContactEditSheet: View {
 }
 
 private struct ReportsSettingsView: View {
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
     @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
@@ -1426,7 +1426,7 @@ private struct ReportsSettingsView: View {
                     .padding(.horizontal)
                     .contextMenu {
                         Button(role: .destructive) {
-                            modelContext.delete(template)
+                            dataContext.delete(template)
                             saveContext()
                         } label: {
                             Label("Delete", systemImage: "trash")
@@ -1471,7 +1471,7 @@ private struct ReportsSettingsView: View {
                     templateEditing = template
                 }
                 Button("Delete", role: .destructive) {
-                    modelContext.delete(template)
+                    dataContext.delete(template)
                     saveContext()
                 }
                 Button("Cancel", role: .cancel) {}
@@ -1494,7 +1494,7 @@ private struct ReportsSettingsView: View {
                     minimumGamesPlayed: minimumGamesPlayed,
                     groupingModeRawValue: groupingModeRawValue
                 )
-                modelContext.insert(template)
+                dataContext.insert(template)
                 saveContext()
             }
             .appPopupStyle()
@@ -1571,7 +1571,7 @@ private struct ReportsSettingsView: View {
 
     private func saveContext() {
         do {
-            try modelContext.save()
+            try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
         }
@@ -2200,7 +2200,7 @@ private struct CustomReportEditView: View {
 }
 
 private struct ReportRecipientsSettingsView: View {
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
 
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
@@ -2301,7 +2301,7 @@ private struct ReportRecipientsSettingsView: View {
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
-                                    modelContext.delete(recipient)
+                                    dataContext.delete(recipient)
                                     saveContext()
                                 } label: {
                                     Label("Remove", systemImage: "trash")
@@ -2369,7 +2369,7 @@ private struct ReportRecipientsSettingsView: View {
         let sendEmail = sendMode == .email || sendMode == .both
         let sendText = sendMode == .text || sendMode == .both
 
-        modelContext.insert(
+        dataContext.insert(
             ReportRecipient(
                 gradeID: gradeID,
                 contactID: contact.id,
@@ -2391,7 +2391,7 @@ private struct ReportRecipientsSettingsView: View {
 
     private func saveContext() {
         do {
-            try modelContext.save()
+            try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
         }

@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct TabsView: View {
-    @Environment(\.modelContext) private var modelContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
 
     var body: some View {
         TabView {
@@ -28,14 +28,14 @@ struct TabsView: View {
     }
 
     private func seedInitialGradesIfNeeded() {
-        let existing = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
+        let existing = (try? dataContext.fetch(FetchDescriptor<Grade>())) ?? []
         guard existing.isEmpty else { return }
 
         let defaults = ["A Grade", "B Grade", "Under 17's", "Under 14's", "Under 12's", "Under 9's"]
         for (index, name) in defaults.enumerated() {
-            modelContext.insert(Grade(name: name, isActive: true, displayOrder: index))
+            dataContext.insert(Grade(name: name, isActive: true, displayOrder: index))
         }
 
-        try? modelContext.save()
+        try? dataContext.save()
     }
 }
