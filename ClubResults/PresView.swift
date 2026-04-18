@@ -254,99 +254,104 @@ private struct PresentationGameFullScreenView: View {
         return cleaned.isEmpty ? "Our Team" : cleaned
     }
 
+    private var ourScoreline: String {
+        "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
+    }
+
+    private var theirScoreline: String {
+        "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
+    }
+
     var body: some View {
-        NavigationStack {
-            GeometryReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(gradeName)
-                                .font(.system(size: 52, weight: .black))
-                            Text("vs \(game.opponent)")
-                                .font(.system(size: 36, weight: .bold))
-                            Text(game.date.formatted(date: .complete, time: .omitted))
-                                .font(.system(size: 24, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+
+                VStack(alignment: .leading, spacing: 26) {
+                    HStack(alignment: .center, spacing: 20) {
+                        ScorePill(
+                            ourTeamLabel,
+                            style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
+                        )
+                        .scaleEffect(proxy.size.width > 1000 ? 1.8 : 1.6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                         if showScore {
-                            VStack(spacing: 14) {
-                                Text("\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))")
-                                    .font(.system(size: 72, weight: .black))
-                                    .minimumScaleFactor(0.7)
-                                Text("-")
-                                    .font(.system(size: 44, weight: .bold))
+                            HStack(spacing: 18) {
+                                Text(ourScoreline)
+                                    .font(.system(size: proxy.size.width > 1000 ? 76 : 56, weight: .black))
+                                    .minimumScaleFactor(0.65)
+                                Text("—")
+                                    .font(.system(size: proxy.size.width > 1000 ? 58 : 44, weight: .heavy))
                                     .foregroundStyle(.secondary)
-                                Text("\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
-                                    .font(.system(size: 72, weight: .black))
-                                    .minimumScaleFactor(0.7)
-                                    .foregroundStyle(.secondary)
+                                Text(theirScoreline)
+                                    .font(.system(size: proxy.size.width > 1000 ? 76 : 56, weight: .black))
+                                    .minimumScaleFactor(0.65)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
                         }
 
-                        HStack(spacing: 20) {
-                            ScorePill(
-                                ourTeamLabel,
-                                style: ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
-                            )
-                            .scaleEffect(1.4)
-
-                            ScorePill(
-                                game.opponent,
-                                style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
-                            )
-                            .scaleEffect(1.4)
-                        }
-                        .padding(.top, 4)
-                        .padding(.bottom, 12)
-
-                        HStack(alignment: .top, spacing: 36) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                Text("Goal Kickers")
-                                    .font(.system(size: 34, weight: .heavy))
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(Array(goalKickers.enumerated()), id: \.offset) { _, item in
-                                        Text(item)
-                                            .font(.system(size: 30, weight: .medium))
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            VStack(alignment: .leading, spacing: 14) {
-                                Text("Best Players")
-                                    .font(.system(size: 34, weight: .heavy))
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(Array(bestPlayers.enumerated()), id: \.offset) { _, item in
-                                        Text(item)
-                                            .font(.system(size: 30, weight: .medium))
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(
-                            maxWidth: .infinity,
-                            alignment: proxy.size.width > 900 ? .center : .leading
+                        ScorePill(
+                            game.opponent,
+                            style: ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
                         )
+                        .scaleEffect(proxy.size.width > 1000 ? 1.8 : 1.6)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(32)
-                }
-            }
-            .background(Color(.systemBackground))
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(gradeName) • vs \(game.opponent)")
+                            .font(.system(size: 30, weight: .bold))
+                            .minimumScaleFactor(0.8)
+                        Text(game.date.formatted(date: .complete, time: .omitted))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(.secondary)
                     }
-                    .font(.system(size: 26, weight: .bold))
+
+                    Divider()
+
+                    HStack(alignment: .top, spacing: 28) {
+                        presentationListColumn(title: "Goal Kickers", items: goalKickers)
+                        presentationListColumn(title: "Best Players", items: bestPlayers)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
+                .padding(.horizontal, 32)
+                .padding(.top, 34)
+                .padding(.bottom, 20)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.system(size: 24, weight: .bold))
+                }
+                .padding(.leading, 18)
+                .padding(.top, 10)
             }
         }
+    }
+
+    @ViewBuilder
+    private func presentationListColumn(title: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.system(size: 36, weight: .heavy))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                        Text(item)
+                            .font(.system(size: 32, weight: .semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
