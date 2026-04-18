@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - Players List
 
 struct PlayersView: View {
-    @Environment(\.modelContext) private var dataContext: ModelContext
+    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @Query(sort: \Player.name) private var queriedPlayers: [Player]
     @Query private var grades: [Grade]
     @State private var playersForDisplay: [Player] = []

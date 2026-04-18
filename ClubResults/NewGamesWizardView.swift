@@ -196,7 +196,7 @@ struct NewGameWizardView: View {
     private let clubNavy = Color(red: 0.05, green: 0.15, blue: 0.35)
     private let clubYellow = Color(red: 1.0, green: 0.82, blue: 0.0)
 
-    @Environment(\.modelContext) private var dataContext: ModelContext
+    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @Environment(\.dismiss) private var dismiss   // ✅ allow Cancel / dismiss sheet
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
