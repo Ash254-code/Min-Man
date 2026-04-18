@@ -255,13 +255,6 @@ private struct NewGameQuickStartSection: View {
                             onStartNewGame(grade.id)
                         } label: {
                             VStack(spacing: 10) {
-                                HStack {
-                                    Spacer()
-                                    Circle()
-                                        .fill(status.color)
-                                        .frame(width: 14, height: 14)
-                                }
-
                                 Text(grade.name)
                                     .font(.system(size: horizontalSizeClass == .compact ? 20 : 34, weight: .bold))
                                     .multilineTextAlignment(.center)
