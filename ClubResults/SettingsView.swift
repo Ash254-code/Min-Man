@@ -56,6 +56,12 @@ struct SettingsView: View {
                     } label: {
                         settingsRow(title: "Clear Saved Picker Names", icon: "trash")
                     }
+
+                    NavigationLink {
+                        BackupAndRestoreSettingsView()
+                    } label: {
+                        settingsRow(title: "Backup & Restore", icon: "externaldrive.badge.icloud")
+                    }
                 } header: {
                     Text("Admin")
                 }
@@ -110,6 +116,90 @@ struct SettingsView: View {
             try modelContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct BackupAndRestoreSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+
+    @State private var shareURL: URL?
+    @State private var exportSuccessMessage: String?
+    @State private var exportErrorMessage: String?
+    @State private var isExporting = false
+
+    var body: some View {
+        Form {
+            Section {
+                Text("Creates a full backup file of all saved data so it can be stored safely before updates or major changes.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    exportAllData()
+                } label: {
+                    HStack {
+                        if isExporting {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                        }
+                        Text(isExporting ? "Creating Backup…" : "Export All Data")
+                    }
+                }
+                .disabled(isExporting)
+            } header: {
+                Text("Data Safety")
+            } footer: {
+                if let exportSuccessMessage {
+                    Text(exportSuccessMessage)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Exports all user-entered app data into one versioned JSON backup file.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Backup & Restore")
+        .sheet(isPresented: Binding(
+            get: { shareURL != nil },
+            set: { shouldPresent in
+                if !shouldPresent { shareURL = nil }
+            }
+        )) {
+            if let shareURL {
+                ShareSheet(items: [shareURL])
+            }
+        }
+        .alert(
+            "Export Failed",
+            isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { if !$0 { exportErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                exportErrorMessage = nil
+            }
+        } message: {
+            Text(exportErrorMessage ?? "An unknown error occurred.")
+        }
+    }
+
+    private func exportAllData() {
+        guard !isExporting else { return }
+        isExporting = true
+        defer { isExporting = false }
+
+        do {
+            let result = try AppBackupService.createFullBackupFile(modelContext: modelContext)
+            shareURL = result.fileURL
+            exportSuccessMessage = """
+            Backup ready: \(result.fileURL.lastPathComponent)
+            \(ByteCountFormatter.string(fromByteCount: Int64(result.fileSizeBytes), countStyle: .file)) • \
+            \(result.itemCounts.players) players • \(result.itemCounts.games) games • \(result.itemCounts.grades) grades
+            """
+        } catch {
+            exportErrorMessage = error.localizedDescription
         }
     }
 }
