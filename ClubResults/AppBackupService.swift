@@ -424,6 +424,7 @@ enum AppBackupService {
         }
     }
 
+    @MainActor
     private static func clearExistingData(modelContext: ModelContext) {
         let grades = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
         grades.forEach { modelContext.delete($0) }
@@ -450,6 +451,7 @@ enum AppBackupService {
         staffDefaults.forEach { modelContext.delete($0) }
     }
 
+    @MainActor
     private static func importPayload(_ payload: AppBackupPayload, into modelContext: ModelContext) {
         payload.grades.forEach {
             modelContext.insert(
@@ -576,16 +578,16 @@ enum AppBackupService {
         }
     }
 
+    @MainActor
     private static func applySettings(_ settings: AppSettingsRecord) {
         UserDefaults.standard.set(settings.appAppearanceRawValue, forKey: "appAppearance")
         ClubConfigurationStore.save(settings.clubConfiguration)
 
-        let boundaryMappings = Dictionary(
-            uniqueKeysWithValues: settings.boundaryUmpireGradeMappings.compactMap { item in
+        let boundaryMappingPairs: [(UUID, [UUID])] = settings.boundaryUmpireGradeMappings.compactMap { item in
                 guard let id = UUID(uuidString: item.key) else { return nil }
                 return (id, item.value)
             }
-        )
+        let boundaryMappings = Dictionary(uniqueKeysWithValues: boundaryMappingPairs)
         SettingsBackupStore.saveBoundaryUmpireGradeMappings(boundaryMappings)
 
         UserDefaults.standard.dictionaryRepresentation().keys
