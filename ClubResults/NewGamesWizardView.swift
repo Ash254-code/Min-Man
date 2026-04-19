@@ -2252,13 +2252,14 @@ struct NewGameWizardView: View {
     }
 
     private var postGameScoreEntryOnGoalsStep: some View {
-        VStack(spacing: 16) {
+        HStack(alignment: .top, spacing: 14) {
             postGameScoreTeamEntry(
                 title: clubConfiguration.clubTeam.name,
                 style: ourTeamScoreStyle,
                 goals: $ourGoals,
                 behinds: $ourBehinds
             )
+            .frame(maxWidth: .infinity, alignment: .topLeading)
 
             postGameScoreTeamEntry(
                 title: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
@@ -2266,6 +2267,7 @@ struct NewGameWizardView: View {
                 goals: $theirGoals,
                 behinds: $theirBehinds
             )
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .padding(.vertical, 4)
     }
