@@ -5,7 +5,7 @@ struct GamesView: View {
     @Environment(\.modelContext) private var modelContext
 
     private struct RoundGroup: Identifiable {
-        let id: UUID
+        let id: String
         let roundNumber: Int
         let date: Date
         let opponent: String
@@ -67,7 +67,7 @@ struct GamesView: View {
     @State private var newGameWizardPresentation: NewGameWizardPresentation?
     @State private var selectedGameForSummary: Game?
     @State private var selectedGameForEdit: Game?
-    @State private var selectedRoundID: UUID?
+    @State private var selectedRoundID: String?
     @State private var gamePendingDelete: Game?
     @State private var codePromptGame: Game?
     @State private var codePromptValue = ""
@@ -109,6 +109,15 @@ struct GamesView: View {
         Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
     }
 
+    private var clubConfiguration: ClubConfiguration {
+        ClubConfigurationStore.load()
+    }
+
+    private var clubName: String {
+        let trimmed = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Min Man" : trimmed
+    }
+
     private func gameListItems(from sourceGames: [Game]) -> [GameListItem] {
         var result: [GameListItem] = []
         var used = Set<UUID>()
@@ -140,7 +149,7 @@ struct GamesView: View {
         guard !sortedChronological.isEmpty else { return [] }
 
         struct RoundBucket {
-            var id: UUID
+            var id: String
             var opponentKey: String
             var opponentLabel: String
             var anchorDate: Date
@@ -160,9 +169,10 @@ struct GamesView: View {
                 let sortedDates = buckets[index].games.map(\.date).sorted()
                 buckets[index].anchorDate = sortedDates[sortedDates.count / 2]
             } else {
+                let dayKey = Calendar.current.startOfDay(for: game.date).timeIntervalSince1970
                 buckets.append(
                     RoundBucket(
-                        id: UUID(),
+                        id: "\(opponentKey)|\(Int(dayKey))",
                         opponentKey: opponentKey,
                         opponentLabel: game.opponent,
                         anchorDate: game.date,
@@ -209,8 +219,8 @@ struct GamesView: View {
         }
     }
 
-    private func roundTitle(for round: RoundGroup) -> String {
-        "ROUND \(round.roundNumber) - \(round.date.formatted(date: .abbreviated, time: .omitted)) - Us v \(round.opponent)"
+    private func roundDateLabel(for round: RoundGroup) -> String {
+        round.date.formatted(date: .abbreviated, time: .omitted)
     }
 
     private func latestDraft(for gradeID: UUID) -> Game? {
@@ -318,9 +328,12 @@ struct GamesView: View {
                 }
                 .buttonStyle(.plain)
 
-                Text(roundTitle(for: round))
-                    .font(.system(size: 24, weight: .bold))
-                    .lineLimit(2)
+                RoundDetailHeaderCard(
+                    roundNumber: round.roundNumber,
+                    dateLabel: roundDateLabel(for: round),
+                    clubName: clubName,
+                    opponent: round.opponent
+                )
 
                 ForEach(roundGamesByGrade(for: round), id: \.grade.id) { grouped in
                     VStack(alignment: .leading, spacing: 10) {
@@ -339,7 +352,12 @@ struct GamesView: View {
                     Button {
                         selectedRoundID = round.id
                     } label: {
-                        RoundCardRow(title: roundTitle(for: round))
+                        RoundCardRow(
+                            roundNumber: round.roundNumber,
+                            dateLabel: roundDateLabel(for: round),
+                            clubName: clubName,
+                            opponent: round.opponent
+                        )
                     }
                     .buttonStyle(.plain)
                 }
@@ -776,19 +794,77 @@ private struct GameCardRow: View {
     }
 }
 
-private struct RoundCardRow: View {
-    let title: String
+private struct RoundTitleLine: View {
+    let roundNumber: Int
+    let dateLabel: String
+    let clubName: String
+    let opponent: String
+    var showsChevron: Bool
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(title)
+            Text("ROUND \(roundNumber) - \(dateLabel) -")
                 .font(.system(size: 24, weight: .bold))
                 .multilineTextAlignment(.leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            OpponentBadge(opponent: clubName, fixedWidth: nil)
+            Text("v \(opponent)")
+                .font(.system(size: 24, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.secondary)
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+}
+
+private struct RoundCardRow: View {
+    let roundNumber: Int
+    let dateLabel: String
+    let clubName: String
+    let opponent: String
+
+    var body: some View {
+        RoundTitleLine(
+            roundNumber: roundNumber,
+            dateLabel: dateLabel,
+            clubName: clubName,
+            opponent: opponent,
+            showsChevron: true
+        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+private struct RoundDetailHeaderCard: View {
+    let roundNumber: Int
+    let dateLabel: String
+    let clubName: String
+    let opponent: String
+
+    var body: some View {
+        RoundTitleLine(
+            roundNumber: roundNumber,
+            dateLabel: dateLabel,
+            clubName: clubName,
+            opponent: opponent,
+            showsChevron: false
+        )
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
