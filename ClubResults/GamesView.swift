@@ -403,66 +403,55 @@ struct GamesView: View {
         }
     }
 
-    var body: some View {
-        NavigationStack {
-            GeometryReader { geometry in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+    private var gamesHomeContent: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
 
-                        // Header like your screenshot: "Games" + small "All" pill
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text("Games")
-                                .font(.system(size: 44, weight: .bold))
+                    // Header like your screenshot: "Games" + small "All" pill
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("Games")
+                            .font(.system(size: 44, weight: .bold))
 
-                            Text(selectedGradeName)
-                                .font(.system(size: 16, weight: .semibold))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .fill(.ultraThinMaterial)
-                                )
-                                .foregroundStyle(.secondary)
+                        Text(selectedGradeName)
+                            .font(.system(size: 16, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                            )
+                            .foregroundStyle(.secondary)
 
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 6)
-
-                        NewGameQuickStartSection(
-                            grades: orderedGrades,
-                            minHeight: geometry.size.height * 0.33,
-                            statusForGrade: gradeStatus(for:),
-                            onStartNewGame: { gradeID in
-                                if let draft = latestDraft(for: gradeID) {
-                                    let reopenLive = DraftResumeStore.shouldOpenLive(for: gradeID)
-                                    newGameWizardPresentation = NewGameWizardPresentation(
-                                        initialGradeID: gradeID,
-                                        draftGameID: draft.id,
-                                        reopenLiveView: reopenLive
-                                    )
-                                    DraftResumeStore.setShouldOpenLive(false, for: gradeID)
-                                } else {
-                                    newGameWizardPresentation = NewGameWizardPresentation(
-                                        initialGradeID: gradeID,
-                                        draftGameID: nil,
-                                        reopenLiveView: false
-                                    )
-                                }
-                            }
-                        )
-                        .padding(.horizontal)
-
-                        GamesListSection(minHeight: geometry.size.height * 0.33) {
-                            gamesListContent
-                        }
-                        .padding(.horizontal)
-
-                        Spacer(minLength: 20)
+                        Spacer()
                     }
+                    .padding(.horizontal)
+                    .padding(.top, 6)
+
+                    NewGameQuickStartSection(
+                        grades: orderedGrades,
+                        minHeight: geometry.size.height * 0.33,
+                        statusForGrade: gradeStatus(for:),
+                        onStartNewGame: startNewGame(for:)
+                    )
+                    .padding(.horizontal)
+
+                    GamesListSection(minHeight: geometry.size.height * 0.33) {
+                        gamesListContent
+                    }
+                    .padding(.horizontal)
+
+                    Spacer(minLength: 20)
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            gamesHomeContent
+        }
+        .navigationBarTitleDisplayMode(.inline)
 
             // ✅ EXACT "other pages" style: one capsule containing filter + plus
             .toolbar {
@@ -518,6 +507,23 @@ struct GamesView: View {
             } message: { game in
                 Text("Delete \(game.opponent) permanently? This cannot be undone.")
             }
+    }
+
+    private func startNewGame(for gradeID: UUID) {
+        if let draft = latestDraft(for: gradeID) {
+            let reopenLive = DraftResumeStore.shouldOpenLive(for: gradeID)
+            newGameWizardPresentation = NewGameWizardPresentation(
+                initialGradeID: gradeID,
+                draftGameID: draft.id,
+                reopenLiveView: reopenLive
+            )
+            DraftResumeStore.setShouldOpenLive(false, for: gradeID)
+        } else {
+            newGameWizardPresentation = NewGameWizardPresentation(
+                initialGradeID: gradeID,
+                draftGameID: nil,
+                reopenLiveView: false
+            )
         }
     }
 
