@@ -584,6 +584,22 @@ struct NewGameWizardView: View {
         .system(size: isCompactLayout ? 20 : 24, weight: .regular)
     }
 
+    private var wizardHeader: some View {
+        HStack(spacing: 12) {
+            Text("New Game")
+                .font(wizardPrimaryTitleFont)
+            Spacer()
+            Text(selectedGradeName)
+                .font(wizardSecondaryTitleFont)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, isCompactLayout ? 20 : 28)
+        .padding(.top, isCompactLayout ? 8 : 14)
+        .padding(.bottom, isCompactLayout ? 12 : 16)
+    }
+
     private var selectedGrade: Grade? {
         guard let gid = gradeID else { return nil }
         return resolvedGrades.first(where: { $0.id == gid })
@@ -888,6 +904,7 @@ struct NewGameWizardView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                wizardHeader
 
                 if currentStep != .score {
                     ProgressView(
@@ -1250,70 +1267,107 @@ struct NewGameWizardView: View {
     // ✅ NEW: Setup step (Grade + Date + Opponent + Venue)
     // Uses the SAME Form styling you had on the Grade screen.
     private var setupStep: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("New Game")
-                    .font(wizardPrimaryTitleFont)
-                Spacer()
-                Text(selectedGradeName)
-                    .font(wizardSecondaryTitleFont)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, isCompactLayout ? 20 : 28)
-            .padding(.top, isCompactLayout ? 8 : 14)
-            .padding(.bottom, isCompactLayout ? 12 : 16)
-
-            Form {
-                if let _ = gradeID, eligiblePlayers.isEmpty {
-                    Section {
-                        Text("No active players assigned to this grade yet. Add players first.")
-                            .foregroundStyle(.secondary)
-                    }
-                } else if gradeID != nil {
-                    Section {
-                        Text("\(eligiblePlayers.count) eligible players")
-                            .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(spacing: 14) {
+                if let _ = gradeID {
+                    StaffCard(title: "Players", systemImage: "person.3.fill") {
+                        Text(
+                            eligiblePlayers.isEmpty
+                                ? "No active players assigned to this grade yet. Add players first."
+                                : "\(eligiblePlayers.count) eligible players"
+                        )
+                        .font(wizardBodyFont)
+                        .foregroundStyle(.secondary)
                     }
                 }
 
-                Section("Game details") {
+                StaffCard(title: "Game Details", systemImage: "calendar") {
                     if shouldAskGameCount {
-                        Picker("How many games?", selection: $gameCountSelection) {
-                            ForEach(GameCountSelection.allCases) { option in
-                                Text(option.label).tag(option)
+                        HStack(spacing: 12) {
+                            rowLabel("How many games?")
+                            Spacer()
+                            setupMenuButton(title: gameCountSelection.label) {
+                                ForEach(GameCountSelection.allCases) { option in
+                                    Button(option.label) {
+                                        gameCountSelection = option
+                                    }
+                                }
                             }
                         }
                     }
 
                     DatePicker("Date & time", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                        .font(wizardBodyFont)
 
-                    Picker("Opponent", selection: $opponentName) {
-                        Text("Select…").tag("")
-                        ForEach(opponentNames, id: \.self) { opposition in
-                            Text(opposition).tag(opposition)
-                        }
-                    }
-                    .onChange(of: opponentName) { _, _ in
-                        if !venuesForSelection.contains(venueName) {
-                            venueName = ""
+                    HStack(spacing: 12) {
+                        rowLabel("Opponent")
+                        Spacer()
+                        setupMenuButton(title: opponentName.isEmpty ? "Select…" : opponentName) {
+                            Button("Select…") { opponentName = "" }
+                            ForEach(opponentNames, id: \.self) { opposition in
+                                Button(opposition) {
+                                    opponentName = opposition
+                                    if !venuesForSelection.contains(venueName) {
+                                        venueName = ""
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    Picker("Venue", selection: $venueName) {
-                        Text("Select…").tag("")
-                        ForEach(venuesForSelection, id: \.self) { venue in
-                            Text(venue).tag(venue)
+                    HStack(spacing: 12) {
+                        rowLabel("Venue")
+                        Spacer()
+                        setupMenuButton(
+                            title: venueName.isEmpty ? "Select…" : venueName,
+                            isDisabled: venuesForSelection.isEmpty
+                        ) {
+                            Button("Select…") { venueName = "" }
+                            ForEach(venuesForSelection, id: \.self) { venue in
+                                Button(venue) {
+                                    venueName = venue
+                                }
+                            }
                         }
                     }
-                    .disabled(venuesForSelection.isEmpty)
                 }
             }
-            .font(wizardBodyFont)
-            .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
         }
         .dynamicTypeSize(.large ... .accessibility2)
-        .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private func setupMenuButton<Content: View>(
+        title: String,
+        isDisabled: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Menu {
+            content()
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(wizardBodyFont)
+                    .foregroundStyle(title == "Select…" ? .secondary : .primary)
+                    .lineLimit(1)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: isCompactLayout ? 13 : 16, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, isCompactLayout ? 14 : 18)
+            .padding(.vertical, isCompactLayout ? 10 : 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
     }
 
     // Staff step (coaching only)
