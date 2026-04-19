@@ -904,7 +904,7 @@ struct NewGameWizardView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if currentStep == .setup {
+                if currentStep != .score {
                     wizardHeader
                 }
 
@@ -964,9 +964,9 @@ struct NewGameWizardView: View {
             .navigationTitle(
                 currentStep == .score
                     ? (supportsLiveGameView ? "Live Game View" : "Final Score")
-                    : (currentStep == .setup ? "" : "New Game")
+                    : ""
             )
-            .navigationBarTitleDisplayMode((currentStep == .setup || currentStep == .score) ? .inline : .large)
+            .navigationBarTitleDisplayMode(.inline)
 
             // ✅ Cancel in top-left ONLY on first step
             .toolbar {
@@ -977,15 +977,6 @@ struct NewGameWizardView: View {
                         Button("Pause") {
                             pauseAndSaveLiveDraftThenReturnHome()
                         }
-                    }
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if currentStep != .setup {
-                        Text(selectedGradeName)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
                     }
                 }
             }
