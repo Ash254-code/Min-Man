@@ -112,12 +112,14 @@ struct SettingsView: View {
         .id(resetToken)
     }
 
+    private let settingsIconColumnWidth: CGFloat = 30
+
     @ViewBuilder
     private func settingsRow(title: String, icon: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .foregroundStyle(.secondary)
-                .frame(width: 24, alignment: .leading)
+                .frame(width: settingsIconColumnWidth, alignment: .leading)
             Text(title)
         }
     }
