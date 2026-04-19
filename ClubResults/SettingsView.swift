@@ -2583,16 +2583,18 @@ struct ReportsSettingsView: View {
                 grades: grades,
                 contacts: contacts,
                 sectionMemberships: sectionMemberships
-            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeBestPlayers, includeGuestVotes, includeGoalKickers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 let template = CustomReportTemplate(
                     name: name,
                     gradeIDs: selectedGradeIDs,
                     includeBestPlayers: includeBestPlayers,
-                    includePlayerGrades: includePlayerGrades,
+                    includePlayerGrades: includeGuestVotes,
                     includeGoalKickers: includeGoalKickers,
-                    includeGuernseyNumbers: includeGuernseyNumbers,
+                    includeGuernseyNumbers: false,
                     includeBestAndFairestVotes: includeBestAndFairestVotes,
                     includeStaffRoles: includeStaffRoles,
+                    includeOfficials: includeOfficials,
+                    includeUmpires: includeUmpires,
                     includeTrainers: includeTrainers,
                     includeMatchNotes: includeMatchNotes,
                     includeOnlyActiveGrades: includeOnlyActiveGrades,
@@ -2638,11 +2640,12 @@ struct ReportsSettingsView: View {
                 initialName: template.name,
                 initialSelectedGradeIDs: template.gradeIDs,
                 initialIncludeBestPlayers: template.includeBestPlayers,
-                initialIncludePlayerGrades: template.includePlayerGrades,
+                initialIncludeGuestVotes: template.includePlayerGrades,
                 initialIncludeGoalKickers: template.includeGoalKickers,
-                initialIncludeGuernseyNumbers: template.includeGuernseyNumbers,
                 initialIncludeBestAndFairestVotes: template.includeBestAndFairestVotes,
                 initialIncludeStaffRoles: template.includeStaffRoles,
+                initialIncludeOfficials: template.includeOfficials,
+                initialIncludeUmpires: template.includeUmpires,
                 initialIncludeTrainers: template.includeTrainers,
                 initialIncludeMatchNotes: template.includeMatchNotes,
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
@@ -2667,15 +2670,17 @@ struct ReportsSettingsView: View {
                     dataContext.delete(template)
                     saveContext()
                 }
-            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeBestPlayers, includeGuestVotes, includeGoalKickers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 template.name = name
                 template.gradeIDs = selectedGradeIDs
                 template.includeBestPlayers = includeBestPlayers
-                template.includePlayerGrades = includePlayerGrades
+                template.includePlayerGrades = includeGuestVotes
                 template.includeGoalKickers = includeGoalKickers
-                template.includeGuernseyNumbers = includeGuernseyNumbers
+                template.includeGuernseyNumbers = false
                 template.includeBestAndFairestVotes = includeBestAndFairestVotes
                 template.includeStaffRoles = includeStaffRoles
+                template.includeOfficials = includeOfficials
+                template.includeUmpires = includeUmpires
                 template.includeTrainers = includeTrainers
                 template.includeMatchNotes = includeMatchNotes
                 template.includeOnlyActiveGrades = includeOnlyActiveGrades
@@ -2997,11 +3002,12 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
 
     var items: [String] = []
     if template.includeBestPlayers { items.append("Best players") }
-    if template.includePlayerGrades { items.append("Player grades") }
+    if template.includePlayerGrades { items.append("Guest Votes") }
     if template.includeGoalKickers { items.append("Goal kickers") }
-    if template.includeGuernseyNumbers { items.append("Guernsey numbers") }
     if template.includeBestAndFairestVotes { items.append("B&F votes") }
-    if template.includeStaffRoles { items.append("Staff roles") }
+    if template.includeStaffRoles { items.append("Coaches") }
+    if template.includeOfficials { items.append("Officials") }
+    if template.includeUmpires { items.append("Umpires") }
     if template.includeTrainers { items.append("Trainers") }
     if template.includeMatchNotes { items.append("Match notes") }
 
@@ -3310,16 +3316,17 @@ private struct CustomReportEditView: View {
     let contacts: [Contact]
     let sectionMemberships: [ContactSectionMembership]
     let onDelete: (() -> Void)?
-    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
+    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
     @State private var includeBestPlayers: Bool
-    @State private var includePlayerGrades: Bool
+    @State private var includeGuestVotes: Bool
     @State private var includeGoalKickers: Bool
-    @State private var includeGuernseyNumbers: Bool
     @State private var includeBestAndFairestVotes: Bool
     @State private var includeStaffRoles: Bool
+    @State private var includeOfficials: Bool
+    @State private var includeUmpires: Bool
     @State private var includeTrainers: Bool
     @State private var includeMatchNotes: Bool
     @State private var includeOnlyActiveGrades: Bool
@@ -3337,11 +3344,12 @@ private struct CustomReportEditView: View {
         initialName: String = "",
         initialSelectedGradeIDs: [UUID] = [],
         initialIncludeBestPlayers: Bool = true,
-        initialIncludePlayerGrades: Bool = true,
+        initialIncludeGuestVotes: Bool = true,
         initialIncludeGoalKickers: Bool = true,
-        initialIncludeGuernseyNumbers: Bool = true,
         initialIncludeBestAndFairestVotes: Bool = true,
         initialIncludeStaffRoles: Bool = true,
+        initialIncludeOfficials: Bool = true,
+        initialIncludeUmpires: Bool = true,
         initialIncludeTrainers: Bool = true,
         initialIncludeMatchNotes: Bool = false,
         initialIncludeOnlyActiveGrades: Bool = true,
@@ -3350,7 +3358,7 @@ private struct CustomReportEditView: View {
         initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
         onDelete: (() -> Void)? = nil,
-        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
+        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
     ) {
         self.grades = grades
         self.contacts = contacts
@@ -3360,11 +3368,12 @@ private struct CustomReportEditView: View {
         _name = State(initialValue: initialName)
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
         _includeBestPlayers = State(initialValue: initialIncludeBestPlayers)
-        _includePlayerGrades = State(initialValue: initialIncludePlayerGrades)
+        _includeGuestVotes = State(initialValue: initialIncludeGuestVotes)
         _includeGoalKickers = State(initialValue: initialIncludeGoalKickers)
-        _includeGuernseyNumbers = State(initialValue: initialIncludeGuernseyNumbers)
         _includeBestAndFairestVotes = State(initialValue: initialIncludeBestAndFairestVotes)
         _includeStaffRoles = State(initialValue: initialIncludeStaffRoles)
+        _includeOfficials = State(initialValue: initialIncludeOfficials)
+        _includeUmpires = State(initialValue: initialIncludeUmpires)
         _includeTrainers = State(initialValue: initialIncludeTrainers)
         _includeMatchNotes = State(initialValue: initialIncludeMatchNotes)
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
@@ -3418,11 +3427,12 @@ private struct CustomReportEditView: View {
 
                 Section {
                     Toggle("Best players", isOn: $includeBestPlayers)
-                    Toggle("Player grades", isOn: $includePlayerGrades)
+                    Toggle("Guest Votes", isOn: $includeGuestVotes)
                     Toggle("Goal kickers", isOn: $includeGoalKickers)
-                    Toggle("Guernsey numbers", isOn: $includeGuernseyNumbers)
                     Toggle("Best & Fairest votes", isOn: $includeBestAndFairestVotes)
-                    Toggle("Staff roles", isOn: $includeStaffRoles)
+                    Toggle("Coaches", isOn: $includeStaffRoles)
+                    Toggle("Officials", isOn: $includeOfficials)
+                    Toggle("Umpires", isOn: $includeUmpires)
                     Toggle("Trainers", isOn: $includeTrainers)
                     Toggle("Match notes", isOn: $includeMatchNotes)
                 } header: {
@@ -3544,11 +3554,12 @@ private struct CustomReportEditView: View {
                             name.trimmingCharacters(in: .whitespacesAndNewlines),
                             Array(selectedGradeIDs),
                             includeBestPlayers,
-                            includePlayerGrades,
+                            includeGuestVotes,
                             includeGoalKickers,
-                            includeGuernseyNumbers,
                             includeBestAndFairestVotes,
                             includeStaffRoles,
+                            includeOfficials,
+                            includeUmpires,
                             includeTrainers,
                             includeMatchNotes,
                             includeOnlyActiveGrades,
