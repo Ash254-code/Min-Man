@@ -2450,6 +2450,8 @@ struct ReportsSettingsView: View {
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
     @Query(sort: [SortDescriptor(\ContactGroup.name)]) private var groups: [ContactGroup]
     @Query private var groupMemberships: [ContactGroupMembership]
+    @Query private var sectionMemberships: [ContactSectionMembership]
+    @Query private var customReportRecipientSections: [CustomReportRecipientSection]
     @Query private var customReportRecipientGroups: [CustomReportRecipientGroup]
     @Query private var customReportRecipientContacts: [CustomReportRecipientContact]
     @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
@@ -2588,9 +2590,8 @@ struct ReportsSettingsView: View {
             CustomReportEditView(
                 grades: grades,
                 contacts: contacts,
-                groups: groups,
-                memberships: groupMemberships
-            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientGroupIDs, selectedRecipientContactIDs in
+                sectionMemberships: sectionMemberships
+            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 let template = CustomReportTemplate(
                     name: name,
                     gradeIDs: selectedGradeIDs,
@@ -2607,8 +2608,8 @@ struct ReportsSettingsView: View {
                     groupingModeRawValue: groupingModeRawValue
                 )
                 dataContext.insert(template)
-                selectedRecipientGroupIDs.forEach { groupID in
-                    dataContext.insert(CustomReportRecipientGroup(templateID: template.id, groupID: groupID))
+                selectedRecipientSectionKeys.forEach { sectionKey in
+                    dataContext.insert(CustomReportRecipientSection(templateID: template.id, sectionKey: sectionKey))
                 }
                 selectedRecipientContactIDs.forEach { contactID in
                     dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
@@ -2632,7 +2633,8 @@ struct ReportsSettingsView: View {
                 grades: grades,
                 contacts: contacts,
                 groups: groups,
-                memberships: groupMemberships
+                memberships: groupMemberships,
+                sectionMemberships: sectionMemberships
             )
             .appPopupStyle()
         }
@@ -2640,8 +2642,7 @@ struct ReportsSettingsView: View {
             CustomReportEditView(
                 grades: grades,
                 contacts: contacts,
-                groups: groups,
-                memberships: groupMemberships,
+                sectionMemberships: sectionMemberships,
                 initialName: template.name,
                 initialSelectedGradeIDs: template.gradeIDs,
                 initialIncludeBestPlayers: template.includeBestPlayers,
@@ -2655,13 +2656,13 @@ struct ReportsSettingsView: View {
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
                 initialMinimumGamesPlayed: template.minimumGamesPlayed,
                 initialGroupingModeRawValue: template.groupingModeRawValue,
-                initialRecipientGroupIDs: customReportRecipientGroups
+                initialRecipientSectionKeys: customReportRecipientSections
                     .filter { $0.templateID == template.id }
-                    .map(\.groupID),
+                    .map(\.sectionKey),
                 initialRecipientContactIDs: customReportRecipientContacts
                     .filter { $0.templateID == template.id }
                     .map(\.contactID)
-            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientGroupIDs, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 template.name = name
                 template.gradeIDs = selectedGradeIDs
                 template.includeBestPlayers = includeBestPlayers
@@ -2676,14 +2677,17 @@ struct ReportsSettingsView: View {
                 template.minimumGamesPlayed = minimumGamesPlayed
                 template.groupingModeRawValue = groupingModeRawValue
 
+                for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
+                    dataContext.delete(recipientSection)
+                }
                 for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
                     dataContext.delete(recipientGroup)
                 }
                 for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
                     dataContext.delete(recipientContact)
                 }
-                selectedRecipientGroupIDs.forEach { groupID in
-                    dataContext.insert(CustomReportRecipientGroup(templateID: template.id, groupID: groupID))
+                selectedRecipientSectionKeys.forEach { sectionKey in
+                    dataContext.insert(CustomReportRecipientSection(templateID: template.id, sectionKey: sectionKey))
                 }
                 selectedRecipientContactIDs.forEach { contactID in
                     dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
@@ -2819,6 +2823,7 @@ private struct CustomReportShareView: View {
     let contacts: [Contact]
     let groups: [ContactGroup]
     let memberships: [ContactGroupMembership]
+    let sectionMemberships: [ContactSectionMembership]
 
     @State private var selectedContactIDs: Set<UUID> = []
     @State private var selectedGroupIDs: Set<UUID> = []
@@ -3315,9 +3320,8 @@ private struct CustomReportEditView: View {
 
     let grades: [Grade]
     let contacts: [Contact]
-    let groups: [ContactGroup]
-    let memberships: [ContactGroupMembership]
-    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [UUID], [UUID]) -> Void
+    let sectionMemberships: [ContactSectionMembership]
+    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
@@ -3332,14 +3336,14 @@ private struct CustomReportEditView: View {
     @State private var includeOnlyActiveGrades: Bool
     @State private var minimumGamesPlayed: Int
     @State private var groupingMode: ReportGroupingMode
-    @State private var selectedRecipientGroupIDs: Set<UUID>
+    @State private var selectedRecipientSectionKeys: Set<String>
     @State private var selectedRecipientContactIDs: Set<UUID>
+    @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
 
     init(
         grades: [Grade],
         contacts: [Contact],
-        groups: [ContactGroup],
-        memberships: [ContactGroupMembership],
+        sectionMemberships: [ContactSectionMembership],
         initialName: String = "",
         initialSelectedGradeIDs: [UUID] = [],
         initialIncludeBestPlayers: Bool = true,
@@ -3353,14 +3357,13 @@ private struct CustomReportEditView: View {
         initialIncludeOnlyActiveGrades: Bool = true,
         initialMinimumGamesPlayed: Int = 0,
         initialGroupingModeRawValue: Int = 0,
-        initialRecipientGroupIDs: [UUID] = [],
+        initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
-        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [UUID], [UUID]) -> Void
+        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
     ) {
         self.grades = grades
         self.contacts = contacts
-        self.groups = groups
-        self.memberships = memberships
+        self.sectionMemberships = sectionMemberships
         self.onSave = onSave
         _name = State(initialValue: initialName)
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
@@ -3375,7 +3378,7 @@ private struct CustomReportEditView: View {
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
         _groupingMode = State(initialValue: ReportGroupingMode(rawValue: initialGroupingModeRawValue) ?? .combinedTotals)
-        _selectedRecipientGroupIDs = State(initialValue: Set(initialRecipientGroupIDs))
+        _selectedRecipientSectionKeys = State(initialValue: Set(initialRecipientSectionKeys))
         _selectedRecipientContactIDs = State(initialValue: Set(initialRecipientContactIDs))
     }
 
@@ -3403,6 +3406,7 @@ private struct CustomReportEditView: View {
                         } label: {
                             HStack {
                                 Text(grade.name)
+                                    .foregroundStyle(.primary)
                                 Spacer()
                                 if selectedGradeIDs.contains(grade.id) {
                                     Image(systemName: "checkmark")
@@ -3410,6 +3414,7 @@ private struct CustomReportEditView: View {
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
 
                     Text("No grade selected means all grades.")
@@ -3433,32 +3438,34 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
-                    if groups.isEmpty {
+                    if recipientSections.isEmpty {
                         Text("No groups found. Create groups in Settings > Groups.")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(groups) { group in
+                        ForEach(recipientSections, id: \.sectionKey) { section in
                             Button {
-                                if selectedRecipientGroupIDs.contains(group.id) {
-                                    selectedRecipientGroupIDs.remove(group.id)
+                                if selectedRecipientSectionKeys.contains(section.sectionKey) {
+                                    selectedRecipientSectionKeys.remove(section.sectionKey)
                                 } else {
-                                    selectedRecipientGroupIDs.insert(group.id)
+                                    selectedRecipientSectionKeys.insert(section.sectionKey)
                                 }
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(group.name)
-                                        Text("\(memberships.filter { $0.groupID == group.id }.count) contact(s)")
+                                        Text(section.title)
+                                            .foregroundStyle(.primary)
+                                        Text("\(contactCountBySectionKey[section.sectionKey, default: 0]) contact(s)")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    if selectedRecipientGroupIDs.contains(group.id) {
+                                    if selectedRecipientSectionKeys.contains(section.sectionKey) {
                                         Image(systemName: "checkmark")
                                             .foregroundStyle(.tint)
                                     }
                                 }
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 } header: {
@@ -3555,7 +3562,7 @@ private struct CustomReportEditView: View {
                             includeOnlyActiveGrades,
                             minimumGamesPlayed,
                             groupingMode.rawValue,
-                            Array(selectedRecipientGroupIDs),
+                            Array(selectedRecipientSectionKeys),
                             Array(selectedRecipientContactIDs)
                         )
                         dismiss()
@@ -3566,10 +3573,49 @@ private struct CustomReportEditView: View {
         }
     }
 
+    private struct RecipientSectionOption {
+        let sectionKey: String
+        let title: String
+    }
+
+    private var customSectionTitles: [String: String] {
+        guard
+            let data = customSectionTitlesData.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private var recipientSections: [RecipientSectionOption] {
+        let sectionKeys = Set(sectionMemberships.map(\.sectionKey))
+        return sectionKeys
+            .map { RecipientSectionOption(sectionKey: $0, title: displayTitle(for: $0)) }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private var contactCountBySectionKey: [String: Int] {
+        Dictionary(grouping: sectionMemberships, by: \.sectionKey)
+            .mapValues { Set($0.map(\.contactID)).count }
+    }
+
+    private func displayTitle(for sectionKey: String) -> String {
+        if let custom = customSectionTitles[sectionKey], !custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return custom
+        }
+        switch ContactSectionKey.fromRawValue(sectionKey) {
+        case let .coachesGrade(gradeID):
+            return grades.first(where: { $0.id == gradeID })?.name ?? "Coaches"
+        default:
+            return ContactSectionKey.fromRawValue(sectionKey).title
+        }
+    }
+
     private func contactsFromSelectedGroups() -> [Contact] {
         let memberIDs = Set(
-            memberships
-                .filter { selectedRecipientGroupIDs.contains($0.groupID) }
+            sectionMemberships
+                .filter { selectedRecipientSectionKeys.contains($0.sectionKey) }
                 .map(\.contactID)
         )
         return contacts
