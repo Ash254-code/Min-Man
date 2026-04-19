@@ -250,8 +250,7 @@ private struct TeamProfileEditorView: View {
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.blue)
-                .disabled(!hasChanges || !canSave)
+                .saveButtonBehavior(isEnabled: hasChanges && canSave)
             }
         }
         .onAppear {

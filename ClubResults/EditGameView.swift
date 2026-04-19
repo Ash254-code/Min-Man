@@ -115,6 +115,7 @@ struct EditGameView: View {
                     try? dataContext.save()
                     dismiss()
                 }
+                .saveButtonBehavior(isEnabled: dataContext.hasChanges)
             }
         }
     }

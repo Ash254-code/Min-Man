@@ -1080,8 +1080,8 @@ struct NewGameWizardView: View {
                             Button("Save") {
                                 _ = saveGame(asDraft: false, dismissOnSuccess: true)
                             }
-                            .disabled(!canProceedOnCurrentStep)
                             .buttonStyle(.borderedProminent)
+                            .saveButtonBehavior(isEnabled: canProceedOnCurrentStep)
                         } else {
                             Button("Next") { next() }
                                 .disabled(!canProceedOnCurrentStep)
@@ -1873,6 +1873,8 @@ struct NewGameWizardView: View {
 
             Section {
                 Button("Save and Continue") { next() }
+                    .buttonStyle(.borderedProminent)
+                    .saveButtonBehavior(isEnabled: true)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
         }
@@ -3200,8 +3202,7 @@ struct NewGameWizardView: View {
                         onSaveAndContinue()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(canSaveAndContinue ? .blue : .gray)
-                    .disabled(!canSaveAndContinue)
+                    .saveButtonBehavior(isEnabled: canSaveAndContinue)
                 }
             }
             .alert("If you proceed, all current data for this game will be lost", isPresented: $showCancelConfirmation) {
@@ -3434,7 +3435,8 @@ struct NewGameWizardView: View {
                     Button("Save \(nextPeriodLabel ?? "period") score") {
                         showManualSavePrompt = true
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
+                    .saveButtonBehavior(isEnabled: true)
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
@@ -3647,8 +3649,7 @@ struct NewGameWizardView: View {
                                 dismiss()
                             }
                             .buttonStyle(.borderedProminent)
-                            .tint(hasChanges ? .blue : .gray)
-                            .disabled(!hasChanges)
+                            .saveButtonBehavior(isEnabled: hasChanges)
                         }
                     }
                 }

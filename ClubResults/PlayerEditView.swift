@@ -49,6 +49,11 @@ struct PlayerEditView: View {
         !nameTrimmed.isEmpty && !nameIsDuplicate
     }
 
+    private var hasChanges: Bool {
+        nameTrimmed != player.name.trimmingCharacters(in: .whitespacesAndNewlines) ||
+        parsedNumber != player.number
+    }
+
     var body: some View {
         List {
             Section("Player") {
@@ -119,7 +124,7 @@ struct PlayerEditView: View {
                     try? dataContext.save()
                     dismiss()
                 }
-                .disabled(!canSave)
+                .saveButtonBehavior(isEnabled: canSave && hasChanges)
             }
 
             ToolbarItem(placement: .topBarLeading) {

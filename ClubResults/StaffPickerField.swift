@@ -202,8 +202,8 @@ struct StaffPickerField: View {
                         Button("Save") {
                             saveNewStaff()
                         }
-                        .buttonStyle(AddSheetActionButtonStyle(isEnabled: canSaveNewStaff))
-                        .disabled(!canSaveNewStaff)
+                        .buttonStyle(.borderedProminent)
+                        .saveButtonBehavior(isEnabled: canSaveNewStaff)
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.top, 8)
@@ -298,22 +298,5 @@ struct StaffPickerField: View {
         }
         .padding(.vertical, horizontalSizeClass == .compact ? 8 : 12)
         .contentShape(Rectangle())
-    }
-}
-
-private struct AddSheetActionButtonStyle: ButtonStyle {
-    let isEnabled: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white.opacity(isEnabled ? 1 : 0.7))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isEnabled ? Color.blue : Color.gray.opacity(0.45))
-                    .opacity(configuration.isPressed && isEnabled ? 0.85 : 1)
-            )
     }
 }
