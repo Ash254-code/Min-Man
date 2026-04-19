@@ -4,6 +4,14 @@ import SwiftData
 struct GamesView: View {
     @Environment(\.modelContext) private var modelContext
 
+    private struct RoundGroup: Identifiable {
+        let id: UUID
+        let roundNumber: Int
+        let date: Date
+        let opponent: String
+        let games: [Game]
+    }
+
     private struct GameListItem: Identifiable {
         let primary: Game
         let secondary: Game?
@@ -59,6 +67,7 @@ struct GamesView: View {
     @State private var newGameWizardPresentation: NewGameWizardPresentation?
     @State private var selectedGameForSummary: Game?
     @State private var selectedGameForEdit: Game?
+    @State private var selectedRoundID: UUID?
     @State private var gamePendingDelete: Game?
     @State private var codePromptGame: Game?
     @State private var codePromptValue = ""
@@ -100,15 +109,15 @@ struct GamesView: View {
         Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
     }
 
-    private var displayedGames: [GameListItem] {
+    private func gameListItems(from sourceGames: [Game]) -> [GameListItem] {
         var result: [GameListItem] = []
         var used = Set<UUID>()
 
-        for game in filteredGames {
+        for game in sourceGames {
             guard !used.contains(game.id) else { continue }
 
             if isTwoGameGrade(for: game.gradeID),
-               let partner = filteredGames.first(where: { candidate in
+               let partner = sourceGames.first(where: { candidate in
                    candidate.id != game.id &&
                    !used.contains(candidate.id) &&
                    arePairedTwoGames(game, candidate)
@@ -124,6 +133,84 @@ struct GamesView: View {
         }
 
         return result
+    }
+
+    private var roundGroups: [RoundGroup] {
+        let sortedChronological = filteredGames.sorted { $0.date < $1.date }
+        guard !sortedChronological.isEmpty else { return [] }
+
+        struct RoundBucket {
+            var id: UUID
+            var opponentKey: String
+            var opponentLabel: String
+            var anchorDate: Date
+            var games: [Game]
+        }
+
+        var buckets: [RoundBucket] = []
+        let matchingWindow: TimeInterval = 60 * 60 * 24 * 3
+
+        for game in sortedChronological {
+            let opponentKey = game.opponent.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if let index = buckets.firstIndex(where: { bucket in
+                bucket.opponentKey == opponentKey &&
+                abs(bucket.anchorDate.timeIntervalSince(game.date)) <= matchingWindow
+            }) {
+                buckets[index].games.append(game)
+                let sortedDates = buckets[index].games.map(\.date).sorted()
+                buckets[index].anchorDate = sortedDates[sortedDates.count / 2]
+            } else {
+                buckets.append(
+                    RoundBucket(
+                        id: UUID(),
+                        opponentKey: opponentKey,
+                        opponentLabel: game.opponent,
+                        anchorDate: game.date,
+                        games: [game]
+                    )
+                )
+            }
+        }
+
+        let chronologicalRounds = buckets
+            .map { bucket in
+                (
+                    id: bucket.id,
+                    date: bucket.games.map(\.date).max() ?? bucket.anchorDate,
+                    opponent: bucket.opponentLabel,
+                    games: bucket.games.sorted { $0.date > $1.date }
+                )
+            }
+            .sorted { $0.date < $1.date }
+
+        return chronologicalRounds
+            .enumerated()
+            .map { idx, round in
+                RoundGroup(
+                    id: round.id,
+                    roundNumber: idx + 1,
+                    date: round.date,
+                    opponent: round.opponent,
+                    games: round.games
+                )
+            }
+            .sorted { $0.date > $1.date }
+    }
+
+    private var selectedRound: RoundGroup? {
+        roundGroups.first(where: { $0.id == selectedRoundID })
+    }
+
+    private func roundGamesByGrade(for round: RoundGroup) -> [(grade: Grade, items: [GameListItem])] {
+        orderedGrades.compactMap { grade in
+            let gamesInGrade = round.games.filter { $0.gradeID == grade.id }
+            guard !gamesInGrade.isEmpty else { return nil }
+            return (grade, gameListItems(from: gamesInGrade.sorted { $0.date > $1.date }))
+        }
+    }
+
+    private func roundTitle(for round: RoundGroup) -> String {
+        "ROUND \(round.roundNumber) - \(round.date.formatted(date: .abbreviated, time: .omitted)) - Us v \(round.opponent)"
     }
 
     private func latestDraft(for gradeID: UUID) -> Game? {
@@ -184,6 +271,82 @@ struct GamesView: View {
         return normalizedGoalKickerSignature(first) == normalizedGoalKickerSignature(second)
     }
 
+    @ViewBuilder
+    private func gameRow(for item: GameListItem) -> some View {
+        let game = item.primary
+        NavigationLink {
+            GameDetailView(game: game, grades: orderedGrades, players: players)
+        } label: {
+            GameCardRow(
+                game: game,
+                gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
+                opponentWidth: standardPillWidth,
+                showScore: shouldShowScore(for: game.gradeID),
+                hasTwoGames: item.hasTwoGames
+            )
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                requestProtectedAction(.delete, for: game)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(.red)
+
+            Button {
+                requestProtectedAction(.edit, for: game)
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.orange)
+        }
+    }
+
+    @ViewBuilder
+    private var gamesListContent: some View {
+        if filteredGames.isEmpty {
+            ContentUnavailableView("No games yet", systemImage: "sportscourt")
+                .padding(.vertical, 36)
+        } else if let round = selectedRound {
+            VStack(alignment: .leading, spacing: 14) {
+                Button {
+                    selectedRoundID = nil
+                } label: {
+                    Label("Back to Games", systemImage: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+
+                Text(roundTitle(for: round))
+                    .font(.system(size: 24, weight: .bold))
+                    .lineLimit(2)
+
+                ForEach(roundGamesByGrade(for: round), id: \.grade.id) { grouped in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(grouped.grade.name)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        ForEach(grouped.items) { item in
+                            gameRow(for: item)
+                        }
+                    }
+                }
+            }
+        } else {
+            VStack(spacing: 14) {
+                ForEach(roundGroups) { round in
+                    Button {
+                        selectedRoundID = round.id
+                    } label: {
+                        RoundCardRow(title: roundTitle(for: round))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
@@ -235,43 +398,7 @@ struct GamesView: View {
                         .padding(.horizontal)
 
                         GamesListSection(minHeight: geometry.size.height * 0.33) {
-                            if filteredGames.isEmpty {
-                                ContentUnavailableView("No games yet", systemImage: "sportscourt")
-                                    .padding(.vertical, 36)
-                            } else {
-                                VStack(spacing: 14) {
-                                    ForEach(displayedGames) { item in
-                                        let game = item.primary
-                                        NavigationLink {
-                                            GameDetailView(game: game, grades: orderedGrades, players: players)
-                                        } label: {
-                                            GameCardRow(
-                                                game: game,
-                                                gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
-                                                opponentWidth: standardPillWidth,
-                                                showScore: shouldShowScore(for: game.gradeID),
-                                                hasTwoGames: item.hasTwoGames
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                            Button {
-                                                requestProtectedAction(.delete, for: game)
-                                            } label: {
-                                                Label("Delete", systemImage: "trash")
-                                            }
-                                            .tint(.red)
-
-                                            Button {
-                                                requestProtectedAction(.edit, for: game)
-                                            } label: {
-                                                Label("Edit", systemImage: "pencil")
-                                            }
-                                            .tint(.orange)
-                                        }
-                                    }
-                                }
-                            }
+                            gamesListContent
                         }
                         .padding(.horizontal)
 
@@ -289,6 +416,9 @@ struct GamesView: View {
                         selectedGradeID: $selectedGradeID
                     )
                 }
+            }
+            .onChange(of: selectedGradeID) { _, _ in
+                selectedRoundID = nil
             }
             .sheet(item: $newGameWizardPresentation) { presentation in
                 NewGameWizardView(
@@ -643,6 +773,33 @@ private struct GameCardRow: View {
                     .allowsHitTesting(false)
             }
         }
+    }
+}
+
+private struct RoundCardRow: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 24, weight: .bold))
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
     }
 }
 
