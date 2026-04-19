@@ -382,6 +382,8 @@ struct CustomReportTemplateRecord: Codable {
     let includeGuernseyNumbers: Bool
     let includeBestAndFairestVotes: Bool
     let includeStaffRoles: Bool
+    let includeOfficials: Bool
+    let includeUmpires: Bool
     let includeTrainers: Bool
     let includeMatchNotes: Bool
     let includeOnlyActiveGrades: Bool
@@ -398,11 +400,40 @@ struct CustomReportTemplateRecord: Codable {
         includeGuernseyNumbers = template.includeGuernseyNumbers
         includeBestAndFairestVotes = template.includeBestAndFairestVotes
         includeStaffRoles = template.includeStaffRoles
+        includeOfficials = template.includeOfficials
+        includeUmpires = template.includeUmpires
         includeTrainers = template.includeTrainers
         includeMatchNotes = template.includeMatchNotes
         includeOnlyActiveGrades = template.includeOnlyActiveGrades
         minimumGamesPlayed = template.minimumGamesPlayed
         groupingModeRawValue = template.groupingModeRawValue
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, gradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers
+        case includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials
+        case includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades
+        case minimumGamesPlayed, groupingModeRawValue
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        gradeIDs = try c.decodeIfPresent([UUID].self, forKey: .gradeIDs) ?? []
+        includeBestPlayers = try c.decodeIfPresent(Bool.self, forKey: .includeBestPlayers) ?? true
+        includePlayerGrades = try c.decodeIfPresent(Bool.self, forKey: .includePlayerGrades) ?? true
+        includeGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .includeGoalKickers) ?? true
+        includeGuernseyNumbers = try c.decodeIfPresent(Bool.self, forKey: .includeGuernseyNumbers) ?? true
+        includeBestAndFairestVotes = try c.decodeIfPresent(Bool.self, forKey: .includeBestAndFairestVotes) ?? true
+        includeStaffRoles = try c.decodeIfPresent(Bool.self, forKey: .includeStaffRoles) ?? true
+        includeOfficials = try c.decodeIfPresent(Bool.self, forKey: .includeOfficials) ?? true
+        includeUmpires = try c.decodeIfPresent(Bool.self, forKey: .includeUmpires) ?? true
+        includeTrainers = try c.decodeIfPresent(Bool.self, forKey: .includeTrainers) ?? true
+        includeMatchNotes = try c.decodeIfPresent(Bool.self, forKey: .includeMatchNotes) ?? false
+        includeOnlyActiveGrades = try c.decodeIfPresent(Bool.self, forKey: .includeOnlyActiveGrades) ?? true
+        minimumGamesPlayed = try c.decodeIfPresent(Int.self, forKey: .minimumGamesPlayed) ?? 0
+        groupingModeRawValue = try c.decodeIfPresent(Int.self, forKey: .groupingModeRawValue) ?? 0
     }
 }
 
@@ -758,6 +789,8 @@ enum AppBackupService {
                     includeGuernseyNumbers: $0.includeGuernseyNumbers,
                     includeBestAndFairestVotes: $0.includeBestAndFairestVotes,
                     includeStaffRoles: $0.includeStaffRoles,
+                    includeOfficials: $0.includeOfficials,
+                    includeUmpires: $0.includeUmpires,
                     includeTrainers: $0.includeTrainers,
                     includeMatchNotes: $0.includeMatchNotes,
                     includeOnlyActiveGrades: $0.includeOnlyActiveGrades,

@@ -16,6 +16,8 @@ final class CustomReportTemplate {
     var includeGuernseyNumbers: Bool
     var includeBestAndFairestVotes: Bool
     var includeStaffRoles: Bool
+    var includeOfficials: Bool
+    var includeUmpires: Bool
     var includeTrainers: Bool
     var includeMatchNotes: Bool
 
@@ -34,6 +36,8 @@ final class CustomReportTemplate {
         includeGuernseyNumbers: Bool = true,
         includeBestAndFairestVotes: Bool = true,
         includeStaffRoles: Bool = true,
+        includeOfficials: Bool = true,
+        includeUmpires: Bool = true,
         includeTrainers: Bool = true,
         includeMatchNotes: Bool = false,
         includeOnlyActiveGrades: Bool = true,
@@ -49,6 +53,8 @@ final class CustomReportTemplate {
         self.includeGuernseyNumbers = includeGuernseyNumbers
         self.includeBestAndFairestVotes = includeBestAndFairestVotes
         self.includeStaffRoles = includeStaffRoles
+        self.includeOfficials = includeOfficials
+        self.includeUmpires = includeUmpires
         self.includeTrainers = includeTrainers
         self.includeMatchNotes = includeMatchNotes
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
