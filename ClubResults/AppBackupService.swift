@@ -13,6 +13,45 @@ struct AppBackupEnvelope: Codable {
     let schemaVersion: Int
     let itemCounts: AppBackupItemCounts
     let payload: AppBackupPayload
+
+    private enum CodingKeys: String, CodingKey {
+        case appName, backupFormatVersion, exportedAt, appVersion, buildNumber, platform, schemaVersion, itemCounts, payload
+    }
+
+    init(
+        appName: String,
+        backupFormatVersion: Int,
+        exportedAt: Date,
+        appVersion: String,
+        buildNumber: String,
+        platform: String,
+        schemaVersion: Int,
+        itemCounts: AppBackupItemCounts,
+        payload: AppBackupPayload
+    ) {
+        self.appName = appName
+        self.backupFormatVersion = backupFormatVersion
+        self.exportedAt = exportedAt
+        self.appVersion = appVersion
+        self.buildNumber = buildNumber
+        self.platform = platform
+        self.schemaVersion = schemaVersion
+        self.itemCounts = itemCounts
+        self.payload = payload
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        appName = try c.decodeIfPresent(String.self, forKey: .appName) ?? "ClubResults"
+        backupFormatVersion = try c.decodeIfPresent(Int.self, forKey: .backupFormatVersion) ?? 1
+        exportedAt = try c.decode(Date.self, forKey: .exportedAt)
+        appVersion = try c.decodeIfPresent(String.self, forKey: .appVersion) ?? "unknown"
+        buildNumber = try c.decodeIfPresent(String.self, forKey: .buildNumber) ?? "unknown"
+        platform = try c.decodeIfPresent(String.self, forKey: .platform) ?? "unknown"
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? backupFormatVersion
+        itemCounts = try c.decode(AppBackupItemCounts.self, forKey: .itemCounts)
+        payload = try c.decode(AppBackupPayload.self, forKey: .payload)
+    }
 }
 
 struct AppBackupItemCounts: Codable {
@@ -26,6 +65,48 @@ struct AppBackupItemCounts: Codable {
     let staffDefaults: Int
     let lastStaffSelections: Int
     let draftResumeFlags: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case grades, players, games, contacts, reportRecipients, customReportTemplates, staffMembers, staffDefaults, lastStaffSelections, draftResumeFlags
+    }
+
+    init(
+        grades: Int,
+        players: Int,
+        games: Int,
+        contacts: Int,
+        reportRecipients: Int,
+        customReportTemplates: Int,
+        staffMembers: Int,
+        staffDefaults: Int,
+        lastStaffSelections: Int,
+        draftResumeFlags: Int
+    ) {
+        self.grades = grades
+        self.players = players
+        self.games = games
+        self.contacts = contacts
+        self.reportRecipients = reportRecipients
+        self.customReportTemplates = customReportTemplates
+        self.staffMembers = staffMembers
+        self.staffDefaults = staffDefaults
+        self.lastStaffSelections = lastStaffSelections
+        self.draftResumeFlags = draftResumeFlags
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        grades = try c.decodeIfPresent(Int.self, forKey: .grades) ?? 0
+        players = try c.decodeIfPresent(Int.self, forKey: .players) ?? 0
+        games = try c.decodeIfPresent(Int.self, forKey: .games) ?? 0
+        contacts = try c.decodeIfPresent(Int.self, forKey: .contacts) ?? 0
+        reportRecipients = try c.decodeIfPresent(Int.self, forKey: .reportRecipients) ?? 0
+        customReportTemplates = try c.decodeIfPresent(Int.self, forKey: .customReportTemplates) ?? 0
+        staffMembers = try c.decodeIfPresent(Int.self, forKey: .staffMembers) ?? 0
+        staffDefaults = try c.decodeIfPresent(Int.self, forKey: .staffDefaults) ?? 0
+        lastStaffSelections = try c.decodeIfPresent(Int.self, forKey: .lastStaffSelections) ?? 0
+        draftResumeFlags = try c.decodeIfPresent(Int.self, forKey: .draftResumeFlags) ?? 0
+    }
 }
 
 struct AppBackupPayload: Codable {
@@ -67,6 +148,15 @@ struct GradeRecord: Codable {
     let allowsLiveGameView: Bool
     let quarterLengthMinutes: Int
 
+    private enum CodingKeys: String, CodingKey {
+        case id, name, isActive, displayOrder
+        case asksHeadCoach, asksAssistantCoach, asksTeamManager, asksRunner
+        case asksGoalUmpire, asksFieldUmpire, asksBoundaryUmpire1, asksBoundaryUmpire2
+        case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
+        case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
+        case bestPlayersCount, asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes
+    }
+
     init(_ grade: Grade) {
         id = grade.id
         name = grade.name
@@ -93,6 +183,35 @@ struct GradeRecord: Codable {
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         allowsLiveGameView = grade.allowsLiveGameView
         quarterLengthMinutes = grade.quarterLengthMinutes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        isActive = try c.decode(Bool.self, forKey: .isActive)
+        displayOrder = try c.decode(Int.self, forKey: .displayOrder)
+        asksHeadCoach = try c.decode(Bool.self, forKey: .asksHeadCoach)
+        asksAssistantCoach = try c.decode(Bool.self, forKey: .asksAssistantCoach)
+        asksTeamManager = try c.decode(Bool.self, forKey: .asksTeamManager)
+        asksRunner = try c.decode(Bool.self, forKey: .asksRunner)
+        asksGoalUmpire = try c.decode(Bool.self, forKey: .asksGoalUmpire)
+        asksFieldUmpire = try c.decode(Bool.self, forKey: .asksFieldUmpire)
+        asksBoundaryUmpire1 = try c.decode(Bool.self, forKey: .asksBoundaryUmpire1)
+        asksBoundaryUmpire2 = try c.decode(Bool.self, forKey: .asksBoundaryUmpire2)
+        asksTrainers = try c.decode(Bool.self, forKey: .asksTrainers)
+        asksTrainer1 = try c.decode(Bool.self, forKey: .asksTrainer1)
+        asksTrainer2 = try c.decode(Bool.self, forKey: .asksTrainer2)
+        asksTrainer3 = try c.decode(Bool.self, forKey: .asksTrainer3)
+        asksTrainer4 = try c.decode(Bool.self, forKey: .asksTrainer4)
+        asksNotes = try c.decode(Bool.self, forKey: .asksNotes)
+        asksScore = try c.decode(Bool.self, forKey: .asksScore)
+        asksLiveGameView = try c.decode(Bool.self, forKey: .asksLiveGameView)
+        asksGoalKickers = try c.decode(Bool.self, forKey: .asksGoalKickers)
+        bestPlayersCount = try c.decode(Int.self, forKey: .bestPlayersCount)
+        asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
+        allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? false
+        quarterLengthMinutes = try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20
     }
 }
 
@@ -319,6 +438,41 @@ struct AppSettingsRecord: Codable {
     let draftResumeOpenLiveFlags: [String: Bool]
     let legacyGradesBackup: [GradeBackup]
     let legacyContactsBackup: [ContactBackup]
+
+    private enum CodingKeys: String, CodingKey {
+        case appAppearanceRawValue, clubConfiguration, boundaryUmpireGradeMappings
+        case lastStaffSelections, draftResumeOpenLiveFlags
+        case legacyGradesBackup, legacyContactsBackup
+    }
+
+    init(
+        appAppearanceRawValue: String,
+        clubConfiguration: ClubConfiguration,
+        boundaryUmpireGradeMappings: [String: [UUID]],
+        lastStaffSelections: [String: String],
+        draftResumeOpenLiveFlags: [String: Bool],
+        legacyGradesBackup: [GradeBackup],
+        legacyContactsBackup: [ContactBackup]
+    ) {
+        self.appAppearanceRawValue = appAppearanceRawValue
+        self.clubConfiguration = clubConfiguration
+        self.boundaryUmpireGradeMappings = boundaryUmpireGradeMappings
+        self.lastStaffSelections = lastStaffSelections
+        self.draftResumeOpenLiveFlags = draftResumeOpenLiveFlags
+        self.legacyGradesBackup = legacyGradesBackup
+        self.legacyContactsBackup = legacyContactsBackup
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        appAppearanceRawValue = try c.decodeIfPresent(String.self, forKey: .appAppearanceRawValue) ?? AppAppearance.system.rawValue
+        clubConfiguration = try c.decode(ClubConfiguration.self, forKey: .clubConfiguration)
+        boundaryUmpireGradeMappings = try c.decodeIfPresent([String: [UUID]].self, forKey: .boundaryUmpireGradeMappings) ?? [:]
+        lastStaffSelections = try c.decodeIfPresent([String: String].self, forKey: .lastStaffSelections) ?? [:]
+        draftResumeOpenLiveFlags = try c.decodeIfPresent([String: Bool].self, forKey: .draftResumeOpenLiveFlags) ?? [:]
+        legacyGradesBackup = try c.decodeIfPresent([GradeBackup].self, forKey: .legacyGradesBackup) ?? []
+        legacyContactsBackup = try c.decodeIfPresent([ContactBackup].self, forKey: .legacyContactsBackup) ?? []
+    }
 }
 
 struct FullBackupExportResult {
