@@ -904,7 +904,9 @@ struct NewGameWizardView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                wizardHeader
+                if currentStep == .setup {
+                    wizardHeader
+                }
 
                 if currentStep != .score {
                     ProgressView(
@@ -975,6 +977,15 @@ struct NewGameWizardView: View {
                         Button("Pause") {
                             pauseAndSaveLiveDraftThenReturnHome()
                         }
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if currentStep != .setup {
+                        Text(selectedGradeName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
             }
