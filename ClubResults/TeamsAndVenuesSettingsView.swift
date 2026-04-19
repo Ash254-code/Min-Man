@@ -161,12 +161,10 @@ struct TeamsAndVenuesSettingsView: View {
 }
 
 private struct TeamProfileEditorView: View {
-    private enum ColorSlot: String {
+    private enum ColorSlot {
         case primary
         case secondary
         case tertiary
-
-        var title: String { rawValue.capitalized }
     }
 
     let title: String
@@ -183,9 +181,6 @@ private struct TeamProfileEditorView: View {
     @State private var draftTertiaryHex: String = ""
     @State private var draftVenues: [String] = []
 
-    @State private var colorPickerPresented = false
-    @State private var colorPickerSlot: ColorSlot = .primary
-
     var body: some View {
         Form {
             Section("Team") {
@@ -195,18 +190,12 @@ private struct TeamProfileEditorView: View {
             }
 
             Section("Colours") {
-                editableColorRow(title: "Primary", hex: draftPrimaryHex, editAction: {
-                    presentColorPicker(.primary)
-                }, deleteAction: nil)
+                editableColorRow(title: "Primary", slot: .primary, hex: draftPrimaryHex, deleteAction: nil)
 
-                editableColorRow(title: "Secondary", hex: draftSecondaryHex, editAction: {
-                    presentColorPicker(.secondary)
-                }, deleteAction: nil)
+                editableColorRow(title: "Secondary", slot: .secondary, hex: draftSecondaryHex, deleteAction: nil)
 
                 if hasTertiary {
-                    editableColorRow(title: "Tertiary", hex: draftTertiaryHex, editAction: {
-                        presentColorPicker(.tertiary)
-                    }, deleteAction: {
+                    editableColorRow(title: "Tertiary", slot: .tertiary, hex: draftTertiaryHex, deleteAction: {
                         draftTertiaryHex = ""
                     })
                 } else {
@@ -258,29 +247,10 @@ private struct TeamProfileEditorView: View {
                     applyDraftToBindings()
                     onSave()
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
                 .disabled(!hasChanges || !canSave)
             }
-        }
-        .sheet(isPresented: $colorPickerPresented) {
-            NavigationStack {
-                Form {
-                    ColorPicker(
-                        colorPickerSlot.title,
-                        selection: Binding(
-                            get: { Color(hex: colorHex(for: colorPickerSlot), fallback: .blue) },
-                            set: { newColor in setColorHex(newColor.toHex(), for: colorPickerSlot) }
-                        ),
-                        supportsOpacity: false
-                    )
-                }
-                .navigationTitle("Edit \(colorPickerSlot.title)")
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { colorPickerPresented = false }
-                    }
-                }
-            }
-            .presentationDetents([.height(220)])
         }
         .onAppear {
             syncFromBindings()
@@ -334,20 +304,20 @@ private struct TeamProfileEditorView: View {
     }
 
     @ViewBuilder
-    private func editableColorRow(title: String, hex: String, editAction: @escaping () -> Void, deleteAction: (() -> Void)?) -> some View {
+    private func editableColorRow(title: String, slot: ColorSlot, hex: String, deleteAction: (() -> Void)?) -> some View {
         HStack {
             Text(title)
             Spacer()
-            Button(action: editAction) {
-                Circle()
-                    .fill(Color(hex: hex, fallback: .blue))
-                    .frame(width: 28, height: 28)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.primary.opacity(0.25), lineWidth: 1)
-                    )
-            }
-            .buttonStyle(.plain)
+            ColorPicker(
+                "",
+                selection: Binding(
+                    get: { Color(hex: hex, fallback: .blue) },
+                    set: { newColor in setColorHex(newColor.toHex(), for: slot) }
+                ),
+                supportsOpacity: false
+            )
+            .labelsHidden()
+            .frame(width: 28, height: 28)
 
             if let deleteAction {
                 deleteIconButton(action: deleteAction)
@@ -362,19 +332,6 @@ private struct TeamProfileEditorView: View {
                 .font(.subheadline.weight(.semibold))
         }
         .buttonStyle(.borderless)
-    }
-
-    private func presentColorPicker(_ slot: ColorSlot) {
-        colorPickerSlot = slot
-        colorPickerPresented = true
-    }
-
-    private func colorHex(for slot: ColorSlot) -> String {
-        switch slot {
-        case .primary: return draftPrimaryHex
-        case .secondary: return draftSecondaryHex
-        case .tertiary: return draftTertiaryHex
-        }
     }
 
     private func setColorHex(_ hex: String, for slot: ColorSlot) {
