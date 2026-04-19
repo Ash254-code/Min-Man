@@ -668,6 +668,14 @@ struct NewGameWizardView: View {
         supportsLiveGameView
     }
 
+    private var availableDataEntryOptions: [DataEntrySelection] {
+        supportsLiveGameView ? DataEntrySelection.allCases : [.postGame]
+    }
+
+    private var isLastStepInFlow: Bool {
+        activeSteps.last == step
+    }
+
     private var activeSteps: [Step] {
         guard let grade = selectedGrade else { return [.setup] }
 
@@ -691,20 +699,19 @@ struct NewGameWizardView: View {
             grade.asksNotes {
             steps.append(.medical)
         }
-        if grade.asksScore && entryMode != .live {
+        if entryMode == .live {
+            steps.append(.score)
+        } else if grade.asksScore {
             steps.append(.score)
         }
-        if grade.asksGoalKickers && entryMode != .live {
-            steps.append(.goals)
-        }
-        if grade.bestPlayersCount > 0 && entryMode != .live { steps.append(.best) }
+        if grade.asksGoalKickers && entryMode != .live { steps.append(.goals) }
+        if grade.bestPlayersCount > 0 { steps.append(.best) }
         if grade.asksGuestBestFairestVotesScan && grade.guestBestPlayersCount > 0 { steps.append(.votes) }
-        steps.append(.review)
         return steps
     }
 
     private var entryModeTriggerStep: Step {
-        if !shouldAskForEntryMode { return .review }
+        if !shouldAskForEntryMode { return .setup }
         if activeSteps.contains(.officials) { return .officials }
         if activeSteps.contains(.medical) { return .medical }
         if activeSteps.contains(.officials) { return .officials }
@@ -970,15 +977,9 @@ struct NewGameWizardView: View {
 
                         Spacer()
 
-                        if currentStep == .review {
-                            Button("Save Draft") {
-                                _ = saveGame(asDraft: true, dismissOnSuccess: true)
-                            }
-                            .disabled(!canProceedOnCurrentStep)
-                            .buttonStyle(.bordered)
-
-                            Button("Save and Send") {
-                                saveAndSendReport()
+                        if isLastStepInFlow {
+                            Button("Save") {
+                                _ = saveGame(asDraft: false, dismissOnSuccess: true)
                             }
                             .disabled(!canProceedOnCurrentStep)
                             .buttonStyle(.borderedProminent)
@@ -1158,8 +1159,13 @@ struct NewGameWizardView: View {
             return
         }
 
+        if isLastStepInFlow {
+            _ = saveGame(asDraft: false, dismissOnSuccess: true)
+            return
+        }
+
         if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == nil {
-            entryMode = supportsLiveGameView ? .live : .postGame
+            entryMode = dataEntrySelection == .liveGame ? .live : .postGame
         }
 
         if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == .live {
@@ -1173,6 +1179,11 @@ struct NewGameWizardView: View {
     }
 
     private func proceedFromVotesStep() {
+        if isLastStepInFlow {
+            _ = saveGame(asDraft: false, dismissOnSuccess: true)
+            return
+        }
+
         guard let currentIndex = activeSteps.firstIndex(of: .votes) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
@@ -1190,7 +1201,7 @@ struct NewGameWizardView: View {
         } else if activeSteps.contains(.votes) {
             move(to: .votes)
         } else {
-            move(to: .review)
+            _ = saveGame(asDraft: false, dismissOnSuccess: true)
         }
     }
 
@@ -1374,12 +1385,13 @@ struct NewGameWizardView: View {
                         rowLabel("Data Entry")
                         Spacer()
                         HStack(spacing: 8) {
-                            ForEach(DataEntrySelection.allCases) { option in
+                            ForEach(availableDataEntryOptions) { option in
                                 setupChoiceButton(
                                     title: option.rawValue,
                                     isSelected: dataEntrySelection == option
                                 ) {
                                     dataEntrySelection = option
+                                    entryMode = option == .liveGame ? .live : .postGame
                                 }
                             }
                         }
