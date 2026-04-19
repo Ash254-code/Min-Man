@@ -322,7 +322,13 @@ struct NewGameWizardView: View {
             var pointScorers: [UUID: Int]
             var rushedPoints: Int
             var periodSnapshots: [StoredSnapshot]
+            var scoreEvents: [StoredScoreEvent]?
             var backgroundCountdownStart: Date?
+        }
+
+        private struct StoredScoreEvent: Codable {
+            var x: Double
+            var margin: Int
         }
 
         private struct StoredSnapshot: Codable {
@@ -347,6 +353,9 @@ struct NewGameWizardView: View {
                         theirGoals: $0.theirGoals,
                         theirBehinds: $0.theirBehinds
                     )
+                },
+                scoreEvents: session.scoreEvents.map {
+                    StoredScoreEvent(x: $0.x, margin: $0.margin)
                 },
                 backgroundCountdownStart: continueCountdownInBackground ? Date() : nil
             )
@@ -374,6 +383,9 @@ struct NewGameWizardView: View {
                     theirGoals: $0.theirGoals,
                     theirBehinds: $0.theirBehinds
                 )
+            }
+            session.scoreEvents = (stored.scoreEvents ?? []).map {
+                ScoreEvent(x: $0.x, margin: $0.margin)
             }
             session.isInitialized = true
 
@@ -2844,12 +2856,18 @@ struct NewGameWizardView: View {
         dismiss()
     }
 
+    private struct ScoreEvent {
+        var x: Double
+        var margin: Int
+    }
+
     private struct LiveGameSessionState {
         var periodMinutes: Int = 20
         var secondsRemaining: Int = 20 * 60
         var pointScorers: [UUID: Int] = [:]
         var rushedPoints: Int = 0
         var periodSnapshots: [PeriodSnapshot] = []
+        var scoreEvents: [ScoreEvent] = []
         var isInitialized = false
         var shouldAutoResumeTimer = false
 
@@ -2861,6 +2879,7 @@ struct NewGameWizardView: View {
             pointScorers = [:]
             rushedPoints = 0
             periodSnapshots = []
+            scoreEvents = []
             isInitialized = true
         }
     }
@@ -3079,8 +3098,8 @@ struct NewGameWizardView: View {
                                         goals: $theirGoals,
                                         behinds: $theirBehinds,
                                         score: theirScore,
-                                        goalAction: { theirGoals += 1 },
-                                        pointAction: { theirBehinds += 1 },
+                                        goalAction: { recordOpponentGoal() },
+                                        pointAction: { recordOpponentPoint() },
                                         minHeight: sharedCardHeight
                                     )
                                     scoreWormCard(width: proxy.size.width)
@@ -3124,8 +3143,8 @@ struct NewGameWizardView: View {
                                                     goals: $theirGoals,
                                                     behinds: $theirBehinds,
                                                     score: theirScore,
-                                                    goalAction: { theirGoals += 1 },
-                                                    pointAction: { theirBehinds += 1 },
+                                                    goalAction: { recordOpponentGoal() },
+                                                    pointAction: { recordOpponentPoint() },
                                                     minHeight: sharedCardHeight
                                                 )
                                                 scoreWormCard(width: teamCardWidth)
@@ -3155,6 +3174,12 @@ struct NewGameWizardView: View {
                 if !timerRunning {
                     liveSession.secondsRemaining = max(1, newValue) * 60
                 }
+            }
+            .onChange(of: ourScore) { oldValue, newValue in
+                trackScoreChange(oldScore: oldValue, newScore: newValue, isOurTeam: true)
+            }
+            .onChange(of: theirScore) { oldValue, newValue in
+                trackScoreChange(oldScore: oldValue, newScore: newValue, isOurTeam: false)
             }
             .onAppear {
                 applyConfiguredInitialPeriod()
@@ -3591,17 +3616,31 @@ struct NewGameWizardView: View {
             }
         }
 
+        private var currentTimelineX: Double {
+            let completedPeriods = min(liveSession.periodSnapshots.count, 4)
+            let base = Double(completedPeriods)
+            let duration = max(1, liveSession.periodMinutes * 60)
+            let progress = liveSession.periodMinutes > 0 ? 1 - (Double(liveSession.secondsRemaining) / Double(duration)) : 0
+            return min(4, base + max(0, min(1, progress)))
+        }
+
         private var scoreWormPoints: [CGPoint] {
-            let snapshots = liveSession.periodSnapshots
             var points: [CGPoint] = [.init(x: 0, y: 0)]
-            for (index, snapshot) in snapshots.enumerated() {
-                points.append(.init(x: CGFloat(index + 1), y: CGFloat(snapshot.ourScore - snapshot.theirScore)))
+            var lastX: Double = 0
+            var lastMargin: Int = 0
+
+            for event in liveSession.scoreEvents {
+                let clampedX = max(0, min(4, event.x))
+                if clampedX > lastX {
+                    points.append(.init(x: clampedX, y: CGFloat(lastMargin)))
+                }
+                points.append(.init(x: clampedX, y: CGFloat(event.margin)))
+                lastX = clampedX
+                lastMargin = event.margin
             }
 
-            let currentQuarter = CGFloat(min(snapshots.count, 3))
-            let progress = CGFloat(liveSession.periodMinutes > 0 ? 1 - (Double(liveSession.secondsRemaining) / Double(max(1, liveSession.periodMinutes * 60))) : 0)
-            let currentX = min(4, currentQuarter + max(0, min(1, progress)))
-            points.append(.init(x: currentX, y: CGFloat(ourScore - theirScore)))
+            let nowX = max(lastX, currentTimelineX)
+            points.append(.init(x: nowX, y: CGFloat(ourScore - theirScore)))
             return points
         }
 
@@ -3649,7 +3688,7 @@ struct NewGameWizardView: View {
                                 path.addLine(to: CGPoint(x: x, y: y))
                             }
                         }
-                        .stroke(ourStyle.background, style: .init(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
+                        .stroke(Color.white, style: .init(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
                     }
                 }
                 .frame(height: 170)
@@ -3744,6 +3783,17 @@ struct NewGameWizardView: View {
             .foregroundStyle(textColor)
         }
 
+        private func trackScoreChange(oldScore: Int, newScore: Int, isOurTeam: Bool) {
+            guard newScore != oldScore else { return }
+            let oldMargin = isOurTeam ? oldScore - theirScore : ourScore - oldScore
+            let delta = abs(newScore - oldScore)
+            var runningMargin = oldMargin
+            for _ in 0..<delta {
+                runningMargin += isOurTeam ? 1 : -1
+                liveSession.scoreEvents.append(ScoreEvent(x: currentTimelineX, margin: runningMargin))
+            }
+        }
+
         private func recordGoal(for playerID: UUID) {
             ourGoals += 1
             if let index = goalKickers.firstIndex(where: { $0.playerID == playerID }) {
@@ -3760,6 +3810,14 @@ struct NewGameWizardView: View {
                 return
             }
             liveSession.pointScorers[playerID, default: 0] += 1
+        }
+
+        private func recordOpponentGoal() {
+            theirGoals += 1
+        }
+
+        private func recordOpponentPoint() {
+            theirBehinds += 1
         }
 
         private func startTimer() {
