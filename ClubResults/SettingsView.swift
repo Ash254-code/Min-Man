@@ -3527,64 +3527,83 @@ private func makeTemplatePreviewPDF(
                 .map { vote in
                     ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
                 }
-        if template.includeBestPlayers && template.includePlayerGrades {
-            beginNewPageIfNeeded(requiredHeight: 160)
+        let goalKickerRows = (primaryGame?.goalKickers ?? [])
+            .filter { entry in
+                guard let playerID = entry.playerID else { return false }
+                return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
+            }
+            .sorted { $0.goals > $1.goals }
+            .map { entry in
+                let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
+                return [name, "\(entry.goals)"]
+            }
+
+        var bestAndFairestPoints: [UUID: Int] = [:]
+        for (index, playerID) in (primaryGame?.bestPlayersRanked ?? []).enumerated() {
+            bestAndFairestPoints[playerID, default: 0] += bestPlayerPoints(for: index)
+        }
+        for vote in (primaryGame?.guestVotesRanked ?? []) {
+            bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
+        }
+        let bestAndFairestRows = bestAndFairestPoints
+            .sorted { $0.value > $1.value }
+            .compactMap { (playerID, pointTotal) -> [String]? in
+                guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
+            }
+
+        struct CompactReportTable {
+            let title: String
+            let columns: [String]
+            let rows: [[String]]
+        }
+
+        var compactTables: [CompactReportTable] = []
+        if template.includeBestPlayers {
+            compactTables.append(CompactReportTable(title: "Best Players", columns: ["Rank", "Player"], rows: bestPlayersRows))
+        }
+        if template.includeGoalKickers {
+            compactTables.append(CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: goalKickerRows))
+        }
+        if template.includePlayerGrades {
+            compactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: guestVoteRows))
+        }
+        if template.includeBestAndFairestVotes {
+            compactTables.append(CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: bestAndFairestRows))
+        }
+
+        if !compactTables.isEmpty {
             let gap: CGFloat = 10
             let halfWidth = (contentRect.width - gap) / 2
-            let leftHeight = drawCompactTable(
-                title: "Best Players",
-                columns: ["Rank", "Player"],
-                rows: bestPlayersRows,
-                xOrigin: contentRect.minX,
-                width: halfWidth
-            )
-            let originalY = cursorY
-            let rightHeight = drawCompactTable(
-                title: "Guest Votes",
-                columns: ["Rank", "Player"],
-                rows: guestVoteRows,
-                xOrigin: contentRect.minX + halfWidth + gap,
-                width: halfWidth
-            )
-            cursorY = originalY + max(leftHeight, rightHeight) + 8
-        } else {
-            if template.includeBestPlayers {
-                drawDetailTable(title: "Best Players", columns: ["Rank", "Player"], rows: bestPlayersRows)
-            }
-            if template.includePlayerGrades {
-                drawDetailTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: guestVoteRows)
-            }
-        }
+            var index = 0
+            while index < compactTables.count {
+                beginNewPageIfNeeded(requiredHeight: 160)
+                let leftTable = compactTables[index]
+                let leftHeight = drawCompactTable(
+                    title: leftTable.title,
+                    columns: leftTable.columns,
+                    rows: leftTable.rows,
+                    xOrigin: contentRect.minX,
+                    width: halfWidth
+                )
+                let rowStartY = cursorY
+                var rowHeight = leftHeight
 
-        if template.includeGoalKickers {
-            let rows = (primaryGame?.goalKickers ?? [])
-                .filter { entry in
-                    guard let playerID = entry.playerID else { return false }
-                    return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
+                if index + 1 < compactTables.count {
+                    let rightTable = compactTables[index + 1]
+                    let rightHeight = drawCompactTable(
+                        title: rightTable.title,
+                        columns: rightTable.columns,
+                        rows: rightTable.rows,
+                        xOrigin: contentRect.minX + halfWidth + gap,
+                        width: halfWidth
+                    )
+                    rowHeight = max(leftHeight, rightHeight)
                 }
-                .sorted { $0.goals > $1.goals }
-                .map { entry in
-                    let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
-                    return [name, "\(entry.goals)"]
-                }
-            drawDetailTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows)
-        }
 
-        if template.includeBestAndFairestVotes {
-            var points: [UUID: Int] = [:]
-            for (index, playerID) in (primaryGame?.bestPlayersRanked ?? []).enumerated() {
-                points[playerID, default: 0] += bestPlayerPoints(for: index)
+                cursorY = rowStartY + rowHeight + 8
+                index += 2
             }
-            for vote in (primaryGame?.guestVotesRanked ?? []) {
-                points[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
-            }
-            let rows = points
-                .sorted { $0.value > $1.value }
-                .compactMap { (playerID, pointTotal) -> [String]? in
-                    guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
-                    return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
-                }
-            drawDetailTable(title: "Best & Fairest", columns: ["Player", "Points"], rows: rows)
         }
 
         if template.includeStaffRoles {
