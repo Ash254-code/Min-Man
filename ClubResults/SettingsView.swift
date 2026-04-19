@@ -3328,7 +3328,7 @@ private func makeTemplatePreviewPDF(
             attributes: [.font: titleFont, .foregroundColor: UIColor.black]
         ).draw(in: titleRect)
 
-        let subtitle = "Date: \(dateSummary) • Grades: \(gradeSummary)"
+        let subtitle = "\(dateSummary) • \(gradeSummary)"
         let subtitleRect = CGRect(x: titleX, y: titleRect.maxY + 2, width: contentRect.width - 68, height: 22)
         NSAttributedString(
             string: subtitle,
@@ -3364,7 +3364,7 @@ private func makeTemplatePreviewPDF(
             for (idx, column) in tableColumns.enumerated() {
                 let width = columnWidths[idx]
                 let rect = CGRect(x: x, y: headerY, width: width, height: 22)
-                UIColor.systemGray5.setFill()
+                UIColor(white: 0.92, alpha: 1).setFill()
                 UIBezierPath(rect: rect).fill()
                 UIColor.separator.setStroke()
                 UIBezierPath(rect: rect).stroke()
@@ -3408,7 +3408,7 @@ private func makeTemplatePreviewPDF(
             for (index, column) in columns.enumerated() {
                 let width = widths[index]
                 let rect = CGRect(x: headerX, y: cursorY, width: width, height: 22)
-                UIColor.systemGray5.setFill()
+                UIColor(white: 0.92, alpha: 1).setFill()
                 UIBezierPath(rect: rect).fill()
                 UIColor.separator.setStroke()
                 UIBezierPath(rect: rect).stroke()
@@ -3440,6 +3440,56 @@ private func makeTemplatePreviewPDF(
             cursorY += 10
         }
 
+        func drawCompactTable(
+            title: String,
+            columns: [String],
+            rows: [[String]],
+            xOrigin: CGFloat,
+            width: CGFloat
+        ) -> CGFloat {
+            let startY = cursorY
+            let sectionRect = CGRect(x: xOrigin, y: cursorY, width: width, height: 20)
+            NSAttributedString(
+                string: title,
+                attributes: [.font: sectionFont, .foregroundColor: UIColor.black]
+            ).draw(in: sectionRect)
+            var localY = cursorY + 22
+            let colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
+
+            var x = xOrigin
+            for (index, column) in columns.enumerated() {
+                let rect = CGRect(x: x, y: localY, width: colWidths[index], height: 20)
+                UIColor(white: 0.92, alpha: 1).setFill()
+                UIBezierPath(rect: rect).fill()
+                UIColor.separator.setStroke()
+                UIBezierPath(rect: rect).stroke()
+                NSAttributedString(
+                    string: column,
+                    attributes: [.font: headerFont, .foregroundColor: UIColor.black]
+                ).draw(in: rect.insetBy(dx: 4, dy: 4))
+                x += colWidths[index]
+            }
+            localY += 20
+
+            let safeRows = rows.isEmpty ? [["No data"]] : rows
+            for row in safeRows {
+                x = xOrigin
+                for (index, colWidth) in colWidths.enumerated() {
+                    let value = index < row.count ? row[index] : ""
+                    let rect = CGRect(x: x, y: localY, width: colWidth, height: 18)
+                    UIColor.separator.setStroke()
+                    UIBezierPath(rect: rect).stroke()
+                    NSAttributedString(
+                        string: value,
+                        attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+                    ).draw(in: rect.insetBy(dx: 4, dy: 3))
+                    x += colWidth
+                }
+                localY += 18
+            }
+            return localY - startY
+        }
+
         if relevantGames.isEmpty {
             drawSectionHeader("No completed games matched this template.")
             return
@@ -3452,7 +3502,13 @@ private func makeTemplatePreviewPDF(
             let ourScoreText = "MinMan \(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
             let oppScoreText = "\(game.opponent) \(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
 
-            let pills: [(String, UIColor)] = [(ourScoreText, UIColor.systemBlue), (oppScoreText, UIColor.systemYellow)]
+            let configuration = ClubConfigurationStore.load()
+            let ourStyle = ClubStyle.style(for: configuration.clubTeam.name, configuration: configuration)
+            let oppStyle = ClubStyle.style(for: game.opponent, configuration: configuration)
+            let pills: [(String, UIColor, UIColor)] = [
+                (ourScoreText, UIColor(ourStyle.background), UIColor(ourStyle.text)),
+                (oppScoreText, UIColor(oppStyle.background), UIColor(oppStyle.text))
+            ]
             var x = contentRect.minX
             for pill in pills {
                 let width = min(contentRect.width * 0.48, CGFloat((pill.0 as NSString).size(withAttributes: [.font: bodyFont]).width + 24))
@@ -3462,27 +3518,51 @@ private func makeTemplatePreviewPDF(
                 path.fill()
                 NSAttributedString(
                     string: pill.0,
-                    attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+                    attributes: [.font: bodyFont, .foregroundColor: pill.2]
                 ).draw(in: rect.insetBy(dx: 8, dy: 4))
                 x += width + 8
             }
             cursorY += 34
         }
 
-        if template.includeBestPlayers {
-            let rows = (primaryGame?.bestPlayersRanked ?? []).enumerated().map { index, playerID in
-                ["\(index + 1)", playerLookup[playerID]?.name ?? "Unknown Player"]
-            }
-            drawDetailTable(title: "Best Players", columns: ["Rank", "Player"], rows: rows)
+        let minimumGamesThreshold = max(template.minimumGamesPlayed, 1)
+        let bestPlayersRows = (primaryGame?.bestPlayersRanked ?? []).enumerated().compactMap { index, playerID in
+            guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+            return ["\(index + 1)", playerLookup[playerID]?.name ?? "Unknown Player"]
         }
-
-        if template.includePlayerGrades {
-            let rows = (primaryGame?.guestVotesRanked ?? [])
+        let guestVoteRows = (primaryGame?.guestVotesRanked ?? [])
+            .filter { gamesByPlayer[$0.playerID, default: 0] >= minimumGamesThreshold }
                 .sorted { $0.rank < $1.rank }
                 .map { vote in
                     ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
                 }
-            drawDetailTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: rows)
+        if template.includeBestPlayers && template.includePlayerGrades {
+            beginNewPageIfNeeded(requiredHeight: 160)
+            let gap: CGFloat = 10
+            let halfWidth = (contentRect.width - gap) / 2
+            let leftHeight = drawCompactTable(
+                title: "Best Players",
+                columns: ["Rank", "Player"],
+                rows: bestPlayersRows,
+                xOrigin: contentRect.minX,
+                width: halfWidth
+            )
+            let originalY = cursorY
+            let rightHeight = drawCompactTable(
+                title: "Guest Votes",
+                columns: ["Rank", "Player"],
+                rows: guestVoteRows,
+                xOrigin: contentRect.minX + halfWidth + gap,
+                width: halfWidth
+            )
+            cursorY = originalY + max(leftHeight, rightHeight) + 8
+        } else {
+            if template.includeBestPlayers {
+                drawDetailTable(title: "Best Players", columns: ["Rank", "Player"], rows: bestPlayersRows)
+            }
+            if template.includePlayerGrades {
+                drawDetailTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: guestVoteRows)
+            }
         }
 
         if template.includeGoalKickers {
