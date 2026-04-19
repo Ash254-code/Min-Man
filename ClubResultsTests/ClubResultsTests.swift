@@ -49,4 +49,100 @@ struct ClubResultsTests {
         #expect(unknown.isEmpty)
     }
 
+    @Test func backupEnvelopeDecodeSupportsLegacyMissingMetadataAndSettings() async throws {
+        let legacyJSON = """
+        {
+          "appName": "ClubResults",
+          "backupFormatVersion": 1,
+          "exportedAt": "2026-02-10T12:34:56Z",
+          "itemCounts": {
+            "grades": 0,
+            "players": 0,
+            "games": 0,
+            "contacts": 0,
+            "reportRecipients": 0,
+            "customReportTemplates": 0,
+            "staffMembers": 0,
+            "staffDefaults": 0
+          },
+          "payload": {
+            "grades": [],
+            "players": [],
+            "games": [],
+            "contacts": [],
+            "reportRecipients": [],
+            "customReportTemplates": [],
+            "staffMembers": [],
+            "staffDefaults": [],
+            "appSettings": {
+              "clubConfiguration": {
+                "clubTeam": {
+                  "name": "Min Man",
+                  "primaryColorHex": "#0D2759",
+                  "secondaryColorHex": "#FFD100",
+                  "tertiaryColorHex": null,
+                  "venues": ["Mintaro"]
+                },
+                "oppositions": []
+              }
+            }
+          }
+        }
+        """
+
+        let data = try #require(legacyJSON.data(using: .utf8))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let envelope = try decoder.decode(AppBackupEnvelope.self, from: data)
+
+        #expect(envelope.appVersion == "unknown")
+        #expect(envelope.buildNumber == "unknown")
+        #expect(envelope.platform == "unknown")
+        #expect(envelope.schemaVersion == 1)
+        #expect(envelope.itemCounts.lastStaffSelections == 0)
+        #expect(envelope.itemCounts.draftResumeFlags == 0)
+        #expect(envelope.payload.appSettings.boundaryUmpireGradeMappings.isEmpty)
+        #expect(envelope.payload.appSettings.lastStaffSelections.isEmpty)
+        #expect(envelope.payload.appSettings.draftResumeOpenLiveFlags.isEmpty)
+        #expect(envelope.payload.appSettings.legacyGradesBackup.isEmpty)
+        #expect(envelope.payload.appSettings.legacyContactsBackup.isEmpty)
+    }
+
+    @Test func gradeRecordDecodeSupportsLegacyMissingNewFields() async throws {
+        let legacyGradeJSON = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "name": "A Grade",
+          "isActive": true,
+          "displayOrder": 1,
+          "asksHeadCoach": true,
+          "asksAssistantCoach": true,
+          "asksTeamManager": true,
+          "asksRunner": true,
+          "asksGoalUmpire": true,
+          "asksFieldUmpire": true,
+          "asksBoundaryUmpire1": true,
+          "asksBoundaryUmpire2": true,
+          "asksTrainers": true,
+          "asksTrainer1": true,
+          "asksTrainer2": true,
+          "asksTrainer3": false,
+          "asksTrainer4": false,
+          "asksNotes": true,
+          "asksScore": true,
+          "asksLiveGameView": true,
+          "asksGoalKickers": true,
+          "bestPlayersCount": 6
+        }
+        """
+
+        let data = try #require(legacyGradeJSON.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(GradeRecord.self, from: data)
+
+        #expect(decoded.asksGuestBestFairestVotesScan == false)
+        #expect(decoded.allowsLiveGameView == false)
+        #expect(decoded.quarterLengthMinutes == 20)
+    }
+
 }
