@@ -1302,9 +1302,9 @@ private struct ContactsSettingsView: View {
     @State private var showAddContact = false
     @State private var showAddGroup = false
     @State private var contactEditing: Contact?
-    @State private var groupEditing: ContactGroup?
-    @State private var selectedContactForMove: Contact?
+    @State private var groupEditing: GroupEditTarget?
     @State private var saveErrorMessage: String?
+    @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
 
     var body: some View {
         List {
@@ -1314,92 +1314,30 @@ private struct ContactsSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
-                if contacts.isEmpty {
-                    Text("No contacts added.")
-                        .foregroundStyle(.secondary)
-                }
-
-                ForEach(contacts) { contact in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(contact.name)
-                            .font(.headline)
-                        Text(contact.mobile)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Text(contact.email)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Text(groupName(for: contact.id) ?? "No group")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        contactEditing = contact
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            deleteContact(contact)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-
-                        Button {
-                            selectedContactForMove = contact
-                        } label: {
-                            Label("Move Group", systemImage: "arrow.left.arrow.right")
-                        }
-                        .tint(.blue)
-                    }
-                }
-
-                Button {
-                    showAddContact = true
-                } label: {
-                    Label("Add Contact", systemImage: "plus")
-                }
-            } header: {
-                Text("Contacts")
+            ForEach(primarySections) { section in
+                sectionView(fallbackTitle: section.title, sectionKey: section.rawValue)
             }
 
             Section {
-                if groups.isEmpty {
-                    Text("No groups created yet.")
+                if orderedGrades.isEmpty {
+                    Text("Add club grades in Settings > Club Grades to manage coach contacts by grade.")
                         .foregroundStyle(.secondary)
-                }
-
-                ForEach(groups) { group in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(group.name)
-                                .font(.headline)
-                            Text("\(memberCount(for: group.id)) contact(s)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
+                } else {
+                    ForEach(orderedGrades) { grade in
+                        sectionView(fallbackTitle: grade.name, sectionKey: ContactSectionKey.coachesGrade(grade.id).rawValue)
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        groupEditing = group
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            deleteGroup(group)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                }
-
-                Button {
-                    showAddGroup = true
-                } label: {
-                    Label("Add Group", systemImage: "plus")
                 }
             } header: {
-                Text("Groups")
+                Text("Coaches")
+            }
+
+            Section {
+                ReportRecipientsByCustomReportView(
+                    templates: templates,
+                    assignments: customReportRecipientSections
+                )
+            } header: {
+                Text("Report Recipients")
             }
         }
         .navigationTitle("Contacts")
@@ -1434,80 +1372,15 @@ private struct ContactsSettingsView: View {
             )
             .appPopupStyle()
         }
-        .sheet(item: $selectedContactForMove) { contact in
-            NavigationStack {
-                List {
-                    Button {
-                        setGroup(nil, for: contact.id)
-                    } label: {
-                        HStack {
-                            Text("No group")
-                            Spacer()
-                            if groupID(for: contact.id) == nil {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                    }
-
-                    ForEach(groups) { group in
-                        Button {
-                            setGroup(group.id, for: contact.id)
-                        } label: {
-                            HStack {
-                                Text(group.name)
-                                Spacer()
-                                if groupID(for: contact.id) == group.id {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Move Contact")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") {
-                            selectedContactForMove = nil
-                        }
-                    }
-                }
-            }
-            .appPopupStyle()
-        }
-        .sheet(isPresented: $showAddGroup) {
+        .sheet(item: $groupEditing) { target in
             GroupEditSheet(
-                title: "Add Group",
-                onSave: { name in
-                    guard !name.isEmpty else { return false }
-                    dataContext.insert(ContactGroup(name: name))
-                    saveContext()
-                    return true
-                }
-            )
-            .appPopupStyle()
-        }
-        .sheet(item: $groupEditing) { group in
-            GroupMembersSheet(
-                group: group,
-                contacts: contacts,
-                memberships: groupMemberships,
-                onAssign: { contactID in
-                    setGroup(group.id, for: contactID)
-                },
-                onRemove: { contactID in
-                    if groupID(for: contactID) == group.id {
-                        setGroup(nil, for: contactID)
-                    }
-                },
-                onRename: { newName in
-                    group.name = newName
-                    saveContext()
+                initialGroupName: displayTitle(for: target.sectionKey, fallback: target.fallbackTitle),
+                contacts: contactsForSection(target.sectionKey),
+                onSave: { newName in
+                    setCustomTitle(newName, for: target.sectionKey, fallback: target.fallbackTitle)
                 },
                 onDelete: {
-                    deleteGroup(group)
-                    groupEditing = nil
+                    clearGroup(target.sectionKey)
                 }
             )
             .appPopupStyle()
@@ -1525,23 +1398,91 @@ private struct ContactsSettingsView: View {
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
+        .task {
+            reloadContacts()
+        }
     }
 
-    private func groupID(for contactID: UUID) -> UUID? {
-        groupMemberships.first(where: { $0.contactID == contactID })?.groupID
+    private func sectionView(fallbackTitle: String, sectionKey: String) -> some View {
+        Section {
+            let members = contactsForSection(sectionKey)
+
+            if members.isEmpty {
+                Text("No contacts added.")
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(members) { contact in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(contact.name)
+                        .font(.headline)
+
+                    Text(contact.mobile)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Text(contact.email)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    contactEditing = contact
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        removeContact(contact.id, fromSection: sectionKey)
+                    } label: {
+                        Label("Remove", systemImage: "minus.circle")
+                    }
+                }
+            }
+
+            Menu {
+                Button {
+                    addSectionKey = sectionKey
+                    showAddContact = true
+                } label: {
+                    Label("New Contact", systemImage: "person.badge.plus")
+                }
+
+                Button {
+                    sectionForExistingContact = sectionKey
+                    showAddExistingContactForSection = true
+                } label: {
+                    Label("Existing Contact", systemImage: "person.2")
+                }
+            } label: {
+                Label("Add Contact", systemImage: "plus")
+            }
+        } header: {
+            HStack {
+                Text(displayTitle(for: sectionKey, fallback: fallbackTitle))
+                Spacer()
+                Button {
+                    groupEditing = GroupEditTarget(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
-    private func groupName(for contactID: UUID) -> String? {
-        guard let gid = groupID(for: contactID) else { return nil }
-        return groups.first(where: { $0.id == gid })?.name
+    private func contactsForSection(_ sectionKey: String) -> [Contact] {
+        let ids = Set(sectionMemberships.filter { $0.sectionKey == sectionKey }.map(\.contactID))
+        return contacts.filter { ids.contains($0.id) }
     }
 
-    private func memberCount(for groupID: UUID) -> Int {
-        groupMemberships.filter { $0.groupID == groupID }.count
+    private func assignContact(_ contactID: UUID, toSection sectionKey: String) {
+        guard !sectionMemberships.contains(where: { $0.contactID == contactID && $0.sectionKey == sectionKey }) else {
+            return
+        }
+        dataContext.insert(ContactSectionMembership(contactID: contactID, sectionKey: sectionKey))
     }
 
-    private func setGroup(_ groupID: UUID?, for contactID: UUID) {
-        for membership in groupMemberships where membership.contactID == contactID {
+    private func removeContact(_ contactID: UUID, fromSection sectionKey: String) {
+        for membership in sectionMemberships where membership.contactID == contactID && membership.sectionKey == sectionKey {
             dataContext.delete(membership)
         }
         if let groupID {
@@ -1573,10 +1514,220 @@ private struct ContactsSettingsView: View {
         saveContext()
     }
 
+    private func clearGroup(_ sectionKey: String) {
+        for membership in sectionMemberships where membership.sectionKey == sectionKey {
+            dataContext.delete(membership)
+        }
+        removeCustomTitle(for: sectionKey)
+        saveContext()
+        reloadContacts()
+    }
+
     private func saveContext() {
         do {
             try dataContext.save()
             SettingsBackupStore.saveContacts(contacts)
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    private var primarySections: [ContactSectionKey] {
+        [
+            .registrar,
+            .coordinatorsSenior,
+            .coordinatorsJunior,
+            .marketing,
+            .committee,
+            .other
+        ]
+    }
+
+    private var customSectionTitles: [String: String] {
+        guard
+            let data = customSectionTitlesData.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private func displayTitle(for sectionKey: String, fallback: String) -> String {
+        if let custom = customSectionTitles[sectionKey], !custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return custom
+        }
+        return fallback
+    }
+
+    private func setCustomTitle(_ title: String, for sectionKey: String, fallback: String) {
+        var updated = customSectionTitles
+        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.isEmpty || cleaned == fallback {
+            updated.removeValue(forKey: sectionKey)
+        } else {
+            updated[sectionKey] = cleaned
+        }
+        if let data = try? JSONEncoder().encode(updated), let json = String(data: data, encoding: .utf8) {
+            customSectionTitlesData = json
+        }
+    }
+
+    private func removeCustomTitle(for sectionKey: String) {
+        var updated = customSectionTitles
+        updated.removeValue(forKey: sectionKey)
+        if let data = try? JSONEncoder().encode(updated), let json = String(data: data, encoding: .utf8) {
+            customSectionTitlesData = json
+        }
+    }
+}
+
+private struct GroupEditTarget: Identifiable {
+    let sectionKey: String
+    let fallbackTitle: String
+    var id: String { sectionKey }
+}
+
+private enum ContactSectionKey: Hashable, Identifiable {
+    case coaches
+    case coachesGrade(UUID)
+    case registrar
+    case coordinatorsSenior
+    case coordinatorsJunior
+    case marketing
+    case committee
+    case other
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .coaches: return "Coaches"
+        case .coachesGrade: return "Grade"
+        case .registrar: return "Registrar"
+        case .coordinatorsSenior: return "Coordinators - Senior"
+        case .coordinatorsJunior: return "Coordinators - Junior"
+        case .marketing: return "Marketing"
+        case .committee: return "Committee"
+        case .other: return "Other"
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .coaches:
+            return "coaches"
+        case let .coachesGrade(gradeID):
+            return "coaches:\(gradeID.uuidString)"
+        case .registrar:
+            return "registrar"
+        case .coordinatorsSenior:
+            return "coordinators:senior"
+        case .coordinatorsJunior:
+            return "coordinators:junior"
+        case .marketing:
+            return "marketing"
+        case .committee:
+            return "committee"
+        case .other:
+            return "other"
+        }
+    }
+
+    static func fromRawValue(_ value: String) -> ContactSectionKey {
+        if value == ContactSectionKey.coaches.rawValue { return .coaches }
+        if value == ContactSectionKey.registrar.rawValue { return .registrar }
+        if value == ContactSectionKey.coordinatorsSenior.rawValue { return .coordinatorsSenior }
+        if value == ContactSectionKey.coordinatorsJunior.rawValue { return .coordinatorsJunior }
+        if value == ContactSectionKey.marketing.rawValue { return .marketing }
+        if value == ContactSectionKey.committee.rawValue { return .committee }
+        if value == ContactSectionKey.other.rawValue { return .other }
+        if value.hasPrefix("coaches:"), let uuid = UUID(uuidString: String(value.dropFirst("coaches:".count))) {
+            return .coachesGrade(uuid)
+        }
+        return .other
+    }
+}
+
+private struct ReportRecipientsByCustomReportView: View {
+    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+
+    let templates: [CustomReportTemplate]
+    let assignments: [CustomReportRecipientSection]
+
+    @State private var saveErrorMessage: String?
+
+    var body: some View {
+        if templates.isEmpty {
+            Text("No custom reports yet. Create one and it will appear here.")
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(templates) { template in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(template.name)
+                        .font(.headline)
+
+                    let assignedSections = sections(for: template.id)
+                    if assignedSections.isEmpty {
+                        Text("No contact sections assigned.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(assignedSections.joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Menu {
+                        ForEach(reportSectionOptions, id: \.rawValue) { section in
+                            if isAssigned(template.id, section.rawValue) {
+                                Button("Remove \(section.label)", role: .destructive) {
+                                    removeSection(section.rawValue, from: template.id)
+                                }
+                            } else {
+                                Button("Add \(section.label)") {
+                                    addSection(section.rawValue, to: template.id)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Manage Sections", systemImage: "slider.horizontal.3")
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private func sections(for templateID: UUID) -> [String] {
+        assignments
+            .filter { $0.templateID == templateID }
+            .compactMap { assignment in
+                reportSectionOptions.first(where: { $0.rawValue == assignment.sectionKey })?.label
+            }
+            .sorted()
+    }
+
+    private func isAssigned(_ templateID: UUID, _ sectionKey: String) -> Bool {
+        assignments.contains(where: { $0.templateID == templateID && $0.sectionKey == sectionKey })
+    }
+
+    private func addSection(_ sectionKey: String, to templateID: UUID) {
+        guard !isAssigned(templateID, sectionKey) else { return }
+        dataContext.insert(CustomReportRecipientSection(templateID: templateID, sectionKey: sectionKey))
+        saveContext()
+    }
+
+    private func removeSection(_ sectionKey: String, from templateID: UUID) {
+        for assignment in assignments where assignment.templateID == templateID && assignment.sectionKey == sectionKey {
+            dataContext.delete(assignment)
+        }
+        saveContext()
+    }
+
+    private func saveContext() {
+        do {
+            try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
         }
@@ -1694,6 +1845,7 @@ private struct ContactEditSheet: View {
     @State private var name: String
     @State private var mobile: String
     @State private var email: String
+    @State private var showDeleteConfirmation = false
 
     init(
         title: String,
@@ -1723,6 +1875,12 @@ private struct ContactEditSheet: View {
         !clean(email).isEmpty
     }
 
+    private var hasChanges: Bool {
+        clean(name) != clean(initialName) ||
+        clean(mobile) != clean(initialMobile) ||
+        clean(email) != clean(initialEmail)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -1740,28 +1898,27 @@ private struct ContactEditSheet: View {
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    HStack(spacing: 12) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
                         if onDelete != nil {
                             Button(role: .destructive) {
-                                onDelete?()
-                                dismiss()
+                                showDeleteConfirmation = true
                             } label: {
                                 Image(systemName: "trash")
                             }
                         }
 
-                        Button("Cancel") {
-                            dismiss()
-                        }
+                        Button("Save") { saveAndClose() }
+                            .buttonStyle(.borderedProminent)
+                            .tint((canSave && hasChanges) ? .blue : .gray)
+                            .disabled(!canSave || !hasChanges)
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        saveAndClose()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(canSave ? .blue : .gray)
-                    .disabled(!canSave)
                 }
                 if allowsSaveAndAddAnother {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -1775,6 +1932,15 @@ private struct ContactEditSheet: View {
                 }
             }
         }
+        .alert("Delete contact?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                onDelete?()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This contact will be permanently deleted.")
+        }
     }
 
     private func saveAndClose() {
@@ -1787,6 +1953,112 @@ private struct ContactEditSheet: View {
         name = ""
         mobile = ""
         email = ""
+    }
+
+    private func clean(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct GroupEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let initialGroupName: String
+    let contacts: [Contact]
+    let onSave: (String) -> Void
+    let onDelete: () -> Void
+
+    @State private var groupName: String
+    @State private var showDeleteConfirmation = false
+
+    init(
+        initialGroupName: String,
+        contacts: [Contact],
+        onSave: @escaping (String) -> Void,
+        onDelete: @escaping () -> Void
+    ) {
+        self.initialGroupName = initialGroupName
+        self.contacts = contacts
+        self.onSave = onSave
+        self.onDelete = onDelete
+        _groupName = State(initialValue: initialGroupName)
+    }
+
+    private var hasChanges: Bool {
+        clean(groupName) != clean(initialGroupName)
+    }
+
+    private var canSave: Bool {
+        !clean(groupName).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Group name")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Group Name", text: $groupName)
+                        .textInputAutocapitalization(.words)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                List {
+                    if contacts.isEmpty {
+                        Text("No contacts in this group.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(contacts) { contact in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(contact.name)
+                                Text(contact.email)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+            .padding()
+            .navigationTitle(clean(groupName).isEmpty ? "Group" : clean(groupName))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+
+                        Button("Save") {
+                            onSave(clean(groupName))
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint((canSave && hasChanges) ? .blue : .gray)
+                        .disabled(!canSave || !hasChanges)
+                    }
+                }
+            }
+        }
+        .alert("Delete group?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                onDelete()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes all contacts from the group.")
+        }
     }
 
     private func clean(_ text: String) -> String {
