@@ -2489,14 +2489,23 @@ struct ReportsSettingsView: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
                     ForEach(templates) { template in
                         ZStack(alignment: .topTrailing) {
-                            Text(template.name)
-                                .font(.headline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .multilineTextAlignment(.leading)
-                                .lineLimit(3)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                .padding(12)
-                                .padding(.trailing, 24)
+                            VStack(spacing: 6) {
+                                Text(template.name)
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+
+                                Text(gradesSummary(for: template))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .padding(.trailing, 20)
 
                             Button {
                                 templateInfoing = template
@@ -2685,6 +2694,14 @@ struct ReportsSettingsView: View {
         } catch {
             saveErrorMessage = error.localizedDescription
         }
+    }
+
+    private func gradesSummary(for template: CustomReportTemplate) -> String {
+        let selectedGradeNames = grades
+            .filter { template.gradeIDs.contains($0.id) }
+            .map(\.name)
+
+        return selectedGradeNames.isEmpty ? "All grades" : selectedGradeNames.joined(separator: " • ")
     }
 }
 
