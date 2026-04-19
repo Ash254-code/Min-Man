@@ -2575,12 +2575,13 @@ struct ReportsSettingsView: View {
                 grades: grades,
                 contacts: contacts,
                 sectionMemberships: sectionMemberships
-            ) { name, selectedGradeIDs, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
                 let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
                 let template = CustomReportTemplate(
                     name: name,
                     gradeIDs: selectedGradeIDs,
+                    includeScores: includeScores,
                     includeBestPlayers: includeBestPlayers,
                     bestPlayersLimit: bestPlayersLimit,
                     includePlayerGrades: includeGuestVotes,
@@ -2651,6 +2652,7 @@ struct ReportsSettingsView: View {
                 sectionMemberships: sectionMemberships,
                 initialName: template.name,
                 initialSelectedGradeIDs: template.gradeIDs,
+                initialIncludeScores: template.includeScores,
                 initialIncludeBestPlayers: template.includeBestPlayers,
                 initialBestPlayersLimit: template.bestPlayersLimit,
                 initialIncludeGuestVotes: template.includePlayerGrades,
@@ -2689,11 +2691,12 @@ struct ReportsSettingsView: View {
                     dataContext.delete(template)
                     saveContext()
                 }
-            ) { name, selectedGradeIDs, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
                 let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
                 template.name = name
                 template.gradeIDs = selectedGradeIDs
+                template.includeScores = includeScores
                 template.includeBestPlayers = includeBestPlayers
                 template.bestPlayersLimit = bestPlayersLimit
                 template.includePlayerGrades = includeGuestVotes
@@ -3115,6 +3118,7 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
         .map(\.name)
 
     var items: [String] = []
+    if template.includeScores { items.append("Scores") }
     if template.includeBestPlayers { items.append("Best players") }
     if template.includePlayerGrades { items.append("Guest Votes") }
     if template.includeGoalKickers { items.append("Goal kickers") }
@@ -3492,39 +3496,52 @@ private func makeTemplatePreviewPDF(
         }
 
         let primaryGame = relevantGames.first
-        if let game = primaryGame, relevantGames.count == 1 {
-            drawSectionHeader("Score")
-            beginNewPageIfNeeded(requiredHeight: 100)
-            let ourScoreText = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
-            let oppScoreText = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
-
+        if template.includeScores {
             let configuration = ClubConfigurationStore.load()
-            let ourStyle = ClubStyle.style(for: configuration.clubTeam.name, configuration: configuration)
-            let oppStyle = ClubStyle.style(for: game.opponent, configuration: configuration)
-            let pills: [(String, UIColor, UIColor)] = [
-                (ourScoreText, UIColor(ourStyle.background), UIColor(ourStyle.text)),
-                (oppScoreText, UIColor(oppStyle.background), UIColor(oppStyle.text))
-            ]
-            let gap: CGFloat = 10
-            let pillWidth = (contentRect.width - gap) / 2
-            var x = contentRect.minX
-            for (index, pill) in pills.enumerated() {
-                let rect = CGRect(x: x, y: cursorY, width: pillWidth, height: 74)
-                let path = UIBezierPath(roundedRect: rect, cornerRadius: 18)
-                pill.1.setFill()
-                path.fill()
-                let teamName = index == 0 ? configuration.clubTeam.name : game.opponent
-                NSAttributedString(
-                    string: teamName.uppercased(),
-                    attributes: [.font: scoreDetailFont, .foregroundColor: pill.2]
-                ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 10, width: rect.width - 24, height: 16))
-                NSAttributedString(
-                    string: pill.0,
-                    attributes: [.font: scoreBannerFont, .foregroundColor: pill.2]
-                ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 28, width: rect.width - 24, height: 36))
-                x += pillWidth + gap
+            if let game = primaryGame, relevantGames.count == 1 {
+                drawSectionHeader("Score")
+                beginNewPageIfNeeded(requiredHeight: 100)
+                let ourScoreText = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
+                let oppScoreText = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
+                let ourStyle = ClubStyle.style(for: configuration.clubTeam.name, configuration: configuration)
+                let oppStyle = ClubStyle.style(for: game.opponent, configuration: configuration)
+                let pills: [(String, UIColor, UIColor)] = [
+                    (ourScoreText, UIColor(ourStyle.background), UIColor(ourStyle.text)),
+                    (oppScoreText, UIColor(oppStyle.background), UIColor(oppStyle.text))
+                ]
+                let gap: CGFloat = 10
+                let pillWidth = (contentRect.width - gap) / 2
+                var x = contentRect.minX
+                for (index, pill) in pills.enumerated() {
+                    let rect = CGRect(x: x, y: cursorY, width: pillWidth, height: 74)
+                    let path = UIBezierPath(roundedRect: rect, cornerRadius: 18)
+                    pill.1.setFill()
+                    path.fill()
+                    let teamName = index == 0 ? configuration.clubTeam.name : game.opponent
+                    NSAttributedString(
+                        string: teamName.uppercased(),
+                        attributes: [.font: scoreDetailFont, .foregroundColor: pill.2]
+                    ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 10, width: rect.width - 24, height: 16))
+                    NSAttributedString(
+                        string: pill.0,
+                        attributes: [.font: scoreBannerFont, .foregroundColor: pill.2]
+                    ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 28, width: rect.width - 24, height: 36))
+                    x += pillWidth + gap
+                }
+                cursorY += 86
+            } else {
+                let scoreRows = relevantGames.map { game in
+                    let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
+                    let our = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
+                    let opponent = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
+                    return [formattedDate(game.date), gradeName, game.opponent, our, opponent]
+                }
+                drawDetailTable(
+                    title: "Scores",
+                    columns: ["Date", "Grade", "Opponent", "Us", "Them"],
+                    rows: scoreRows
+                )
             }
-            cursorY += 86
         }
 
         let minimumGamesThreshold = max(template.minimumGamesPlayed, 1)
@@ -3706,10 +3723,11 @@ private struct CustomReportEditView: View {
     let contacts: [Contact]
     let sectionMemberships: [ContactSectionMembership]
     let onDelete: (() -> Void)?
-    let onSave: (String, [UUID], Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
+    let onSave: (String, [UUID], Bool, Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
+    @State private var includeScores: Bool
     @State private var includeBestPlayers: Bool
     @State private var bestPlayersLimit: Int
     @State private var includeGuestVotes: Bool
@@ -3740,6 +3758,7 @@ private struct CustomReportEditView: View {
         sectionMemberships: [ContactSectionMembership],
         initialName: String = "",
         initialSelectedGradeIDs: [UUID] = [],
+        initialIncludeScores: Bool = true,
         initialIncludeBestPlayers: Bool = false,
         initialBestPlayersLimit: Int = 0,
         initialIncludeGuestVotes: Bool = false,
@@ -3762,7 +3781,7 @@ private struct CustomReportEditView: View {
         initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
         onDelete: (() -> Void)? = nil,
-        onSave: @escaping (String, [UUID], Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
+        onSave: @escaping (String, [UUID], Bool, Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
     ) {
         self.grades = grades
         self.contacts = contacts
@@ -3771,6 +3790,7 @@ private struct CustomReportEditView: View {
         self.onSave = onSave
         _name = State(initialValue: initialName)
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
+        _includeScores = State(initialValue: initialIncludeScores)
         _includeBestPlayers = State(initialValue: initialIncludeBestPlayers)
         _bestPlayersLimit = State(initialValue: Self.clampedReportItemLimit(initialBestPlayersLimit, defaultValue: 0))
         _includeGuestVotes = State(initialValue: initialIncludeGuestVotes)
@@ -3854,6 +3874,7 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
+                    Toggle("Scores", isOn: $includeScores)
                     toggleWithLimitPicker(title: "Best players", isOn: $includeBestPlayers, limit: $bestPlayersLimit, defaultLimitWhenEnabled: 0)
                     toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit, defaultLimitWhenEnabled: 0)
                     toggleWithLimitPicker(title: "Goal Kickers", isOn: $includeGoalKickers, limit: $goalKickersLimit, defaultLimitWhenEnabled: 0)
@@ -3988,6 +4009,7 @@ private struct CustomReportEditView: View {
                         onSave(
                             name.trimmingCharacters(in: .whitespacesAndNewlines),
                             Array(selectedGradeIDs),
+                            includeScores,
                             includeBestPlayers,
                             bestPlayersLimit,
                             includeGuestVotes,

@@ -10,6 +10,7 @@ final class CustomReportTemplate {
     var gradeIDsData: Data
 
     // Core sections
+    var includeScores: Bool
     var includeBestPlayers: Bool
     var bestPlayersLimit: Int
     var includePlayerGrades: Bool
@@ -37,6 +38,7 @@ final class CustomReportTemplate {
         id: UUID = UUID(),
         name: String,
         gradeIDs: [UUID] = [],
+        includeScores: Bool = true,
         includeBestPlayers: Bool = true,
         bestPlayersLimit: Int = 0,
         includePlayerGrades: Bool = true,
@@ -61,6 +63,7 @@ final class CustomReportTemplate {
         self.id = id
         self.name = name
         self.gradeIDsData = (try? JSONEncoder().encode(gradeIDs)) ?? Data()
+        self.includeScores = includeScores
         self.includeBestPlayers = includeBestPlayers
         self.bestPlayersLimit = max(0, min(bestPlayersLimit, 10))
         self.includePlayerGrades = includePlayerGrades

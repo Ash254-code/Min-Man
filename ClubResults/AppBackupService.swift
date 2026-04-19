@@ -436,6 +436,7 @@ struct CustomReportTemplateRecord: Codable {
     let id: UUID
     let name: String
     let gradeIDs: [UUID]
+    let includeScores: Bool
     let includeBestPlayers: Bool
     let bestPlayersLimit: Int
     let includePlayerGrades: Bool
@@ -458,6 +459,7 @@ struct CustomReportTemplateRecord: Codable {
         id = template.id
         name = template.name
         gradeIDs = template.gradeIDs
+        includeScores = template.includeScores
         includeBestPlayers = template.includeBestPlayers
         bestPlayersLimit = template.bestPlayersLimit
         includePlayerGrades = template.includePlayerGrades
@@ -478,7 +480,7 @@ struct CustomReportTemplateRecord: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, gradeIDs, includeBestPlayers, bestPlayersLimit, includePlayerGrades, guestVotesLimit
+        case id, name, gradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includePlayerGrades, guestVotesLimit
         case includeGoalKickers, goalKickersLimit, includeGuernseyNumbers, includeBestAndFairestVotes
         case bestAndFairestLimit, includeStaffRoles, includeOfficials
         case includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades
@@ -490,6 +492,7 @@ struct CustomReportTemplateRecord: Codable {
         id = try c.decode(UUID.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
         gradeIDs = try c.decodeIfPresent([UUID].self, forKey: .gradeIDs) ?? []
+        includeScores = try c.decodeIfPresent(Bool.self, forKey: .includeScores) ?? true
         includeBestPlayers = try c.decodeIfPresent(Bool.self, forKey: .includeBestPlayers) ?? true
         bestPlayersLimit = try c.decodeIfPresent(Int.self, forKey: .bestPlayersLimit) ?? 0
         includePlayerGrades = try c.decodeIfPresent(Bool.self, forKey: .includePlayerGrades) ?? true
@@ -983,6 +986,7 @@ enum AppBackupService {
                     id: $0.id,
                     name: $0.name,
                     gradeIDs: $0.gradeIDs,
+                    includeScores: $0.includeScores,
                     includeBestPlayers: $0.includeBestPlayers,
                     bestPlayersLimit: $0.bestPlayersLimit,
                     includePlayerGrades: $0.includePlayerGrades,
