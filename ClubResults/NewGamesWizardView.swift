@@ -226,7 +226,6 @@ struct NewGameWizardView: View {
     @State private var entryMode: EntryMode?
     @State private var liveGameSession = LiveGameSessionState()
     @State private var editingGame: Game?
-    @State private var isAdvancingStep = true
 
     // MARK: Setup
     @State private var gradeID: UUID?
@@ -238,8 +237,6 @@ struct NewGameWizardView: View {
     // MARK: Selections (dropdowns)
     @State private var opponentName: String = ""
     @State private var venueName: String = ""
-    @State private var setupPickerPrompt: SetupPickerPrompt?
-    @State private var setupPickerDetent: PresentationDetent = .large
 
     // MARK: Staff
     @State private var headCoachName: String = ""
@@ -411,32 +408,6 @@ struct NewGameWizardView: View {
         return ClubStyle.style(for: opponent, configuration: clubConfiguration)
     }
 
-    // MARK: Setup picker sizing
-    private var setupPickerOptionsCount: Int {
-        switch setupPickerPrompt {
-        case .opponent:
-            return opponentNames.count + 1 // "Select…" option
-        case .venue:
-            return venuesForSelection.count + 1 // "Select…" option
-        case .none:
-            return 0
-        }
-    }
-
-    private var setupPickerRowHeight: CGFloat { isCompactLayout ? 56 : 72 }
-
-    private var setupPickerHeaderAndPaddingHeight: CGFloat { isCompactLayout ? 112 : 132 }
-
-    private var setupPickerHeight: CGFloat {
-        PickerSheetPresentation.preferredHeight(
-            optionCount: setupPickerOptionsCount,
-            rowHeight: setupPickerRowHeight,
-            chromeHeight: setupPickerHeaderAndPaddingHeight,
-            minVisibleRows: 2,
-            isCompactLayout: isCompactLayout
-        )
-    }
-
     private var setupPickerExpandedDetent: PresentationDetent {
         PickerSheetPresentation.expandedDetent(isCompactLayout: isCompactLayout)
     }
@@ -599,11 +570,6 @@ struct NewGameWizardView: View {
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
     }
 
-    private enum SetupPickerPrompt {
-        case opponent
-        case venue
-    }
-
     private var isCompactLayout: Bool { horizontalSizeClass == .compact }
 
     private var wizardPrimaryTitleFont: Font {
@@ -713,36 +679,6 @@ struct NewGameWizardView: View {
 
     private var selectorListFont: Font {
         .system(size: isCompactLayout ? 24 : 28, weight: .semibold)
-    }
-
-    @ViewBuilder
-    private func formSelectorRow(
-        title: String,
-        value: String,
-        placeholder: String = "Select…",
-        disabled: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Text(title)
-                    .font(wizardBodyFont)
-                    .foregroundStyle(disabled ? .secondary : .primary)
-                Spacer()
-                Text(value.isEmpty ? placeholder : value)
-                    .font(wizardBodyFont)
-                    .foregroundStyle(value.isEmpty || disabled ? .secondary : .primary)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, isCompactLayout ? 6 : 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .opacity(disabled ? 0.65 : 1)
     }
 
     @ViewBuilder
@@ -919,12 +855,33 @@ struct NewGameWizardView: View {
         liveGameSession.configureIfNeeded(initialPeriodMinutes: configuredPeriod)
     }
 
-    private var stepTransition: AnyTransition {
-        let edge: Edge = isAdvancingStep ? .trailing : .leading
-        return .asymmetric(
-            insertion: .move(edge: edge).combined(with: .opacity),
-            removal: .move(edge: isAdvancingStep ? .leading : .trailing).combined(with: .opacity)
+    private var displayedSteps: [Step] {
+        isPreviewMode ? [currentStep] : activeSteps
+    }
+
+    private var stepSelectionBinding: Binding<Int> {
+        Binding(
+            get: { currentStep.rawValue },
+            set: { newRawValue in
+                guard let newStep = displayedSteps.first(where: { $0.rawValue == newRawValue }) else { return }
+                move(to: newStep)
+            }
         )
+    }
+
+    @ViewBuilder
+    private func stepView(for wizardStep: Step) -> some View {
+        switch wizardStep {
+        case .setup: setupStep
+        case .staff: staffStep
+        case .officials: officialsStep
+        case .medical: medicalStep
+        case .score: scoreStep
+        case .goals: goalsStep
+        case .best: bestStep
+        case .votes: votesStep
+        case .review: reviewStep
+        }
     }
 
     // MARK: Body
@@ -942,21 +899,13 @@ struct NewGameWizardView: View {
                     .padding(.bottom, 10)
                 }
 
-                ZStack {
-                    switch currentStep {
-                    case .setup: setupStep
-                    case .staff: staffStep
-                    case .officials: officialsStep
-                    case .medical: medicalStep
-                    case .score: scoreStep
-                    case .goals: goalsStep
-                    case .best: bestStep
-                    case .votes: votesStep
-                    case .review: reviewStep
+                TabView(selection: stepSelectionBinding) {
+                    ForEach(displayedSteps, id: \.rawValue) { wizardStep in
+                        stepView(for: wizardStep)
+                            .tag(wizardStep.rawValue)
                     }
                 }
-                .id(currentStep)
-                .transition(stepTransition)
+                .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if !isPreviewMode && currentStep != .score {
@@ -1169,33 +1118,32 @@ struct NewGameWizardView: View {
         guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
-        move(to: activeSteps[nextIndex], advancing: true)
+        move(to: activeSteps[nextIndex])
     }
 
     private func proceedFromVotesStep() {
         guard let currentIndex = activeSteps.firstIndex(of: .votes) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
-        move(to: activeSteps[nextIndex], advancing: true)
+        move(to: activeSteps[nextIndex])
     }
 
     private func back() {
         guard let currentIndex = activeSteps.firstIndex(of: step), currentIndex > 0 else { return }
-        move(to: activeSteps[currentIndex - 1], advancing: false)
+        move(to: activeSteps[currentIndex - 1])
     }
 
     private func proceedAfterLiveSave() {
         if activeSteps.contains(.best) {
-            move(to: .best, advancing: true)
+            move(to: .best)
         } else if activeSteps.contains(.votes) {
-            move(to: .votes, advancing: true)
+            move(to: .votes)
         } else {
-            move(to: .review, advancing: true)
+            move(to: .review)
         }
     }
 
-    private func move(to newStep: Step, advancing: Bool) {
-        isAdvancingStep = advancing
+    private func move(to newStep: Step) {
         step = newStep
     }
 
@@ -1289,7 +1237,7 @@ struct NewGameWizardView: View {
         if reopenLiveViewOnAppear {
             entryMode = .live
             startLiveSessionIfNeeded()
-            move(to: .score, advancing: true)
+            move(to: .score)
             isRestoringDraft = false
         } else {
             entryMode = .postGame
@@ -1339,17 +1287,25 @@ struct NewGameWizardView: View {
 
                     DatePicker("Date & time", selection: $date, displayedComponents: [.date, .hourAndMinute])
 
-                    formSelectorRow(title: "Opponent", value: opponentName) {
-                        setupPickerPrompt = .opponent
+                    Picker("Opponent", selection: $opponentName) {
+                        Text("Select…").tag("")
+                        ForEach(opponentNames, id: \.self) { opposition in
+                            Text(opposition).tag(opposition)
+                        }
+                    }
+                    .onChange(of: opponentName) { _, _ in
+                        if !venuesForSelection.contains(venueName) {
+                            venueName = ""
+                        }
                     }
 
-                    formSelectorRow(
-                        title: "Venue",
-                        value: venueName,
-                        disabled: venuesForSelection.isEmpty
-                    ) {
-                        setupPickerPrompt = .venue
+                    Picker("Venue", selection: $venueName) {
+                        Text("Select…").tag("")
+                        ForEach(venuesForSelection, id: \.self) { venue in
+                            Text(venue).tag(venue)
+                        }
                     }
+                    .disabled(venuesForSelection.isEmpty)
                 }
             }
             .font(wizardBodyFont)
@@ -1358,80 +1314,6 @@ struct NewGameWizardView: View {
         .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
-        .sheet(
-            isPresented: Binding(
-                get: { setupPickerPrompt != nil },
-                set: { if !$0 { setupPickerPrompt = nil } }
-            )
-        ) {
-            NavigationStack {
-                List {
-                    switch setupPickerPrompt {
-                    case .opponent:
-                        Button {
-                            opponentName = ""
-                            venueName = ""
-                            setupPickerPrompt = nil
-                        } label: {
-                            selectorListRow(title: "Select…", selected: opponentName.isEmpty)
-                        }
-                        .buttonStyle(.plain)
-
-                        ForEach(opponentNames, id: \.self) { opposition in
-                            Button {
-                                opponentName = opposition
-                                if !venuesForSelection.contains(venueName) {
-                                    venueName = ""
-                                }
-                                setupPickerPrompt = nil
-                            } label: {
-                                selectorListRow(title: opposition, selected: opponentName == opposition)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                    case .venue:
-                        Button {
-                            venueName = ""
-                            setupPickerPrompt = nil
-                        } label: {
-                            selectorListRow(title: "Select…", selected: venueName.isEmpty)
-                        }
-                        .buttonStyle(.plain)
-
-                        ForEach(venuesForSelection, id: \.self) { venue in
-                            Button {
-                                venueName = venue
-                                setupPickerPrompt = nil
-                            } label: {
-                                selectorListRow(title: venue, selected: venueName == venue)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                    case .none:
-                        EmptyView()
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .navigationTitle(setupPickerPrompt == .venue ? "Select Venue" : "Select Opponent")
-                .navigationBarTitleDisplayMode(.inline)
-                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { setupPickerPrompt = nil }
-                    }
-                }
-            }
-            .presentationDetents([.height(setupPickerHeight), setupPickerExpandedDetent], selection: $setupPickerDetent)
-            .presentationDragIndicator(.visible)
-            .onAppear {
-                setupPickerDetent = setupPickerExpandedDetent
-            }
-            .onChange(of: setupPickerPrompt) { _, _ in
-                setupPickerDetent = setupPickerExpandedDetent
-            }
-        }
     }
 
     // Staff step (coaching only)
