@@ -372,7 +372,7 @@ struct NewGameWizardView: View {
 
             var session = LiveGameSessionState()
             session.periodMinutes = stored.periodMinutes
-            session.secondsRemaining = max(0, stored.secondsRemaining)
+            session.secondsRemaining = stored.secondsRemaining
             session.pointScorers = stored.pointScorers
             session.rushedPoints = stored.rushedPoints
             session.periodSnapshots = stored.periodSnapshots.map {
@@ -391,8 +391,8 @@ struct NewGameWizardView: View {
 
             if let start = stored.backgroundCountdownStart {
                 let elapsed = Int(Date().timeIntervalSince(start))
-                session.secondsRemaining = max(0, session.secondsRemaining - max(0, elapsed))
-                session.shouldAutoResumeTimer = session.secondsRemaining > 0
+                session.secondsRemaining -= max(0, elapsed)
+                session.shouldAutoResumeTimer = true
             }
 
             clear(for: gameID)
@@ -3005,7 +3005,7 @@ struct NewGameWizardView: View {
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
-        private var isDangerTime: Bool { liveSession.secondsRemaining <= 120 }
+        private var isDangerTime: Bool { liveSession.secondsRemaining <= 0 }
         private var canSaveAndContinue: Bool { liveSession.periodSnapshots.count == 4 }
         private var nextPeriodLabel: String? {
             switch liveSession.periodSnapshots.count {
@@ -3367,7 +3367,7 @@ struct NewGameWizardView: View {
                     }
                     .accessibilityLabel("Start")
                     .buttonStyle(.borderedProminent)
-                    .disabled(timerRunning || liveSession.secondsRemaining == 0)
+                    .disabled(timerRunning)
 
                     Button {
                         pauseTimer()
@@ -3858,14 +3858,14 @@ struct NewGameWizardView: View {
             timerRunning = true
             timerTask?.cancel()
             timerTask = Task {
-                while !Task.isCancelled && timerRunning && liveSession.secondsRemaining > 0 {
+                while !Task.isCancelled && timerRunning {
                     try? await Task.sleep(for: .seconds(1))
                     guard !Task.isCancelled else { return }
                     await MainActor.run {
                         guard timerRunning else { return }
-                        liveSession.secondsRemaining = max(0, liveSession.secondsRemaining - 1)
-                        if liveSession.secondsRemaining == 0 {
-                            timerRunning = false
+                        let previousSeconds = liveSession.secondsRemaining
+                        liveSession.secondsRemaining -= 1
+                        if previousSeconds > 0 && liveSession.secondsRemaining == 0 {
                             AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
                             UINotificationFeedbackGenerator().notificationOccurred(.warning)
                             showEndOfPeriodPrompt = true
@@ -3887,9 +3887,11 @@ struct NewGameWizardView: View {
         }
 
         private func timeText(_ seconds: Int) -> String {
-            let mins = seconds / 60
-            let secs = seconds % 60
-            return String(format: "%02d:%02d", mins, secs)
+            let absoluteSeconds = abs(seconds)
+            let mins = absoluteSeconds / 60
+            let secs = absoluteSeconds % 60
+            let sign = seconds < 0 ? "-" : ""
+            return "\(sign)" + String(format: "%02d:%02d", mins, secs)
         }
 
         private func saveCurrentPeriodSnapshot() {
