@@ -909,9 +909,10 @@ struct NewGameWizardView: View {
 
     private var stepSelectionBinding: Binding<Int> {
         Binding(
-            get: { currentStep.rawValue },
-            set: { newRawValue in
-                guard let newStep = displayedSteps.first(where: { $0.rawValue == newRawValue }) else { return }
+            get: { displayedSteps.firstIndex(of: currentStep) ?? 0 },
+            set: { newIndex in
+                guard displayedSteps.indices.contains(newIndex) else { return }
+                let newStep = displayedSteps[newIndex]
                 move(to: newStep)
             }
         )
@@ -951,9 +952,9 @@ struct NewGameWizardView: View {
                 }
 
                 TabView(selection: stepSelectionBinding) {
-                    ForEach(displayedSteps, id: \.rawValue) { wizardStep in
+                    ForEach(Array(displayedSteps.enumerated()), id: \.offset) { index, wizardStep in
                         stepView(for: wizardStep)
-                            .tag(wizardStep.rawValue)
+                            .tag(index)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -1194,7 +1195,9 @@ struct NewGameWizardView: View {
     }
 
     private func move(to newStep: Step) {
-        step = newStep
+        withAnimation(.easeInOut(duration: 0.3)) {
+            step = newStep
+        }
     }
 
     private func applyPreviewStateIfNeeded() {
