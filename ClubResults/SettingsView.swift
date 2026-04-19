@@ -2565,19 +2565,6 @@ struct ReportsSettingsView: View {
                         dateRange: reportDateRange(for: template)
                     )
                 }
-                Button("Delete Report", role: .destructive) {
-                    for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
-                        dataContext.delete(recipientSection)
-                    }
-                    for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
-                        dataContext.delete(recipientGroup)
-                    }
-                    for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
-                        dataContext.delete(recipientContact)
-                    }
-                    dataContext.delete(template)
-                    saveContext()
-                }
             }
         }
         .sheet(isPresented: $isCreatingTemplate) {
@@ -2616,6 +2603,15 @@ struct ReportsSettingsView: View {
                     dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
                 }
                 saveContext()
+                let selectedQuickPick = ReportRangeQuickPick(rawValue: selectedQuickPickRawValue) ?? .mostRecentGame
+                let selectedDateRange = buildDateRange(
+                    for: selectedQuickPick,
+                    template: template,
+                    games: games,
+                    customStartDate: normalizedStart,
+                    customEndDate: normalizedEnd
+                )
+                templateSharing = TemplateRunRequest(template: template, dateRange: selectedDateRange)
             }
             .appPopupStyle()
         }
@@ -3750,12 +3746,6 @@ private struct CustomReportEditView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    TextField("Report name", text: $name)
-                } header: {
-                    Text("Template")
-                }
-
                 Section("Date Range") {
                     Picker("Range", selection: $selectedDateRangeQuickPick) {
                         ForEach(ReportRangeQuickPick.allCases) { quickPick in
@@ -3767,6 +3757,12 @@ private struct CustomReportEditView: View {
                         DatePicker("Start Date", selection: $customDateRangeStart, displayedComponents: .date)
                         DatePicker("End Date", selection: $customDateRangeEnd, displayedComponents: .date)
                     }
+                }
+
+                Section {
+                    TextField("Report name", text: $name)
+                } header: {
+                    Text("Template")
                 }
 
                 Section {
