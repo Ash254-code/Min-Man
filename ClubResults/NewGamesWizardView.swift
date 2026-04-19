@@ -665,7 +665,8 @@ struct NewGameWizardView: View {
     }
 
     private var supportsLiveGameView: Bool {
-        selectedGrade?.asksLiveGameView ?? true
+        guard let grade = selectedGrade else { return true }
+        return grade.asksLiveGameView && grade.allowsLiveGameView
     }
 
     private var shouldAskForEntryMode: Bool {
