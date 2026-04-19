@@ -3207,6 +3207,13 @@ private func makeTemplatePreviewPDF(
         .sorted { $0.date > $1.date }
     let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
     let gradeLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0.name) })
+    let selectedGradeNames = selectedGrades.map(\.name)
+    let gradeSummary = selectedGradeNames.isEmpty ? "All grades" : selectedGradeNames.joined(separator: ", ")
+    let dateSummary: String = {
+        let start = dateRange.start.formatted(date: .abbreviated, time: .omitted)
+        let end = dateRange.end.formatted(date: .abbreviated, time: .omitted)
+        return start == end ? start : "\(start) – \(end)"
+    }()
     var gamesByPlayer: [UUID: Int] = [:]
 
     func guestVotePoints(for rank: Int) -> Int {
@@ -3317,11 +3324,11 @@ private func makeTemplatePreviewPDF(
         let titleX = contentRect.minX + 68
         let titleRect = CGRect(x: titleX, y: cursorY + 4, width: contentRect.width - 68, height: 28)
         NSAttributedString(
-            string: "Custom Report Preview",
+            string: template.name,
             attributes: [.font: titleFont, .foregroundColor: UIColor.black]
         ).draw(in: titleRect)
 
-        let subtitle = "Template: \(template.name) • Layout: \(groupingMode.title) • Generated \(Date().formatted(date: .abbreviated, time: .shortened))"
+        let subtitle = "Date: \(dateSummary) • Grades: \(gradeSummary)"
         let subtitleRect = CGRect(x: titleX, y: titleRect.maxY + 2, width: contentRect.width - 68, height: 22)
         NSAttributedString(
             string: subtitle,
@@ -3363,7 +3370,7 @@ private func makeTemplatePreviewPDF(
                 UIBezierPath(rect: rect).stroke()
                 NSAttributedString(
                     string: column.0,
-                    attributes: [.font: headerFont, .foregroundColor: UIColor.white]
+                    attributes: [.font: headerFont, .foregroundColor: UIColor.black]
                 ).draw(in: rect.insetBy(dx: 4, dy: 5))
                 x += width
             }
@@ -3407,7 +3414,7 @@ private func makeTemplatePreviewPDF(
                 UIBezierPath(rect: rect).stroke()
                 NSAttributedString(
                     string: column,
-                    attributes: [.font: headerFont, .foregroundColor: UIColor.white]
+                    attributes: [.font: headerFont, .foregroundColor: UIColor.black]
                 ).draw(in: rect.insetBy(dx: 4, dy: 5))
                 headerX += width
             }
@@ -3438,337 +3445,113 @@ private func makeTemplatePreviewPDF(
             return
         }
 
-        switch groupingMode {
-        case .splitByGameAndGrade:
-            for game in relevantGames {
-                let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
-                drawSectionHeader("\(gradeName) • \(game.date.formatted(date: .abbreviated, time: .omitted)) vs \(game.opponent)")
-                drawTableHeader()
+        let primaryGame = relevantGames.first
+        if let game = primaryGame, relevantGames.count == 1 {
+            drawSectionHeader("Score")
+            beginNewPageIfNeeded(requiredHeight: 36)
+            let ourScoreText = "MinMan \(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
+            let oppScoreText = "\(game.opponent) \(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
 
-                var rowsByPlayer: [UUID: (goals: Int, bestCount: Int)] = [:]
-                if template.includeGoalKickers {
-                    for entry in game.goalKickers {
-                        guard let playerID = entry.playerID else { continue }
-                        var stats = rowsByPlayer[playerID] ?? (0, 0)
-                        stats.goals += entry.goals
-                        rowsByPlayer[playerID] = stats
-                    }
-                }
-                if template.includeBestPlayers {
-                    for playerID in game.bestPlayersRanked {
-                        var stats = rowsByPlayer[playerID] ?? (0, 0)
-                        stats.bestCount += 1
-                        rowsByPlayer[playerID] = stats
-                    }
-                }
-                if template.includePlayerGrades {
-                    for vote in game.guestVotesRanked {
-                        var stats = rowsByPlayer[vote.playerID] ?? (0, 0)
-                        stats.bestCount += guestVotePoints(for: vote.rank)
-                        rowsByPlayer[vote.playerID] = stats
-                    }
-                }
-                if template.includeBestAndFairestVotes {
-                    for (index, playerID) in game.bestPlayersRanked.enumerated() {
-                        var stats = rowsByPlayer[playerID] ?? (0, 0)
-                        stats.bestCount += bestPlayerPoints(for: index)
-                        rowsByPlayer[playerID] = stats
-                    }
-                    for vote in game.guestVotesRanked {
-                        var stats = rowsByPlayer[vote.playerID] ?? (0, 0)
-                        stats.bestCount += guestVotePoints(for: vote.rank)
-                        rowsByPlayer[vote.playerID] = stats
-                    }
-                }
-
-                if rowsByPlayer.isEmpty {
-                    let summary = metadataSummary(for: game)
-                    drawRow(
-                        playerName: "No player stats",
-                        guernsey: "-",
-                        goals: "-",
-                        bestPlayers: "-",
-                        gamesPlayed: "1",
-                        notes: summary.isEmpty ? "No matching data for selected sections" : summary
-                    )
-                } else {
-                    var drewAnyRows = false
-                    for (playerID, stats) in rowsByPlayer.sorted(by: { (lhs, rhs) in
-                        (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
-                    }) {
-                        if template.minimumGamesPlayed > 0, gamesByPlayer[playerID, default: 0] < template.minimumGamesPlayed {
-                            continue
-                        }
-                        let player = playerLookup[playerID]
-                        let guernsey = template.includeGuernseyNumbers ? (player?.number.map(String.init) ?? "-") : "-"
-                        let notes = template.includeMatchNotes ? game.notes.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-                        drawRow(
-                            playerName: player?.name ?? "Unknown Player",
-                            guernsey: guernsey,
-                            goals: template.includeGoalKickers ? "\(stats.goals)" : "-",
-                            bestPlayers: (template.includeBestPlayers || template.includePlayerGrades || template.includeBestAndFairestVotes) ? "\(stats.bestCount)" : "-",
-                            gamesPlayed: "1",
-                            notes: notes
-                        )
-                        drewAnyRows = true
-                    }
-                    if !drewAnyRows {
-                        let summary = metadataSummary(for: game)
-                        drawRow(
-                            playerName: "No players met minimum games",
-                            guernsey: "-",
-                            goals: "-",
-                            bestPlayers: "-",
-                            gamesPlayed: "1",
-                            notes: summary.isEmpty ? "No matching data for selected sections" : summary
-                        )
-                    }
-                }
-                cursorY += 10
+            let pills: [(String, UIColor)] = [(ourScoreText, UIColor.systemBlue), (oppScoreText, UIColor.systemYellow)]
+            var x = contentRect.minX
+            for pill in pills {
+                let width = min(contentRect.width * 0.48, CGFloat((pill.0 as NSString).size(withAttributes: [.font: bodyFont]).width + 24))
+                let rect = CGRect(x: x, y: cursorY, width: width, height: 24)
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: 12)
+                pill.1.setFill()
+                path.fill()
+                NSAttributedString(
+                    string: pill.0,
+                    attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+                ).draw(in: rect.insetBy(dx: 8, dy: 4))
+                x += width + 8
             }
-        case .combinedTotals:
-            let groupedGames = Dictionary(grouping: relevantGames, by: \.gradeID)
-            for (gradeID, gradeGames) in groupedGames.sorted(by: { (gradeLookup[$0.key] ?? "") < (gradeLookup[$1.key] ?? "") }) {
-                let gradeName = gradeLookup[gradeID] ?? "Unknown Grade"
-                drawSectionHeader("\(gradeName) • Combined totals")
-                drawTableHeader()
+            cursorY += 34
+        }
 
-                var rowsByPlayer: [UUID: (goals: Int, bestCount: Int, gamesPlayed: Int)] = [:]
-                for game in gradeGames {
-                    var touchedInGame = Set<UUID>()
-                    if template.includeGoalKickers {
-                        for entry in game.goalKickers {
-                            guard let playerID = entry.playerID else { continue }
-                            var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
-                            stats.goals += entry.goals
-                            rowsByPlayer[playerID] = stats
-                            touchedInGame.insert(playerID)
-                        }
-                    }
-                    if template.includeBestPlayers {
-                        for playerID in game.bestPlayersRanked {
-                            var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
-                            stats.bestCount += 1
-                            rowsByPlayer[playerID] = stats
-                            touchedInGame.insert(playerID)
-                        }
-                    }
-                    if template.includePlayerGrades {
-                        for vote in game.guestVotesRanked {
-                            var stats = rowsByPlayer[vote.playerID] ?? (0, 0, 0)
-                            stats.bestCount += guestVotePoints(for: vote.rank)
-                            rowsByPlayer[vote.playerID] = stats
-                            touchedInGame.insert(vote.playerID)
-                        }
-                    }
-                    if template.includeBestAndFairestVotes {
-                        for (index, playerID) in game.bestPlayersRanked.enumerated() {
-                            var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
-                            stats.bestCount += bestPlayerPoints(for: index)
-                            rowsByPlayer[playerID] = stats
-                            touchedInGame.insert(playerID)
-                        }
-                        for vote in game.guestVotesRanked {
-                            var stats = rowsByPlayer[vote.playerID] ?? (0, 0, 0)
-                            stats.bestCount += guestVotePoints(for: vote.rank)
-                            rowsByPlayer[vote.playerID] = stats
-                            touchedInGame.insert(vote.playerID)
-                        }
-                    }
-                    for playerID in touchedInGame {
-                        var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
-                        stats.gamesPlayed += 1
-                        rowsByPlayer[playerID] = stats
-                    }
-                }
-
-                var drewAnyRows = false
-                for (playerID, stats) in rowsByPlayer.sorted(by: { (lhs, rhs) in
-                    (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
-                }) {
-                    if template.minimumGamesPlayed > 0, gamesByPlayer[playerID, default: 0] < template.minimumGamesPlayed {
-                        continue
-                    }
-                    let player = playerLookup[playerID]
-                    let guernsey = template.includeGuernseyNumbers ? (player?.number.map(String.init) ?? "-") : "-"
-                    drawRow(
-                        playerName: player?.name ?? "Unknown Player",
-                        guernsey: guernsey,
-                        goals: template.includeGoalKickers ? "\(stats.goals)" : "-",
-                        bestPlayers: (template.includeBestPlayers || template.includePlayerGrades || template.includeBestAndFairestVotes) ? "\(stats.bestCount)" : "-",
-                        gamesPlayed: "\(stats.gamesPlayed)",
-                        notes: ""
-                    )
-                    drewAnyRows = true
-                }
-                if !drewAnyRows {
-                    let summaries = gradeGames
-                        .map { metadataSummary(for: $0) }
-                        .filter { !$0.isEmpty }
-                    drawRow(
-                        playerName: rowsByPlayer.isEmpty ? "No player stats" : "No players met minimum games",
-                        guernsey: "-",
-                        goals: "-",
-                        bestPlayers: "-",
-                        gamesPlayed: "\(gradeGames.count)",
-                        notes: summaries.isEmpty ? "No matching data for selected sections" : summaries.joined(separator: " | ")
-                    )
-                }
-                cursorY += 10
-
-                let gameLabelRows: [(Game, String)] = gradeGames
-                    .sorted { $0.date > $1.date }
-                    .map { game in
-                        let label = "\(game.date.formatted(date: .abbreviated, time: .omitted)) vs \(game.opponent)"
-                        return (game, label)
-                    }
-
-                if template.includePlayerGrades {
-                    var guestPoints: [UUID: (points: Int, games: Int)] = [:]
-                    for game in gradeGames {
-                        var touched = Set<UUID>()
-                        for vote in game.guestVotesRanked {
-                            var stats = guestPoints[vote.playerID] ?? (0, 0)
-                            stats.points += guestVotePoints(for: vote.rank)
-                            guestPoints[vote.playerID] = stats
-                            touched.insert(vote.playerID)
-                        }
-                        for playerID in touched {
-                            var stats = guestPoints[playerID] ?? (0, 0)
-                            stats.games += 1
-                            guestPoints[playerID] = stats
-                        }
-                    }
-                    let guestRows = guestPoints
-                        .sorted { lhs, rhs in
-                            if lhs.value.points != rhs.value.points { return lhs.value.points > rhs.value.points }
-                            return (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
-                        }
-                        .map { playerID, stats in
-                            [playerLookup[playerID]?.name ?? "Unknown Player", "\(stats.points)", "\(stats.games)"]
-                        }
-                    drawDetailTable(
-                        title: "\(gradeName) • Guest Votes",
-                        columns: ["Player", "Points", "Games"],
-                        rows: guestRows
-                    )
-                }
-
-                if template.includeBestAndFairestVotes {
-                    var points: [UUID: (points: Int, games: Int)] = [:]
-                    for game in gradeGames {
-                        var touched = Set<UUID>()
-                        for (index, playerID) in game.bestPlayersRanked.enumerated() {
-                            var stats = points[playerID] ?? (0, 0)
-                            stats.points += bestPlayerPoints(for: index)
-                            points[playerID] = stats
-                            touched.insert(playerID)
-                        }
-                        for vote in game.guestVotesRanked {
-                            var stats = points[vote.playerID] ?? (0, 0)
-                            stats.points += guestVotePoints(for: vote.rank)
-                            points[vote.playerID] = stats
-                            touched.insert(vote.playerID)
-                        }
-                        for playerID in touched {
-                            var stats = points[playerID] ?? (0, 0)
-                            stats.games += 1
-                            points[playerID] = stats
-                        }
-                    }
-                    let rows = points
-                        .sorted { lhs, rhs in
-                            if lhs.value.points != rhs.value.points { return lhs.value.points > rhs.value.points }
-                            return (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
-                        }
-                        .map { playerID, stats in
-                            [playerLookup[playerID]?.name ?? "Unknown Player", "\(stats.points)", "\(stats.games)"]
-                        }
-                    drawDetailTable(
-                        title: "\(gradeName) • Best & Fairest",
-                        columns: ["Player", "Points", "Games"],
-                        rows: rows
-                    )
-                }
-
-                if template.includeStaffRoles {
-                    let rows = gameLabelRows.map { game, label in
-                        [
-                            label,
-                            game.headCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            game.assistantCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            game.teamManagerName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            game.runnerName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        ]
-                    }
-                    drawDetailTable(
-                        title: "\(gradeName) • Coaches",
-                        columns: ["Game", "Head", "Assistant", "Manager", "Runner"],
-                        rows: rows
-                    )
-                }
-
-                if template.includeOfficials {
-                    let rows = gameLabelRows.map { game, label in
-                        [
-                            label,
-                            game.goalUmpireName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            game.fieldUmpireName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        ]
-                    }
-                    drawDetailTable(
-                        title: "\(gradeName) • Officials",
-                        columns: ["Game", "Goal", "Field"],
-                        rows: rows
-                    )
-                }
-
-                if template.includeUmpires {
-                    let rows = gameLabelRows.map { game, label in
-                        [
-                            label,
-                            game.boundaryUmpire1Name.trimmingCharacters(in: .whitespacesAndNewlines),
-                            game.boundaryUmpire2Name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        ]
-                    }
-                    drawDetailTable(
-                        title: "\(gradeName) • Umpires",
-                        columns: ["Game", "Boundary 1", "Boundary 2"],
-                        rows: rows
-                    )
-                }
-
-                if template.includeTrainers {
-                    let rows = gameLabelRows.map { game, label in
-                        [
-                            label,
-                            game.trainers
-                                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                .filter { !$0.isEmpty }
-                                .joined(separator: ", ")
-                        ]
-                    }
-                    drawDetailTable(
-                        title: "\(gradeName) • Trainers",
-                        columns: ["Game", "Trainers"],
-                        rows: rows
-                    )
-                }
-
-                if template.includeMatchNotes {
-                    let rows = gameLabelRows.map { game, label in
-                        [
-                            label,
-                            game.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-                        ]
-                    }
-                    drawDetailTable(
-                        title: "\(gradeName) • Match Notes",
-                        columns: ["Game", "Notes"],
-                        rows: rows
-                    )
-                }
+        if template.includeBestPlayers {
+            let rows = (primaryGame?.bestPlayersRanked ?? []).enumerated().map { index, playerID in
+                ["\(index + 1)", playerLookup[playerID]?.name ?? "Unknown Player"]
             }
+            drawDetailTable(title: "Best Players", columns: ["Rank", "Player"], rows: rows)
+        }
+
+        if template.includePlayerGrades {
+            let rows = (primaryGame?.guestVotesRanked ?? [])
+                .sorted { $0.rank < $1.rank }
+                .map { vote in
+                    ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
+                }
+            drawDetailTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: rows)
+        }
+
+        if template.includeGoalKickers {
+            let rows = (primaryGame?.goalKickers ?? []).map { entry in
+                let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
+                return [name, "\(entry.goals)"]
+            }
+            drawDetailTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows)
+        }
+
+        if template.includeBestAndFairestVotes {
+            var points: [UUID: Int] = [:]
+            for (index, playerID) in (primaryGame?.bestPlayersRanked ?? []).enumerated() {
+                points[playerID, default: 0] += bestPlayerPoints(for: index)
+            }
+            for vote in (primaryGame?.guestVotesRanked ?? []) {
+                points[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
+            }
+            let rows = points
+                .sorted { $0.value > $1.value }
+                .map { [playerLookup[$0.key]?.name ?? "Unknown Player", "\($0.value)"] }
+            drawDetailTable(title: "Best & Fairest", columns: ["Player", "Points"], rows: rows)
+        }
+
+        if template.includeStaffRoles {
+            let rows = primaryGame.map { game in
+                [[
+                    game.headCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    game.assistantCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    game.teamManagerName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    game.runnerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                ]]
+            } ?? []
+            drawDetailTable(title: "Coaches", columns: ["Head", "Assistant", "Manager", "Runner"], rows: rows)
+        }
+
+        if template.includeOfficials {
+            let rows = primaryGame.map { game in
+                [[
+                    game.goalUmpireName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    game.fieldUmpireName.trimmingCharacters(in: .whitespacesAndNewlines)
+                ]]
+            } ?? []
+            drawDetailTable(title: "Officials", columns: ["Goal", "Field"], rows: rows)
+        }
+
+        if template.includeUmpires {
+            let rows = primaryGame.map { game in
+                [[
+                    game.boundaryUmpire1Name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    game.boundaryUmpire2Name.trimmingCharacters(in: .whitespacesAndNewlines)
+                ]]
+            } ?? []
+            drawDetailTable(title: "Umpires", columns: ["Boundary 1", "Boundary 2"], rows: rows)
+        }
+
+        if template.includeTrainers {
+            let rows = primaryGame.map { game in
+                game.trainers
+                    .map { ["Trainer", $0.trimmingCharacters(in: .whitespacesAndNewlines)] }
+            } ?? []
+            drawDetailTable(title: "Trainers", columns: ["Role", "Name"], rows: rows)
+        }
+
+        if template.includeMatchNotes {
+            let rows = primaryGame.map { game in
+                [[game.notes.trimmingCharacters(in: .whitespacesAndNewlines)]]
+            } ?? []
+            drawDetailTable(title: "Match Notes", columns: ["Notes"], rows: rows)
         }
     }
 
