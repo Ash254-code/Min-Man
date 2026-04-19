@@ -2575,17 +2575,21 @@ struct ReportsSettingsView: View {
                 grades: grades,
                 contacts: contacts,
                 sectionMemberships: sectionMemberships
-            ) { name, selectedGradeIDs, includeBestPlayers, includeGuestVotes, includeGoalKickers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
                 let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
                 let template = CustomReportTemplate(
                     name: name,
                     gradeIDs: selectedGradeIDs,
                     includeBestPlayers: includeBestPlayers,
+                    bestPlayersLimit: bestPlayersLimit,
                     includePlayerGrades: includeGuestVotes,
+                    guestVotesLimit: guestVotesLimit,
                     includeGoalKickers: includeGoalKickers,
+                    goalKickersLimit: goalKickersLimit,
                     includeGuernseyNumbers: false,
                     includeBestAndFairestVotes: includeBestAndFairestVotes,
+                    bestAndFairestLimit: bestAndFairestLimit,
                     includeStaffRoles: includeStaffRoles,
                     includeOfficials: includeOfficials,
                     includeUmpires: includeUmpires,
@@ -2648,9 +2652,13 @@ struct ReportsSettingsView: View {
                 initialName: template.name,
                 initialSelectedGradeIDs: template.gradeIDs,
                 initialIncludeBestPlayers: template.includeBestPlayers,
+                initialBestPlayersLimit: template.bestPlayersLimit,
                 initialIncludeGuestVotes: template.includePlayerGrades,
+                initialGuestVotesLimit: template.guestVotesLimit,
                 initialIncludeGoalKickers: template.includeGoalKickers,
+                initialGoalKickersLimit: template.goalKickersLimit,
                 initialIncludeBestAndFairestVotes: template.includeBestAndFairestVotes,
+                initialBestAndFairestLimit: template.bestAndFairestLimit,
                 initialIncludeStaffRoles: template.includeStaffRoles,
                 initialIncludeOfficials: template.includeOfficials,
                 initialIncludeUmpires: template.includeUmpires,
@@ -2681,16 +2689,20 @@ struct ReportsSettingsView: View {
                     dataContext.delete(template)
                     saveContext()
                 }
-            ) { name, selectedGradeIDs, includeBestPlayers, includeGuestVotes, includeGoalKickers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
                 let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
                 template.name = name
                 template.gradeIDs = selectedGradeIDs
                 template.includeBestPlayers = includeBestPlayers
+                template.bestPlayersLimit = bestPlayersLimit
                 template.includePlayerGrades = includeGuestVotes
+                template.guestVotesLimit = guestVotesLimit
                 template.includeGoalKickers = includeGoalKickers
+                template.goalKickersLimit = goalKickersLimit
                 template.includeGuernseyNumbers = false
                 template.includeBestAndFairestVotes = includeBestAndFairestVotes
+                template.bestAndFairestLimit = bestAndFairestLimit
                 template.includeStaffRoles = includeStaffRoles
                 template.includeOfficials = includeOfficials
                 template.includeUmpires = includeUmpires
@@ -3516,17 +3528,23 @@ private func makeTemplatePreviewPDF(
         }
 
         let minimumGamesThreshold = max(template.minimumGamesPlayed, 1)
+        let bestPlayersLimit = max(0, min(template.bestPlayersLimit, 10))
+        let guestVotesLimit = max(0, min(template.guestVotesLimit, 10))
+        let goalKickersLimit = max(0, min(template.goalKickersLimit, 10))
+        let bestAndFairestLimit = max(0, min(template.bestAndFairestLimit, 10))
         let rankedBestPlayerIDs: [UUID] = primaryGame?.bestPlayersRanked ?? []
-        let bestPlayersRows = rankedBestPlayerIDs.enumerated().compactMap { (index: Int, playerID: UUID) -> [String]? in
+        let allBestPlayersRows = rankedBestPlayerIDs.enumerated().compactMap { (index: Int, playerID: UUID) -> [String]? in
             guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
             return ["\(index + 1)", playerLookup[playerID]?.name ?? "Unknown Player"]
         }
-        let guestVoteRows = (primaryGame?.guestVotesRanked ?? [])
+        let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
+        let allGuestVoteRows = (primaryGame?.guestVotesRanked ?? [])
             .filter { gamesByPlayer[$0.playerID, default: 0] >= minimumGamesThreshold }
                 .sorted { $0.rank < $1.rank }
                 .map { vote in
                     ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
                 }
+        let guestVoteRows = guestVotesLimit == 0 ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
         if template.includeBestPlayers && template.includePlayerGrades {
             beginNewPageIfNeeded(requiredHeight: 160)
             let gap: CGFloat = 10
@@ -3557,7 +3575,7 @@ private func makeTemplatePreviewPDF(
         }
 
         if template.includeGoalKickers {
-            let rows = (primaryGame?.goalKickers ?? [])
+            let allRows = (primaryGame?.goalKickers ?? [])
                 .filter { entry in
                     guard let playerID = entry.playerID else { return false }
                     return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
@@ -3567,6 +3585,7 @@ private func makeTemplatePreviewPDF(
                     let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
                     return [name, "\(entry.goals)"]
                 }
+            let rows = goalKickersLimit == 0 ? allRows : Array(allRows.prefix(goalKickersLimit))
             drawDetailTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows)
         }
 
@@ -3578,12 +3597,13 @@ private func makeTemplatePreviewPDF(
             for vote in (primaryGame?.guestVotesRanked ?? []) {
                 points[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
             }
-            let rows = points
+            let allRows = points
                 .sorted { $0.value > $1.value }
                 .compactMap { (playerID, pointTotal) -> [String]? in
                     guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                     return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
                 }
+            let rows = bestAndFairestLimit == 0 ? allRows : Array(allRows.prefix(bestAndFairestLimit))
             drawDetailTable(title: "Best & Fairest", columns: ["Player", "Points"], rows: rows)
         }
 
@@ -3666,14 +3686,18 @@ private struct CustomReportEditView: View {
     let contacts: [Contact]
     let sectionMemberships: [ContactSectionMembership]
     let onDelete: (() -> Void)?
-    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
+    let onSave: (String, [UUID], Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
     @State private var includeBestPlayers: Bool
+    @State private var bestPlayersLimit: Int
     @State private var includeGuestVotes: Bool
+    @State private var guestVotesLimit: Int
     @State private var includeGoalKickers: Bool
+    @State private var goalKickersLimit: Int
     @State private var includeBestAndFairestVotes: Bool
+    @State private var bestAndFairestLimit: Int
     @State private var includeStaffRoles: Bool
     @State private var includeOfficials: Bool
     @State private var includeUmpires: Bool
@@ -3697,9 +3721,13 @@ private struct CustomReportEditView: View {
         initialName: String = "",
         initialSelectedGradeIDs: [UUID] = [],
         initialIncludeBestPlayers: Bool = false,
+        initialBestPlayersLimit: Int = 0,
         initialIncludeGuestVotes: Bool = false,
+        initialGuestVotesLimit: Int = 0,
         initialIncludeGoalKickers: Bool = false,
+        initialGoalKickersLimit: Int = 0,
         initialIncludeBestAndFairestVotes: Bool = false,
+        initialBestAndFairestLimit: Int = 5,
         initialIncludeStaffRoles: Bool = false,
         initialIncludeOfficials: Bool = false,
         initialIncludeUmpires: Bool = false,
@@ -3714,7 +3742,7 @@ private struct CustomReportEditView: View {
         initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
         onDelete: (() -> Void)? = nil,
-        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
+        onSave: @escaping (String, [UUID], Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
     ) {
         self.grades = grades
         self.contacts = contacts
@@ -3724,9 +3752,13 @@ private struct CustomReportEditView: View {
         _name = State(initialValue: initialName)
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
         _includeBestPlayers = State(initialValue: initialIncludeBestPlayers)
+        _bestPlayersLimit = State(initialValue: Self.clampedReportItemLimit(initialBestPlayersLimit, defaultValue: 0))
         _includeGuestVotes = State(initialValue: initialIncludeGuestVotes)
+        _guestVotesLimit = State(initialValue: Self.clampedReportItemLimit(initialGuestVotesLimit, defaultValue: 0))
         _includeGoalKickers = State(initialValue: initialIncludeGoalKickers)
+        _goalKickersLimit = State(initialValue: Self.clampedReportItemLimit(initialGoalKickersLimit, defaultValue: 0))
         _includeBestAndFairestVotes = State(initialValue: initialIncludeBestAndFairestVotes)
+        _bestAndFairestLimit = State(initialValue: Self.clampedReportItemLimit(initialBestAndFairestLimit, defaultValue: 5))
         _includeStaffRoles = State(initialValue: initialIncludeStaffRoles)
         _includeOfficials = State(initialValue: initialIncludeOfficials)
         _includeUmpires = State(initialValue: initialIncludeUmpires)
@@ -3802,10 +3834,10 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
-                    Toggle("Best players", isOn: $includeBestPlayers)
-                    Toggle("Guest Votes", isOn: $includeGuestVotes)
-                    Toggle("Goal kickers", isOn: $includeGoalKickers)
-                    Toggle("Best & Fairest votes", isOn: $includeBestAndFairestVotes)
+                    toggleWithLimitPicker(title: "Best players", isOn: $includeBestPlayers, limit: $bestPlayersLimit)
+                    toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit)
+                    toggleWithLimitPicker(title: "Goal kickers", isOn: $includeGoalKickers, limit: $goalKickersLimit)
+                    toggleWithLimitPicker(title: "Best & Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit)
                     Toggle("Coaches", isOn: $includeStaffRoles)
                     Toggle("Officials", isOn: $includeOfficials)
                     Toggle("Umpires", isOn: $includeUmpires)
@@ -3937,9 +3969,13 @@ private struct CustomReportEditView: View {
                             name.trimmingCharacters(in: .whitespacesAndNewlines),
                             Array(selectedGradeIDs),
                             includeBestPlayers,
+                            bestPlayersLimit,
                             includeGuestVotes,
+                            guestVotesLimit,
                             includeGoalKickers,
+                            goalKickersLimit,
                             includeBestAndFairestVotes,
+                            bestAndFairestLimit,
                             includeStaffRoles,
                             includeOfficials,
                             includeUmpires,
@@ -3978,6 +4014,32 @@ private struct CustomReportEditView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This report template will be permanently deleted.")
+        }
+    }
+
+    private static func clampedReportItemLimit(_ value: Int, defaultValue: Int) -> Int {
+        let safeDefault = max(0, min(defaultValue, 10))
+        if (0...10).contains(value) {
+            return value
+        }
+        return safeDefault
+    }
+
+    @ViewBuilder
+    private func toggleWithLimitPicker(title: String, isOn: Binding<Bool>, limit: Binding<Int>) -> some View {
+        HStack(spacing: 12) {
+            Toggle(title, isOn: isOn)
+            if isOn.wrappedValue {
+                Picker(title, selection: limit) {
+                    Text("ALL").tag(0)
+                    ForEach(1...10, id: \.self) { value in
+                        Text("\(value)").tag(value)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(minWidth: 74, alignment: .trailing)
+            }
         }
     }
 

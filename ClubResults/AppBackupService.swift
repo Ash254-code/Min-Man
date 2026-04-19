@@ -415,10 +415,14 @@ struct CustomReportTemplateRecord: Codable {
     let name: String
     let gradeIDs: [UUID]
     let includeBestPlayers: Bool
+    let bestPlayersLimit: Int
     let includePlayerGrades: Bool
+    let guestVotesLimit: Int
     let includeGoalKickers: Bool
+    let goalKickersLimit: Int
     let includeGuernseyNumbers: Bool
     let includeBestAndFairestVotes: Bool
+    let bestAndFairestLimit: Int
     let includeStaffRoles: Bool
     let includeOfficials: Bool
     let includeUmpires: Bool
@@ -433,10 +437,14 @@ struct CustomReportTemplateRecord: Codable {
         name = template.name
         gradeIDs = template.gradeIDs
         includeBestPlayers = template.includeBestPlayers
+        bestPlayersLimit = template.bestPlayersLimit
         includePlayerGrades = template.includePlayerGrades
+        guestVotesLimit = template.guestVotesLimit
         includeGoalKickers = template.includeGoalKickers
+        goalKickersLimit = template.goalKickersLimit
         includeGuernseyNumbers = template.includeGuernseyNumbers
         includeBestAndFairestVotes = template.includeBestAndFairestVotes
+        bestAndFairestLimit = template.bestAndFairestLimit
         includeStaffRoles = template.includeStaffRoles
         includeOfficials = template.includeOfficials
         includeUmpires = template.includeUmpires
@@ -448,8 +456,9 @@ struct CustomReportTemplateRecord: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, gradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers
-        case includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials
+        case id, name, gradeIDs, includeBestPlayers, bestPlayersLimit, includePlayerGrades, guestVotesLimit
+        case includeGoalKickers, goalKickersLimit, includeGuernseyNumbers, includeBestAndFairestVotes
+        case bestAndFairestLimit, includeStaffRoles, includeOfficials
         case includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades
         case minimumGamesPlayed, groupingModeRawValue
     }
@@ -460,10 +469,14 @@ struct CustomReportTemplateRecord: Codable {
         name = try c.decode(String.self, forKey: .name)
         gradeIDs = try c.decodeIfPresent([UUID].self, forKey: .gradeIDs) ?? []
         includeBestPlayers = try c.decodeIfPresent(Bool.self, forKey: .includeBestPlayers) ?? true
+        bestPlayersLimit = try c.decodeIfPresent(Int.self, forKey: .bestPlayersLimit) ?? 0
         includePlayerGrades = try c.decodeIfPresent(Bool.self, forKey: .includePlayerGrades) ?? true
+        guestVotesLimit = try c.decodeIfPresent(Int.self, forKey: .guestVotesLimit) ?? 0
         includeGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .includeGoalKickers) ?? true
+        goalKickersLimit = try c.decodeIfPresent(Int.self, forKey: .goalKickersLimit) ?? 0
         includeGuernseyNumbers = try c.decodeIfPresent(Bool.self, forKey: .includeGuernseyNumbers) ?? true
         includeBestAndFairestVotes = try c.decodeIfPresent(Bool.self, forKey: .includeBestAndFairestVotes) ?? true
+        bestAndFairestLimit = try c.decodeIfPresent(Int.self, forKey: .bestAndFairestLimit) ?? 5
         includeStaffRoles = try c.decodeIfPresent(Bool.self, forKey: .includeStaffRoles) ?? true
         includeOfficials = try c.decodeIfPresent(Bool.self, forKey: .includeOfficials) ?? true
         includeUmpires = try c.decodeIfPresent(Bool.self, forKey: .includeUmpires) ?? true
@@ -950,10 +963,14 @@ enum AppBackupService {
                     name: $0.name,
                     gradeIDs: $0.gradeIDs,
                     includeBestPlayers: $0.includeBestPlayers,
+                    bestPlayersLimit: $0.bestPlayersLimit,
                     includePlayerGrades: $0.includePlayerGrades,
+                    guestVotesLimit: $0.guestVotesLimit,
                     includeGoalKickers: $0.includeGoalKickers,
+                    goalKickersLimit: $0.goalKickersLimit,
                     includeGuernseyNumbers: $0.includeGuernseyNumbers,
                     includeBestAndFairestVotes: $0.includeBestAndFairestVotes,
+                    bestAndFairestLimit: $0.bestAndFairestLimit,
                     includeStaffRoles: $0.includeStaffRoles,
                     includeOfficials: $0.includeOfficials,
                     includeUmpires: $0.includeUmpires,

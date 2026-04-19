@@ -11,10 +11,14 @@ final class CustomReportTemplate {
 
     // Core sections
     var includeBestPlayers: Bool
+    var bestPlayersLimit: Int
     var includePlayerGrades: Bool
+    var guestVotesLimit: Int
     var includeGoalKickers: Bool
+    var goalKickersLimit: Int
     var includeGuernseyNumbers: Bool
     var includeBestAndFairestVotes: Bool
+    var bestAndFairestLimit: Int
     var includeStaffRoles: Bool
     var includeOfficials: Bool
     var includeUmpires: Bool
@@ -34,10 +38,14 @@ final class CustomReportTemplate {
         name: String,
         gradeIDs: [UUID] = [],
         includeBestPlayers: Bool = true,
+        bestPlayersLimit: Int = 0,
         includePlayerGrades: Bool = true,
+        guestVotesLimit: Int = 0,
         includeGoalKickers: Bool = true,
+        goalKickersLimit: Int = 0,
         includeGuernseyNumbers: Bool = true,
         includeBestAndFairestVotes: Bool = true,
+        bestAndFairestLimit: Int = 5,
         includeStaffRoles: Bool = true,
         includeOfficials: Bool = true,
         includeUmpires: Bool = true,
@@ -54,10 +62,14 @@ final class CustomReportTemplate {
         self.name = name
         self.gradeIDsData = (try? JSONEncoder().encode(gradeIDs)) ?? Data()
         self.includeBestPlayers = includeBestPlayers
+        self.bestPlayersLimit = max(0, min(bestPlayersLimit, 10))
         self.includePlayerGrades = includePlayerGrades
+        self.guestVotesLimit = max(0, min(guestVotesLimit, 10))
         self.includeGoalKickers = includeGoalKickers
+        self.goalKickersLimit = max(0, min(goalKickersLimit, 10))
         self.includeGuernseyNumbers = includeGuernseyNumbers
         self.includeBestAndFairestVotes = includeBestAndFairestVotes
+        self.bestAndFairestLimit = max(0, min(bestAndFairestLimit, 10))
         self.includeStaffRoles = includeStaffRoles
         self.includeOfficials = includeOfficials
         self.includeUmpires = includeUmpires
