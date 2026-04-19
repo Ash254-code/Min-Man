@@ -2336,6 +2336,8 @@ struct ReportsSettingsView: View {
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
     @Query(sort: [SortDescriptor(\ContactGroup.name)]) private var groups: [ContactGroup]
     @Query private var groupMemberships: [ContactGroupMembership]
+    @Query private var customReportRecipientGroups: [CustomReportRecipientGroup]
+    @Query private var customReportRecipientContacts: [CustomReportRecipientContact]
     @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
     @Query(sort: [SortDescriptor(\Player.name)]) private var players: [Player]
 
@@ -2344,7 +2346,6 @@ struct ReportsSettingsView: View {
     @State private var templateInfoing: CustomReportTemplate?
     @State private var templatePreviewing: CustomReportTemplate?
     @State private var templateSharing: CustomReportTemplate?
-    @State private var templateRecipientsEditing: CustomReportTemplate?
     @State private var isCreatingTemplate = false
     @State private var saveErrorMessage: String?
     var onOpenContactsSettings: (() -> Void)? = nil
@@ -2459,9 +2460,6 @@ struct ReportsSettingsView: View {
                 Button("Share") {
                     templateSharing = template
                 }
-                Button("Report Recipients") {
-                    templateRecipientsEditing = template
-                }
                 Button("Edit") {
                     templateEditing = template
                 }
@@ -2473,7 +2471,12 @@ struct ReportsSettingsView: View {
             }
         }
         .sheet(isPresented: $isCreatingTemplate) {
-            CustomReportEditView(grades: grades) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue in
+            CustomReportEditView(
+                grades: grades,
+                contacts: contacts,
+                groups: groups,
+                memberships: groupMemberships
+            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientGroupIDs, selectedRecipientContactIDs in
                 let template = CustomReportTemplate(
                     name: name,
                     gradeIDs: selectedGradeIDs,
@@ -2490,6 +2493,12 @@ struct ReportsSettingsView: View {
                     groupingModeRawValue: groupingModeRawValue
                 )
                 dataContext.insert(template)
+                selectedRecipientGroupIDs.forEach { groupID in
+                    dataContext.insert(CustomReportRecipientGroup(templateID: template.id, groupID: groupID))
+                }
+                selectedRecipientContactIDs.forEach { contactID in
+                    dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
+                }
                 saveContext()
             }
             .appPopupStyle()
@@ -2513,18 +2522,12 @@ struct ReportsSettingsView: View {
             )
             .appPopupStyle()
         }
-        .sheet(item: $templateRecipientsEditing) { template in
-            CustomReportRecipientsEditorView(
-                template: template,
-                contacts: contacts,
-                groups: groups,
-                memberships: groupMemberships
-            )
-            .appPopupStyle()
-        }
         .sheet(item: $templateEditing) { template in
             CustomReportEditView(
                 grades: grades,
+                contacts: contacts,
+                groups: groups,
+                memberships: groupMemberships,
                 initialName: template.name,
                 initialSelectedGradeIDs: template.gradeIDs,
                 initialIncludeBestPlayers: template.includeBestPlayers,
@@ -2537,8 +2540,14 @@ struct ReportsSettingsView: View {
                 initialIncludeMatchNotes: template.includeMatchNotes,
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
                 initialMinimumGamesPlayed: template.minimumGamesPlayed,
-                initialGroupingModeRawValue: template.groupingModeRawValue
-            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue in
+                initialGroupingModeRawValue: template.groupingModeRawValue,
+                initialRecipientGroupIDs: customReportRecipientGroups
+                    .filter { $0.templateID == template.id }
+                    .map(\.groupID),
+                initialRecipientContactIDs: customReportRecipientContacts
+                    .filter { $0.templateID == template.id }
+                    .map(\.contactID)
+            ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientGroupIDs, selectedRecipientContactIDs in
                 template.name = name
                 template.gradeIDs = selectedGradeIDs
                 template.includeBestPlayers = includeBestPlayers
@@ -2552,6 +2561,19 @@ struct ReportsSettingsView: View {
                 template.includeOnlyActiveGrades = includeOnlyActiveGrades
                 template.minimumGamesPlayed = minimumGamesPlayed
                 template.groupingModeRawValue = groupingModeRawValue
+
+                for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
+                    dataContext.delete(recipientGroup)
+                }
+                for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
+                    dataContext.delete(recipientContact)
+                }
+                selectedRecipientGroupIDs.forEach { groupID in
+                    dataContext.insert(CustomReportRecipientGroup(templateID: template.id, groupID: groupID))
+                }
+                selectedRecipientContactIDs.forEach { contactID in
+                    dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
+                }
                 saveContext()
             }
             .appPopupStyle()
@@ -2846,200 +2868,6 @@ private struct CustomReportShareView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(items: shareItems)
-        }
-    }
-}
-
-private struct CustomReportRecipientsEditorView: View {
-    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
-    @Environment(\.dismiss) private var dismiss
-
-    let template: CustomReportTemplate
-    let contacts: [Contact]
-    let groups: [ContactGroup]
-    let memberships: [ContactGroupMembership]
-
-    @Query private var selectedGroups: [CustomReportRecipientGroup]
-    @Query private var selectedIndividuals: [CustomReportRecipientContact]
-
-    @State private var saveErrorMessage: String?
-
-    private var groupsForTemplate: [CustomReportRecipientGroup] {
-        selectedGroups.filter { $0.templateID == template.id }
-    }
-
-    private var individualsForTemplate: [CustomReportRecipientContact] {
-        selectedIndividuals.filter { $0.templateID == template.id }
-    }
-
-    private var selectedGroupIDs: Set<UUID> {
-        Set(groupsForTemplate.map(\.groupID))
-    }
-
-    private var selectedIndividualIDs: Set<UUID> {
-        Set(individualsForTemplate.map(\.contactID))
-    }
-
-    private var contactsFromSelectedGroups: [Contact] {
-        let contactIDs = Set(
-            memberships
-                .filter { selectedGroupIDs.contains($0.groupID) }
-                .map(\.contactID)
-        )
-        return contacts
-            .filter { contactIDs.contains($0.id) }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private var additionalIndividualContacts: [Contact] {
-        let groupedContactIDs = Set(contactsFromSelectedGroups.map(\.id))
-        return contacts
-            .filter { !groupedContactIDs.contains($0.id) }
-            .filter { !selectedIndividualIDs.contains($0.id) }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private var selectedIndividualContacts: [Contact] {
-        contacts
-            .filter { selectedIndividualIDs.contains($0.id) }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Groups") {
-                    if groups.isEmpty {
-                        Text("No groups found. Create groups in Settings > Groups.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(groups) { group in
-                            let isSelected = selectedGroupIDs.contains(group.id)
-                            Button {
-                                toggleGroup(group)
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(group.name)
-                                        Text("\(memberships.filter { $0.groupID == group.id }.count) contact(s)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if isSelected {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.tint)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section("Individual Recipients") {
-                    if contactsFromSelectedGroups.isEmpty {
-                        Text("No recipients in selected groups.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(contactsFromSelectedGroups) { contact in
-                            contactRow(contact, sourceLabel: "From selected group")
-                        }
-                    }
-
-                    if selectedIndividualContacts.isEmpty {
-                        Text("No extra individual recipients selected.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(selectedIndividualContacts) { contact in
-                            contactRow(contact, sourceLabel: "Added individually", showsRemove: true)
-                        }
-                    }
-
-                    Menu {
-                        if additionalIndividualContacts.isEmpty {
-                            Text("No available contacts")
-                        } else {
-                            ForEach(additionalIndividualContacts) { contact in
-                                Button(contact.name) {
-                                    addIndividual(contact)
-                                }
-                            }
-                        }
-                    } label: {
-                        Label("Add Individual", systemImage: "plus")
-                    }
-                }
-            }
-            .navigationTitle("Report Recipients")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-            .alert(
-                "Save Error",
-                isPresented: Binding(
-                    get: { saveErrorMessage != nil },
-                    set: { if !$0 { saveErrorMessage = nil } }
-                )
-            ) {
-                Button("OK", role: .cancel) {
-                    saveErrorMessage = nil
-                }
-            } message: {
-                Text(saveErrorMessage ?? "An unknown error occurred.")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func contactRow(_ contact: Contact, sourceLabel: String, showsRemove: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(contact.name)
-            Text(sourceLabel)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if showsRemove {
-                Button(role: .destructive) {
-                    removeIndividual(contact.id)
-                } label: {
-                    Label("Remove", systemImage: "trash")
-                }
-            }
-        }
-    }
-
-    private func toggleGroup(_ group: ContactGroup) {
-        if let assignment = groupsForTemplate.first(where: { $0.groupID == group.id }) {
-            dataContext.delete(assignment)
-        } else {
-            dataContext.insert(CustomReportRecipientGroup(templateID: template.id, groupID: group.id))
-        }
-        saveContext()
-    }
-
-    private func addIndividual(_ contact: Contact) {
-        guard !selectedIndividualIDs.contains(contact.id) else { return }
-        dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contact.id))
-        saveContext()
-    }
-
-    private func removeIndividual(_ contactID: UUID) {
-        for recipient in individualsForTemplate where recipient.contactID == contactID {
-            dataContext.delete(recipient)
-        }
-        saveContext()
-    }
-
-    private func saveContext() {
-        do {
-            try dataContext.save()
-        } catch {
-            saveErrorMessage = error.localizedDescription
         }
     }
 }
@@ -3362,7 +3190,10 @@ private struct CustomReportEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     let grades: [Grade]
-    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int) -> Void
+    let contacts: [Contact]
+    let groups: [ContactGroup]
+    let memberships: [ContactGroupMembership]
+    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [UUID], [UUID]) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
@@ -3377,9 +3208,14 @@ private struct CustomReportEditView: View {
     @State private var includeOnlyActiveGrades: Bool
     @State private var minimumGamesPlayed: Int
     @State private var groupingMode: ReportGroupingMode
+    @State private var selectedRecipientGroupIDs: Set<UUID>
+    @State private var selectedRecipientContactIDs: Set<UUID>
 
     init(
         grades: [Grade],
+        contacts: [Contact],
+        groups: [ContactGroup],
+        memberships: [ContactGroupMembership],
         initialName: String = "",
         initialSelectedGradeIDs: [UUID] = [],
         initialIncludeBestPlayers: Bool = true,
@@ -3393,9 +3229,14 @@ private struct CustomReportEditView: View {
         initialIncludeOnlyActiveGrades: Bool = true,
         initialMinimumGamesPlayed: Int = 0,
         initialGroupingModeRawValue: Int = 0,
-        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int) -> Void
+        initialRecipientGroupIDs: [UUID] = [],
+        initialRecipientContactIDs: [UUID] = [],
+        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [UUID], [UUID]) -> Void
     ) {
         self.grades = grades
+        self.contacts = contacts
+        self.groups = groups
+        self.memberships = memberships
         self.onSave = onSave
         _name = State(initialValue: initialName)
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
@@ -3410,6 +3251,8 @@ private struct CustomReportEditView: View {
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
         _groupingMode = State(initialValue: ReportGroupingMode(rawValue: initialGroupingModeRawValue) ?? .combinedTotals)
+        _selectedRecipientGroupIDs = State(initialValue: Set(initialRecipientGroupIDs))
+        _selectedRecipientContactIDs = State(initialValue: Set(initialRecipientContactIDs))
     }
 
     private var canSave: Bool {
@@ -3466,6 +3309,95 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
+                    if groups.isEmpty {
+                        Text("No groups found. Create groups in Settings > Groups.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(groups) { group in
+                            Button {
+                                if selectedRecipientGroupIDs.contains(group.id) {
+                                    selectedRecipientGroupIDs.remove(group.id)
+                                } else {
+                                    selectedRecipientGroupIDs.insert(group.id)
+                                }
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(group.name)
+                                        Text("\(memberships.filter { $0.groupID == group.id }.count) contact(s)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if selectedRecipientGroupIDs.contains(group.id) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Report Recipients • Groups")
+                }
+
+                Section {
+                    let groupMemberContacts = contactsFromSelectedGroups()
+                    if groupMemberContacts.isEmpty {
+                        Text("No recipients in selected groups.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(groupMemberContacts) { contact in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(contact.name)
+                                Text("From selected group")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    let individualContacts = selectedIndividualRecipients()
+                    if individualContacts.isEmpty {
+                        Text("No extra individual recipients selected.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(individualContacts) { contact in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(contact.name)
+                                Text("Added individually")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    selectedRecipientContactIDs.remove(contact.id)
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+
+                    Menu {
+                        let additionalContacts = availableAdditionalRecipients()
+                        if additionalContacts.isEmpty {
+                            Text("No available contacts")
+                        } else {
+                            ForEach(additionalContacts) { contact in
+                                Button(contact.name) {
+                                    selectedRecipientContactIDs.insert(contact.id)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Add Individual", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Report Recipients • Individual Recipients")
+                }
+
+                Section {
                     Picker("Report layout", selection: $groupingMode) {
                         ForEach(ReportGroupingMode.allCases) { mode in
                             Text(mode.title).tag(mode)
@@ -3498,7 +3430,9 @@ private struct CustomReportEditView: View {
                             includeMatchNotes,
                             includeOnlyActiveGrades,
                             minimumGamesPlayed,
-                            groupingMode.rawValue
+                            groupingMode.rawValue,
+                            Array(selectedRecipientGroupIDs),
+                            Array(selectedRecipientContactIDs)
                         )
                         dismiss()
                     }
@@ -3506,6 +3440,31 @@ private struct CustomReportEditView: View {
                 }
             }
         }
+    }
+
+    private func contactsFromSelectedGroups() -> [Contact] {
+        let memberIDs = Set(
+            memberships
+                .filter { selectedRecipientGroupIDs.contains($0.groupID) }
+                .map(\.contactID)
+        )
+        return contacts
+            .filter { memberIDs.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func selectedIndividualRecipients() -> [Contact] {
+        contacts
+            .filter { selectedRecipientContactIDs.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func availableAdditionalRecipients() -> [Contact] {
+        let groupedIDs = Set(contactsFromSelectedGroups().map(\.id))
+        return contacts
+            .filter { !groupedIDs.contains($0.id) }
+            .filter { !selectedRecipientContactIDs.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
 
