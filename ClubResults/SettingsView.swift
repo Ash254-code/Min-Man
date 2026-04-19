@@ -2471,14 +2471,16 @@ struct ReportsSettingsView: View {
     @State private var isCreatingTemplate = false
     @State private var saveErrorMessage: String?
     @State private var isMoveModeEnabled = false
+    @State private var moveDraftOrder: [UUID] = []
+    @State private var draggingTemplateID: UUID?
     @AppStorage("reports.templateOrder.v1") private var templateOrderData = ""
     var onOpenContactsSettings: (() -> Void)? = nil
 
     private var displayedTemplates: [CustomReportTemplate] {
         let templateByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
-        let storedOrder = persistedTemplateOrderIDs()
-        let orderedFromStore = storedOrder.compactMap { templateByID[$0] }
-        let remaining = templates.filter { !storedOrder.contains($0.id) }
+        let activeOrder = activeTemplateOrderIDs()
+        let orderedFromStore = activeOrder.compactMap { templateByID[$0] }
+        let remaining = templates.filter { !activeOrder.contains($0.id) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         return orderedFromStore + remaining
     }
@@ -2548,17 +2550,18 @@ struct ReportsSettingsView: View {
                         )
                         .onDrag {
                             guard isMoveModeEnabled else { return NSItemProvider() }
+                            draggingTemplateID = template.id
                             return NSItemProvider(object: template.id.uuidString as NSString)
                         }
-                        .dropDestination(for: String.self) { droppedTemplateIDs, _ in
-                            guard isMoveModeEnabled else { return false }
-                            guard
-                                let droppedIDValue = droppedTemplateIDs.first,
-                                let droppedID = UUID(uuidString: droppedIDValue)
-                            else { return false }
-                            moveTemplate(droppedID, before: template.id)
-                            return true
-                        }
+                        .onDrop(
+                            of: [UTType.text],
+                            delegate: ReportTemplateDropDelegate(
+                                currentTemplateID: template.id,
+                                isMoveModeEnabled: isMoveModeEnabled,
+                                draggingTemplateID: $draggingTemplateID,
+                                onReorder: reorderDraftTemplate
+                            )
+                        )
                         .frame(maxWidth: .infinity)
                         .frame(height: 94)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -2594,7 +2597,7 @@ struct ReportsSettingsView: View {
             if isMoveModeEnabled {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
-                        isMoveModeEnabled = false
+                        finishMoveModeAndSave()
                     }
                 }
             }
@@ -2604,6 +2607,7 @@ struct ReportsSettingsView: View {
         }
         .onChange(of: templates.map(\.id)) { _ in
             syncTemplateOrderWithCurrentTemplates()
+            syncMoveDraftWithCurrentTemplates()
         }
         .confirmationDialog("Report actions", isPresented: Binding(
             get: { templateActioning != nil },
@@ -2624,7 +2628,7 @@ struct ReportsSettingsView: View {
                     )
                 }
                 Button("Move") {
-                    isMoveModeEnabled = true
+                    beginMoveMode()
                 }
                 Button("Delete Report", role: .destructive) {
                     deleteTemplate(template)
@@ -2860,15 +2864,38 @@ struct ReportsSettingsView: View {
         templateEditing = duplicatedTemplate
     }
 
-    private func moveTemplate(_ sourceID: UUID, before destinationID: UUID) {
-        var currentOrder = displayedTemplates.map(\.id)
+    private func reorderDraftTemplate(_ sourceID: UUID, _ destinationID: UUID) {
+        var currentOrder = moveDraftOrder
         guard let sourceIndex = currentOrder.firstIndex(of: sourceID) else { return }
         guard let destinationIndex = currentOrder.firstIndex(of: destinationID) else { return }
         guard sourceIndex != destinationIndex else { return }
         let movedID = currentOrder.remove(at: sourceIndex)
         let adjustedDestination = destinationIndex > sourceIndex ? destinationIndex - 1 : destinationIndex
         currentOrder.insert(movedID, at: adjustedDestination)
-        persistTemplateOrder(currentOrder)
+        moveDraftOrder = currentOrder
+    }
+
+    private func beginMoveMode() {
+        syncTemplateOrderWithCurrentTemplates()
+        moveDraftOrder = persistedTemplateOrderIDs()
+        isMoveModeEnabled = true
+    }
+
+    private func finishMoveModeAndSave() {
+        persistTemplateOrder(moveDraftOrder)
+        isMoveModeEnabled = false
+        draggingTemplateID = nil
+    }
+
+    private func activeTemplateOrderIDs() -> [UUID] {
+        isMoveModeEnabled ? moveDraftOrder : persistedTemplateOrderIDs()
+    }
+
+    private func syncMoveDraftWithCurrentTemplates() {
+        let currentTemplateIDs = Set(templates.map(\.id))
+        moveDraftOrder = moveDraftOrder.filter { currentTemplateIDs.contains($0) }
+        let missing = templates.map(\.id).filter { !moveDraftOrder.contains($0) }
+        moveDraftOrder.append(contentsOf: missing)
     }
 
     private func persistedTemplateOrderIDs() -> [UUID] {
@@ -2963,6 +2990,30 @@ struct ReportsSettingsView: View {
             .map { $0.email.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+}
+
+private struct ReportTemplateDropDelegate: DropDelegate {
+    let currentTemplateID: UUID
+    let isMoveModeEnabled: Bool
+    @Binding var draggingTemplateID: UUID?
+    let onReorder: (UUID, UUID) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard isMoveModeEnabled else { return }
+        guard let draggingTemplateID else { return }
+        guard draggingTemplateID != currentTemplateID else { return }
+        onReorder(draggingTemplateID, currentTemplateID)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard isMoveModeEnabled else { return nil }
+        return DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingTemplateID = nil
+        return isMoveModeEnabled
     }
 }
 
