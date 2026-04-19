@@ -961,6 +961,7 @@ private struct RoundDetailHeaderCard: View {
 
 private struct CompactRoundOutcomePill: View {
     let item: GamesView.RoundOutcomePillItem
+    private let pillSize: CGFloat = 44
 
     private var foregroundColor: Color {
         guard let outcome = item.outcome else { return .secondary }
@@ -974,16 +975,14 @@ private struct CompactRoundOutcomePill: View {
     var body: some View {
         Text(item.outcome?.label ?? "-")
             .font(.system(size: 16, weight: .bold))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity)
+            .frame(width: pillSize, height: pillSize)
             .background(
-                Capsule(style: .continuous)
+                Circle()
                     .fill(item.outcome == nil ? Color.clear : foregroundColor.opacity(0.22))
             )
             .foregroundStyle(foregroundColor)
             .overlay(
-                Capsule(style: .continuous)
+                Circle()
                     .stroke(Color.white.opacity(item.outcome == nil ? 0.18 : 0), lineWidth: 1)
             )
             .accessibilityLabel("\(item.gradeName) \(item.outcome?.label ?? "No game")")
