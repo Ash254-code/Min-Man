@@ -412,6 +412,7 @@ struct NewGameWizardView: View {
     @State private var reportAttachmentURL: URL?
     @State private var pendingEmailRecipients: [String] = []
     @State private var pendingTextRecipients: [String] = []
+    @State private var pendingEmailSubject: String = "Min-Man Game Report"
     @State private var showMailComposer = false
     @State private var showMessageComposer = false
     @State private var sendStatusMessage: String?
@@ -1078,7 +1079,7 @@ struct NewGameWizardView: View {
 
                         if isLastStepInFlow {
                             Button("Save") {
-                                _ = saveGame(asDraft: false, dismissOnSuccess: true)
+                                saveAndSendReport()
                             }
                             .buttonStyle(.borderedProminent)
                             .saveButtonBehavior(isEnabled: canProceedOnCurrentStep)
@@ -1161,7 +1162,7 @@ struct NewGameWizardView: View {
             if let attachmentURL = reportAttachmentURL {
                 MailComposeView(
                     recipients: pendingEmailRecipients,
-                    subject: "Min-Man Game Report",
+                    subject: pendingEmailSubject,
                     body: "Attached is the game report PDF.",
                     attachmentURL: attachmentURL
                 ) {
@@ -2839,6 +2840,7 @@ struct NewGameWizardView: View {
         let playerLookup: (UUID) -> String = { pid in
             players.first(where: { $0.id == pid })?.name ?? "Unknown"
         }
+        pendingEmailSubject = reportEmailSubject(for: savedGame, gradeName: gradeName)
 
         do {
             reportAttachmentURL = try ExportService.makeGameSummaryPDF(
@@ -2886,6 +2888,22 @@ struct NewGameWizardView: View {
         }
 
         beginTextSendIfNeeded()
+    }
+
+    private func reportEmailSubject(for game: Game, gradeName: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+
+        let formattedDate = formatter.string(from: game.date)
+        let opponent = game.opponent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Unknown Opponent"
+            : game.opponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedGrade = gradeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Unknown Grade"
+            : gradeName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return "\(formattedDate) - \(opponent) - \(cleanedGrade)"
     }
 
     private func beginTextSendIfNeeded() {
