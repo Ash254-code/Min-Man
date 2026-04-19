@@ -179,6 +179,34 @@ struct AppBackupPayload: Codable {
     let customReportRecipientGroups: [CustomReportRecipientGroupRecord]
     let customReportRecipientContacts: [CustomReportRecipientContactRecord]
     let appSettings: AppSettingsRecord
+
+    private enum CodingKeys: String, CodingKey {
+        case grades, players, games, contacts, reportRecipients, customReportTemplates
+        case staffMembers, staffDefaults
+        case contactGroups, contactGroupMemberships, contactSectionMemberships
+        case reportRecipientGroups, customReportRecipientSections, customReportRecipientGroups, customReportRecipientContacts
+        case appSettings
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        grades = try c.decodeIfPresent([GradeRecord].self, forKey: .grades) ?? []
+        players = try c.decodeIfPresent([PlayerRecord].self, forKey: .players) ?? []
+        games = try c.decodeIfPresent([GameRecord].self, forKey: .games) ?? []
+        contacts = try c.decodeIfPresent([ContactRecord].self, forKey: .contacts) ?? []
+        reportRecipients = try c.decodeIfPresent([ReportRecipientRecord].self, forKey: .reportRecipients) ?? []
+        customReportTemplates = try c.decodeIfPresent([CustomReportTemplateRecord].self, forKey: .customReportTemplates) ?? []
+        staffMembers = try c.decodeIfPresent([StaffMemberRecord].self, forKey: .staffMembers) ?? []
+        staffDefaults = try c.decodeIfPresent([StaffDefaultRecord].self, forKey: .staffDefaults) ?? []
+        contactGroups = try c.decodeIfPresent([ContactGroupRecord].self, forKey: .contactGroups) ?? []
+        contactGroupMemberships = try c.decodeIfPresent([ContactGroupMembershipRecord].self, forKey: .contactGroupMemberships) ?? []
+        contactSectionMemberships = try c.decodeIfPresent([ContactSectionMembershipRecord].self, forKey: .contactSectionMemberships) ?? []
+        reportRecipientGroups = try c.decodeIfPresent([ReportRecipientGroupRecord].self, forKey: .reportRecipientGroups) ?? []
+        customReportRecipientSections = try c.decodeIfPresent([CustomReportRecipientSectionRecord].self, forKey: .customReportRecipientSections) ?? []
+        customReportRecipientGroups = try c.decodeIfPresent([CustomReportRecipientGroupRecord].self, forKey: .customReportRecipientGroups) ?? []
+        customReportRecipientContacts = try c.decodeIfPresent([CustomReportRecipientContactRecord].self, forKey: .customReportRecipientContacts) ?? []
+        appSettings = try c.decodeIfPresent(AppSettingsRecord.self, forKey: .appSettings) ?? AppSettingsRecord.defaults
+    }
 }
 
 struct GradeRecord: Codable {
@@ -252,26 +280,26 @@ struct GradeRecord: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
-        isActive = try c.decode(Bool.self, forKey: .isActive)
-        displayOrder = try c.decode(Int.self, forKey: .displayOrder)
-        asksHeadCoach = try c.decode(Bool.self, forKey: .asksHeadCoach)
-        asksAssistantCoach = try c.decode(Bool.self, forKey: .asksAssistantCoach)
-        asksTeamManager = try c.decode(Bool.self, forKey: .asksTeamManager)
-        asksRunner = try c.decode(Bool.self, forKey: .asksRunner)
-        asksGoalUmpire = try c.decode(Bool.self, forKey: .asksGoalUmpire)
-        asksFieldUmpire = try c.decode(Bool.self, forKey: .asksFieldUmpire)
-        asksBoundaryUmpire1 = try c.decode(Bool.self, forKey: .asksBoundaryUmpire1)
-        asksBoundaryUmpire2 = try c.decode(Bool.self, forKey: .asksBoundaryUmpire2)
-        asksTrainers = try c.decode(Bool.self, forKey: .asksTrainers)
-        asksTrainer1 = try c.decode(Bool.self, forKey: .asksTrainer1)
-        asksTrainer2 = try c.decode(Bool.self, forKey: .asksTrainer2)
-        asksTrainer3 = try c.decode(Bool.self, forKey: .asksTrainer3)
-        asksTrainer4 = try c.decode(Bool.self, forKey: .asksTrainer4)
-        asksNotes = try c.decode(Bool.self, forKey: .asksNotes)
-        asksScore = try c.decode(Bool.self, forKey: .asksScore)
-        asksLiveGameView = try c.decode(Bool.self, forKey: .asksLiveGameView)
-        asksGoalKickers = try c.decode(Bool.self, forKey: .asksGoalKickers)
-        bestPlayersCount = try c.decode(Int.self, forKey: .bestPlayersCount)
+        isActive = try c.decodeIfPresent(Bool.self, forKey: .isActive) ?? true
+        displayOrder = try c.decodeIfPresent(Int.self, forKey: .displayOrder) ?? 0
+        asksHeadCoach = try c.decodeIfPresent(Bool.self, forKey: .asksHeadCoach) ?? true
+        asksAssistantCoach = try c.decodeIfPresent(Bool.self, forKey: .asksAssistantCoach) ?? true
+        asksTeamManager = try c.decodeIfPresent(Bool.self, forKey: .asksTeamManager) ?? true
+        asksRunner = try c.decodeIfPresent(Bool.self, forKey: .asksRunner) ?? true
+        asksGoalUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksGoalUmpire) ?? true
+        asksFieldUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksFieldUmpire) ?? true
+        asksBoundaryUmpire1 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire1) ?? true
+        asksBoundaryUmpire2 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire2) ?? true
+        asksTrainers = try c.decodeIfPresent(Bool.self, forKey: .asksTrainers) ?? true
+        asksTrainer1 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer1) ?? asksTrainers
+        asksTrainer2 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer2) ?? asksTrainers
+        asksTrainer3 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer3) ?? asksTrainers
+        asksTrainer4 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer4) ?? asksTrainers
+        asksNotes = try c.decodeIfPresent(Bool.self, forKey: .asksNotes) ?? true
+        asksScore = try c.decodeIfPresent(Bool.self, forKey: .asksScore) ?? true
+        asksLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .asksLiveGameView) ?? true
+        asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
+        bestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) ?? 6
         guestBestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? bestPlayersCount
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? false
@@ -379,26 +407,26 @@ struct GameRecord: Codable {
         gradeID = try c.decode(UUID.self, forKey: .gradeID)
         date = try c.decode(Date.self, forKey: .date)
         opponent = try c.decode(String.self, forKey: .opponent)
-        venue = try c.decode(String.self, forKey: .venue)
+        venue = try c.decodeIfPresent(String.self, forKey: .venue) ?? ""
         ourGoals = try c.decode(Int.self, forKey: .ourGoals)
         ourBehinds = try c.decode(Int.self, forKey: .ourBehinds)
         theirGoals = try c.decode(Int.self, forKey: .theirGoals)
         theirBehinds = try c.decode(Int.self, forKey: .theirBehinds)
-        goalKickers = try c.decode([GameGoalKickerRecord].self, forKey: .goalKickers)
-        bestPlayersRanked = try c.decode([UUID].self, forKey: .bestPlayersRanked)
+        goalKickers = try c.decodeIfPresent([GameGoalKickerRecord].self, forKey: .goalKickers) ?? []
+        bestPlayersRanked = try c.decodeIfPresent([UUID].self, forKey: .bestPlayersRanked) ?? []
         guestVotesRanked = try c.decodeIfPresent([GameGuestVoteEntry].self, forKey: .guestVotesRanked) ?? []
-        headCoachName = try c.decode(String.self, forKey: .headCoachName)
-        assistantCoachName = try c.decode(String.self, forKey: .assistantCoachName)
-        teamManagerName = try c.decode(String.self, forKey: .teamManagerName)
-        runnerName = try c.decode(String.self, forKey: .runnerName)
-        goalUmpireName = try c.decode(String.self, forKey: .goalUmpireName)
-        fieldUmpireName = try c.decode(String.self, forKey: .fieldUmpireName)
-        boundaryUmpire1Name = try c.decode(String.self, forKey: .boundaryUmpire1Name)
-        boundaryUmpire2Name = try c.decode(String.self, forKey: .boundaryUmpire2Name)
-        trainers = try c.decode([String].self, forKey: .trainers)
-        notes = try c.decode(String.self, forKey: .notes)
+        headCoachName = try c.decodeIfPresent(String.self, forKey: .headCoachName) ?? ""
+        assistantCoachName = try c.decodeIfPresent(String.self, forKey: .assistantCoachName) ?? ""
+        teamManagerName = try c.decodeIfPresent(String.self, forKey: .teamManagerName) ?? ""
+        runnerName = try c.decodeIfPresent(String.self, forKey: .runnerName) ?? ""
+        goalUmpireName = try c.decodeIfPresent(String.self, forKey: .goalUmpireName) ?? ""
+        fieldUmpireName = try c.decodeIfPresent(String.self, forKey: .fieldUmpireName) ?? ""
+        boundaryUmpire1Name = try c.decodeIfPresent(String.self, forKey: .boundaryUmpire1Name) ?? ""
+        boundaryUmpire2Name = try c.decodeIfPresent(String.self, forKey: .boundaryUmpire2Name) ?? ""
+        trainers = try c.decodeIfPresent([String].self, forKey: .trainers) ?? []
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         guestBestFairestVotesScanPDF = try c.decodeIfPresent(Data.self, forKey: .guestBestFairestVotesScanPDF)
-        isDraft = try c.decode(Bool.self, forKey: .isDraft)
+        isDraft = try c.decodeIfPresent(Bool.self, forKey: .isDraft) ?? false
     }
 }
 
@@ -660,12 +688,24 @@ struct AppSettingsRecord: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         appAppearanceRawValue = try c.decodeIfPresent(String.self, forKey: .appAppearanceRawValue) ?? AppAppearance.system.rawValue
-        clubConfiguration = try c.decode(ClubConfiguration.self, forKey: .clubConfiguration)
+        clubConfiguration = try c.decodeIfPresent(ClubConfiguration.self, forKey: .clubConfiguration) ?? ClubConfigurationStore.defaults
         boundaryUmpireGradeMappings = try c.decodeIfPresent([String: [UUID]].self, forKey: .boundaryUmpireGradeMappings) ?? [:]
         lastStaffSelections = try c.decodeIfPresent([String: String].self, forKey: .lastStaffSelections) ?? [:]
         draftResumeOpenLiveFlags = try c.decodeIfPresent([String: Bool].self, forKey: .draftResumeOpenLiveFlags) ?? [:]
         legacyGradesBackup = try c.decodeIfPresent([GradeBackup].self, forKey: .legacyGradesBackup) ?? []
         legacyContactsBackup = try c.decodeIfPresent([ContactBackup].self, forKey: .legacyContactsBackup) ?? []
+    }
+
+    static var defaults: AppSettingsRecord {
+        AppSettingsRecord(
+            appAppearanceRawValue: AppAppearance.system.rawValue,
+            clubConfiguration: ClubConfigurationStore.defaults,
+            boundaryUmpireGradeMappings: [:],
+            lastStaffSelections: [:],
+            draftResumeOpenLiveFlags: [:],
+            legacyGradesBackup: [],
+            legacyContactsBackup: []
+        )
     }
 }
 
