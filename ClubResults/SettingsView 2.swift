@@ -1535,20 +1535,16 @@ private struct GroupsSettingsView: View {
     @State private var addSectionKey: String?
     @State private var showAddExistingContactForSection = false
     @State private var sectionForExistingContact: String?
+    @State private var showAddGroup = false
     @State private var contactEditing: Contact?
-    @State private var isManagingGroups = false
+    @State private var groupEditing: GroupEditTarget?
     @State private var saveErrorMessage: String?
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
-    @AppStorage("contactSectionCustomGroups") private var customSectionKeysData: String = ""
-    @AppStorage("contactSectionHiddenGroups") private var hiddenSectionKeysData: String = ""
 
     var body: some View {
         List {
-            ForEach(baseSections.filter {
-                if case .fixed = $0.section { return true }
-                return false
-            }, id: \.sectionKey) { section in
-                sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+            ForEach(primarySections) { section in
+                sectionView(fallbackTitle: section.title, sectionKey: section.rawValue)
             }
 
             Section {
@@ -1556,38 +1552,16 @@ private struct GroupsSettingsView: View {
                     Text("Add club grades in Settings > Club Grades to manage coach contacts by grade.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(baseSections.filter { $0.section == .coachesGrade }, id: \.sectionKey) { section in
-                        sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+                    ForEach(orderedGrades) { grade in
+                        sectionView(fallbackTitle: grade.name, sectionKey: ContactSectionKey.coachesGrade(grade.id).rawValue)
                     }
                 }
             } header: {
                 Text("Coaches")
             }
 
-            ForEach(customSections, id: \.sectionKey) { section in
-                sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
-            }
-
-            Section {
-                ReportRecipientsByCustomReportView(
-                    templates: templates,
-                    assignments: customReportRecipientSections
-                )
-            } header: {
-                Text("Report Recipients")
-            }
         }
         .navigationTitle("Groups")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    isManagingGroups = true
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .accessibilityLabel("Manage Groups")
-            }
-        }
         .sheet(isPresented: $showAddContact) {
             ContactEditSheet(
                 title: "Add Contact",
@@ -1638,10 +1612,17 @@ private struct GroupsSettingsView: View {
             )
             .appPopupStyle()
         }
-        .sheet(isPresented: $isManagingGroups) {
-            GroupManagerSheet(initialGroups: manageableGroups) { drafts in
-                applyGroupDrafts(drafts)
-            }
+        .sheet(item: $groupEditing) { target in
+            GroupEditSheet(
+                initialGroupName: displayTitle(for: target.sectionKey, fallback: target.fallbackTitle),
+                contacts: contactsForSection(target.sectionKey),
+                onSave: { newName in
+                    setCustomTitle(newName, for: target.sectionKey, fallback: target.fallbackTitle)
+                },
+                onDelete: {
+                    clearGroup(target.sectionKey)
+                }
+            )
             .appPopupStyle()
         }
         .alert(
@@ -1664,63 +1645,6 @@ private struct GroupsSettingsView: View {
 
     private var orderedGrades: [Grade] {
         orderedGradesForDisplay(resolvedConfiguredGrades(from: grades), includeInactive: true)
-    }
-
-    private var customGroupKeys: [String] {
-        guard
-            let data = customSectionKeysData.data(using: .utf8),
-            let decoded = try? JSONDecoder().decode([String].self, from: data)
-        else {
-            return []
-        }
-        return decoded
-    }
-
-    private var hiddenGroupKeys: Set<String> {
-        guard
-            let data = hiddenSectionKeysData.data(using: .utf8),
-            let decoded = try? JSONDecoder().decode([String].self, from: data)
-        else {
-            return []
-        }
-        return Set(decoded)
-    }
-
-    private var baseSections: [GroupSectionDescriptor] {
-        let primary = primarySections.map {
-            GroupSectionDescriptor(section: .fixed($0), sectionKey: $0.rawValue, fallbackTitle: $0.title)
-        }
-        let gradeSections = orderedGrades.map {
-            GroupSectionDescriptor(
-                section: .coachesGrade,
-                sectionKey: ContactSectionKey.coachesGrade($0.id).rawValue,
-                fallbackTitle: $0.name
-            )
-        }
-        return (primary + gradeSections).filter { !hiddenGroupKeys.contains($0.sectionKey) }
-    }
-
-    private var customSections: [GroupSectionDescriptor] {
-        customGroupKeys
-            .filter { !hiddenGroupKeys.contains($0) }
-            .map { key in
-                GroupSectionDescriptor(
-                    section: .custom,
-                    sectionKey: key,
-                    fallbackTitle: "Custom Group"
-                )
-            }
-    }
-
-    private var manageableGroups: [GroupManagementDraft] {
-        (baseSections + customSections).map { section in
-            GroupManagementDraft(
-                sectionKey: section.sectionKey,
-                name: displayTitle(for: section.sectionKey, fallback: section.fallbackTitle),
-                fallbackTitle: section.fallbackTitle,
-                isCustom: section.section == .custom
-            )
-        }
     }
 
     private func sectionView(fallbackTitle: String, sectionKey: String) -> some View {
@@ -1778,6 +1702,13 @@ private struct GroupsSettingsView: View {
         } header: {
             HStack {
                 Text(displayTitle(for: sectionKey, fallback: fallbackTitle))
+                Spacer()
+                Button {
+                    groupEditing = GroupEditTarget(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -1875,56 +1806,12 @@ private struct GroupsSettingsView: View {
             customSectionTitlesData = json
         }
     }
-
-    private func saveCustomGroupKeys(_ keys: [String]) {
-        guard let data = try? JSONEncoder().encode(keys), let json = String(data: data, encoding: .utf8) else { return }
-        customSectionKeysData = json
-    }
-
-    private func saveHiddenGroupKeys(_ keys: Set<String>) {
-        guard let data = try? JSONEncoder().encode(Array(keys)), let json = String(data: data, encoding: .utf8) else { return }
-        hiddenSectionKeysData = json
-    }
-
-    private func applyGroupDrafts(_ drafts: [GroupManagementDraft]) {
-        let existingKeys = Set(manageableGroups.map(\.sectionKey))
-        let keptKeys = Set(drafts.map(\.sectionKey))
-        let deletedKeys = existingKeys.subtracting(keptKeys)
-
-        for key in deletedKeys {
-            clearGroup(key)
-        }
-
-        var updatedHidden = hiddenGroupKeys
-        let customKeys = drafts.filter(\.isCustom).map(\.sectionKey)
-        saveCustomGroupKeys(customKeys)
-
-        let baseKeys = Set((baseSections + customSections).filter { !$0.section.isCustom }.map(\.sectionKey))
-        for key in deletedKeys where baseKeys.contains(key) {
-            updatedHidden.insert(key)
-        }
-        saveHiddenGroupKeys(updatedHidden)
-
-        for draft in drafts {
-            setCustomTitle(draft.name, for: draft.sectionKey, fallback: draft.fallbackTitle)
-        }
-    }
 }
 
-private struct GroupSectionDescriptor {
-    enum SectionKind: Equatable {
-        case fixed(ContactSectionKey)
-        case coachesGrade
-        case custom
-
-        var isCustom: Bool {
-            self == .custom
-        }
-    }
-
-    let section: SectionKind
+private struct GroupEditTarget: Identifiable {
     let sectionKey: String
     let fallbackTitle: String
+    var id: String { sectionKey }
 }
 
 private struct PinCodeSettingsView: View {
@@ -2334,66 +2221,71 @@ private struct ExistingContactAssignmentSheet: View {
     }
 }
 
-private struct GroupManagementDraft: Identifiable, Equatable {
-    let sectionKey: String
-    var name: String
-    let fallbackTitle: String
-    let isCustom: Bool
-
-    var id: String { sectionKey }
-}
-
-private struct GroupManagerSheet: View {
+private struct GroupEditSheet: View {
     @Environment(\.dismiss) private var dismiss
 
-    let onSave: ([GroupManagementDraft]) -> Void
+    let initialGroupName: String
+    let contacts: [Contact]
+    let onSave: (String) -> Void
+    let onDelete: () -> Void
 
-    @State private var draftGroups: [GroupManagementDraft]
-    @State private var initialGroups: [GroupManagementDraft]
+    @State private var groupName: String
+    @State private var showDeleteConfirmation = false
 
-    init(initialGroups: [GroupManagementDraft], onSave: @escaping ([GroupManagementDraft]) -> Void) {
+    init(
+        initialGroupName: String,
+        contacts: [Contact],
+        onSave: @escaping (String) -> Void,
+        onDelete: @escaping () -> Void
+    ) {
+        self.initialGroupName = initialGroupName
+        self.contacts = contacts
         self.onSave = onSave
-        _draftGroups = State(initialValue: initialGroups)
-        _initialGroups = State(initialValue: initialGroups)
+        self.onDelete = onDelete
+        _groupName = State(initialValue: initialGroupName)
     }
 
     private var hasChanges: Bool {
-        draftGroups != initialGroups
+        clean(groupName) != clean(initialGroupName)
+    }
+
+    private var canSave: Bool {
+        !clean(groupName).isEmpty
     }
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach($draftGroups) { $group in
-                    HStack(spacing: 12) {
-                        TextField("Group Name", text: $group.name)
-                            .textInputAutocapitalization(.words)
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Group name")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Group Name", text: $groupName)
+                        .textInputAutocapitalization(.words)
+                        .textFieldStyle(.roundedBorder)
+                }
 
-                        Button(role: .destructive) {
-                            draftGroups.removeAll { $0.id == group.id }
-                        } label: {
-                            Image(systemName: "trash")
+                List {
+                    if contacts.isEmpty {
+                        Text("No contacts in this group.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(contacts) { contact in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(contact.name)
+                                Text(contact.email)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-
-                Button {
-                    draftGroups.append(
-                        GroupManagementDraft(
-                            sectionKey: "custom:\(UUID().uuidString)",
-                            name: "",
-                            fallbackTitle: "Custom Group",
-                            isCustom: true
-                        )
-                    )
-                } label: {
-                    Label("Add Group", systemImage: "plus")
-                }
+                .listStyle(.plain)
             }
-            .navigationTitle("Manage Groups")
+            .padding()
+            .navigationTitle(clean(groupName).isEmpty ? "Group" : clean(groupName))
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button {
                         dismiss()
                     } label: {
@@ -2401,12 +2293,20 @@ private struct GroupManagerSheet: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        onSave(normalizedDrafts())
-                        dismiss()
+                    HStack(spacing: 10) {
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+
+                        Button("Save") {
+                            onSave(clean(groupName))
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .saveButtonBehavior(isEnabled: canSave && hasChanges)
                     }
-                    .disabled(!hasChanges)
-                    .foregroundStyle(hasChanges ? .blue : .gray)
                 }
             }
         }
@@ -2421,20 +2321,8 @@ private struct GroupManagerSheet: View {
         }
     }
 
-    private func normalizedDrafts() -> [GroupManagementDraft] {
-        var seen = Set<String>()
-        return draftGroups.compactMap { group in
-            let cleaned = group.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            let finalName = cleaned.isEmpty ? group.fallbackTitle : cleaned
-            guard !seen.contains(group.sectionKey) else { return nil }
-            seen.insert(group.sectionKey)
-            return GroupManagementDraft(
-                sectionKey: group.sectionKey,
-                name: finalName,
-                fallbackTitle: group.fallbackTitle,
-                isCustom: group.isCustom
-            )
-        }
+    private func clean(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
