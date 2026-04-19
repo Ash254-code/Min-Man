@@ -640,9 +640,14 @@ struct NewGameWizardView: View {
         min(max(selectedGrade?.bestPlayersCount ?? 6, 0), 10)
     }
 
+    private var shouldAskGuestVotes: Bool {
+        guard let grade = selectedGrade else { return false }
+        return grade.asksGuestBestFairestVotesScan && grade.guestBestPlayersCount > 0
+    }
+
     private var requiredGuestBestPlayersCount: Int {
-        guard selectedGrade?.asksGuestBestFairestVotesScan ?? false else { return 0 }
-        return min(max(selectedGrade?.guestBestPlayersCount ?? 3, 1), 10)
+        guard shouldAskGuestVotes else { return 0 }
+        return min(max(selectedGrade?.guestBestPlayersCount ?? 3, 0), 10)
     }
 
     private var supportsLiveGameView: Bool {
@@ -683,7 +688,7 @@ struct NewGameWizardView: View {
             steps.append(.goals)
         }
         if grade.bestPlayersCount > 0 && entryMode != .live { steps.append(.best) }
-        if grade.asksGuestBestFairestVotesScan { steps.append(.votes) }
+        if grade.asksGuestBestFairestVotesScan && grade.guestBestPlayersCount > 0 { steps.append(.votes) }
         steps.append(.review)
         return steps
     }
