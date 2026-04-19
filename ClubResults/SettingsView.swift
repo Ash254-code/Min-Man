@@ -3724,18 +3724,18 @@ private struct CustomReportEditView: View {
         sectionMemberships: [ContactSectionMembership],
         initialName: String = "",
         initialSelectedGradeIDs: [UUID] = [],
-        initialIncludeBestPlayers: Bool = true,
-        initialIncludeGuestVotes: Bool = true,
-        initialIncludeGoalKickers: Bool = true,
-        initialIncludeBestAndFairestVotes: Bool = true,
-        initialIncludeStaffRoles: Bool = true,
-        initialIncludeOfficials: Bool = true,
-        initialIncludeUmpires: Bool = true,
-        initialIncludeTrainers: Bool = true,
+        initialIncludeBestPlayers: Bool = false,
+        initialIncludeGuestVotes: Bool = false,
+        initialIncludeGoalKickers: Bool = false,
+        initialIncludeBestAndFairestVotes: Bool = false,
+        initialIncludeStaffRoles: Bool = false,
+        initialIncludeOfficials: Bool = false,
+        initialIncludeUmpires: Bool = false,
+        initialIncludeTrainers: Bool = false,
         initialIncludeMatchNotes: Bool = false,
         initialIncludeOnlyActiveGrades: Bool = true,
-        initialMinimumGamesPlayed: Int = 0,
-        initialGroupingModeRawValue: Int = 0,
+        initialMinimumGamesPlayed: Int = 1,
+        initialGroupingModeRawValue: Int = 1,
         initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
         onDelete: (() -> Void)? = nil,
@@ -3778,25 +3778,29 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
-                    ForEach(grades) { grade in
-                        Button {
-                            if selectedGradeIDs.contains(grade.id) {
-                                selectedGradeIDs.remove(grade.id)
-                            } else {
-                                selectedGradeIDs.insert(grade.id)
-                            }
-                        } label: {
-                            HStack {
-                                Text(grade.name)
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                if selectedGradeIDs.contains(grade.id) {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
+                        ForEach(grades) { grade in
+                            let isSelected = selectedGradeIDs.contains(grade.id)
+                            Button {
+                                if isSelected {
+                                    selectedGradeIDs.remove(grade.id)
+                                } else {
+                                    selectedGradeIDs.insert(grade.id)
                                 }
+                            } label: {
+                                Text(grade.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 10)
+                                    .background(
+                                        Capsule()
+                                            .fill(isSelected ? Color.blue : Color.secondary.opacity(0.2))
+                                    )
                             }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
 
                     Text("No grade selected means all grades.")
