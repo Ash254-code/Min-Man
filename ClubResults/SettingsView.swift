@@ -3540,47 +3540,23 @@ private func makeTemplatePreviewPDF(
         let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
         let allGuestVoteRows = (primaryGame?.guestVotesRanked ?? [])
             .filter { gamesByPlayer[$0.playerID, default: 0] >= minimumGamesThreshold }
-                .sorted { $0.rank < $1.rank }
-                .map { vote in
-                    ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
-                }
-<<<<<<< HEAD
-        let goalKickerRows = (primaryGame?.goalKickers ?? [])
+            .sorted { $0.rank < $1.rank }
+            .map { vote in
+                ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
+            }
+        let guestVoteRows = guestVotesLimit == 0 ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
+
+        let allGoalKickerRows = (primaryGame?.goalKickers ?? [])
             .filter { entry in
                 guard let playerID = entry.playerID else { return false }
                 return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
-=======
-        let guestVoteRows = guestVotesLimit == 0 ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
-        if template.includeBestPlayers && template.includePlayerGrades {
-            beginNewPageIfNeeded(requiredHeight: 160)
-            let gap: CGFloat = 10
-            let halfWidth = (contentRect.width - gap) / 2
-            let leftHeight = drawCompactTable(
-                title: "Best Players",
-                columns: ["Rank", "Player"],
-                rows: bestPlayersRows,
-                xOrigin: contentRect.minX,
-                width: halfWidth
-            )
-            let originalY = cursorY
-            let rightHeight = drawCompactTable(
-                title: "Guest Votes",
-                columns: ["Rank", "Player"],
-                rows: guestVoteRows,
-                xOrigin: contentRect.minX + halfWidth + gap,
-                width: halfWidth
-            )
-            cursorY = originalY + max(leftHeight, rightHeight) + 8
-        } else {
-            if template.includeBestPlayers {
-                drawDetailTable(title: "Best Players", columns: ["Rank", "Player"], rows: bestPlayersRows)
->>>>>>> add-custom-report-player-picker
             }
             .sorted { $0.goals > $1.goals }
             .map { entry in
                 let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
                 return [name, "\(entry.goals)"]
             }
+        let goalKickerRows = goalKickersLimit == 0 ? allGoalKickerRows : Array(allGoalKickerRows.prefix(goalKickersLimit))
 
         var bestAndFairestPoints: [UUID: Int] = [:]
         for (index, playerID) in (primaryGame?.bestPlayersRanked ?? []).enumerated() {
@@ -3589,33 +3565,18 @@ private func makeTemplatePreviewPDF(
         for vote in (primaryGame?.guestVotesRanked ?? []) {
             bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
         }
-        let bestAndFairestRows = bestAndFairestPoints
+        let allBestAndFairestRows = bestAndFairestPoints
             .sorted { $0.value > $1.value }
             .compactMap { (playerID, pointTotal) -> [String]? in
                 guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                 return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
             }
+        let bestAndFairestRows = bestAndFairestLimit == 0 ? allBestAndFairestRows : Array(allBestAndFairestRows.prefix(bestAndFairestLimit))
 
-<<<<<<< HEAD
         struct CompactReportTable {
             let title: String
             let columns: [String]
             let rows: [[String]]
-=======
-        if template.includeGoalKickers {
-            let allRows = (primaryGame?.goalKickers ?? [])
-                .filter { entry in
-                    guard let playerID = entry.playerID else { return false }
-                    return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
-                }
-                .sorted { $0.goals > $1.goals }
-                .map { entry in
-                    let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
-                    return [name, "\(entry.goals)"]
-                }
-            let rows = goalKickersLimit == 0 ? allRows : Array(allRows.prefix(goalKickersLimit))
-            drawDetailTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows)
->>>>>>> add-custom-report-player-picker
         }
 
         var compactTables: [CompactReportTable] = []
@@ -3629,7 +3590,6 @@ private func makeTemplatePreviewPDF(
             compactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: guestVoteRows))
         }
         if template.includeBestAndFairestVotes {
-<<<<<<< HEAD
             compactTables.append(CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: bestAndFairestRows))
         }
 
@@ -3665,23 +3625,6 @@ private func makeTemplatePreviewPDF(
                 cursorY = rowStartY + rowHeight + 8
                 index += 2
             }
-=======
-            var points: [UUID: Int] = [:]
-            for (index, playerID) in (primaryGame?.bestPlayersRanked ?? []).enumerated() {
-                points[playerID, default: 0] += bestPlayerPoints(for: index)
-            }
-            for vote in (primaryGame?.guestVotesRanked ?? []) {
-                points[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
-            }
-            let allRows = points
-                .sorted { $0.value > $1.value }
-                .compactMap { (playerID, pointTotal) -> [String]? in
-                    guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
-                    return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
-                }
-            let rows = bestAndFairestLimit == 0 ? allRows : Array(allRows.prefix(bestAndFairestLimit))
-            drawDetailTable(title: "Best & Fairest", columns: ["Player", "Points"], rows: rows)
->>>>>>> add-custom-report-player-picker
         }
 
         if template.includeStaffRoles {
