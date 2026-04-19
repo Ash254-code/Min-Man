@@ -476,7 +476,7 @@ struct GamesView: View {
             .onChange(of: selectedGradeID) { _, _ in
                 selectedRoundID = nil
             }
-            .sheet(item: $newGameWizardPresentation) { presentation in
+            .navigationDestination(item: $newGameWizardPresentation) { presentation in
                 NewGameWizardView(
                     initialGradeID: presentation.initialGradeID,
                     draftGameID: presentation.draftGameID,
@@ -485,7 +485,6 @@ struct GamesView: View {
                         DraftResumeStore.setShouldOpenLive(true, for: gradeID)
                     }
                 )
-                    .appPopupStyle()
             }
             .navigationDestination(item: $selectedGameForSummary) { game in
                 GameDetailView(game: game, grades: orderedGrades, players: players)
