@@ -162,7 +162,7 @@ enum ExportService {
 
         let filename = fileSafe("\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted))_vs_\(game.opponent).pdf")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-        try data.write(to: url, options: .atomic)
+        try data.write(to: url, options: Data.WritingOptions.atomic)
         return url
     }
 

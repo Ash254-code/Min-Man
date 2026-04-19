@@ -330,7 +330,7 @@ struct GameDetailView: View {
             if let scanData = game.guestBestFairestVotesScanPDF {
                 let pdfName = "GuestVotes_\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted)).pdf"
                 let pdfURL = FileManager.default.temporaryDirectory.appendingPathComponent(pdfName.replacingOccurrences(of: "/", with: "-"))
-                try scanData.write(to: pdfURL, options: .atomic)
+                try scanData.write(to: pdfURL, options: Data.WritingOptions.atomic)
                 items.append(pdfURL)
             }
 

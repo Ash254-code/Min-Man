@@ -609,7 +609,7 @@ enum AppBackupService {
 
         let data = try encoder.encode(envelope)
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(makeFilename())
-        try data.write(to: fileURL, options: .atomic)
+        try data.write(to: fileURL, options: Data.WritingOptions.atomic)
 
         guard let fileSize = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64 else {
             throw AppBackupExportError.failedToReadFileSize

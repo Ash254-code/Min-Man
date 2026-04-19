@@ -3639,7 +3639,7 @@ private func makeTemplatePreviewPDF(
         .replacingOccurrences(of: "/", with: "-")
         .replacingOccurrences(of: " ", with: "_")
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("CustomReport_\(safeName)_Preview.pdf")
-    try data.write(to: url, options: .atomic)
+    try data.write(to: url, options: Data.WritingOptions.atomic)
     return url
 }
 
