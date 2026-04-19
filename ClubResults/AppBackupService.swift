@@ -144,6 +144,7 @@ struct GradeRecord: Codable {
     let asksLiveGameView: Bool
     let asksGoalKickers: Bool
     let bestPlayersCount: Int
+    let guestBestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
     let allowsLiveGameView: Bool
     let quarterLengthMinutes: Int
@@ -154,9 +155,11 @@ struct GradeRecord: Codable {
         case asksGoalUmpire, asksFieldUmpire, asksBoundaryUmpire1, asksBoundaryUmpire2
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
-        case bestPlayersCount, asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes
+        case bestPlayersCount, guestBestPlayersCount
+        case asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes
     }
 
+    @MainActor
     init(_ grade: Grade) {
         id = grade.id
         name = grade.name
@@ -180,6 +183,7 @@ struct GradeRecord: Codable {
         asksLiveGameView = grade.asksLiveGameView
         asksGoalKickers = grade.asksGoalKickers
         bestPlayersCount = grade.bestPlayersCount
+        guestBestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         allowsLiveGameView = grade.allowsLiveGameView
         quarterLengthMinutes = grade.quarterLengthMinutes
@@ -209,6 +213,7 @@ struct GradeRecord: Codable {
         asksLiveGameView = try c.decode(Bool.self, forKey: .asksLiveGameView)
         asksGoalKickers = try c.decode(Bool.self, forKey: .asksGoalKickers)
         bestPlayersCount = try c.decode(Int.self, forKey: .bestPlayersCount)
+        guestBestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? bestPlayersCount
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? false
         quarterLengthMinutes = try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20
