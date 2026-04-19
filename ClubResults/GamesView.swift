@@ -653,7 +653,6 @@ private struct NewGameQuickStartSection: View {
             HStack(spacing: 14) {
                 legendItem(status: .noGameSaved, text: "No Game Saved")
                 legendItem(status: .liveInProgress, text: "Game in Progress")
-                legendItem(status: .draftOnly, text: "Game in Draft")
                 legendItem(status: .gameSaved, text: "Game Saved")
             }
         }
