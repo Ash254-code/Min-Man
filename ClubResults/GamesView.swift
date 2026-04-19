@@ -834,6 +834,11 @@ private enum RoundOutcomeLayout {
     static let columnWidth: CGFloat = 94
     static let columnSpacing: CGFloat = 20
     static let chevronReserveWidth: CGFloat = 34
+
+    static func contentWidth(for columnCount: Int) -> CGFloat {
+        guard columnCount > 0 else { return 0 }
+        return (CGFloat(columnCount) * columnWidth) + (CGFloat(columnCount - 1) * columnSpacing)
+    }
 }
 
 private struct RoundOutcomeColumnHeaders: View {
@@ -850,6 +855,7 @@ private struct RoundOutcomeColumnHeaders: View {
                     .frame(width: RoundOutcomeLayout.columnWidth, alignment: .center)
             }
         }
+        .frame(width: RoundOutcomeLayout.contentWidth(for: gradeNames.count), alignment: .center)
         .padding(.trailing, RoundOutcomeLayout.chevronReserveWidth)
     }
 }
@@ -890,6 +896,7 @@ private struct RoundTitleLine: View {
                         .frame(width: RoundOutcomeLayout.columnWidth)
                 }
             }
+            .frame(width: RoundOutcomeLayout.contentWidth(for: outcomePills.count), alignment: .center)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .layoutPriority(3)
 
