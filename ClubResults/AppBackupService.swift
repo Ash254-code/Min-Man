@@ -566,14 +566,14 @@ enum AppBackupService {
 
         let settings = exportSettings()
         let payload = AppBackupPayload(
-            grades: grades.map(GradeRecord.init),
-            players: players.map(PlayerRecord.init),
-            games: games.map(GameRecord.init),
-            contacts: contacts.map(ContactRecord.init),
-            reportRecipients: reportRecipients.map(ReportRecipientRecord.init),
-            customReportTemplates: customReportTemplates.map(CustomReportTemplateRecord.init),
-            staffMembers: staffMembers.map(StaffMemberRecord.init),
-            staffDefaults: staffDefaults.map(StaffDefaultRecord.init),
+            grades: grades.map { GradeRecord($0) },
+            players: players.map { PlayerRecord($0) },
+            games: games.map { GameRecord($0) },
+            contacts: contacts.map { ContactRecord($0) },
+            reportRecipients: reportRecipients.map { ReportRecipientRecord($0) },
+            customReportTemplates: customReportTemplates.map { CustomReportTemplateRecord($0) },
+            staffMembers: staffMembers.map { StaffMemberRecord($0) },
+            staffDefaults: staffDefaults.map { StaffDefaultRecord($0) },
             appSettings: settings
         )
 

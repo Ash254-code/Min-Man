@@ -3528,7 +3528,8 @@ private func makeTemplatePreviewPDF(
         }
 
         let minimumGamesThreshold = max(template.minimumGamesPlayed, 1)
-        let bestPlayersRows = (primaryGame?.bestPlayersRanked ?? []).enumerated().compactMap { index, playerID in
+        let rankedBestPlayerIDs: [UUID] = primaryGame?.bestPlayersRanked ?? []
+        let bestPlayersRows = rankedBestPlayerIDs.enumerated().compactMap { (index: Int, playerID: UUID) -> [String]? in
             guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
             return ["\(index + 1)", playerLookup[playerID]?.name ?? "Unknown Player"]
         }
