@@ -35,7 +35,6 @@
 			membershipExceptions = (
 				Info.plist,
 				"PresView 2.swift",
-				"SettingsView 2.swift",
 			);
 			target = 5EE0D3772F3C2FB000AA9C37 /* ClubResults */;
 		};
