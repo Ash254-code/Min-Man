@@ -305,7 +305,8 @@ struct PlayersView: View {
     }
 
     private func confirmDelete() {
-        guard deleteCode == "1234", let player = playerPendingDelete else {
+        let trimmedCode = deleteCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard DeleteCodeStore.verify(trimmedCode), let player = playerPendingDelete else {
             showDeletePrompt = false
             showWrongCode = true
             return

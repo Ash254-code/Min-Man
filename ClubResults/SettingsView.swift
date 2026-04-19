@@ -49,6 +49,12 @@ struct SettingsView: View {
                     } label: {
                         settingsRow(title: "Contacts", icon: "person.crop.rectangle")
                     }
+
+                    NavigationLink {
+                        GroupsSettingsView()
+                    } label: {
+                        settingsRow(title: "Groups", icon: "person.3.sequence")
+                    }
                 } header: {
                     Text("Settings")
                 }
@@ -64,6 +70,12 @@ struct SettingsView: View {
                         BackupAndRestoreSettingsView()
                     } label: {
                         settingsRow(title: "Backup & Restore", icon: "externaldrive.badge.icloud")
+                    }
+
+                    NavigationLink {
+                        PinCodeSettingsView()
+                    } label: {
+                        settingsRow(title: "PIN Code", icon: "number.square")
                     }
                 } header: {
                     Text("Admin")
@@ -1309,11 +1321,223 @@ private struct AddGradeWizardView: View {
 private struct ContactsSettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
 
-    @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
-    @Query(sort: [SortDescriptor(\ContactGroup.name)]) private var groups: [ContactGroup]
-    @Query private var groupMemberships: [ContactGroupMembership]
+    @State private var contacts: [Contact] = []
     @Query private var reportRecipients: [ReportRecipient]
-    @Query private var groupRecipients: [ReportRecipientGroup]
+    @Query private var sectionMemberships: [ContactSectionMembership]
+
+    @State private var showAddContact = false
+    @State private var contactEditing: Contact?
+    @State private var saveErrorMessage: String?
+
+    var body: some View {
+        List {
+            Section {
+                Text("Required fields: Name, Mobile, Email")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                if contacts.isEmpty {
+                    Text("No contacts added.")
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(contacts) { contact in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(contact.name)
+                            .font(.headline)
+
+                        Text(contact.mobile)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Text(contact.email)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        contactEditing = contact
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            deleteContact(contact)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+
+                Button {
+                    showAddContact = true
+                } label: {
+                    Label("Add Contact", systemImage: "plus")
+                }
+            } header: {
+                Text("Contacts")
+            } footer: {
+                Text("Manage contact group assignments from Settings > Groups.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Contacts")
+        .sheet(isPresented: $showAddContact) {
+            ContactEditSheet(
+                title: "Add Contact",
+                allowsSaveAndAddAnother: false,
+                onSave: { name, mobile, email in
+                    let newContact = Contact(name: name, mobile: mobile, email: email)
+                    dataContext.insert(newContact)
+                    contacts.append(newContact)
+                    contacts.sort {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
+                    SettingsBackupStore.saveContacts(contacts)
+                    saveContext()
+                    reloadContacts()
+                    return true
+                }
+            )
+            .appPopupStyle()
+        }
+        .sheet(item: $contactEditing) { contact in
+            ContactEditSheet(
+                title: "Edit Contact",
+                initialName: contact.name,
+                initialMobile: contact.mobile,
+                initialEmail: contact.email,
+                onSave: { name, mobile, email in
+                    contact.name = name
+                    contact.mobile = mobile
+                    contact.email = email
+                    SettingsBackupStore.saveContacts(contacts)
+                    saveContext()
+                    reloadContacts()
+                    return true
+                },
+                onDelete: {
+                    deleteContact(contact)
+                }
+            )
+            .appPopupStyle()
+        }
+        .alert(
+            "Save Error",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                saveErrorMessage = nil
+            }
+        } message: {
+            Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
+        .task {
+            reloadContacts()
+        }
+    }
+
+    private func deleteContact(_ contact: Contact) {
+        for recipient in reportRecipients where recipient.contactID == contact.id {
+            dataContext.delete(recipient)
+        }
+
+        for membership in sectionMemberships where membership.contactID == contact.id {
+            dataContext.delete(membership)
+        }
+
+        dataContext.delete(contact)
+        contacts.removeAll { $0.id == contact.id }
+
+        SettingsBackupStore.saveContacts(contacts)
+        saveContext()
+        reloadContacts()
+    }
+
+    private func saveContext() {
+        do {
+            try dataContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+            let backups = SettingsBackupStore.loadContacts()
+            contacts = backups
+                .map {
+                    Contact(
+                        id: $0.id,
+                        name: $0.name,
+                        mobile: $0.mobile,
+                        email: $0.email
+                    )
+                }
+                .sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+        }
+    }
+
+    private func reloadContacts() {
+        do {
+            let descriptor = FetchDescriptor<Contact>(
+                sortBy: [SortDescriptor(\Contact.name)]
+            )
+            let fetched = try dataContext.fetch(descriptor)
+
+            if fetched.isEmpty {
+                let backups = SettingsBackupStore.loadContacts()
+                if !backups.isEmpty {
+                    contacts = backups
+                        .map {
+                            Contact(
+                                id: $0.id,
+                                name: $0.name,
+                                mobile: $0.mobile,
+                                email: $0.email
+                            )
+                        }
+                        .sorted {
+                            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                        }
+
+                    for item in backups {
+                        dataContext.insert(
+                            Contact(
+                                id: item.id,
+                                name: item.name,
+                                mobile: item.mobile,
+                                email: item.email
+                            )
+                        )
+                    }
+
+                    try? dataContext.save()
+
+                    let afterRestore = (try? dataContext.fetch(descriptor)) ?? []
+                    if !afterRestore.isEmpty {
+                        contacts = afterRestore
+                    }
+                    return
+                }
+            }
+
+            contacts = fetched
+            SettingsBackupStore.saveContacts(contacts)
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct GroupsSettingsView: View {
+    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+
+    @State private var contacts: [Contact] = []
+    @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
+    @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
+    @Query private var sectionMemberships: [ContactSectionMembership]
+    @Query private var customReportRecipientSections: [CustomReportRecipientSection]
 
     @State private var showAddContact = false
     @State private var showAddGroup = false
@@ -1324,12 +1548,6 @@ private struct ContactsSettingsView: View {
 
     var body: some View {
         List {
-            Section {
-                Text("Required fields: Name, Mobile, Email")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             ForEach(primarySections) { section in
                 sectionView(fallbackTitle: section.title, sectionKey: section.rawValue)
             }
@@ -1356,7 +1574,7 @@ private struct ContactsSettingsView: View {
                 Text("Report Recipients")
             }
         }
-        .navigationTitle("Contacts")
+        .navigationTitle("Groups")
         .sheet(isPresented: $showAddContact) {
             ContactEditSheet(
                 title: "Add Contact",
@@ -1381,9 +1599,6 @@ private struct ContactsSettingsView: View {
                     contact.email = email
                     saveContext()
                     return true
-                },
-                onDelete: {
-                    deleteContact(contact)
                 }
             )
             .appPopupStyle()
@@ -1536,7 +1751,6 @@ private struct ContactsSettingsView: View {
         }
         removeCustomTitle(for: sectionKey)
         saveContext()
-        reloadContacts()
     }
 
     private func saveContext() {
@@ -1602,6 +1816,85 @@ private struct GroupEditTarget: Identifiable {
     let sectionKey: String
     let fallbackTitle: String
     var id: String { sectionKey }
+}
+
+private struct PinCodeSettingsView: View {
+    @State private var currentPIN = ""
+    @State private var newPIN = ""
+    @State private var confirmPIN = ""
+    @State private var errorMessage: String?
+    @State private var successMessage: String?
+
+    var body: some View {
+        Form {
+            Section("Verify Current Code") {
+                SecureField("Current 4-digit code", text: $currentPIN)
+                    .keyboardType(.numberPad)
+            }
+
+            Section("Set New Code") {
+                SecureField("New 4-digit code", text: $newPIN)
+                    .keyboardType(.numberPad)
+                SecureField("Confirm new code", text: $confirmPIN)
+                    .keyboardType(.numberPad)
+            }
+
+            Section {
+                Button("Change Delete Code") {
+                    changeCode()
+                }
+            }
+
+            if let successMessage {
+                Section {
+                    Text(successMessage)
+                        .foregroundStyle(.green)
+                }
+            }
+        }
+        .navigationTitle("PIN Code")
+        .alert(
+            "Could Not Change Code",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "Unknown error")
+        }
+    }
+
+    private func changeCode() {
+        successMessage = nil
+        let trimmedCurrent = currentPIN.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNew = newPIN.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedConfirm = confirmPIN.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard DeleteCodeStore.verify(trimmedCurrent) else {
+            errorMessage = "Current code is incorrect."
+            return
+        }
+
+        guard DeleteCodeStore.isValidCode(trimmedNew) else {
+            errorMessage = "New code must be exactly 4 digits."
+            return
+        }
+
+        guard trimmedNew == trimmedConfirm else {
+            errorMessage = "New code and confirmation do not match."
+            return
+        }
+
+        DeleteCodeStore.save(trimmedNew)
+        currentPIN = ""
+        newPIN = ""
+        confirmPIN = ""
+        successMessage = "Delete code updated successfully."
+    }
 }
 
 private enum ContactSectionKey: Hashable, Identifiable {
