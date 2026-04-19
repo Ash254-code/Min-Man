@@ -831,8 +831,9 @@ private struct GameCardRow: View {
 
 
 private enum RoundOutcomeLayout {
-    static let columnWidth: CGFloat = 58
-    static let columnSpacing: CGFloat = 6
+    static let columnWidth: CGFloat = 74
+    static let columnSpacing: CGFloat = 12
+    static let chevronReserveWidth: CGFloat = 30
 }
 
 private struct RoundOutcomeColumnHeaders: View {
@@ -842,13 +843,14 @@ private struct RoundOutcomeColumnHeaders: View {
         HStack(spacing: RoundOutcomeLayout.columnSpacing) {
             ForEach(gradeNames, id: \.self) { gradeName in
                 Text(gradeName)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+                    .minimumScaleFactor(0.8)
                     .frame(width: RoundOutcomeLayout.columnWidth, alignment: .center)
             }
         }
+        .padding(.trailing, RoundOutcomeLayout.chevronReserveWidth)
     }
 }
 
@@ -892,10 +894,10 @@ private struct RoundTitleLine: View {
             .layoutPriority(3)
 
             if showsChevron {
-                Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .frame(width: RoundOutcomeLayout.chevronReserveWidth, alignment: .trailing)
             }
         }
     }
@@ -971,9 +973,9 @@ private struct CompactRoundOutcomePill: View {
 
     var body: some View {
         Text(item.outcome?.label ?? "-")
-            .font(.system(size: 14, weight: .bold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+             .font(.system(size: 16, weight: .bold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
             .frame(maxWidth: .infinity)
             .background(
                 Capsule(style: .continuous)
