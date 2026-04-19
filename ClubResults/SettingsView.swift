@@ -2459,8 +2459,8 @@ struct ReportsSettingsView: View {
 
     @State private var templateEditing: CustomReportTemplate?
     @State private var templateActioning: CustomReportTemplate?
-    @State private var templatePreviewing: CustomReportTemplate?
-    @State private var templateSharing: CustomReportTemplate?
+    @State private var templatePreviewing: TemplateRunRequest?
+    @State private var templateSharing: TemplateRunRequest?
     @State private var isCreatingTemplate = false
     @State private var saveErrorMessage: String?
     var onOpenContactsSettings: (() -> Void)? = nil
@@ -2561,22 +2561,17 @@ struct ReportsSettingsView: View {
             .padding(.vertical)
         }
         .navigationTitle("Reports")
-        .confirmationDialog(
-            templateActioning?.name ?? "Custom Report",
-            isPresented: Binding(
-                get: { templateActioning != nil },
-                set: { if !$0 { templateActioning = nil } }
-            )
-        ) {
-            if let template = templateActioning {
-                Button("Preview") {
-                    templatePreviewing = template
+        .sheet(item: $templateActioning) { template in
+            CustomReportDateRangeActionView(template: template, games: games) { selectedDateRange, selectedOption in
+                let request = TemplateRunRequest(template: template, dateRange: selectedDateRange)
+                switch selectedOption {
+                case .preview:
+                    templatePreviewing = request
+                case .share:
+                    templateSharing = request
                 }
-                Button("Share") {
-                    templateSharing = template
-                }
-                Button("Cancel", role: .cancel) {}
             }
+            .appPopupStyle()
         }
         .sheet(isPresented: $isCreatingTemplate) {
             CustomReportEditView(
@@ -2610,23 +2605,25 @@ struct ReportsSettingsView: View {
             }
             .appPopupStyle()
         }
-        .sheet(item: $templatePreviewing) { template in
+        .sheet(item: $templatePreviewing) { request in
             CustomReportPreviewView(
-                template: template,
+                template: request.template,
                 grades: grades,
                 games: games,
-                players: players
+                players: players,
+                selectedDateRange: request.dateRange
             )
                 .appPopupStyle()
         }
-        .sheet(item: $templateSharing) { template in
+        .sheet(item: $templateSharing) { request in
             CustomReportShareView(
-                template: template,
+                template: request.template,
                 grades: grades,
                 contacts: contacts,
                 groups: groups,
                 memberships: groupMemberships,
-                sectionMemberships: sectionMemberships
+                sectionMemberships: sectionMemberships,
+                selectedDateRange: request.dateRange
             )
             .appPopupStyle()
         }
@@ -2733,6 +2730,132 @@ struct ReportsSettingsView: View {
     }
 }
 
+private struct TemplateRunRequest: Identifiable {
+    let template: CustomReportTemplate
+    let dateRange: ReportDateRange
+
+    var id: String {
+        "\(template.id.uuidString)-\(dateRange.start.timeIntervalSince1970)-\(dateRange.end.timeIntervalSince1970)"
+    }
+}
+
+private struct ReportDateRange {
+    let start: Date
+    let end: Date
+
+    func contains(_ date: Date) -> Bool {
+        date >= start && date <= end
+    }
+}
+
+private enum ReportActionOption {
+    case preview
+    case share
+}
+
+private enum ReportRangeQuickPick: String, CaseIterable, Identifiable {
+    case mostRecentGame = "Most Recent Game"
+    case previousWeek = "Previous Week"
+    case previousMonth = "Previous Month"
+    case currentYear = "Current Year"
+    case custom = "Custom Date Range"
+
+    var id: String { rawValue }
+}
+
+private struct CustomReportDateRangeActionView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let template: CustomReportTemplate
+    let games: [Game]
+    let onSubmit: (ReportDateRange, ReportActionOption) -> Void
+
+    @State private var selectedQuickPick: ReportRangeQuickPick = .mostRecentGame
+    @State private var customStartDate: Date = Calendar.current.startOfDay(for: Date().addingTimeInterval(-60 * 60 * 24 * 7))
+    @State private var customEndDate: Date = Date()
+
+    private var computedRange: ReportDateRange {
+        let calendar = Calendar.current
+        let today = Date()
+        switch selectedQuickPick {
+        case .mostRecentGame:
+            let mostRecentGameDate = games
+                .filter { !$0.isDraft && $0.date <= today }
+                .map(\.date)
+                .max() ?? today
+            let dayStart = calendar.startOfDay(for: mostRecentGameDate)
+            let dayEnd = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: dayStart) ?? mostRecentGameDate
+            return ReportDateRange(start: dayStart, end: dayEnd)
+        case .previousWeek:
+            let dayStart = calendar.startOfDay(for: today)
+            let start = calendar.date(byAdding: .day, value: -7, to: dayStart) ?? dayStart
+            let end = calendar.date(byAdding: DateComponents(second: -1), to: dayStart) ?? today
+            return ReportDateRange(start: start, end: end)
+        case .previousMonth:
+            let dayStart = calendar.startOfDay(for: today)
+            let start = calendar.date(byAdding: .month, value: -1, to: dayStart) ?? dayStart
+            let end = calendar.date(byAdding: DateComponents(second: -1), to: dayStart) ?? today
+            return ReportDateRange(start: start, end: end)
+        case .currentYear:
+            let year = calendar.component(.year, from: today)
+            let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? calendar.startOfDay(for: today)
+            return ReportDateRange(start: start, end: today)
+        case .custom:
+            let start = min(customStartDate, customEndDate)
+            let end = max(customStartDate, customEndDate)
+            return ReportDateRange(start: calendar.startOfDay(for: start), end: calendar.date(byAdding: DateComponents(day: 1, second: -1), to: calendar.startOfDay(for: end)) ?? end)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Date Range") {
+                    ForEach(ReportRangeQuickPick.allCases) { pick in
+                        Button {
+                            selectedQuickPick = pick
+                        } label: {
+                            HStack {
+                                Text(pick.rawValue)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                if selectedQuickPick == pick {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if selectedQuickPick == .custom {
+                    Section("Custom Date Range") {
+                        DatePicker("Start Date", selection: $customStartDate, displayedComponents: .date)
+                        DatePicker("End Date", selection: $customEndDate, displayedComponents: .date)
+                    }
+                }
+            }
+            .navigationTitle(template.name)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    Button("Preview") {
+                        onSubmit(computedRange, .preview)
+                        dismiss()
+                    }
+                    Button("Share") {
+                        onSubmit(computedRange, .share)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct CustomReportPreviewView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -2740,6 +2863,7 @@ private struct CustomReportPreviewView: View {
     let grades: [Grade]
     let games: [Game]
     let players: [Player]
+    let selectedDateRange: ReportDateRange
     @State private var pdfURL: URL?
     @State private var errorMessage: String?
     @State private var showShareSheet = false
@@ -2793,7 +2917,8 @@ private struct CustomReportPreviewView: View {
                         template: template,
                         grades: grades,
                         games: games,
-                        players: players
+                        players: players,
+                        dateRange: selectedDateRange
                     )
                 } catch {
                     errorMessage = "Could not generate preview PDF."
@@ -2812,6 +2937,7 @@ private struct CustomReportShareView: View {
     let groups: [ContactGroup]
     let memberships: [ContactGroupMembership]
     let sectionMemberships: [ContactSectionMembership]
+    let selectedDateRange: ReportDateRange
 
     @State private var selectedContactIDs: Set<UUID> = []
     @State private var selectedGroupIDs: Set<UUID> = []
@@ -2853,7 +2979,7 @@ private struct CustomReportShareView: View {
     private var shareMessage: String {
         var lines: [String] = []
         lines.append("Custom report: \(template.name)")
-        lines.append(buildTemplateDetails(for: template, grades: grades))
+        lines.append(buildTemplateDetails(for: template, grades: grades, dateRange: selectedDateRange))
         lines.append(selectedContacts.isEmpty ? "Selected contacts: none" : "Selected contacts: \(selectedContacts.map(\.name).joined(separator: ", "))")
         lines.append(selectedGroups.isEmpty ? "Selected groups: none" : "Selected groups: \(selectedGroups.map(\.name).joined(separator: ", "))")
         return lines.joined(separator: "\n")
@@ -2989,7 +3115,7 @@ private struct CustomReportShareView: View {
     }
 }
 
-private func buildTemplateDetails(for template: CustomReportTemplate, grades: [Grade]) -> String {
+private func buildTemplateDetails(for template: CustomReportTemplate, grades: [Grade], dateRange: ReportDateRange) -> String {
     let gradeNames = grades
         .filter { !template.includeOnlyActiveGrades || $0.isActive }
         .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
@@ -3012,8 +3138,16 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
 
     let grouping = ReportGroupingMode(rawValue: template.groupingModeRawValue) ?? .combinedTotals
     let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive"), \(grouping.filterSummary)"
+    let dateRangeText = "Date range: \(formattedDate(dateRange.start)) – \(formattedDate(dateRange.end))"
     let sections = "Includes: " + (items.isEmpty ? "No sections selected" : items.joined(separator: ", "))
-    return [gradesText, sections, filters].joined(separator: " • ")
+    return [gradesText, sections, filters, dateRangeText].joined(separator: " • ")
+}
+
+private func formattedDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .none
+    return formatter.string(from: date)
 }
 
 private enum ReportGroupingMode: Int, CaseIterable, Identifiable {
@@ -3045,7 +3179,8 @@ private func makeTemplatePreviewPDF(
     template: CustomReportTemplate,
     grades: [Grade],
     games: [Game],
-    players: [Player]
+    players: [Player],
+    dateRange: ReportDateRange
 ) throws -> URL {
     let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
     let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
@@ -3057,6 +3192,7 @@ private func makeTemplatePreviewPDF(
     let relevantGames = games
         .filter { selectedGradeIDs.isEmpty || selectedGradeIDs.contains($0.gradeID) }
         .filter { !$0.isDraft && $0.date <= Date() }
+        .filter { dateRange.contains($0.date) }
         .sorted { $0.date > $1.date }
     let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
     let gradeLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0.name) })
