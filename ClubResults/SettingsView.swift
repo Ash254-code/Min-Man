@@ -3388,6 +3388,51 @@ private func makeTemplatePreviewPDF(
             cursorY += 20
         }
 
+        func drawDetailTable(title: String, columns: [String], rows: [[String]]) {
+            drawSectionHeader(title)
+            beginNewPageIfNeeded(requiredHeight: 24)
+
+            let weights: [CGFloat] = columns.enumerated().map { index, _ in
+                index == 0 ? 0.24 : (0.76 / CGFloat(max(columns.count - 1, 1)))
+            }
+            let widths = weights.map { $0 * contentRect.width }
+
+            var headerX = contentRect.minX
+            for (index, column) in columns.enumerated() {
+                let width = widths[index]
+                let rect = CGRect(x: headerX, y: cursorY, width: width, height: 22)
+                UIColor.systemGray5.setFill()
+                UIBezierPath(rect: rect).fill()
+                UIColor.separator.setStroke()
+                UIBezierPath(rect: rect).stroke()
+                NSAttributedString(
+                    string: column,
+                    attributes: [.font: headerFont, .foregroundColor: UIColor.white]
+                ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                headerX += width
+            }
+            cursorY += 22
+
+            let safeRows = rows.isEmpty ? [["No data for selected date range"]] : rows
+            for row in safeRows {
+                beginNewPageIfNeeded(requiredHeight: 20)
+                var x = contentRect.minX
+                for (index, width) in widths.enumerated() {
+                    let value = index < row.count ? row[index] : ""
+                    let rect = CGRect(x: x, y: cursorY, width: width, height: 20)
+                    UIColor.separator.setStroke()
+                    UIBezierPath(rect: rect).stroke()
+                    NSAttributedString(
+                        string: value,
+                        attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+                    ).draw(in: rect.insetBy(dx: 4, dy: 4))
+                    x += width
+                }
+                cursorY += 20
+            }
+            cursorY += 10
+        }
+
         if relevantGames.isEmpty {
             drawSectionHeader("No completed games matched this template.")
             return
@@ -3570,6 +3615,159 @@ private func makeTemplatePreviewPDF(
                     )
                 }
                 cursorY += 10
+
+                let gameLabelRows: [(Game, String)] = gradeGames
+                    .sorted { $0.date > $1.date }
+                    .map { game in
+                        let label = "\(game.date.formatted(date: .abbreviated, time: .omitted)) vs \(game.opponent)"
+                        return (game, label)
+                    }
+
+                if template.includePlayerGrades {
+                    var guestPoints: [UUID: (points: Int, games: Int)] = [:]
+                    for game in gradeGames {
+                        var touched = Set<UUID>()
+                        for vote in game.guestVotesRanked {
+                            var stats = guestPoints[vote.playerID] ?? (0, 0)
+                            stats.points += guestVotePoints(for: vote.rank)
+                            guestPoints[vote.playerID] = stats
+                            touched.insert(vote.playerID)
+                        }
+                        for playerID in touched {
+                            var stats = guestPoints[playerID] ?? (0, 0)
+                            stats.games += 1
+                            guestPoints[playerID] = stats
+                        }
+                    }
+                    let guestRows = guestPoints
+                        .sorted { lhs, rhs in
+                            if lhs.value.points != rhs.value.points { return lhs.value.points > rhs.value.points }
+                            return (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
+                        }
+                        .map { playerID, stats in
+                            [playerLookup[playerID]?.name ?? "Unknown Player", "\(stats.points)", "\(stats.games)"]
+                        }
+                    drawDetailTable(
+                        title: "\(gradeName) • Guest Votes",
+                        columns: ["Player", "Points", "Games"],
+                        rows: guestRows
+                    )
+                }
+
+                if template.includeBestAndFairestVotes {
+                    var points: [UUID: (points: Int, games: Int)] = [:]
+                    for game in gradeGames {
+                        var touched = Set<UUID>()
+                        for (index, playerID) in game.bestPlayersRanked.enumerated() {
+                            var stats = points[playerID] ?? (0, 0)
+                            stats.points += bestPlayerPoints(for: index)
+                            points[playerID] = stats
+                            touched.insert(playerID)
+                        }
+                        for vote in game.guestVotesRanked {
+                            var stats = points[vote.playerID] ?? (0, 0)
+                            stats.points += guestVotePoints(for: vote.rank)
+                            points[vote.playerID] = stats
+                            touched.insert(vote.playerID)
+                        }
+                        for playerID in touched {
+                            var stats = points[playerID] ?? (0, 0)
+                            stats.games += 1
+                            points[playerID] = stats
+                        }
+                    }
+                    let rows = points
+                        .sorted { lhs, rhs in
+                            if lhs.value.points != rhs.value.points { return lhs.value.points > rhs.value.points }
+                            return (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
+                        }
+                        .map { playerID, stats in
+                            [playerLookup[playerID]?.name ?? "Unknown Player", "\(stats.points)", "\(stats.games)"]
+                        }
+                    drawDetailTable(
+                        title: "\(gradeName) • Best & Fairest",
+                        columns: ["Player", "Points", "Games"],
+                        rows: rows
+                    )
+                }
+
+                if template.includeStaffRoles {
+                    let rows = gameLabelRows.map { game, label in
+                        [
+                            label,
+                            game.headCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
+                            game.assistantCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
+                            game.teamManagerName.trimmingCharacters(in: .whitespacesAndNewlines),
+                            game.runnerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ]
+                    }
+                    drawDetailTable(
+                        title: "\(gradeName) • Coaches",
+                        columns: ["Game", "Head", "Assistant", "Manager", "Runner"],
+                        rows: rows
+                    )
+                }
+
+                if template.includeOfficials {
+                    let rows = gameLabelRows.map { game, label in
+                        [
+                            label,
+                            game.goalUmpireName.trimmingCharacters(in: .whitespacesAndNewlines),
+                            game.fieldUmpireName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ]
+                    }
+                    drawDetailTable(
+                        title: "\(gradeName) • Officials",
+                        columns: ["Game", "Goal", "Field"],
+                        rows: rows
+                    )
+                }
+
+                if template.includeUmpires {
+                    let rows = gameLabelRows.map { game, label in
+                        [
+                            label,
+                            game.boundaryUmpire1Name.trimmingCharacters(in: .whitespacesAndNewlines),
+                            game.boundaryUmpire2Name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ]
+                    }
+                    drawDetailTable(
+                        title: "\(gradeName) • Umpires",
+                        columns: ["Game", "Boundary 1", "Boundary 2"],
+                        rows: rows
+                    )
+                }
+
+                if template.includeTrainers {
+                    let rows = gameLabelRows.map { game, label in
+                        [
+                            label,
+                            game.trainers
+                                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                .filter { !$0.isEmpty }
+                                .joined(separator: ", ")
+                        ]
+                    }
+                    drawDetailTable(
+                        title: "\(gradeName) • Trainers",
+                        columns: ["Game", "Trainers"],
+                        rows: rows
+                    )
+                }
+
+                if template.includeMatchNotes {
+                    let rows = gameLabelRows.map { game, label in
+                        [
+                            label,
+                            game.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ]
+                    }
+                    drawDetailTable(
+                        title: "\(gradeName) • Match Notes",
+                        columns: ["Game", "Notes"],
+                        rows: rows
+                    )
+                }
             }
         }
     }
