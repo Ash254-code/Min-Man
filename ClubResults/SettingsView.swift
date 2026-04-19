@@ -484,7 +484,9 @@ private struct AdminNameResetView: View {
         guard canClear else { return }
 
         let selectedRoles = Set(selectedPickerTypes.map(\.role))
-        let selectedLastSelectionFields = selectedPickerTypes.flatMap(\.lastSelectionFieldKeys)
+        let selectedLastSelectionFields: [String] = selectedPickerTypes.reduce(into: []) { result, pickerType in
+            result.append(contentsOf: pickerType.lastSelectionFieldKeys)
+        }
         let selectedGradeIDs = self.selectedGradeIDs
 
         let matchingStaffMembers = staffMembers.filter {
