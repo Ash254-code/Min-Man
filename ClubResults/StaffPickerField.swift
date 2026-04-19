@@ -12,6 +12,7 @@ struct StaffPickerField: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var staffMembers: [StaffMember]
+    @Query(sort: [SortDescriptor(\Player.name)]) private var players: [Player]
 
     @State private var showAdd = false
     @State private var showChooser = false
@@ -21,16 +22,30 @@ struct StaffPickerField: View {
     private var options: [String] {
         let savedForRole = persistedNames(for: role)
 
-        let namesFromDataStore: [String]
-        if let gradeID {
-            namesFromDataStore = staffMembers
-                .filter { $0.gradeID == gradeID && $0.role == role }
-                .map(\.name)
-        } else {
-            namesFromDataStore = []
-        }
+        let namesFromDataStore = staffNamesForSelectedGrade
+        let namesFromBoundarySelection = boundarySelectionPlayerNames
 
-        return deduplicatedNames(from: namesFromDataStore + savedForRole)
+        return deduplicatedNames(from: namesFromDataStore + namesFromBoundarySelection + savedForRole)
+    }
+
+    private var staffNamesForSelectedGrade: [String] {
+        guard let gradeID else { return [] }
+        return staffMembers
+            .filter { $0.gradeID == gradeID && $0.role == role }
+            .map(\.name)
+    }
+
+    private var boundarySelectionPlayerNames: [String] {
+        guard let gradeID else { return [] }
+        guard role == .boundaryUmpire || role == .fieldUmpire else { return [] }
+
+        let mappings = SettingsBackupStore.loadBoundaryUmpireGradeMappings()
+        let selectedGradeIDs = mappings[gradeID].flatMap { $0.isEmpty ? nil : $0 } ?? [gradeID]
+        let selectedGradeIDSet = Set(selectedGradeIDs)
+
+        return players
+            .filter { $0.isActive && !selectedGradeIDSet.isDisjoint(with: $0.gradeIDs) }
+            .map(\.name)
     }
 
     private var trimmedNewName: String {
