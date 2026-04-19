@@ -877,7 +877,7 @@ private struct ClubGradesSettingsView: View {
                                 gradeEditing = nil
                             }
                         }
-                        .disabled(isEditGradeSaveDisabled)
+                        .saveButtonBehavior(isEnabled: !isEditGradeSaveDisabled)
                     }
                 }
             }
@@ -1298,7 +1298,7 @@ private struct AddGradeWizardView: View {
                         Spacer()
                         if step == .settings {
                             Button("Save") { onSave(draft) }
-                                .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .saveButtonBehavior(isEnabled: !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         } else {
                             Button("Next") {
                                 step = Step(rawValue: step.rawValue + 1) ?? .settings
@@ -1978,7 +1978,7 @@ private struct GroupNameEditSheet: View {
                         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         if onSave(cleaned) { dismiss() }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .saveButtonBehavior(isEnabled: !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .onAppear {
@@ -2136,8 +2136,7 @@ private struct ContactEditSheet: View {
 
                         Button("Save") { saveAndClose() }
                             .buttonStyle(.borderedProminent)
-                            .tint((canSave && hasChanges) ? .blue : .gray)
-                            .disabled(!canSave || !hasChanges)
+                            .saveButtonBehavior(isEnabled: canSave && hasChanges)
                     }
                 }
                 if allowsSaveAndAddAnother {
@@ -2146,8 +2145,7 @@ private struct ContactEditSheet: View {
                             saveAndAddAnother()
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(canSave ? .blue : .gray)
-                        .disabled(!canSave)
+                        .saveButtonBehavior(isEnabled: canSave)
                     }
                 }
             }
@@ -2307,8 +2305,7 @@ private struct GroupEditSheet: View {
                             dismiss()
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint((canSave && hasChanges) ? .blue : .gray)
-                        .disabled(!canSave || !hasChanges)
+                        .saveButtonBehavior(isEnabled: canSave && hasChanges)
                     }
                 }
             }
@@ -3502,7 +3499,7 @@ private struct CustomReportEditView: View {
                         )
                         dismiss()
                     }
-                    .disabled(!canSave)
+                    .saveButtonBehavior(isEnabled: canSave)
                 }
             }
         }

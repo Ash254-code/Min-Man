@@ -24,6 +24,10 @@ struct PlayerAddView: View {
         return trimmed.isEmpty || Int(trimmed) != nil
     }
 
+    private var canSave: Bool {
+        numberIsValid && !cleanedName.isEmpty
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -76,7 +80,7 @@ struct PlayerAddView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(!numberIsValid)
+                        .saveButtonBehavior(isEnabled: canSave)
                 }
             }
             .onAppear {

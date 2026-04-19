@@ -245,8 +245,7 @@ struct GameEditView: View {
                         saveGame()
                         dismiss()
                     }
-                    .foregroundStyle(hasChanges ? .blue : .secondary)
-                    .disabled(!hasChanges)
+                    .saveButtonBehavior(isEnabled: hasChanges)
                 }
             }
         }
