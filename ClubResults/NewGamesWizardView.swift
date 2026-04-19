@@ -587,14 +587,38 @@ struct NewGameWizardView: View {
         .system(size: isCompactLayout ? 22 : 30, weight: .semibold)
     }
 
+    private var wizardStepSubtitleFont: Font {
+        .system(size: isCompactLayout ? 16 : 20, weight: .semibold)
+    }
+
     private var wizardBodyFont: Font {
         .system(size: isCompactLayout ? 20 : 24, weight: .regular)
     }
 
+    private var currentStepSubtitle: String {
+        switch currentStep {
+        case .setup: return "Game Details"
+        case .staff: return "Coaches"
+        case .officials: return "Officials"
+        case .medical: return "Medical & Notes"
+        case .score: return supportsLiveGameView ? "Live Scoring" : "Final Score"
+        case .goals: return "Goal Kickers"
+        case .best: return "Best Players"
+        case .votes: return "Guest Votes"
+        case .review: return "Review & Save"
+        }
+    }
+
     private var wizardHeader: some View {
-        HStack(spacing: 12) {
-            Text("New Game")
-                .font(wizardPrimaryTitleFont)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: isCompactLayout ? 2 : 4) {
+                Text("New Game")
+                    .font(wizardPrimaryTitleFont)
+
+                Text(currentStepSubtitle)
+                    .font(wizardStepSubtitleFont)
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
             Text(selectedGradeName)
                 .font(wizardSecondaryTitleFont)
