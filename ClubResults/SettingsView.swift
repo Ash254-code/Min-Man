@@ -6,7 +6,9 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+    @AppStorage("settings.open.contacts") private var shouldOpenContacts = false
     @State private var saveErrorMessage: String?
+    @State private var showContactsSettings = false
 
     var body: some View {
         NavigationStack {
@@ -68,8 +70,22 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .background {
+                NavigationLink(
+                    destination: ContactsSettingsView(),
+                    isActive: $showContactsSettings
+                ) {
+                    EmptyView()
+                }
+                .hidden()
+            }
             .task {
                 seedInitialGradesIfNeeded()
+            }
+            .onAppear {
+                guard shouldOpenContacts else { return }
+                shouldOpenContacts = false
+                showContactsSettings = true
             }
             .alert(
                 "Save Error",
@@ -2083,10 +2099,26 @@ struct ReportsSettingsView: View {
     @State private var templateSharing: CustomReportTemplate?
     @State private var isCreatingTemplate = false
     @State private var saveErrorMessage: String?
+    var onOpenContactsSettings: (() -> Void)? = nil
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Spacer()
+                    Button {
+                        onOpenContactsSettings?()
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(10)
+                            .background(.thinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                }
+
                 if templates.isEmpty {
                     Text("No custom reports yet. Create one to save reusable report filters.")
                         .font(.subheadline)
@@ -2132,24 +2164,26 @@ struct ReportsSettingsView: View {
                             }
                         }
                     }
-                }
-                .padding(.horizontal)
-
-                Button {
-                    isCreatingTemplate = true
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Create Custom Report")
-                            .fontWeight(.semibold)
+                    
+                    Button {
+                        isCreatingTemplate = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Create Custom Report")
+                                .font(.headline.weight(.semibold))
+                                .multilineTextAlignment(.leading)
+                                .lineLimit(3)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(12)
+                        .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
+                    .buttonStyle(.plain)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .frame(height: 94)
                 }
-                .buttonStyle(.plain)
                 .padding(.horizontal)
-                .padding(.top, 4)
             }
             .padding(.vertical)
         }
