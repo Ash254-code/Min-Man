@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("settings.open.contacts") private var shouldOpenContacts = false
     @State private var saveErrorMessage: String?
     @State private var showContactsSettings = false
+    var resetToken: UUID = UUID()
 
     var body: some View {
         NavigationStack {
@@ -107,6 +108,7 @@ struct SettingsView: View {
                 Text(saveErrorMessage ?? "An unknown error occurred.")
             }
         }
+        .id(resetToken)
     }
 
     @ViewBuilder
@@ -114,6 +116,7 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .foregroundStyle(.secondary)
+                .frame(width: 24, alignment: .leading)
             Text(title)
         }
     }

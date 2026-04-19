@@ -4,9 +4,10 @@ import SwiftData
 struct TabsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @State private var selectedTab: AppTab = .games
+    @State private var settingsResetToken = UUID()
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: selectionBinding) {
             GamesView()
                 .tag(AppTab.games)
                 .tabItem { Label("Games", systemImage: "list.bullet") }
@@ -21,12 +22,13 @@ struct TabsView: View {
 
             ReportsSettingsView {
                 UserDefaults.standard.set(true, forKey: "settings.open.contacts")
+                settingsResetToken = UUID()
                 selectedTab = .settings
             }
                 .tag(AppTab.reports)
                 .tabItem { Label("Reports", systemImage: "doc.text") }
 
-            SettingsView()
+            SettingsView(resetToken: settingsResetToken)
                 .tag(AppTab.settings)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
@@ -45,6 +47,18 @@ struct TabsView: View {
         }
 
         try? dataContext.save()
+    }
+
+    private var selectionBinding: Binding<AppTab> {
+        Binding(
+            get: { selectedTab },
+            set: { newValue in
+                if newValue == .settings {
+                    settingsResetToken = UUID()
+                }
+                selectedTab = newValue
+            }
+        )
     }
 }
 
