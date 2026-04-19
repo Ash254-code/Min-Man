@@ -3459,9 +3459,9 @@ private struct ReportRecipientsSettingsView: View {
                 let groupRecipients = groupRecipientsForGrade(grade.id)
                 let groupIDs = Set(groupRecipients.map(\.groupID))
                 let activeGroupID = {
-                    if let saved = activeGroupByGrade[grade.id], groupIDs.contains(saved) { return saved }
-                    return groupRecipients.first?.groupID
-                }()
+                        if let saved = activeGroupByGrade[grade.id], groupIDs.contains(saved) { return saved }
+                    return groupRecipients.first!.groupID
+                    }()
                 let individualsInActiveGroup = individualsForGroup(activeGroupID, within: contactRecipients)
 
                 Section {
@@ -3546,8 +3546,7 @@ private struct ReportRecipientsSettingsView: View {
                             Text("Add a recipient group first to view individuals.")
                                 .foregroundStyle(.secondary)
                         } else {
-                            if let activeGroupID,
-                               let activeGroup = groups.first(where: { $0.id == activeGroupID }) {
+                            if let activeGroup = groups.first(where: { $0.id == activeGroupID }) {
                                 Text("Current group: \(activeGroup.name)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
