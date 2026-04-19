@@ -3821,30 +3821,37 @@ private struct CustomReportEditView: View {
                         Text("No groups found. Create groups in Settings > Groups.")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(recipientSections, id: \.sectionKey) { section in
-                            Button {
-                                if selectedRecipientSectionKeys.contains(section.sectionKey) {
-                                    selectedRecipientSectionKeys.remove(section.sectionKey)
-                                } else {
-                                    selectedRecipientSectionKeys.insert(section.sectionKey)
-                                }
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
+                            spacing: 8
+                        ) {
+                            ForEach(recipientSections, id: \.sectionKey) { section in
+                                let isSelected = selectedRecipientSectionKeys.contains(section.sectionKey)
+                                Button {
+                                    if isSelected {
+                                        selectedRecipientSectionKeys.remove(section.sectionKey)
+                                    } else {
+                                        selectedRecipientSectionKeys.insert(section.sectionKey)
+                                    }
+                                } label: {
+                                    VStack(spacing: 2) {
                                         Text(section.title)
-                                            .foregroundStyle(.primary)
-                                        Text("\(contactCountBySectionKey[section.sectionKey, default: 0]) contact(s)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(.footnote.weight(.semibold))
+                                            .lineLimit(1)
+                                        Text("\(contactCountBySectionKey[section.sectionKey, default: 0])")
+                                            .font(.caption2)
+                                            .lineLimit(1)
                                     }
-                                    Spacer()
-                                    if selectedRecipientSectionKeys.contains(section.sectionKey) {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(.tint)
-                                    }
+                                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                    .frame(maxWidth: .infinity, minHeight: 46)
+                                    .padding(.horizontal, 6)
+                                    .background(
+                                        Capsule()
+                                            .fill(isSelected ? Color.blue : Color.secondary.opacity(0.2))
+                                    )
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 } header: {
