@@ -2570,6 +2570,9 @@ struct ReportsSettingsView: View {
                         emailRecipients: recipientEmails(for: template)
                     )
                 }
+                Button("Delete Report", role: .destructive) {
+                    deleteTemplate(template)
+                }
             }
         }
         .sheet(isPresented: $isCreatingTemplate) {
@@ -2674,17 +2677,7 @@ struct ReportsSettingsView: View {
                     .filter { $0.templateID == template.id }
                     .map(\.contactID),
                 onDelete: {
-                    for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
-                        dataContext.delete(recipientSection)
-                    }
-                    for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
-                        dataContext.delete(recipientGroup)
-                    }
-                    for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
-                        dataContext.delete(recipientContact)
-                    }
-                    dataContext.delete(template)
-                    saveContext()
+                    deleteTemplate(template)
                 }
             ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
@@ -2753,6 +2746,20 @@ struct ReportsSettingsView: View {
         } catch {
             saveErrorMessage = error.localizedDescription
         }
+    }
+
+    private func deleteTemplate(_ template: CustomReportTemplate) {
+        for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
+            dataContext.delete(recipientSection)
+        }
+        for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
+            dataContext.delete(recipientGroup)
+        }
+        for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
+            dataContext.delete(recipientContact)
+        }
+        dataContext.delete(template)
+        saveContext()
     }
 
     private func gradesSummary(for template: CustomReportTemplate) -> String {
