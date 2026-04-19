@@ -138,6 +138,28 @@ struct AppBackupItemCounts: Codable {
         lastStaffSelections = try c.decodeIfPresent(Int.self, forKey: .lastStaffSelections) ?? 0
         draftResumeFlags = try c.decodeIfPresent(Int.self, forKey: .draftResumeFlags) ?? 0
     }
+
+    static func fromPayload(_ payload: AppBackupPayload) -> AppBackupItemCounts {
+        AppBackupItemCounts(
+            grades: payload.grades.count,
+            players: payload.players.count,
+            games: payload.games.count,
+            contacts: payload.contacts.count,
+            reportRecipients: payload.reportRecipients.count,
+            customReportTemplates: payload.customReportTemplates.count,
+            staffMembers: payload.staffMembers.count,
+            staffDefaults: payload.staffDefaults.count,
+            contactGroups: payload.contactGroups.count,
+            contactGroupMemberships: payload.contactGroupMemberships.count,
+            contactSectionMemberships: payload.contactSectionMemberships.count,
+            reportRecipientGroups: payload.reportRecipientGroups.count,
+            customReportRecipientSections: payload.customReportRecipientSections.count,
+            customReportRecipientGroups: payload.customReportRecipientGroups.count,
+            customReportRecipientContacts: payload.customReportRecipientContacts.count,
+            lastStaffSelections: payload.appSettings.lastStaffSelections.count,
+            draftResumeFlags: payload.appSettings.draftResumeOpenLiveFlags.count
+        )
+    }
 }
 
 struct AppBackupPayload: Codable {
@@ -728,25 +750,7 @@ enum AppBackupService {
             appSettings: settings
         )
 
-        let counts = AppBackupItemCounts(
-            grades: payload.grades.count,
-            players: payload.players.count,
-            games: payload.games.count,
-            contacts: payload.contacts.count,
-            reportRecipients: payload.reportRecipients.count,
-            customReportTemplates: payload.customReportTemplates.count,
-            staffMembers: payload.staffMembers.count,
-            staffDefaults: payload.staffDefaults.count,
-            contactGroups: payload.contactGroups.count,
-            contactGroupMemberships: payload.contactGroupMemberships.count,
-            contactSectionMemberships: payload.contactSectionMemberships.count,
-            reportRecipientGroups: payload.reportRecipientGroups.count,
-            customReportRecipientSections: payload.customReportRecipientSections.count,
-            customReportRecipientGroups: payload.customReportRecipientGroups.count,
-            customReportRecipientContacts: payload.customReportRecipientContacts.count,
-            lastStaffSelections: payload.appSettings.lastStaffSelections.count,
-            draftResumeFlags: payload.appSettings.draftResumeOpenLiveFlags.count
-        )
+        let counts = AppBackupItemCounts.fromPayload(payload)
 
         let now = Date()
         let envelope = AppBackupEnvelope(
@@ -787,7 +791,21 @@ enum AppBackupService {
         decoder.dateDecodingStrategy = .iso8601
         let envelope = try decoder.decode(AppBackupEnvelope.self, from: data)
         try validateEnvelope(envelope)
-        return envelope
+
+        // Trust payload as the source of truth and recompute summary counts so
+        // import previews/results stay accurate even if serialized metadata is stale.
+        let payloadCounts = AppBackupItemCounts.fromPayload(envelope.payload)
+        return AppBackupEnvelope(
+            appName: envelope.appName,
+            backupFormatVersion: envelope.backupFormatVersion,
+            exportedAt: envelope.exportedAt,
+            appVersion: envelope.appVersion,
+            buildNumber: envelope.buildNumber,
+            platform: envelope.platform,
+            schemaVersion: envelope.schemaVersion,
+            itemCounts: payloadCounts,
+            payload: envelope.payload
+        )
     }
 
     @MainActor
