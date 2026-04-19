@@ -205,7 +205,7 @@ private extension TotalsView {
     }
 
     // Best Player leaderboard:
-    // 1st=3 pts, 2nd=2 pts, 3rd=1 pt per game
+    // 1st=3 votes, 2nd=2 votes, 3rd=1 vote per game
     func topBestPlayers() -> [LeaderRow] {
         var points: [UUID: Int] = [:]
 
@@ -232,7 +232,7 @@ private extension TotalsView {
             .prefix(3)
 
         return sorted.enumerated().map { i, item in
-            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) pts")
+            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) votes")
         }
     }
 
@@ -257,12 +257,12 @@ private extension TotalsView {
             .prefix(3)
 
         return sorted.enumerated().map { i, item in
-            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value)")
+            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) goals")
         }
     }
 
     // Guest Votes leaderboard:
-    // 1st=3 pts, 2nd=2 pts, 3rd=1 pt per game
+    // 1st=3 votes, 2nd=2 votes, 3rd=1 vote per game
     func topGuestVotes() -> [LeaderRow] {
         var points: [UUID: Int] = [:]
 
@@ -288,7 +288,7 @@ private extension TotalsView {
             .prefix(3)
 
         return sorted.enumerated().map { i, item in
-            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) pts")
+            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) votes")
         }
     }
 
@@ -335,7 +335,7 @@ private extension TotalsView {
             .prefix(3)
 
         return sorted.enumerated().map { i, item in
-            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) pts")
+            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) votes")
         }
     }
 }
