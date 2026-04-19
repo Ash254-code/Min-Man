@@ -800,10 +800,11 @@ private struct RoundTitleLine: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("ROUND \(roundNumber) - \(dateLabel) -")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 22, weight: .bold))
                 .multilineTextAlignment(.leading)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
+                .layoutPriority(0)
             OpponentBadge(opponent: clubName, fixedWidth: nil)
             Text("v")
                 .font(.system(size: 24, weight: .bold))
@@ -816,7 +817,8 @@ private struct RoundTitleLine: View {
                         }
                     }
                 }
-                .frame(maxWidth: 220)
+                .frame(width: 180, alignment: .leading)
+                .layoutPriority(2)
             }
             Spacer(minLength: 8)
             if showsChevron {
