@@ -2800,7 +2800,6 @@ struct NewGameWizardView: View {
         @State private var showGoalKickerEditor = false
         @State private var showEndOfPeriodPrompt = false
         @State private var showManualSavePrompt = false
-        @State private var bestPlayerPickerPrompt: Int?
 
         init(
             date: Binding<Date>,
@@ -2850,7 +2849,7 @@ struct NewGameWizardView: View {
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
         private var isDangerTime: Bool { liveSession.secondsRemaining <= 120 }
-        private var canSaveAndContinue: Bool { liveSession.periodSnapshots.count == 4 && allRequiredBestPlayersSelected }
+        private var canSaveAndContinue: Bool { liveSession.periodSnapshots.count == 4 }
         private var nextPeriodLabel: String? {
             switch liveSession.periodSnapshots.count {
             case 0: return "Quarter Time"
@@ -2927,37 +2926,6 @@ struct NewGameWizardView: View {
             ourBehinds = liveSession.pointScorers.values.reduce(0, +) + liveSession.rushedPoints
         }
 
-        private var allRequiredBestPlayersSelected: Bool {
-            guard requiredBestPlayersCount > 0 else { return true }
-            let selected = Array(bestRanked.prefix(requiredBestPlayersCount)).compactMap { $0 }
-            return selected.count == requiredBestPlayersCount && Set(selected).count == requiredBestPlayersCount
-        }
-
-        private func syncBestPlayersSelectionCount() {
-            if bestRanked.count < requiredBestPlayersCount {
-                bestRanked.append(contentsOf: Array(repeating: nil, count: requiredBestPlayersCount - bestRanked.count))
-            } else if bestRanked.count > requiredBestPlayersCount {
-                bestRanked = Array(bestRanked.prefix(requiredBestPlayersCount))
-            }
-        }
-
-        private func selectedBestPlayerName(for rank: Int) -> String {
-            guard bestRanked.indices.contains(rank), let playerID = bestRanked[rank] else { return "Select…" }
-            return eligiblePlayers.first(where: { $0.id == playerID })?.name ?? "Select…"
-        }
-
-        private func bestLabel(for index: Int) -> String {
-            let position = index + 1
-            switch position {
-            case 1: return "Best"
-            case 2: return "2nd"
-            case 3: return "3rd"
-            default:
-                let suffix = (11...13).contains(position % 100) ? "th" : ([1: "st", 2: "nd", 3: "rd"][position % 10] ?? "th")
-                return "\(position)\(suffix)"
-            }
-        }
-
         var body: some View {
             VStack(spacing: 0) {
                 pullDownHandle
@@ -3019,7 +2987,7 @@ struct NewGameWizardView: View {
                                         pointAction: { theirBehinds += 1 },
                                         minHeight: sharedCardHeight
                                     )
-                                    bestPlayersCard(width: proxy.size.width)
+                                    scoreWormCard(width: proxy.size.width)
                                 } else {
                                     VStack(spacing: 0) {
                                         VStack(spacing: 10) {
@@ -3064,7 +3032,7 @@ struct NewGameWizardView: View {
                                                     pointAction: { theirBehinds += 1 },
                                                     minHeight: sharedCardHeight
                                                 )
-                                                bestPlayersCard(width: teamCardWidth)
+                                                scoreWormCard(width: teamCardWidth)
                                             }
                                             .frame(width: teamCardWidth, alignment: .topTrailing)
                                             .padding(.top, sideCardTopOffset)
@@ -3087,36 +3055,6 @@ struct NewGameWizardView: View {
                     }
                 }
             }
-            .sheet(
-                isPresented: Binding(
-                    get: { bestPlayerPickerPrompt != nil },
-                    set: { if !$0 { bestPlayerPickerPrompt = nil } }
-                )
-            ) {
-                NavigationStack {
-                    List(eligiblePlayers) { player in
-                        Button(player.name) {
-                            guard let rank = bestPlayerPickerPrompt else { return }
-                            if bestRanked.indices.contains(rank) {
-                                for idx in 0..<requiredBestPlayersCount where idx != rank && bestRanked.indices.contains(idx) {
-                                    if bestRanked[idx] == player.id {
-                                        bestRanked[idx] = nil
-                                    }
-                                }
-                                bestRanked[rank] = player.id
-                            }
-                            bestPlayerPickerPrompt = nil
-                        }
-                    }
-                    .navigationTitle("Select Best Player")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { bestPlayerPickerPrompt = nil }
-                        }
-                    }
-                }
-            }
             .onChange(of: liveSession.periodMinutes) { _, newValue in
                 if !timerRunning {
                     liveSession.secondsRemaining = max(1, newValue) * 60
@@ -3124,7 +3062,6 @@ struct NewGameWizardView: View {
             }
             .onAppear {
                 applyConfiguredInitialPeriod()
-                syncBestPlayersSelectionCount()
             }
             .onChange(of: initialPeriodMinutes) { _, _ in
                 applyConfiguredInitialPeriod()
@@ -3554,35 +3491,80 @@ struct NewGameWizardView: View {
             }
         }
 
-        private func bestPlayersCard(width: CGFloat) -> some View {
-            VStack(alignment: .leading, spacing: 10) {
-                ScorePill("Best Players", style: ourStyle)
+        private var scoreWormPoints: [CGPoint] {
+            let snapshots = liveSession.periodSnapshots
+            var points: [CGPoint] = [.init(x: 0, y: 0)]
+            for (index, snapshot) in snapshots.enumerated() {
+                points.append(.init(x: CGFloat(index + 1), y: CGFloat(snapshot.ourScore - snapshot.theirScore)))
+            }
 
-                if requiredBestPlayersCount == 0 {
-                    Text("No best players required.")
+            let currentQuarter = CGFloat(min(snapshots.count, 3))
+            let progress = CGFloat(liveSession.periodMinutes > 0 ? 1 - (Double(liveSession.secondsRemaining) / Double(max(1, liveSession.periodMinutes * 60))) : 0)
+            let currentX = min(4, currentQuarter + max(0, min(1, progress)))
+            points.append(.init(x: currentX, y: CGFloat(ourScore - theirScore)))
+            return points
+        }
+
+        private func scoreWormCard(width: CGFloat) -> some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    ScorePill("Score Worm", style: ourStyle)
+                    Spacer()
+                    Text("Margin: \(ourScore - theirScore > 0 ? "+" : "")\(ourScore - theirScore)")
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
-                } else {
-                    ForEach(0..<requiredBestPlayersCount, id: \.self) { idx in
-                        Button {
-                            bestPlayerPickerPrompt = idx
-                        } label: {
-                            HStack(spacing: 8) {
-                                Text("\(idx + 1).")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 26, alignment: .leading)
-                                Text(selectedBestPlayerName(for: idx))
-                                    .foregroundStyle(bestRanked[idx] == nil ? .secondary : .primary)
-                                Spacer()
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.secondary)
+                }
+
+                GeometryReader { geo in
+                    let points = scoreWormPoints
+                    let maxAbs = max(6, points.map { abs($0.y) }.max() ?? 0)
+                    let chartHeight = geo.size.height
+                    let chartWidth = geo.size.width
+                    let zeroY = chartHeight / 2
+
+                    ZStack {
+                        ForEach(0...4, id: \.self) { quarter in
+                            let x = (CGFloat(quarter) / 4) * chartWidth
+                            Path { path in
+                                path.move(to: CGPoint(x: x, y: 0))
+                                path.addLine(to: CGPoint(x: x, y: chartHeight))
+                            }
+                            .stroke(.secondary.opacity(0.2), style: .init(lineWidth: quarter == 0 || quarter == 4 ? 1.2 : 0.8))
+                        }
+
+                        Path { path in
+                            path.move(to: CGPoint(x: 0, y: zeroY))
+                            path.addLine(to: CGPoint(x: chartWidth, y: zeroY))
+                        }
+                        .stroke(.secondary.opacity(0.35), style: .init(lineWidth: 1, dash: [6, 6]))
+
+                        Path { path in
+                            guard let first = points.first else { return }
+                            let startX = (first.x / 4) * chartWidth
+                            let startY = zeroY - (first.y / maxAbs) * (chartHeight * 0.45)
+                            path.move(to: CGPoint(x: startX, y: startY))
+                            for point in points.dropFirst() {
+                                let x = (point.x / 4) * chartWidth
+                                let y = zeroY - (point.y / maxAbs) * (chartHeight * 0.45)
+                                path.addLine(to: CGPoint(x: x, y: y))
                             }
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(bestLabel(for: idx)) best player")
+                        .stroke(ourStyle.background, style: .init(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
                     }
                 }
+                .frame(height: 170)
+
+                HStack {
+                    Text("Q1")
+                    Spacer()
+                    Text("Q2")
+                    Spacer()
+                    Text("Q3")
+                    Spacer()
+                    Text("Q4")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             }
             .padding()
             .frame(maxWidth: width, alignment: .topLeading)
