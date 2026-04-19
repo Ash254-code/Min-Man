@@ -224,10 +224,6 @@ struct NewGameWizardView: View {
     }
     @State private var step: Step = .setup
     @State private var entryMode: EntryMode?
-    @State private var showEntryModePrompt = false
-    @State private var entryModePickerDetent: PresentationDetent = .height(280)
-    @State private var showLiveGameView = false
-    @State private var liveGameSessionSaved = false
     @State private var liveGameSession = LiveGameSessionState()
     @State private var editingGame: Game?
 
@@ -241,8 +237,6 @@ struct NewGameWizardView: View {
     // MARK: Selections (dropdowns)
     @State private var opponentName: String = ""
     @State private var venueName: String = ""
-    @State private var setupPickerPrompt: SetupPickerPrompt?
-    @State private var setupPickerDetent: PresentationDetent = .large
 
     // MARK: Staff
     @State private var headCoachName: String = ""
@@ -414,32 +408,6 @@ struct NewGameWizardView: View {
         return ClubStyle.style(for: opponent, configuration: clubConfiguration)
     }
 
-    // MARK: Setup picker sizing
-    private var setupPickerOptionsCount: Int {
-        switch setupPickerPrompt {
-        case .opponent:
-            return opponentNames.count + 1 // "Select…" option
-        case .venue:
-            return venuesForSelection.count + 1 // "Select…" option
-        case .none:
-            return 0
-        }
-    }
-
-    private var setupPickerRowHeight: CGFloat { isCompactLayout ? 56 : 72 }
-
-    private var setupPickerHeaderAndPaddingHeight: CGFloat { isCompactLayout ? 112 : 132 }
-
-    private var setupPickerHeight: CGFloat {
-        PickerSheetPresentation.preferredHeight(
-            optionCount: setupPickerOptionsCount,
-            rowHeight: setupPickerRowHeight,
-            chromeHeight: setupPickerHeaderAndPaddingHeight,
-            minVisibleRows: 2,
-            isCompactLayout: isCompactLayout
-        )
-    }
-
     private var setupPickerExpandedDetent: PresentationDetent {
         PickerSheetPresentation.expandedDetent(isCompactLayout: isCompactLayout)
     }
@@ -602,11 +570,6 @@ struct NewGameWizardView: View {
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
     }
 
-    private enum SetupPickerPrompt {
-        case opponent
-        case venue
-    }
-
     private var isCompactLayout: Bool { horizontalSizeClass == .compact }
 
     private var wizardPrimaryTitleFont: Font {
@@ -716,36 +679,6 @@ struct NewGameWizardView: View {
 
     private var selectorListFont: Font {
         .system(size: isCompactLayout ? 24 : 28, weight: .semibold)
-    }
-
-    @ViewBuilder
-    private func formSelectorRow(
-        title: String,
-        value: String,
-        placeholder: String = "Select…",
-        disabled: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Text(title)
-                    .font(wizardBodyFont)
-                    .foregroundStyle(disabled ? .secondary : .primary)
-                Spacer()
-                Text(value.isEmpty ? placeholder : value)
-                    .font(wizardBodyFont)
-                    .foregroundStyle(value.isEmpty || disabled ? .secondary : .primary)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: isCompactLayout ? 14 : 18, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, isCompactLayout ? 6 : 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .opacity(disabled ? 0.65 : 1)
     }
 
     @ViewBuilder
@@ -917,13 +850,38 @@ struct NewGameWizardView: View {
         canProceed
     }
 
-    private var shouldShowLiveGameDock: Bool {
-        entryMode == .live && !liveGameSessionSaved && !showLiveGameView
-    }
-
     private func startLiveSessionIfNeeded() {
         let configuredPeriod = min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30)
         liveGameSession.configureIfNeeded(initialPeriodMinutes: configuredPeriod)
+    }
+
+    private var displayedSteps: [Step] {
+        isPreviewMode ? [currentStep] : activeSteps
+    }
+
+    private var stepSelectionBinding: Binding<Int> {
+        Binding(
+            get: { currentStep.rawValue },
+            set: { newRawValue in
+                guard let newStep = displayedSteps.first(where: { $0.rawValue == newRawValue }) else { return }
+                move(to: newStep)
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func stepView(for wizardStep: Step) -> some View {
+        switch wizardStep {
+        case .setup: setupStep
+        case .staff: staffStep
+        case .officials: officialsStep
+        case .medical: medicalStep
+        case .score: scoreStep
+        case .goals: goalsStep
+        case .best: bestStep
+        case .votes: votesStep
+        case .review: reviewStep
+        }
     }
 
     // MARK: Body
@@ -941,19 +899,13 @@ struct NewGameWizardView: View {
                     .padding(.bottom, 10)
                 }
 
-                ZStack {
-                    switch currentStep {
-                    case .setup: setupStep
-                    case .staff: staffStep
-                    case .officials: officialsStep
-                    case .medical: medicalStep
-                    case .score: scoreStep
-                    case .goals: goalsStep
-                    case .best: bestStep
-                    case .votes: votesStep
-                    case .review: reviewStep
+                TabView(selection: stepSelectionBinding) {
+                    ForEach(displayedSteps, id: \.rawValue) { wizardStep in
+                        stepView(for: wizardStep)
+                            .tag(wizardStep.rawValue)
                     }
                 }
+                .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if !isPreviewMode && currentStep != .score {
@@ -1003,19 +955,14 @@ struct NewGameWizardView: View {
                     if !isPreviewMode && currentStep == .setup {
                         Button("Cancel") { dismiss() }
                     } else if !isPreviewMode && currentStep == .score {
-                        Button("Close") { dismiss() }
+                        Button("Pause") {
+                            pauseAndSaveLiveDraftThenReturnHome()
+                        }
                     }
                 }
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            if shouldShowLiveGameDock {
-                liveGameDock
-                    .padding(.horizontal, isCompactLayout ? 12 : 20)
-                    .padding(.bottom, 10)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
+        .animation(.easeInOut(duration: 0.26), value: currentStep)
         // ✅ Seed staff + defaults once
         .onAppear {
             StaffSeeder.seedIfNeeded(modelContext: dataContext, grades: grades)
@@ -1036,7 +983,6 @@ struct NewGameWizardView: View {
             gameCountSelection = .one
             step = .setup
             entryMode = nil
-            liveGameSessionSaved = false
             liveGameSession = LiveGameSessionState()
             editingGame = nil
             guestBestFairestVotesScanPDF = nil
@@ -1127,87 +1073,6 @@ struct NewGameWizardView: View {
         } message: {
             Text("Manual guest votes are already saved in the ranking. You can optionally attach a scan.")
         }
-        .sheet(isPresented: $showEntryModePrompt) {
-            NavigationStack {
-                List {
-                    Section {
-                        Button {
-                            entryMode = .postGame
-                            liveGameSessionSaved = false
-                            showEntryModePrompt = false
-                            proceedAfterEntryModeSelection()
-                        } label: {
-                            selectorListRow(title: "Post-Game entry", selected: entryMode == .postGame)
-                        }
-                        .buttonStyle(.plain)
-
-                        if supportsLiveGameView {
-                            Button {
-                                entryMode = .live
-                                liveGameSessionSaved = false
-                                showEntryModePrompt = false
-                                startLiveSessionIfNeeded()
-                                showLiveGameView = true
-                            } label: {
-                                selectorListRow(title: "Live entry", selected: entryMode == .live)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .navigationTitle("Entry Mode")
-                .navigationBarTitleDisplayMode(.inline)
-                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showEntryModePrompt = false }
-                    }
-                }
-            }
-            .presentationDetents([.height(280), .medium], selection: $entryModePickerDetent)
-            .presentationDragIndicator(.visible)
-            .onAppear {
-                entryModePickerDetent = .height(280)
-            }
-        }
-        .fullScreenCover(isPresented: $showLiveGameView) {
-            LiveGameView(
-                date: $date,
-                ourGoals: $ourGoals,
-                ourBehinds: $ourBehinds,
-                theirGoals: $theirGoals,
-                theirBehinds: $theirBehinds,
-                goalKickers: $goalKickers,
-                bestRanked: $bestRanked,
-                liveSession: $liveGameSession,
-                initialPeriodMinutes: min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30),
-                requiredBestPlayersCount: requiredBestPlayersCount,
-                ourTeamName: clubConfiguration.clubTeam.name,
-                oppTeamName: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
-                ourStyle: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration),
-                oppStyle: ClubStyle.style(for: finalOpponent.isEmpty ? "Opponent" : finalOpponent, configuration: clubConfiguration),
-                eligiblePlayers: eligiblePlayers,
-                playerName: { playerID in
-                    players.first(where: { $0.id == playerID })?.name ?? "Unknown"
-                },
-                onSaveAndContinue: {
-                    let saved = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
-                    if saved != nil {
-                        liveGameSessionSaved = true
-                        liveGameSession = LiveGameSessionState()
-                        showLiveGameView = false
-                        proceedAfterLiveSave()
-                    }
-                },
-                onBackToHome: {
-                    pauseAndSaveLiveDraftThenReturnHome()
-                },
-                onCollapse: {
-                    showLiveGameView = false
-                }
-            )
-        }
         .alert(
             "Report status",
             isPresented: Binding(
@@ -1225,71 +1090,14 @@ struct NewGameWizardView: View {
         }
     }
 
-    private var liveGameDock: some View {
-        HStack(spacing: 12) {
-            Capsule(style: .continuous)
-                .fill(Color.secondary.opacity(0.45))
-                .frame(width: 34, height: 5)
-                .padding(.trailing, 2)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Live Game View")
-                    .font(.headline)
-                Text("\(ourTeamNameForDisplay) \(ourScore) • \(oppTeamNameForDisplay) \(theirScore)")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 8)
-
-            Button("Open") {
-                startLiveSessionIfNeeded()
-                showLiveGameView = true
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            startLiveSessionIfNeeded()
-            showLiveGameView = true
-        }
-        .gesture(
-            DragGesture(minimumDistance: 10)
-                .onEnded { value in
-                    guard value.translation.height < -45 else { return }
-                    startLiveSessionIfNeeded()
-                    showLiveGameView = true
-                }
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Live game dock. Swipe up or tap to reopen live game view.")
-    }
-
-    private var ourTeamNameForDisplay: String {
-        clubConfiguration.clubTeam.name
-    }
-
-    private var oppTeamNameForDisplay: String {
-        finalOpponent.isEmpty ? "Opponent" : finalOpponent
-    }
-
     private func pauseAndSaveLiveDraftThenReturnHome() {
         guard let gid = gradeID else {
-            showLiveGameView = false
             dismiss()
             return
         }
 
         _ = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
         onBackToHomeFromLive?(gid)
-        showLiveGameView = false
         dismiss()
     }
 
@@ -1300,55 +1108,43 @@ struct NewGameWizardView: View {
         }
 
         if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == nil {
-            showEntryModePrompt = true
-            return
+            entryMode = supportsLiveGameView ? .live : .postGame
         }
 
-        if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == .live && !liveGameSessionSaved {
+        if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == .live {
             startLiveSessionIfNeeded()
-            showLiveGameView = true
-            return
         }
 
         guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
-        step = activeSteps[nextIndex]
+        move(to: activeSteps[nextIndex])
     }
 
     private func proceedFromVotesStep() {
         guard let currentIndex = activeSteps.firstIndex(of: .votes) else { return }
         let nextIndex = currentIndex + 1
         guard activeSteps.indices.contains(nextIndex) else { return }
-        step = activeSteps[nextIndex]
+        move(to: activeSteps[nextIndex])
     }
 
     private func back() {
         guard let currentIndex = activeSteps.firstIndex(of: step), currentIndex > 0 else { return }
-        step = activeSteps[currentIndex - 1]
-    }
-
-    private func proceedAfterEntryModeSelection() {
-        guard shouldAskForEntryMode, step == entryModeTriggerStep else { return }
-        if entryMode == .live {
-            startLiveSessionIfNeeded()
-            showLiveGameView = true
-            return
-        }
-        guard let currentIndex = activeSteps.firstIndex(of: step) else { return }
-        let nextIndex = currentIndex + 1
-        guard activeSteps.indices.contains(nextIndex) else { return }
-        step = activeSteps[nextIndex]
+        move(to: activeSteps[currentIndex - 1])
     }
 
     private func proceedAfterLiveSave() {
         if activeSteps.contains(.best) {
-            step = .best
+            move(to: .best)
         } else if activeSteps.contains(.votes) {
-            step = .votes
+            move(to: .votes)
         } else {
-            step = .review
+            move(to: .review)
         }
+    }
+
+    private func move(to newStep: Step) {
+        step = newStep
     }
 
     private func applyPreviewStateIfNeeded() {
@@ -1441,11 +1237,8 @@ struct NewGameWizardView: View {
         if reopenLiveViewOnAppear {
             entryMode = .live
             startLiveSessionIfNeeded()
-            step = .score
-            DispatchQueue.main.async {
-                showLiveGameView = true
-                isRestoringDraft = false
-            }
+            move(to: .score)
+            isRestoringDraft = false
         } else {
             entryMode = .postGame
             isRestoringDraft = false
@@ -1494,17 +1287,25 @@ struct NewGameWizardView: View {
 
                     DatePicker("Date & time", selection: $date, displayedComponents: [.date, .hourAndMinute])
 
-                    formSelectorRow(title: "Opponent", value: opponentName) {
-                        setupPickerPrompt = .opponent
+                    Picker("Opponent", selection: $opponentName) {
+                        Text("Select…").tag("")
+                        ForEach(opponentNames, id: \.self) { opposition in
+                            Text(opposition).tag(opposition)
+                        }
+                    }
+                    .onChange(of: opponentName) { _, _ in
+                        if !venuesForSelection.contains(venueName) {
+                            venueName = ""
+                        }
                     }
 
-                    formSelectorRow(
-                        title: "Venue",
-                        value: venueName,
-                        disabled: venuesForSelection.isEmpty
-                    ) {
-                        setupPickerPrompt = .venue
+                    Picker("Venue", selection: $venueName) {
+                        Text("Select…").tag("")
+                        ForEach(venuesForSelection, id: \.self) { venue in
+                            Text(venue).tag(venue)
+                        }
                     }
+                    .disabled(venuesForSelection.isEmpty)
                 }
             }
             .font(wizardBodyFont)
@@ -1513,80 +1314,6 @@ struct NewGameWizardView: View {
         .dynamicTypeSize(.large ... .accessibility2)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
-        .sheet(
-            isPresented: Binding(
-                get: { setupPickerPrompt != nil },
-                set: { if !$0 { setupPickerPrompt = nil } }
-            )
-        ) {
-            NavigationStack {
-                List {
-                    switch setupPickerPrompt {
-                    case .opponent:
-                        Button {
-                            opponentName = ""
-                            venueName = ""
-                            setupPickerPrompt = nil
-                        } label: {
-                            selectorListRow(title: "Select…", selected: opponentName.isEmpty)
-                        }
-                        .buttonStyle(.plain)
-
-                        ForEach(opponentNames, id: \.self) { opposition in
-                            Button {
-                                opponentName = opposition
-                                if !venuesForSelection.contains(venueName) {
-                                    venueName = ""
-                                }
-                                setupPickerPrompt = nil
-                            } label: {
-                                selectorListRow(title: opposition, selected: opponentName == opposition)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                    case .venue:
-                        Button {
-                            venueName = ""
-                            setupPickerPrompt = nil
-                        } label: {
-                            selectorListRow(title: "Select…", selected: venueName.isEmpty)
-                        }
-                        .buttonStyle(.plain)
-
-                        ForEach(venuesForSelection, id: \.self) { venue in
-                            Button {
-                                venueName = venue
-                                setupPickerPrompt = nil
-                            } label: {
-                                selectorListRow(title: venue, selected: venueName == venue)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                    case .none:
-                        EmptyView()
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .navigationTitle(setupPickerPrompt == .venue ? "Select Venue" : "Select Opponent")
-                .navigationBarTitleDisplayMode(.inline)
-                .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { setupPickerPrompt = nil }
-                    }
-                }
-            }
-            .presentationDetents([.height(setupPickerHeight), setupPickerExpandedDetent], selection: $setupPickerDetent)
-            .presentationDragIndicator(.visible)
-            .onAppear {
-                setupPickerDetent = setupPickerExpandedDetent
-            }
-            .onChange(of: setupPickerPrompt) { _, _ in
-                setupPickerDetent = setupPickerExpandedDetent
-            }
-        }
     }
 
     // Staff step (coaching only)
@@ -1793,69 +1520,43 @@ struct NewGameWizardView: View {
     @ViewBuilder
     private var scoreStep: some View {
         if supportsLiveGameView {
-            liveScoreStep
+            liveGameStep
         } else {
             postGameScoreStep
         }
     }
 
-    private var liveScoreStep: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                let cardSpacing: CGFloat = isCompactLayout ? 14 : 18
-                let timerHeight = max(190, proxy.size.height * 0.25)
-                let timerWidth = max(280, proxy.size.width * 0.33)
-                let scoreboardHeight = max(300, proxy.size.height * 0.5)
-
-                VStack(spacing: cardSpacing) {
-                    VStack(spacing: 8) {
-                        Text("Live Game View")
-                            .font(.system(size: isCompactLayout ? 30 : 46, weight: .bold))
-                        Text(date.formatted(date: .abbreviated, time: .shortened))
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    if isCompactLayout {
-                        timerCard(width: proxy.size.width, minHeight: timerHeight)
-                        scoreboardCard(minHeight: scoreboardHeight)
-                        timerCard(width: proxy.size.width, minHeight: timerHeight)
-                    } else {
-                        HStack(alignment: .top, spacing: cardSpacing) {
-                            scoreboardCard(minHeight: scoreboardHeight)
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
-
-                            timerCard(width: timerWidth, minHeight: timerHeight)
-                                .frame(width: timerWidth, alignment: .topTrailing)
-                        }
-                    }
-
-                    goalScorersCard
-
-                    Button("Save and Continue") { next() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                }
-                .padding(.horizontal, isCompactLayout ? 14 : 24)
-                .padding(.top, isCompactLayout ? 14 : 20)
-                .padding(.bottom, 26)
+    private var liveGameStep: some View {
+        LiveGameView(
+            date: $date,
+            ourGoals: $ourGoals,
+            ourBehinds: $ourBehinds,
+            theirGoals: $theirGoals,
+            theirBehinds: $theirBehinds,
+            goalKickers: $goalKickers,
+            bestRanked: $bestRanked,
+            liveSession: $liveGameSession,
+            initialPeriodMinutes: min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30),
+            requiredBestPlayersCount: requiredBestPlayersCount,
+            ourTeamName: clubConfiguration.clubTeam.name,
+            oppTeamName: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
+            ourStyle: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration),
+            oppStyle: ClubStyle.style(for: finalOpponent.isEmpty ? "Opponent" : finalOpponent, configuration: clubConfiguration),
+            eligiblePlayers: eligiblePlayers,
+            playerName: { playerID in
+                players.first(where: { $0.id == playerID })?.name ?? "Unknown"
+            },
+            onSaveAndContinue: {
+                _ = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
+                proceedAfterLiveSave()
+            },
+            onBackToHome: {
+                pauseAndSaveLiveDraftThenReturnHome()
+            },
+            onCollapse: {
+                pauseAndSaveLiveDraftThenReturnHome()
             }
-        }
-        .onChange(of: periodMinutes) { _, newValue in
-            periodMinutes = max(1, newValue)
-            if !isTimerRunning {
-                remainingSeconds = periodMinutes * 60
-            }
-        }
-        .onReceive(timerTick.autoconnect()) { _ in
-            guard isTimerRunning else { return }
-            if remainingSeconds > 0 {
-                remainingSeconds -= 1
-            } else {
-                isTimerRunning = false
-            }
-        }
+        )
     }
 
     private var postGameScoreStep: some View {
@@ -3111,26 +2812,25 @@ struct NewGameWizardView: View {
         }
 
         var body: some View {
-            NavigationStack {
-                VStack(spacing: 0) {
-                    pullDownHandle
-                        .padding(.top, 8)
-                        .padding(.bottom, 8)
-
-                    HStack {
-                        Spacer()
-                        Button("Save Game") {
-                            pauseTimer()
-                            onSaveAndContinue()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(canSaveAndContinue ? .blue : .gray)
-                        .disabled(!canSaveAndContinue)
-                    }
-                    .padding(.horizontal, 18)
+            VStack(spacing: 0) {
+                pullDownHandle
+                    .padding(.top, 8)
                     .padding(.bottom, 8)
 
-                    GeometryReader { proxy in
+                HStack {
+                    Spacer()
+                    Button("Save Game") {
+                        pauseTimer()
+                        onSaveAndContinue()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(canSaveAndContinue ? .blue : .gray)
+                    .disabled(!canSaveAndContinue)
+                }
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
+
+                GeometryReader { proxy in
                         let compact = proxy.size.width < 980
                         let cardSpacing: CGFloat = compact ? 14 : 18
                         let teamCardWidth = max(300, proxy.size.width * 0.35)
@@ -3226,22 +2926,20 @@ struct NewGameWizardView: View {
                                 }
                             }
                         }
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 22)
                 }
-                .background(Color(.systemGroupedBackground))
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Back") {
-                            pauseTimer()
-                            onBackToHome()
-                        }
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 22)
+            }
+            .background(Color(.systemGroupedBackground))
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Back") {
+                        pauseTimer()
+                        onBackToHome()
                     }
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
             .sheet(
                 isPresented: Binding(
                     get: { bestPlayerPickerPrompt != nil },
