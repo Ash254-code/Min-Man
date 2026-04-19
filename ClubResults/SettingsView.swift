@@ -2512,59 +2512,7 @@ struct ReportsSettingsView: View {
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
                     ForEach(displayedTemplates) { template in
-                        VStack(spacing: 6) {
-                            Text(template.name)
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-
-                            Text(gradesSummary(for: template))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .onTapGesture {
-                            guard !isMoveModeEnabled else { return }
-                            templatePreviewing = TemplateRunRequest(
-                                template: template,
-                                dateRange: reportDateRange(for: template),
-                                emailRecipients: recipientEmails(for: template)
-                            )
-                        }
-                        .onLongPressGesture {
-                            guard !isMoveModeEnabled else { return }
-                            templateActioning = template
-                        }
-                        .rotationEffect(.degrees(isMoveModeEnabled ? 1.6 : 0))
-                        .animation(
-                            isMoveModeEnabled
-                            ? .easeInOut(duration: 0.14).repeatForever(autoreverses: true)
-                            : .default,
-                            value: isMoveModeEnabled
-                        )
-                        .onDrag {
-                            guard isMoveModeEnabled else { return NSItemProvider() }
-                            draggingTemplateID = template.id
-                            return NSItemProvider(object: template.id.uuidString as NSString)
-                        }
-                        .onDrop(
-                            of: [UTType.text],
-                            delegate: ReportTemplateDropDelegate(
-                                currentTemplateID: template.id,
-                                isMoveModeEnabled: isMoveModeEnabled,
-                                draggingTemplateID: $draggingTemplateID,
-                                onReorder: reorderDraftTemplate
-                            )
-                        )
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 94)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        reportTile(for: template)
                     }
                     
                     Button {
@@ -2805,6 +2753,68 @@ struct ReportsSettingsView: View {
             try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    @ViewBuilder
+    private func reportTile(for template: CustomReportTemplate) -> some View {
+        let baseTile = VStack(spacing: 6) {
+            Text(template.name)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+
+            Text(gradesSummary(for: template))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture {
+            guard !isMoveModeEnabled else { return }
+            templatePreviewing = TemplateRunRequest(
+                template: template,
+                dateRange: reportDateRange(for: template),
+                emailRecipients: recipientEmails(for: template)
+            )
+        }
+        .onLongPressGesture {
+            guard !isMoveModeEnabled else { return }
+            templateActioning = template
+        }
+        .rotationEffect(.degrees(isMoveModeEnabled ? 1.6 : 0))
+        .animation(
+            isMoveModeEnabled
+            ? .easeInOut(duration: 0.14).repeatForever(autoreverses: true)
+            : .default,
+            value: isMoveModeEnabled
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 94)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+        if isMoveModeEnabled {
+            baseTile
+                .onDrag {
+                    draggingTemplateID = template.id
+                    return NSItemProvider(object: template.id.uuidString as NSString)
+                }
+                .onDrop(
+                    of: [UTType.text],
+                    delegate: ReportTemplateDropDelegate(
+                        currentTemplateID: template.id,
+                        isMoveModeEnabled: isMoveModeEnabled,
+                        draggingTemplateID: $draggingTemplateID,
+                        onReorder: reorderDraftTemplate
+                    )
+                )
+        } else {
+            baseTile
         }
     }
 
