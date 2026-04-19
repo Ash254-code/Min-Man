@@ -62,7 +62,7 @@ struct GamesView: View {
         }
     }
 
-    private struct NewGameWizardPresentation: Identifiable {
+    private struct NewGameWizardPresentation: Identifiable, Hashable {
         let id = UUID()
         let initialGradeID: UUID?
         let draftGameID: UUID?
