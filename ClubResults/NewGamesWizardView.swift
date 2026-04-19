@@ -1245,6 +1245,41 @@ struct NewGameWizardView: View {
         dismiss()
     }
 
+    private func discardLiveDraftThenReturnHome() {
+        guard let gid = gradeID else {
+            dismiss()
+            return
+        }
+
+        var clearedDraftIDs: Set<UUID> = []
+
+        if let editingGame, editingGame.isDraft {
+            clearedDraftIDs.insert(editingGame.id)
+            dataContext.delete(editingGame)
+            self.editingGame = nil
+        }
+
+        if let draftGameID,
+           let persistedDraft = games.first(where: { $0.id == draftGameID && $0.isDraft }) {
+            clearedDraftIDs.insert(persistedDraft.id)
+            if editingGame?.id != persistedDraft.id {
+                dataContext.delete(persistedDraft)
+            }
+        }
+
+        if !clearedDraftIDs.isEmpty {
+            do { try dataContext.save() }
+            catch { print("❌ Failed to discard draft game: \(error)") }
+        }
+
+        for gameID in clearedDraftIDs {
+            LiveDraftResumeStore.clear(for: gameID)
+        }
+
+        onBackToHomeFromLive?(gid)
+        dismiss()
+    }
+
     private func next() {
         if step == .votes {
             showGuestVotesScanPrompt = true
@@ -1790,6 +1825,9 @@ struct NewGameWizardView: View {
             },
             onBackToHome: {
                 pauseAndSaveLiveDraftThenReturnHome()
+            },
+            onCancelAndDiscard: {
+                discardLiveDraftThenReturnHome()
             },
             onCollapse: {
                 pauseAndSaveLiveDraftThenReturnHome()
@@ -2886,6 +2924,7 @@ struct NewGameWizardView: View {
         let playerName: (UUID) -> String
         let onSaveAndContinue: () -> Void
         let onBackToHome: () -> Void
+        let onCancelAndDiscard: () -> Void
         let onCollapse: () -> Void
 
         @State private var timerRunning = false
@@ -2917,6 +2956,7 @@ struct NewGameWizardView: View {
             playerName: @escaping (UUID) -> String,
             onSaveAndContinue: @escaping () -> Void,
             onBackToHome: @escaping () -> Void,
+            onCancelAndDiscard: @escaping () -> Void,
             onCollapse: @escaping () -> Void
         ) {
             _date = date
@@ -2940,6 +2980,7 @@ struct NewGameWizardView: View {
             self.playerName = playerName
             self.onSaveAndContinue = onSaveAndContinue
             self.onBackToHome = onBackToHome
+            self.onCancelAndDiscard = onCancelAndDiscard
             self.onCollapse = onCollapse
         }
 
@@ -3139,7 +3180,7 @@ struct NewGameWizardView: View {
             }
             .alert("If you proceed, all current data for this game will be lost", isPresented: $showCancelConfirmation) {
                 Button("Continue", role: .destructive) {
-                    onBackToHome()
+                    onCancelAndDiscard()
                 }
                 Button("Cancel", role: .cancel) {}
             }
