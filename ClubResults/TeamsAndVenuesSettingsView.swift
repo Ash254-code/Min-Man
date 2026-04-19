@@ -168,6 +168,7 @@ private struct TeamProfileEditorView: View {
     }
 
     let title: String
+    @Environment(\.dismiss) private var dismiss
     @Binding var teamName: String
     @Binding var primaryHex: String
     @Binding var secondaryHex: String
@@ -246,6 +247,7 @@ private struct TeamProfileEditorView: View {
                 Button("Save") {
                     applyDraftToBindings()
                     onSave()
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.blue)
