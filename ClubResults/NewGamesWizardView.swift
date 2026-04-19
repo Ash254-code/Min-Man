@@ -799,13 +799,17 @@ struct NewGameWizardView: View {
         }
         if entryMode == .live {
             steps.append(.score)
-        } else if grade.asksScore {
+        } else if grade.asksScore && !grade.asksGoalKickers {
             steps.append(.score)
         }
         if grade.asksGoalKickers && entryMode != .live { steps.append(.goals) }
         if grade.bestPlayersCount > 0 { steps.append(.best) }
         if grade.asksGuestBestFairestVotesScan && grade.guestBestPlayersCount > 0 { steps.append(.votes) }
         return steps
+    }
+
+    private var shouldCollectPostGameScoreWithinGoalsStep: Bool {
+        entryMode != .live && (selectedGrade?.asksScore ?? true) && (selectedGrade?.asksGoalKickers ?? true)
     }
 
     private var entryModeTriggerStep: Step {
@@ -2118,6 +2122,12 @@ struct NewGameWizardView: View {
 
     private var goalsStep: some View {
         Form {
+            if shouldCollectPostGameScoreWithinGoalsStep {
+                Section("Final score") {
+                    postGameScoreEntryOnGoalsStep
+                }
+            }
+
             Section("Goals summary") {
                 HStack { Text("Our goals (from score)"); Spacer(); Text("\(ourGoals)").font(.headline) }
                 HStack { Text("Allocated to kickers"); Spacer(); Text("\(totalGoalsKicked)").font(.headline) }
@@ -2239,6 +2249,75 @@ struct NewGameWizardView: View {
                 goalKickerPickerDetent = setupPickerExpandedDetent
             }
         }
+    }
+
+    private var postGameScoreEntryOnGoalsStep: some View {
+        VStack(spacing: 16) {
+            postGameScoreTeamEntry(
+                title: clubConfiguration.clubTeam.name,
+                style: ourTeamScoreStyle,
+                goals: $ourGoals,
+                behinds: $ourBehinds
+            )
+
+            postGameScoreTeamEntry(
+                title: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
+                style: opponentScoreStyle,
+                goals: $theirGoals,
+                behinds: $theirBehinds
+            )
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func postGameScoreTeamEntry(
+        title: String,
+        style: ClubStyle.Style,
+        goals: Binding<Int>,
+        behinds: Binding<Int>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ScorePill(title, style: style, fixedWidth: standardPillWidth)
+
+            HStack(spacing: 10) {
+                Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
+                    .font(.system(size: isCompactLayout ? 34 : 44, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Spacer()
+                Text("\((goals.wrappedValue * 6) + behinds.wrappedValue)")
+                    .font(.system(size: isCompactLayout ? 44 : 58, weight: .black, design: .rounded))
+                    .monospacedDigit()
+            }
+
+            HStack(spacing: 10) {
+                postGameScoreButton(title: "Goal +", color: style.background) { goals.wrappedValue += 1 }
+                postGameScoreButton(title: "Behind +", color: style.background) { behinds.wrappedValue += 1 }
+            }
+            HStack(spacing: 10) {
+                postGameScoreButton(title: "Goal −", color: .secondary) {
+                    goals.wrappedValue = max(0, goals.wrappedValue - 1)
+                }
+                postGameScoreButton(title: "Behind −", color: .secondary) {
+                    behinds.wrappedValue = max(0, behinds.wrappedValue - 1)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func postGameScoreButton(title: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: isCompactLayout ? 18 : 22, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, isCompactLayout ? 12 : 16)
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(color.opacity(0.9))
+        )
+        .foregroundStyle(.white)
     }
 
     private var bestStep: some View {
