@@ -2541,14 +2541,17 @@ struct ReportsSettingsView: View {
                     Button {
                         isCreatingTemplate = true
                     } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus.circle.fill")
+                        VStack(spacing: 2) {
+                            Text("+")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+
                             Text("Create Custom Report")
                                 .font(.headline.weight(.semibold))
-                                .multilineTextAlignment(.leading)
-                                .lineLimit(3)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                         .padding(12)
                         .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
