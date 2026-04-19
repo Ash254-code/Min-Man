@@ -786,25 +786,27 @@ private struct RoundTitleLine: View {
     let opponent: String
     let outcomePills: [GamesView.RoundOutcomePillItem]
     var showsChevron: Bool
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var roundDateColumnWidth: CGFloat {
+        horizontalSizeClass == .compact ? 210 : 320
+    }
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Text("ROUND \(roundNumber) - \(dateLabel) -")
-                    .font(.system(size: 22, weight: .bold))
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                    .layoutPriority(1)
+            Text("ROUND \(roundNumber) - \(dateLabel)")
+                .font(.system(size: 22, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(width: roundDateColumnWidth, alignment: .leading)
+                .layoutPriority(3)
 
-                Text("V")
-                    .font(.system(size: 22, weight: .semibold))
-                    .lineLimit(1)
+            Text("V")
+                .font(.system(size: 22, weight: .semibold))
+                .lineLimit(1)
 
-                OpponentBadge(opponent: opponent)
-                    .layoutPriority(1)
-            }
-            .lineLimit(1)
+            OpponentBadge(opponent: opponent)
+                .layoutPriority(1)
 
             Spacer(minLength: 16)
 
