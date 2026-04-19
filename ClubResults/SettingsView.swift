@@ -3606,52 +3606,39 @@ private func makeTemplatePreviewPDF(
         }
 
         let primaryGame = relevantGames.first
-        if template.includeScores {
-            let configuration = ClubConfigurationStore.load()
-            if let game = primaryGame, relevantGames.count == 1 {
-                drawSectionHeader("Score")
-                beginNewPageIfNeeded(requiredHeight: 100)
-                let ourScoreText = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
-                let oppScoreText = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
-                let ourStyle = ClubStyle.style(for: configuration.clubTeam.name, configuration: configuration)
-                let oppStyle = ClubStyle.style(for: game.opponent, configuration: configuration)
-                let pills: [(String, UIColor, UIColor)] = [
-                    (ourScoreText, UIColor(ourStyle.background), UIColor(ourStyle.text)),
-                    (oppScoreText, UIColor(oppStyle.background), UIColor(oppStyle.text))
-                ]
-                let gap: CGFloat = 10
-                let pillWidth = (contentRect.width - gap) / 2
-                var x = contentRect.minX
-                for (index, pill) in pills.enumerated() {
-                    let rect = CGRect(x: x, y: cursorY, width: pillWidth, height: 74)
-                    let path = UIBezierPath(roundedRect: rect, cornerRadius: 18)
-                    pill.1.setFill()
-                    path.fill()
-                    let teamName = index == 0 ? configuration.clubTeam.name : game.opponent
-                    NSAttributedString(
-                        string: teamName.uppercased(),
-                        attributes: [.font: scoreDetailFont, .foregroundColor: pill.2]
-                    ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 10, width: rect.width - 24, height: 16))
-                    NSAttributedString(
-                        string: pill.0,
-                        attributes: [.font: scoreBannerFont, .foregroundColor: pill.2]
-                    ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 28, width: rect.width - 24, height: 36))
-                    x += pillWidth + gap
-                }
-                cursorY += 86
-            } else {
-                let scoreRows = relevantGames.map { game in
-                    let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
-                    let our = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
-                    let opponent = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
-                    return [formattedDate(game.date), gradeName, game.opponent, our, opponent]
-                }
-                drawDetailTable(
-                    title: "Scores",
-                    columns: ["Date", "Grade", "Opponent", "Us", "Them"],
-                    rows: scoreRows
-                )
+        let configuration = ClubConfigurationStore.load()
+
+        func drawScorePills(for game: Game, title: String) {
+            drawSectionHeader(title)
+            beginNewPageIfNeeded(requiredHeight: 100)
+            let ourScoreText = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
+            let oppScoreText = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
+            let ourStyle = ClubStyle.style(for: configuration.clubTeam.name, configuration: configuration)
+            let oppStyle = ClubStyle.style(for: game.opponent, configuration: configuration)
+            let pills: [(String, UIColor, UIColor)] = [
+                (ourScoreText, UIColor(ourStyle.background), UIColor(ourStyle.text)),
+                (oppScoreText, UIColor(oppStyle.background), UIColor(oppStyle.text))
+            ]
+            let gap: CGFloat = 10
+            let pillWidth = (contentRect.width - gap) / 2
+            var x = contentRect.minX
+            for (index, pill) in pills.enumerated() {
+                let rect = CGRect(x: x, y: cursorY, width: pillWidth, height: 74)
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: 18)
+                pill.1.setFill()
+                path.fill()
+                let teamName = index == 0 ? configuration.clubTeam.name : game.opponent
+                NSAttributedString(
+                    string: teamName.uppercased(),
+                    attributes: [.font: scoreDetailFont, .foregroundColor: pill.2]
+                ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 10, width: rect.width - 24, height: 16))
+                NSAttributedString(
+                    string: pill.0,
+                    attributes: [.font: scoreBannerFont, .foregroundColor: pill.2]
+                ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 28, width: rect.width - 24, height: 36))
+                x += pillWidth + gap
             }
+            cursorY += 86
         }
 
         let minimumGamesThreshold = max(template.minimumGamesPlayed, 1)
@@ -3659,46 +3646,48 @@ private func makeTemplatePreviewPDF(
         let guestVotesLimit = max(0, min(template.guestVotesLimit, 10))
         let goalKickersLimit = max(0, min(template.goalKickersLimit, 10))
         let bestAndFairestLimit = max(0, min(template.bestAndFairestLimit, 10))
-        let rankedBestPlayerIDs: [UUID] = primaryGame?.bestPlayersRanked ?? []
-        let allBestPlayersRows = rankedBestPlayerIDs.enumerated().compactMap { (index: Int, playerID: UUID) -> [String]? in
-            guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
-            return ["\(index + 1)", playerLookup[playerID]?.name ?? "Unknown Player"]
-        }
-        let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
-        let allGuestVoteRows = (primaryGame?.guestVotesRanked ?? [])
-            .filter { gamesByPlayer[$0.playerID, default: 0] >= minimumGamesThreshold }
-            .sorted { $0.rank < $1.rank }
-            .map { vote in
-                ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
-            }
-        let guestVoteRows = guestVotesLimit == 0 ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
 
-        let allGoalKickerRows = (primaryGame?.goalKickers ?? [])
-            .filter { entry in
-                guard let playerID = entry.playerID else { return false }
-                return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
+        func reportRows(for game: Game?) -> (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]]) {
+            let rankedBestPlayerIDs: [UUID] = game?.bestPlayersRanked ?? []
+            let allBestPlayersRows = rankedBestPlayerIDs.enumerated().compactMap { (index: Int, playerID: UUID) -> [String]? in
+                guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                return ["\(index + 1)", playerLookup[playerID]?.name ?? "Unknown Player"]
             }
-            .sorted { $0.goals > $1.goals }
-            .map { entry in
-                let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
-                return [name, "\(entry.goals)"]
+            let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
+            let allGuestVoteRows = (game?.guestVotesRanked ?? [])
+                .filter { gamesByPlayer[$0.playerID, default: 0] >= minimumGamesThreshold }
+                .sorted { $0.rank < $1.rank }
+                .map { vote in
+                    ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
+                }
+            let guestVoteRows = guestVotesLimit == 0 ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
+            let allGoalKickerRows = (game?.goalKickers ?? [])
+                .filter { entry in
+                    guard let playerID = entry.playerID else { return false }
+                    return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
+                }
+                .sorted { $0.goals > $1.goals }
+                .map { entry in
+                    let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
+                    return [name, "\(entry.goals)"]
+                }
+            let goalKickerRows = goalKickersLimit == 0 ? allGoalKickerRows : Array(allGoalKickerRows.prefix(goalKickersLimit))
+            var bestAndFairestPoints: [UUID: Int] = [:]
+            for (index, playerID) in (game?.bestPlayersRanked ?? []).enumerated() {
+                bestAndFairestPoints[playerID, default: 0] += bestPlayerPoints(for: index)
             }
-        let goalKickerRows = goalKickersLimit == 0 ? allGoalKickerRows : Array(allGoalKickerRows.prefix(goalKickersLimit))
-
-        var bestAndFairestPoints: [UUID: Int] = [:]
-        for (index, playerID) in (primaryGame?.bestPlayersRanked ?? []).enumerated() {
-            bestAndFairestPoints[playerID, default: 0] += bestPlayerPoints(for: index)
+            for vote in (game?.guestVotesRanked ?? []) {
+                bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
+            }
+            let allBestAndFairestRows = bestAndFairestPoints
+                .sorted { $0.value > $1.value }
+                .compactMap { (playerID, pointTotal) -> [String]? in
+                    guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
+                }
+            let bestAndFairestRows = bestAndFairestLimit == 0 ? allBestAndFairestRows : Array(allBestAndFairestRows.prefix(bestAndFairestLimit))
+            return (bestPlayersRows, guestVoteRows, goalKickerRows, bestAndFairestRows)
         }
-        for vote in (primaryGame?.guestVotesRanked ?? []) {
-            bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
-        }
-        let allBestAndFairestRows = bestAndFairestPoints
-            .sorted { $0.value > $1.value }
-            .compactMap { (playerID, pointTotal) -> [String]? in
-                guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
-                return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
-            }
-        let bestAndFairestRows = bestAndFairestLimit == 0 ? allBestAndFairestRows : Array(allBestAndFairestRows.prefix(bestAndFairestLimit))
 
         struct CompactReportTable {
             let title: String
@@ -3706,21 +3695,25 @@ private func makeTemplatePreviewPDF(
             let rows: [[String]]
         }
 
-        var compactTables: [CompactReportTable] = []
-        if template.includeBestPlayers {
-            compactTables.append(CompactReportTable(title: "Best Players", columns: ["Rank", "Player"], rows: bestPlayersRows))
-        }
-        if template.includeGoalKickers {
-            compactTables.append(CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: goalKickerRows))
-        }
-        if template.includePlayerGrades {
-            compactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: guestVoteRows))
-        }
-        if template.includeBestAndFairestVotes {
-            compactTables.append(CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: bestAndFairestRows))
+        func buildCompactTables(for rows: (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]])) -> [CompactReportTable] {
+            var compactTables: [CompactReportTable] = []
+            if template.includeBestPlayers {
+                compactTables.append(CompactReportTable(title: "Best Players", columns: ["Rank", "Player"], rows: rows.bestPlayers))
+            }
+            if template.includeGoalKickers {
+                compactTables.append(CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows.goalKickers))
+            }
+            if template.includePlayerGrades {
+                compactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: rows.guestVotes))
+            }
+            if template.includeBestAndFairestVotes {
+                compactTables.append(CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest))
+            }
+            return compactTables
         }
 
-        if !compactTables.isEmpty {
+        func drawCompactTables(_ compactTables: [CompactReportTable]) {
+            guard !compactTables.isEmpty else { return }
             let gap: CGFloat = 10
             let halfWidth = (contentRect.width - gap) / 2
             var index = 0
@@ -3752,6 +3745,52 @@ private func makeTemplatePreviewPDF(
                 cursorY = rowStartY + rowHeight + 8
                 index += 2
             }
+        }
+
+        let gradeOrderLookup = Dictionary(uniqueKeysWithValues: selectedGrades.enumerated().map { ($0.element.id, $0.offset) })
+        let gradeGames = Dictionary(grouping: relevantGames, by: \.gradeID)
+            .compactMap { gradeID, games -> (gradeID: UUID, game: Game)? in
+                guard let game = games.max(by: { $0.date < $1.date }) else { return nil }
+                return (gradeID: gradeID, game: game)
+            }
+            .sorted {
+                let leftOrder = gradeOrderLookup[$0.gradeID] ?? Int.max
+                let rightOrder = gradeOrderLookup[$1.gradeID] ?? Int.max
+                if leftOrder != rightOrder { return leftOrder < rightOrder }
+                return (gradeLookup[$0.gradeID] ?? "") < (gradeLookup[$1.gradeID] ?? "")
+            }
+
+        if gradeGames.count > 1 {
+            for gradeGame in gradeGames {
+                let gradeName = gradeLookup[gradeGame.gradeID] ?? "Unknown Grade"
+                drawSectionHeader(gradeName)
+                let game = gradeGame.game
+                if template.includeScores {
+                    drawScorePills(for: game, title: "Score")
+                }
+                let rows = reportRows(for: game)
+                drawCompactTables(buildCompactTables(for: rows))
+            }
+        } else {
+            if template.includeScores {
+                if let game = primaryGame {
+                    drawScorePills(for: game, title: "Score")
+                } else {
+                    let scoreRows = relevantGames.map { game in
+                        let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
+                        let our = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
+                        let opponent = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
+                        return [formattedDate(game.date), gradeName, game.opponent, our, opponent]
+                    }
+                    drawDetailTable(
+                        title: "Scores",
+                        columns: ["Date", "Grade", "Opponent", "Us", "Them"],
+                        rows: scoreRows
+                    )
+                }
+            }
+            let rows = reportRows(for: primaryGame)
+            drawCompactTables(buildCompactTables(for: rows))
         }
 
         if template.includeStaffRoles {
