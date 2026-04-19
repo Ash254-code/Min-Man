@@ -82,14 +82,8 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .background {
-                NavigationLink(
-                    destination: ContactsSettingsView(),
-                    isActive: $showContactsSettings
-                ) {
-                    EmptyView()
-                }
-                .hidden()
+            .navigationDestination(isPresented: $showContactsSettings) {
+                ContactsSettingsView()
             }
             .task {
                 seedInitialGradesIfNeeded()
@@ -1540,6 +1534,9 @@ private struct GroupsSettingsView: View {
     @Query private var customReportRecipientSections: [CustomReportRecipientSection]
 
     @State private var showAddContact = false
+    @State private var addSectionKey: String?
+    @State private var showAddExistingContactForSection = false
+    @State private var sectionForExistingContact: String?
     @State private var showAddGroup = false
     @State private var contactEditing: Contact?
     @State private var groupEditing: GroupEditTarget?
@@ -1580,9 +1577,31 @@ private struct GroupsSettingsView: View {
                 title: "Add Contact",
                 allowsSaveAndAddAnother: false,
                 onSave: { name, mobile, email in
-                    dataContext.insert(Contact(name: name, mobile: mobile, email: email))
+                    let contact = Contact(name: name, mobile: mobile, email: email)
+                    dataContext.insert(contact)
+                    if let addSectionKey {
+                        assignContact(contact.id, toSection: addSectionKey)
+                    }
                     saveContext()
                     return true
+                }
+            )
+            .appPopupStyle()
+        }
+        .sheet(isPresented: $showAddExistingContactForSection) {
+            ExistingContactAssignmentSheet(
+                contacts: contacts,
+                assignedContactIDs: Set(
+                    sectionMemberships
+                        .filter { $0.sectionKey == sectionForExistingContact }
+                        .map(\.contactID)
+                ),
+                onSelect: { contact in
+                    guard let sectionKey = sectionForExistingContact else { return }
+                    assignContact(contact.id, toSection: sectionKey)
+                    saveContext()
+                    sectionForExistingContact = nil
+                    showAddExistingContactForSection = false
                 }
             )
             .appPopupStyle()
@@ -1632,6 +1651,10 @@ private struct GroupsSettingsView: View {
         .task {
             reloadContacts()
         }
+    }
+
+    private var orderedGrades: [Grade] {
+        orderedGradesForDisplay(resolvedConfiguredGrades(from: grades), includeInactive: true)
     }
 
     private func sectionView(fallbackTitle: String, sectionKey: String) -> some View {
@@ -1716,32 +1739,6 @@ private struct GroupsSettingsView: View {
         for membership in sectionMemberships where membership.contactID == contactID && membership.sectionKey == sectionKey {
             dataContext.delete(membership)
         }
-        if let groupID {
-            dataContext.insert(ContactGroupMembership(contactID: contactID, groupID: groupID))
-        }
-        saveContext()
-        selectedContactForMove = nil
-    }
-
-    private func deleteContact(_ contact: Contact) {
-        for recipient in reportRecipients where recipient.contactID == contact.id {
-            dataContext.delete(recipient)
-        }
-        for membership in groupMemberships where membership.contactID == contact.id {
-            dataContext.delete(membership)
-        }
-        dataContext.delete(contact)
-        saveContext()
-    }
-
-    private func deleteGroup(_ group: ContactGroup) {
-        for membership in groupMemberships where membership.groupID == group.id {
-            dataContext.delete(membership)
-        }
-        for recipient in groupRecipients where recipient.groupID == group.id {
-            dataContext.delete(recipient)
-        }
-        dataContext.delete(group)
         saveContext()
     }
 
@@ -1771,6 +1768,15 @@ private struct GroupsSettingsView: View {
             .committee,
             .other
         ]
+    }
+
+    private func reloadContacts() {
+        do {
+            let descriptor = FetchDescriptor<Contact>(sortBy: [SortDescriptor(\Contact.name)])
+            contacts = try dataContext.fetch(descriptor)
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
     }
 
     private var customSectionTitles: [String: String] {
@@ -1966,6 +1972,24 @@ private struct ReportRecipientsByCustomReportView: View {
 
     @State private var saveErrorMessage: String?
 
+    private struct ReportSectionOption {
+        let rawValue: String
+        let label: String
+    }
+
+    private var reportSectionOptions: [ReportSectionOption] {
+        [
+            ContactSectionKey.registrar,
+            .coordinatorsSenior,
+            .coordinatorsJunior,
+            .marketing,
+            .committee,
+            .other
+        ].map { key in
+            ReportSectionOption(rawValue: key.rawValue, label: key.title)
+        }
+    }
+
     var body: some View {
         if templates.isEmpty {
             Text("No custom reports yet. Create one and it will appear here.")
@@ -2043,7 +2067,7 @@ private struct ReportRecipientsByCustomReportView: View {
     }
 }
 
-private struct GroupEditSheet: View {
+private struct GroupNameEditSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let title: String
@@ -2126,7 +2150,7 @@ private struct GroupMembersSheet: View {
             }
         }
         .sheet(isPresented: $isRenaming) {
-            GroupEditSheet(title: "Rename Group", initialName: group.name) { newName in
+            GroupNameEditSheet(title: "Rename Group", initialName: group.name) { newName in
                 guard !newName.isEmpty else { return false }
                 onRename(newName)
                 return true
@@ -2266,6 +2290,49 @@ private struct ContactEditSheet: View {
 
     private func clean(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct ExistingContactAssignmentSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let contacts: [Contact]
+    let assignedContactIDs: Set<UUID>
+    let onSelect: (Contact) -> Void
+
+    private var availableContacts: [Contact] {
+        contacts.filter { !assignedContactIDs.contains($0.id) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if availableContacts.isEmpty {
+                    Text("All contacts are already in this section.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(availableContacts) { contact in
+                        Button {
+                            onSelect(contact)
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(contact.name)
+                                Text(contact.email)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Add Existing Contact")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
     }
 }
 
