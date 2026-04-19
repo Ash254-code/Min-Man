@@ -3854,10 +3854,10 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
-                    toggleWithLimitPicker(title: "Best players", isOn: $includeBestPlayers, limit: $bestPlayersLimit)
-                    toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit)
-                    toggleWithLimitPicker(title: "Goal kickers", isOn: $includeGoalKickers, limit: $goalKickersLimit)
-                    toggleWithLimitPicker(title: "Best & Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit)
+                    toggleWithLimitPicker(title: "Best players", isOn: $includeBestPlayers, limit: $bestPlayersLimit, defaultLimitWhenEnabled: 0)
+                    toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit, defaultLimitWhenEnabled: 0)
+                    toggleWithLimitPicker(title: "Goal Kickers", isOn: $includeGoalKickers, limit: $goalKickersLimit, defaultLimitWhenEnabled: 0)
+                    toggleWithLimitPicker(title: "Best and Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit, defaultLimitWhenEnabled: 5)
                     Toggle("Coaches", isOn: $includeStaffRoles)
                     Toggle("Officials", isOn: $includeOfficials)
                     Toggle("Umpires", isOn: $includeUmpires)
@@ -4046,7 +4046,12 @@ private struct CustomReportEditView: View {
     }
 
     @ViewBuilder
-    private func toggleWithLimitPicker(title: String, isOn: Binding<Bool>, limit: Binding<Int>) -> some View {
+    private func toggleWithLimitPicker(
+        title: String,
+        isOn: Binding<Bool>,
+        limit: Binding<Int>,
+        defaultLimitWhenEnabled: Int
+    ) -> some View {
         HStack(spacing: 12) {
             Toggle(title, isOn: isOn)
             if isOn.wrappedValue {
@@ -4059,6 +4064,15 @@ private struct CustomReportEditView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(minWidth: 74, alignment: .trailing)
+            }
+        }
+        .onChange(of: isOn.wrappedValue) { isEnabled in
+            guard isEnabled else { return }
+            let clampedDefault = Self.clampedReportItemLimit(defaultLimitWhenEnabled, defaultValue: 0)
+            if !(0...10).contains(limit.wrappedValue) {
+                limit.wrappedValue = clampedDefault
+            } else if title == "Best and Fairest votes", limit.wrappedValue == 0 {
+                limit.wrappedValue = clampedDefault
             }
         }
     }
