@@ -2896,6 +2896,7 @@ struct NewGameWizardView: View {
         @State private var showGoalKickerEditor = false
         @State private var showEndOfPeriodPrompt = false
         @State private var showManualSavePrompt = false
+        @State private var showCancelConfirmation = false
 
         init(
             date: Binding<Date>,
@@ -3054,13 +3055,6 @@ struct NewGameWizardView: View {
                         ScrollView {
                             VStack(spacing: cardSpacing) {
                                 if compact {
-                                    VStack(spacing: 10) {
-                                        Text("Live Game View")
-                                            .font(.title.bold())
-                                        Text(date.formatted(date: .abbreviated, time: .shortened))
-                                            .foregroundStyle(.secondary)
-                                    }
-
                                     teamScoreCard(
                                         title: ourTeamName,
                                         style: ourStyle,
@@ -3086,14 +3080,6 @@ struct NewGameWizardView: View {
                                     scoreWormCard(width: proxy.size.width)
                                 } else {
                                     VStack(spacing: 0) {
-                                        VStack(spacing: 10) {
-                                            Text("Live Game View")
-                                                .font(.title.bold())
-                                            Text(date.formatted(date: .abbreviated, time: .shortened))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        .frame(width: timerWidth)
-
                                         HStack(alignment: .top, spacing: cardSpacing) {
                                             VStack(spacing: cardSpacing) {
                                                 teamScoreCard(
@@ -3145,11 +3131,17 @@ struct NewGameWizardView: View {
             .background(Color(.systemGroupedBackground))
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Back") {
+                    Button("Cancel") {
                         pauseTimer()
-                        onBackToHome()
+                        showCancelConfirmation = true
                     }
                 }
+            }
+            .alert("If you proceed, all current data for this game will be lost", isPresented: $showCancelConfirmation) {
+                Button("Continue", role: .destructive) {
+                    onBackToHome()
+                }
+                Button("Cancel", role: .cancel) {}
             }
             .onChange(of: liveSession.periodMinutes) { _, newValue in
                 if !timerRunning {
