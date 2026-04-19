@@ -3317,6 +3317,8 @@ private func makeTemplatePreviewPDF(
         let sectionFont = UIFont(name: "AvenirNext-DemiBold", size: 14) ?? UIFont.systemFont(ofSize: 14, weight: .semibold)
         let bodyFont = UIFont(name: "AvenirNext-Regular", size: 11) ?? UIFont.systemFont(ofSize: 11)
         let headerFont = UIFont(name: "AvenirNext-DemiBold", size: 10) ?? UIFont.systemFont(ofSize: 10, weight: .semibold)
+        let scoreBannerFont = UIFont(name: "AvenirNext-Bold", size: 26) ?? UIFont.systemFont(ofSize: 26, weight: .bold)
+        let scoreDetailFont = UIFont(name: "AvenirNext-DemiBold", size: 12) ?? UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         if let logo = UIImage(named: "club_logo") {
             let logoRect = CGRect(x: contentRect.minX, y: cursorY, width: 56, height: 56)
@@ -3401,8 +3403,15 @@ private func makeTemplatePreviewPDF(
             drawSectionHeader(title)
             beginNewPageIfNeeded(requiredHeight: 24)
 
-            let weights: [CGFloat] = columns.enumerated().map { index, _ in
-                index == 0 ? 0.24 : (0.76 / CGFloat(max(columns.count - 1, 1)))
+            let weights: [CGFloat]
+            if columns.count == 2, columns[1].lowercased() == "goals" || columns[1].lowercased() == "points" {
+                weights = [0.82, 0.18]
+            } else if columns.count == 2, columns[0].lowercased() == "rank" {
+                weights = [0.18, 0.82]
+            } else {
+                weights = columns.enumerated().map { index, _ in
+                    index == 0 ? 0.34 : (0.66 / CGFloat(max(columns.count - 1, 1)))
+                }
             }
             let widths = weights.map { $0 * contentRect.width }
 
@@ -3410,7 +3419,7 @@ private func makeTemplatePreviewPDF(
             for (index, column) in columns.enumerated() {
                 let width = widths[index]
                 let rect = CGRect(x: headerX, y: cursorY, width: width, height: 22)
-                UIColor(white: 0.92, alpha: 1).setFill()
+                UIColor(red: 0.93, green: 0.95, blue: 0.99, alpha: 1).setFill()
                 UIBezierPath(rect: rect).fill()
                 UIColor.separator.setStroke()
                 UIBezierPath(rect: rect).stroke()
@@ -3423,8 +3432,12 @@ private func makeTemplatePreviewPDF(
             cursorY += 22
 
             let safeRows = rows.isEmpty ? [["No data for selected date range"]] : rows
-            for row in safeRows {
+            for (rowIndex, row) in safeRows.enumerated() {
                 beginNewPageIfNeeded(requiredHeight: 20)
+                if rowIndex.isMultiple(of: 2) {
+                    UIColor(white: 0.985, alpha: 1).setFill()
+                    UIBezierPath(rect: CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: 20)).fill()
+                }
                 var x = contentRect.minX
                 for (index, width) in widths.enumerated() {
                     let value = index < row.count ? row[index] : ""
@@ -3500,9 +3513,9 @@ private func makeTemplatePreviewPDF(
         let primaryGame = relevantGames.first
         if let game = primaryGame, relevantGames.count == 1 {
             drawSectionHeader("Score")
-            beginNewPageIfNeeded(requiredHeight: 36)
-            let ourScoreText = "MinMan \(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
-            let oppScoreText = "\(game.opponent) \(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
+            beginNewPageIfNeeded(requiredHeight: 100)
+            let ourScoreText = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
+            let oppScoreText = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
 
             let configuration = ClubConfigurationStore.load()
             let ourStyle = ClubStyle.style(for: configuration.clubTeam.name, configuration: configuration)
@@ -3511,20 +3524,26 @@ private func makeTemplatePreviewPDF(
                 (ourScoreText, UIColor(ourStyle.background), UIColor(ourStyle.text)),
                 (oppScoreText, UIColor(oppStyle.background), UIColor(oppStyle.text))
             ]
+            let gap: CGFloat = 10
+            let pillWidth = (contentRect.width - gap) / 2
             var x = contentRect.minX
-            for pill in pills {
-                let width = min(contentRect.width * 0.48, CGFloat((pill.0 as NSString).size(withAttributes: [.font: bodyFont]).width + 24))
-                let rect = CGRect(x: x, y: cursorY, width: width, height: 24)
-                let path = UIBezierPath(roundedRect: rect, cornerRadius: 12)
+            for (index, pill) in pills.enumerated() {
+                let rect = CGRect(x: x, y: cursorY, width: pillWidth, height: 74)
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: 18)
                 pill.1.setFill()
                 path.fill()
+                let teamName = index == 0 ? configuration.clubTeam.name : game.opponent
+                NSAttributedString(
+                    string: teamName.uppercased(),
+                    attributes: [.font: scoreDetailFont, .foregroundColor: pill.2]
+                ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 10, width: rect.width - 24, height: 16))
                 NSAttributedString(
                     string: pill.0,
-                    attributes: [.font: bodyFont, .foregroundColor: pill.2]
-                ).draw(in: rect.insetBy(dx: 8, dy: 4))
-                x += width + 8
+                    attributes: [.font: scoreBannerFont, .foregroundColor: pill.2]
+                ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 28, width: rect.width - 24, height: 36))
+                x += pillWidth + gap
             }
-            cursorY += 34
+            cursorY += 86
         }
 
         let minimumGamesThreshold = max(template.minimumGamesPlayed, 1)
@@ -3569,10 +3588,16 @@ private func makeTemplatePreviewPDF(
         }
 
         if template.includeGoalKickers {
-            let rows = (primaryGame?.goalKickers ?? []).map { entry in
-                let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
-                return [name, "\(entry.goals)"]
-            }
+            let rows = (primaryGame?.goalKickers ?? [])
+                .filter { entry in
+                    guard let playerID = entry.playerID else { return false }
+                    return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
+                }
+                .sorted { $0.goals > $1.goals }
+                .map { entry in
+                    let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
+                    return [name, "\(entry.goals)"]
+                }
             drawDetailTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows)
         }
 
@@ -3586,7 +3611,10 @@ private func makeTemplatePreviewPDF(
             }
             let rows = points
                 .sorted { $0.value > $1.value }
-                .map { [playerLookup[$0.key]?.name ?? "Unknown Player", "\($0.value)"] }
+                .compactMap { (playerID, pointTotal) -> [String]? in
+                    guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
+                }
             drawDetailTable(title: "Best & Fairest", columns: ["Player", "Points"], rows: rows)
         }
 
