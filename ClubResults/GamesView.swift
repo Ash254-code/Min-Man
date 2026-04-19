@@ -289,7 +289,6 @@ struct GamesView: View {
         } label: {
             GameCardRow(
                 game: game,
-                gradeName: gradeNameByID[game.gradeID] ?? "Unknown",
                 opponentWidth: standardPillWidth,
                 showScore: shouldShowScore(for: game.gradeID),
                 hasTwoGames: item.hasTwoGames
@@ -690,87 +689,33 @@ private struct FilterCapsule: View {
 // MARK: - Card Row (rounded cards + opponent pill + win/loss + grade)
 private struct GameCardRow: View {
     let game: Game
-    let gradeName: String
     let opponentWidth: CGFloat
     let showScore: Bool
     let hasTwoGames: Bool
 
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
     private var didWin: Bool { game.ourScore >= game.theirScore }
-    private var isCompact: Bool { horizontalSizeClass == .compact }
 
     var body: some View {
-        VStack(spacing: 8) {
-            if isCompact {
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        OpponentBadge(opponent: game.opponent, fixedWidth: nil)
-                        if hasTwoGames {
-                            Text("Two games")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        Text(game.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
+        HStack(spacing: 12) {
+            OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth, useClubColors: true)
 
-                    Spacer(minLength: 4)
-
-                    VStack(alignment: .trailing, spacing: 8) {
-                        ResultPill(win: didWin)
-                        if showScore {
-                            Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
-                                .font(.system(size: 22, weight: .semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
-                        }
-                        Text(gradeName)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-            } else {
-                HStack(spacing: 12) {
-
-                    // ✅ opponent pills all same width
-                    VStack(alignment: .leading, spacing: 6) {
-                        OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth)
-                        if hasTwoGames {
-                            Text("Two games")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Spacer(minLength: 10)
-
-                    if showScore {
-                        Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
-                            .font(.system(size: 24, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
-
-                    Spacer(minLength: 10)
-
-                    VStack(alignment: .trailing, spacing: 6) {
-                        ResultPill(win: didWin)
-                        Text(gradeName)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                HStack {
-                    Text(game.date.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
+            if hasTwoGames {
+                Text("Two games")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
+
+            Spacer(minLength: 10)
+
+            if showScore {
+                Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
+                    .font(.system(size: 24, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+
+            Spacer(minLength: 10)
+            ResultPill(win: didWin)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -809,10 +754,9 @@ private struct RoundTitleLine: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
             OpponentBadge(opponent: clubName, fixedWidth: nil)
-            Text("v \(opponent)")
+            Text("v")
                 .font(.system(size: 24, weight: .bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+            OpponentBadge(opponent: opponent, fixedWidth: nil, useClubColors: true)
             Spacer(minLength: 8)
             if showsChevron {
                 Image(systemName: "chevron.right")
