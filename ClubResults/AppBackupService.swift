@@ -180,6 +180,42 @@ struct AppBackupPayload: Codable {
     let customReportRecipientContacts: [CustomReportRecipientContactRecord]
     let appSettings: AppSettingsRecord
 
+    init(
+        grades: [GradeRecord],
+        players: [PlayerRecord],
+        games: [GameRecord],
+        contacts: [ContactRecord],
+        reportRecipients: [ReportRecipientRecord],
+        customReportTemplates: [CustomReportTemplateRecord],
+        staffMembers: [StaffMemberRecord],
+        staffDefaults: [StaffDefaultRecord],
+        contactGroups: [ContactGroupRecord],
+        contactGroupMemberships: [ContactGroupMembershipRecord],
+        contactSectionMemberships: [ContactSectionMembershipRecord],
+        reportRecipientGroups: [ReportRecipientGroupRecord],
+        customReportRecipientSections: [CustomReportRecipientSectionRecord],
+        customReportRecipientGroups: [CustomReportRecipientGroupRecord],
+        customReportRecipientContacts: [CustomReportRecipientContactRecord],
+        appSettings: AppSettingsRecord
+    ) {
+        self.grades = grades
+        self.players = players
+        self.games = games
+        self.contacts = contacts
+        self.reportRecipients = reportRecipients
+        self.customReportTemplates = customReportTemplates
+        self.staffMembers = staffMembers
+        self.staffDefaults = staffDefaults
+        self.contactGroups = contactGroups
+        self.contactGroupMemberships = contactGroupMemberships
+        self.contactSectionMemberships = contactSectionMemberships
+        self.reportRecipientGroups = reportRecipientGroups
+        self.customReportRecipientSections = customReportRecipientSections
+        self.customReportRecipientGroups = customReportRecipientGroups
+        self.customReportRecipientContacts = customReportRecipientContacts
+        self.appSettings = appSettings
+    }
+
     private enum CodingKeys: String, CodingKey {
         case grades, players, games, contacts, reportRecipients, customReportTemplates
         case staffMembers, staffDefaults
