@@ -1806,7 +1806,7 @@ struct NewGameWizardView: View {
 
     @ViewBuilder
     private var scoreStep: some View {
-        if supportsLiveGameView {
+        if entryMode == .live {
             liveGameStep
         } else {
             postGameScoreStep
