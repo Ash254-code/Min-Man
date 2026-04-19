@@ -2459,7 +2459,6 @@ struct ReportsSettingsView: View {
 
     @State private var templateEditing: CustomReportTemplate?
     @State private var templateActioning: CustomReportTemplate?
-    @State private var templateInfoing: CustomReportTemplate?
     @State private var templatePreviewing: CustomReportTemplate?
     @State private var templateSharing: CustomReportTemplate?
     @State private var isCreatingTemplate = false
@@ -2513,10 +2512,10 @@ struct ReportsSettingsView: View {
                             .padding(.trailing, 20)
 
                             Button {
-                                templateInfoing = template
+                                templateEditing = template
                             } label: {
-                                Image(systemName: "info.circle.fill")
-                                    .font(.caption)
+                                Image(systemName: "square.and.pencil")
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                                     .padding(8)
                             }
@@ -2575,13 +2574,6 @@ struct ReportsSettingsView: View {
                 }
                 Button("Share") {
                     templateSharing = template
-                }
-                Button("Edit") {
-                    templateEditing = template
-                }
-                Button("Delete", role: .destructive) {
-                    dataContext.delete(template)
-                    saveContext()
                 }
                 Button("Cancel", role: .cancel) {}
             }
@@ -2661,7 +2653,20 @@ struct ReportsSettingsView: View {
                     .map(\.sectionKey),
                 initialRecipientContactIDs: customReportRecipientContacts
                     .filter { $0.templateID == template.id }
-                    .map(\.contactID)
+                    .map(\.contactID),
+                onDelete: {
+                    for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
+                        dataContext.delete(recipientSection)
+                    }
+                    for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
+                        dataContext.delete(recipientGroup)
+                    }
+                    for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
+                        dataContext.delete(recipientContact)
+                    }
+                    dataContext.delete(template)
+                    saveContext()
+                }
             ) { name, selectedGradeIDs, includeBestPlayers, includePlayerGrades, includeGoalKickers, includeGuernseyNumbers, includeBestAndFairestVotes, includeStaffRoles, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
                 template.name = name
                 template.gradeIDs = selectedGradeIDs
@@ -2697,19 +2702,6 @@ struct ReportsSettingsView: View {
             .appPopupStyle()
         }
         .alert(
-            templateInfoing?.name ?? "Custom Report Info",
-            isPresented: Binding(
-                get: { templateInfoing != nil },
-                set: { if !$0 { templateInfoing = nil } }
-            )
-        ) {
-            Button("Close", role: .cancel) {
-                templateInfoing = nil
-            }
-        } message: {
-            Text(templateInfoing.map { templateDetails(for: $0) } ?? "")
-        }
-        .alert(
             "Save Error",
             isPresented: Binding(
                 get: { saveErrorMessage != nil },
@@ -2722,10 +2714,6 @@ struct ReportsSettingsView: View {
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
-    }
-
-    private func templateDetails(for template: CustomReportTemplate) -> String {
-        buildTemplateDetails(for: template, grades: grades)
     }
 
     private func saveContext() {
@@ -3321,6 +3309,7 @@ private struct CustomReportEditView: View {
     let grades: [Grade]
     let contacts: [Contact]
     let sectionMemberships: [ContactSectionMembership]
+    let onDelete: (() -> Void)?
     let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
 
     @State private var name: String
@@ -3338,6 +3327,7 @@ private struct CustomReportEditView: View {
     @State private var groupingMode: ReportGroupingMode
     @State private var selectedRecipientSectionKeys: Set<String>
     @State private var selectedRecipientContactIDs: Set<UUID>
+    @State private var showDeleteConfirmation = false
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
 
     init(
@@ -3359,11 +3349,13 @@ private struct CustomReportEditView: View {
         initialGroupingModeRawValue: Int = 0,
         initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
+        onDelete: (() -> Void)? = nil,
         onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
     ) {
         self.grades = grades
         self.contacts = contacts
         self.sectionMemberships = sectionMemberships
+        self.onDelete = onDelete
         self.onSave = onSave
         _name = State(initialValue: initialName)
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
@@ -3569,7 +3561,26 @@ private struct CustomReportEditView: View {
                     }
                     .saveButtonBehavior(isEnabled: canSave)
                 }
+
+                if onDelete != nil {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete Report", systemImage: "trash")
+                        }
+                    }
+                }
             }
+        }
+        .alert("Delete report?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                onDelete?()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This report template will be permanently deleted.")
         }
     }
 
