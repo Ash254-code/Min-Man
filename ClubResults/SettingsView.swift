@@ -2798,6 +2798,14 @@ private struct CustomReportShareView: View {
         groups.filter { selectedGroupIDs.contains($0.id) }
     }
 
+    private var contactCountByGroupID: [UUID: Int] {
+        let validContactIDs = Set(contacts.map(\.id))
+        return Dictionary(
+            grouping: memberships.filter { validContactIDs.contains($0.contactID) },
+            by: \.groupID
+        ).mapValues { Set($0.map(\.contactID)).count }
+    }
+
     private var activeGroupMembers: [Contact] {
         guard let activeGroupID else { return [] }
         let memberIDs = Set(memberships.filter { $0.groupID == activeGroupID }.map(\.contactID))
@@ -2846,7 +2854,8 @@ private struct CustomReportShareView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(group.name)
-                                        Text("\(memberships.filter { $0.groupID == group.id }.count) contact(s)")
+                                            .foregroundStyle(.primary)
+                                        Text("\(contactCountByGroupID[group.id, default: 0]) contact(s)")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -2857,6 +2866,7 @@ private struct CustomReportShareView: View {
                                     }
                                 }
                             }
+                            .buttonStyle(.plain)
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                 Button {
                                     activeGroupID = group.id
