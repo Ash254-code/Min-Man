@@ -144,7 +144,6 @@ struct GradeRecord: Codable {
     let asksLiveGameView: Bool
     let asksGoalKickers: Bool
     let bestPlayersCount: Int
-    let guestBestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
     let guestBestPlayersCount: Int
     let allowsLiveGameView: Bool
@@ -184,7 +183,6 @@ struct GradeRecord: Codable {
         asksLiveGameView = grade.asksLiveGameView
         asksGoalKickers = grade.asksGoalKickers
         bestPlayersCount = grade.bestPlayersCount
-        guestBestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         guestBestPlayersCount = grade.guestBestPlayersCount
         allowsLiveGameView = grade.allowsLiveGameView
@@ -876,3 +874,4 @@ enum AppBackupService {
             .replacingOccurrences(of: " ", with: "")
     }
 }
+
