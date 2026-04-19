@@ -1305,7 +1305,9 @@ private struct ContactsSettingsView: View {
     @State private var showAddExistingContactForSection = false
     @State private var sectionForExistingContact = ContactSectionKey.registrar.rawValue
     @State private var contactEditing: Contact?
+    @State private var groupEditing: GroupEditTarget?
     @State private var saveErrorMessage: String?
+    @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
 
     private var orderedGrades: [Grade] {
         orderedGradesForDisplay(grades, includeInactive: true)
@@ -1320,7 +1322,7 @@ private struct ContactsSettingsView: View {
             }
 
             ForEach(primarySections) { section in
-                sectionView(title: section.title, sectionKey: section.rawValue)
+                sectionView(fallbackTitle: section.title, sectionKey: section.rawValue)
             }
 
             Section {
@@ -1329,7 +1331,7 @@ private struct ContactsSettingsView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(orderedGrades) { grade in
-                        sectionView(title: grade.name, sectionKey: ContactSectionKey.coachesGrade(grade.id).rawValue)
+                        sectionView(fallbackTitle: grade.name, sectionKey: ContactSectionKey.coachesGrade(grade.id).rawValue)
                     }
                 }
             } header: {
@@ -1424,6 +1426,19 @@ private struct ContactsSettingsView: View {
             )
             .appPopupStyle()
         }
+        .sheet(item: $groupEditing) { target in
+            GroupEditSheet(
+                initialGroupName: displayTitle(for: target.sectionKey, fallback: target.fallbackTitle),
+                contacts: contactsForSection(target.sectionKey),
+                onSave: { newName in
+                    setCustomTitle(newName, for: target.sectionKey, fallback: target.fallbackTitle)
+                },
+                onDelete: {
+                    clearGroup(target.sectionKey)
+                }
+            )
+            .appPopupStyle()
+        }
         .alert(
             "Save Error",
             isPresented: Binding(
@@ -1442,7 +1457,7 @@ private struct ContactsSettingsView: View {
         }
     }
 
-    private func sectionView(title: String, sectionKey: String) -> some View {
+    private func sectionView(fallbackTitle: String, sectionKey: String) -> some View {
         Section {
             let members = contactsForSection(sectionKey)
 
@@ -1474,12 +1489,6 @@ private struct ContactsSettingsView: View {
                     } label: {
                         Label("Remove", systemImage: "minus.circle")
                     }
-
-                    Button(role: .destructive) {
-                        deleteContact(contact)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
                 }
             }
 
@@ -1501,7 +1510,16 @@ private struct ContactsSettingsView: View {
                 Label("Add Contact", systemImage: "plus")
             }
         } header: {
-            Text(title)
+            HStack {
+                Text(displayTitle(for: sectionKey, fallback: fallbackTitle))
+                Spacer()
+                Button {
+                    groupEditing = GroupEditTarget(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -1537,6 +1555,15 @@ private struct ContactsSettingsView: View {
         contacts.removeAll { $0.id == contact.id }
 
         SettingsBackupStore.saveContacts(contacts)
+        saveContext()
+        reloadContacts()
+    }
+
+    private func clearGroup(_ sectionKey: String) {
+        for membership in sectionMemberships where membership.sectionKey == sectionKey {
+            dataContext.delete(membership)
+        }
+        removeCustomTitle(for: sectionKey)
         saveContext()
         reloadContacts()
     }
@@ -1623,6 +1650,50 @@ private struct ContactsSettingsView: View {
             .other
         ]
     }
+
+    private var customSectionTitles: [String: String] {
+        guard
+            let data = customSectionTitlesData.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private func displayTitle(for sectionKey: String, fallback: String) -> String {
+        if let custom = customSectionTitles[sectionKey], !custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return custom
+        }
+        return fallback
+    }
+
+    private func setCustomTitle(_ title: String, for sectionKey: String, fallback: String) {
+        var updated = customSectionTitles
+        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.isEmpty || cleaned == fallback {
+            updated.removeValue(forKey: sectionKey)
+        } else {
+            updated[sectionKey] = cleaned
+        }
+        if let data = try? JSONEncoder().encode(updated), let json = String(data: data, encoding: .utf8) {
+            customSectionTitlesData = json
+        }
+    }
+
+    private func removeCustomTitle(for sectionKey: String) {
+        var updated = customSectionTitles
+        updated.removeValue(forKey: sectionKey)
+        if let data = try? JSONEncoder().encode(updated), let json = String(data: data, encoding: .utf8) {
+            customSectionTitlesData = json
+        }
+    }
+}
+
+private struct GroupEditTarget: Identifiable {
+    let sectionKey: String
+    let fallbackTitle: String
+    var id: String { sectionKey }
 }
 
 private enum ContactSectionKey: Hashable, Identifiable {
@@ -1802,6 +1873,7 @@ private struct ContactEditSheet: View {
     @State private var name: String
     @State private var mobile: String
     @State private var email: String
+    @State private var showDeleteConfirmation = false
 
     init(
         title: String,
@@ -1831,6 +1903,12 @@ private struct ContactEditSheet: View {
         !clean(email).isEmpty
     }
 
+    private var hasChanges: Bool {
+        clean(name) != clean(initialName) ||
+        clean(mobile) != clean(initialMobile) ||
+        clean(email) != clean(initialEmail)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -1848,28 +1926,27 @@ private struct ContactEditSheet: View {
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    HStack(spacing: 12) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
                         if onDelete != nil {
                             Button(role: .destructive) {
-                                onDelete?()
-                                dismiss()
+                                showDeleteConfirmation = true
                             } label: {
                                 Image(systemName: "trash")
                             }
                         }
 
-                        Button("Cancel") {
-                            dismiss()
-                        }
+                        Button("Save") { saveAndClose() }
+                            .buttonStyle(.borderedProminent)
+                            .tint((canSave && hasChanges) ? .blue : .gray)
+                            .disabled(!canSave || !hasChanges)
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        saveAndClose()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(canSave ? .blue : .gray)
-                    .disabled(!canSave)
                 }
                 if allowsSaveAndAddAnother {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -1883,6 +1960,15 @@ private struct ContactEditSheet: View {
                 }
             }
         }
+        .alert("Delete contact?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                onDelete?()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This contact will be permanently deleted.")
+        }
     }
 
     private func saveAndClose() {
@@ -1895,6 +1981,112 @@ private struct ContactEditSheet: View {
         name = ""
         mobile = ""
         email = ""
+    }
+
+    private func clean(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct GroupEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let initialGroupName: String
+    let contacts: [Contact]
+    let onSave: (String) -> Void
+    let onDelete: () -> Void
+
+    @State private var groupName: String
+    @State private var showDeleteConfirmation = false
+
+    init(
+        initialGroupName: String,
+        contacts: [Contact],
+        onSave: @escaping (String) -> Void,
+        onDelete: @escaping () -> Void
+    ) {
+        self.initialGroupName = initialGroupName
+        self.contacts = contacts
+        self.onSave = onSave
+        self.onDelete = onDelete
+        _groupName = State(initialValue: initialGroupName)
+    }
+
+    private var hasChanges: Bool {
+        clean(groupName) != clean(initialGroupName)
+    }
+
+    private var canSave: Bool {
+        !clean(groupName).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Group name")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Group Name", text: $groupName)
+                        .textInputAutocapitalization(.words)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                List {
+                    if contacts.isEmpty {
+                        Text("No contacts in this group.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(contacts) { contact in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(contact.name)
+                                Text(contact.email)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+            .padding()
+            .navigationTitle(clean(groupName).isEmpty ? "Group" : clean(groupName))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+
+                        Button("Save") {
+                            onSave(clean(groupName))
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint((canSave && hasChanges) ? .blue : .gray)
+                        .disabled(!canSave || !hasChanges)
+                    }
+                }
+            }
+        }
+        .alert("Delete group?", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                onDelete()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes all contacts from the group.")
+        }
     }
 
     private func clean(_ text: String) -> String {
