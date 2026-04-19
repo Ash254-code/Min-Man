@@ -1529,9 +1529,7 @@ private struct GroupsSettingsView: View {
 
     @State private var contacts: [Contact] = []
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
-    @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
     @Query private var sectionMemberships: [ContactSectionMembership]
-    @Query private var customReportRecipientSections: [CustomReportRecipientSection]
 
     @State private var showAddContact = false
     @State private var addSectionKey: String?
@@ -1562,14 +1560,6 @@ private struct GroupsSettingsView: View {
                 Text("Coaches")
             }
 
-            Section {
-                ReportRecipientsByCustomReportView(
-                    templates: templates,
-                    assignments: customReportRecipientSections
-                )
-            } header: {
-                Text("Report Recipients")
-            }
         }
         .navigationTitle("Groups")
         .sheet(isPresented: $showAddContact) {
@@ -1964,109 +1954,6 @@ private enum ContactSectionKey: Hashable, Identifiable {
     }
 }
 
-private struct ReportRecipientsByCustomReportView: View {
-    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
-
-    let templates: [CustomReportTemplate]
-    let assignments: [CustomReportRecipientSection]
-
-    @State private var saveErrorMessage: String?
-
-    private struct ReportSectionOption {
-        let rawValue: String
-        let label: String
-    }
-
-    private var reportSectionOptions: [ReportSectionOption] {
-        [
-            ContactSectionKey.registrar,
-            .coordinatorsSenior,
-            .coordinatorsJunior,
-            .marketing,
-            .committee,
-            .other
-        ].map { key in
-            ReportSectionOption(rawValue: key.rawValue, label: key.title)
-        }
-    }
-
-    var body: some View {
-        if templates.isEmpty {
-            Text("No custom reports yet. Create one and it will appear here.")
-                .foregroundStyle(.secondary)
-        } else {
-            ForEach(templates) { template in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(template.name)
-                        .font(.headline)
-
-                    let assignedSections = sections(for: template.id)
-                    if assignedSections.isEmpty {
-                        Text("No contact sections assigned.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(assignedSections.joined(separator: ", "))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Menu {
-                        ForEach(reportSectionOptions, id: \.rawValue) { section in
-                            if isAssigned(template.id, section.rawValue) {
-                                Button("Remove \(section.label)", role: .destructive) {
-                                    removeSection(section.rawValue, from: template.id)
-                                }
-                            } else {
-                                Button("Add \(section.label)") {
-                                    addSection(section.rawValue, to: template.id)
-                                }
-                            }
-                        }
-                    } label: {
-                        Label("Manage Sections", systemImage: "slider.horizontal.3")
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-        }
-    }
-
-    private func sections(for templateID: UUID) -> [String] {
-        assignments
-            .filter { $0.templateID == templateID }
-            .compactMap { assignment in
-                reportSectionOptions.first(where: { $0.rawValue == assignment.sectionKey })?.label
-            }
-            .sorted()
-    }
-
-    private func isAssigned(_ templateID: UUID, _ sectionKey: String) -> Bool {
-        assignments.contains(where: { $0.templateID == templateID && $0.sectionKey == sectionKey })
-    }
-
-    private func addSection(_ sectionKey: String, to templateID: UUID) {
-        guard !isAssigned(templateID, sectionKey) else { return }
-        dataContext.insert(CustomReportRecipientSection(templateID: templateID, sectionKey: sectionKey))
-        saveContext()
-    }
-
-    private func removeSection(_ sectionKey: String, from templateID: UUID) {
-        for assignment in assignments where assignment.templateID == templateID && assignment.sectionKey == sectionKey {
-            dataContext.delete(assignment)
-        }
-        saveContext()
-    }
-
-    private func saveContext() {
-        do {
-            try dataContext.save()
-        } catch {
-            saveErrorMessage = error.localizedDescription
-        }
-    }
-}
-
 private struct GroupNameEditSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -2457,6 +2344,7 @@ struct ReportsSettingsView: View {
     @State private var templateInfoing: CustomReportTemplate?
     @State private var templatePreviewing: CustomReportTemplate?
     @State private var templateSharing: CustomReportTemplate?
+    @State private var templateRecipientsEditing: CustomReportTemplate?
     @State private var isCreatingTemplate = false
     @State private var saveErrorMessage: String?
     var onOpenContactsSettings: (() -> Void)? = nil
@@ -2571,6 +2459,9 @@ struct ReportsSettingsView: View {
                 Button("Share") {
                     templateSharing = template
                 }
+                Button("Report Recipients") {
+                    templateRecipientsEditing = template
+                }
                 Button("Edit") {
                     templateEditing = template
                 }
@@ -2616,6 +2507,15 @@ struct ReportsSettingsView: View {
             CustomReportShareView(
                 template: template,
                 grades: grades,
+                contacts: contacts,
+                groups: groups,
+                memberships: groupMemberships
+            )
+            .appPopupStyle()
+        }
+        .sheet(item: $templateRecipientsEditing) { template in
+            CustomReportRecipientsEditorView(
+                template: template,
                 contacts: contacts,
                 groups: groups,
                 memberships: groupMemberships
@@ -2946,6 +2846,200 @@ private struct CustomReportShareView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(items: shareItems)
+        }
+    }
+}
+
+private struct CustomReportRecipientsEditorView: View {
+    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+    @Environment(\.dismiss) private var dismiss
+
+    let template: CustomReportTemplate
+    let contacts: [Contact]
+    let groups: [ContactGroup]
+    let memberships: [ContactGroupMembership]
+
+    @Query private var selectedGroups: [CustomReportRecipientGroup]
+    @Query private var selectedIndividuals: [CustomReportRecipientContact]
+
+    @State private var saveErrorMessage: String?
+
+    private var groupsForTemplate: [CustomReportRecipientGroup] {
+        selectedGroups.filter { $0.templateID == template.id }
+    }
+
+    private var individualsForTemplate: [CustomReportRecipientContact] {
+        selectedIndividuals.filter { $0.templateID == template.id }
+    }
+
+    private var selectedGroupIDs: Set<UUID> {
+        Set(groupsForTemplate.map(\.groupID))
+    }
+
+    private var selectedIndividualIDs: Set<UUID> {
+        Set(individualsForTemplate.map(\.contactID))
+    }
+
+    private var contactsFromSelectedGroups: [Contact] {
+        let contactIDs = Set(
+            memberships
+                .filter { selectedGroupIDs.contains($0.groupID) }
+                .map(\.contactID)
+        )
+        return contacts
+            .filter { contactIDs.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var additionalIndividualContacts: [Contact] {
+        let groupedContactIDs = Set(contactsFromSelectedGroups.map(\.id))
+        return contacts
+            .filter { !groupedContactIDs.contains($0.id) }
+            .filter { !selectedIndividualIDs.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var selectedIndividualContacts: [Contact] {
+        contacts
+            .filter { selectedIndividualIDs.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Groups") {
+                    if groups.isEmpty {
+                        Text("No groups found. Create groups in Settings > Groups.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(groups) { group in
+                            let isSelected = selectedGroupIDs.contains(group.id)
+                            Button {
+                                toggleGroup(group)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(group.name)
+                                        Text("\(memberships.filter { $0.groupID == group.id }.count) contact(s)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if isSelected {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Section("Individual Recipients") {
+                    if contactsFromSelectedGroups.isEmpty {
+                        Text("No recipients in selected groups.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(contactsFromSelectedGroups) { contact in
+                            contactRow(contact, sourceLabel: "From selected group")
+                        }
+                    }
+
+                    if selectedIndividualContacts.isEmpty {
+                        Text("No extra individual recipients selected.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(selectedIndividualContacts) { contact in
+                            contactRow(contact, sourceLabel: "Added individually", showsRemove: true)
+                        }
+                    }
+
+                    Menu {
+                        if additionalIndividualContacts.isEmpty {
+                            Text("No available contacts")
+                        } else {
+                            ForEach(additionalIndividualContacts) { contact in
+                                Button(contact.name) {
+                                    addIndividual(contact)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Add Individual", systemImage: "plus")
+                    }
+                }
+            }
+            .navigationTitle("Report Recipients")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .alert(
+                "Save Error",
+                isPresented: Binding(
+                    get: { saveErrorMessage != nil },
+                    set: { if !$0 { saveErrorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {
+                    saveErrorMessage = nil
+                }
+            } message: {
+                Text(saveErrorMessage ?? "An unknown error occurred.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contactRow(_ contact: Contact, sourceLabel: String, showsRemove: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(contact.name)
+            Text(sourceLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if showsRemove {
+                Button(role: .destructive) {
+                    removeIndividual(contact.id)
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private func toggleGroup(_ group: ContactGroup) {
+        if let assignment = groupsForTemplate.first(where: { $0.groupID == group.id }) {
+            dataContext.delete(assignment)
+        } else {
+            dataContext.insert(CustomReportRecipientGroup(templateID: template.id, groupID: group.id))
+        }
+        saveContext()
+    }
+
+    private func addIndividual(_ contact: Contact) {
+        guard !selectedIndividualIDs.contains(contact.id) else { return }
+        dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contact.id))
+        saveContext()
+    }
+
+    private func removeIndividual(_ contactID: UUID) {
+        for recipient in individualsForTemplate where recipient.contactID == contactID {
+            dataContext.delete(recipient)
+        }
+        saveContext()
+    }
+
+    private func saveContext() {
+        do {
+            try dataContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
         }
     }
 }

@@ -68,6 +68,8 @@ struct ClubResultsApp: App {
             CustomReportTemplate.self,
             ContactSectionMembership.self,
             CustomReportRecipientSection.self,
+            CustomReportRecipientGroup.self,
+            CustomReportRecipientContact.self,
             ContactGroup.self,
             ContactGroupMembership.self,
             ReportRecipientGroup.self,
