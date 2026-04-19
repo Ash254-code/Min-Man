@@ -238,6 +238,8 @@ struct GamesView: View {
 
     private func roundOutcomePills(for round: RoundGroup) -> [RoundOutcomePillItem] {
         orderedGrades.compactMap { grade in
+            guard grade.asksScore else { return nil }
+
             let gamesInGrade = round.games
                 .filter { $0.gradeID == grade.id }
                 .sorted { $0.date > $1.date }
@@ -787,28 +789,35 @@ private struct RoundTitleLine: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text("ROUND \(roundNumber) - \(dateLabel) -")
-                .font(.system(size: 22, weight: .bold))
-                .multilineTextAlignment(.leading)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .layoutPriority(1)
-            Text("V \(opponent)")
-                .font(.system(size: 22, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.9)
-            if !outcomePills.isEmpty {
-                Spacer(minLength: 20)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(outcomePills) { item in
-                            CompactRoundOutcomePill(item: item)
-                        }
-                    }
+            HStack(spacing: 10) {
+                Text("ROUND \(roundNumber) - \(dateLabel) -")
+                    .font(.system(size: 22, weight: .bold))
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .layoutPriority(1)
+
+                Text("V")
+                    .font(.system(size: 22, weight: .semibold))
+                    .lineLimit(1)
+
+                OpponentBadge(opponent: opponent)
+                    .layoutPriority(1)
+            }
+            .lineLimit(1)
+
+            Spacer(minLength: 16)
+
+            HStack(spacing: 6) {
+                ForEach(outcomePills) { item in
+                    CompactRoundOutcomePill(item: item)
                 }
                 .frame(maxWidth: 320, alignment: .trailing)
                 .layoutPriority(2)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .layoutPriority(3)
+
             if showsChevron {
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
