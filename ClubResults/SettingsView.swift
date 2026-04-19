@@ -3318,14 +3318,14 @@ private func makeTemplatePreviewPDF(
         let titleRect = CGRect(x: titleX, y: cursorY + 4, width: contentRect.width - 68, height: 28)
         NSAttributedString(
             string: "Custom Report Preview",
-            attributes: [.font: titleFont, .foregroundColor: UIColor.label]
+            attributes: [.font: titleFont, .foregroundColor: UIColor.black]
         ).draw(in: titleRect)
 
         let subtitle = "Template: \(template.name) • Layout: \(groupingMode.title) • Generated \(Date().formatted(date: .abbreviated, time: .shortened))"
         let subtitleRect = CGRect(x: titleX, y: titleRect.maxY + 2, width: contentRect.width - 68, height: 22)
         NSAttributedString(
             string: subtitle,
-            attributes: [.font: subtitleFont, .foregroundColor: UIColor.secondaryLabel]
+            attributes: [.font: subtitleFont, .foregroundColor: UIColor.darkGray]
         ).draw(in: subtitleRect)
         cursorY += 72
 
@@ -3343,7 +3343,10 @@ private func makeTemplatePreviewPDF(
         func drawSectionHeader(_ text: String) {
             beginNewPageIfNeeded(requiredHeight: 24)
             let rect = CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: 20)
-            NSAttributedString(string: text, attributes: [.font: sectionFont]).draw(in: rect)
+            NSAttributedString(
+                string: text,
+                attributes: [.font: sectionFont, .foregroundColor: UIColor.black]
+            ).draw(in: rect)
             cursorY += 24
         }
 
@@ -3360,7 +3363,7 @@ private func makeTemplatePreviewPDF(
                 UIBezierPath(rect: rect).stroke()
                 NSAttributedString(
                     string: column.0,
-                    attributes: [.font: headerFont, .foregroundColor: UIColor.label]
+                    attributes: [.font: headerFont, .foregroundColor: UIColor.white]
                 ).draw(in: rect.insetBy(dx: 4, dy: 5))
                 x += width
             }
@@ -3378,7 +3381,7 @@ private func makeTemplatePreviewPDF(
                 UIBezierPath(rect: rect).stroke()
                 NSAttributedString(
                     string: value,
-                    attributes: [.font: bodyFont, .foregroundColor: UIColor.label]
+                    attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
                 ).draw(in: rect.insetBy(dx: 4, dy: 4))
                 x += width
             }
