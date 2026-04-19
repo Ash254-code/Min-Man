@@ -2787,8 +2787,10 @@ private struct CustomReportDateRangeActionView: View {
         let today = Date()
         switch selectedQuickPick {
         case .mostRecentGame:
-            let mostRecentGameDate = games
+            let scopedGames = games
+                .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.gradeID) }
                 .filter { !$0.isDraft && $0.date <= today }
+            let mostRecentGameDate = scopedGames
                 .map(\.date)
                 .max() ?? today
             let dayStart = calendar.startOfDay(for: mostRecentGameDate)
