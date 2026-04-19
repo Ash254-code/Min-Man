@@ -12,6 +12,28 @@ struct GamesView: View {
         let games: [Game]
     }
 
+    fileprivate enum RoundOutcome {
+        case win
+        case draw
+        case loss
+
+        var label: String {
+            switch self {
+            case .win: return "W"
+            case .draw: return "D"
+            case .loss: return "L"
+            }
+        }
+    }
+
+    fileprivate struct RoundOutcomePillItem: Identifiable {
+        let gradeID: UUID
+        let gradeName: String
+        let outcome: RoundOutcome
+
+        var id: UUID { gradeID }
+    }
+
     private struct GameListItem: Identifiable {
         let primary: Game
         let secondary: Game?
@@ -107,15 +129,6 @@ struct GamesView: View {
 
     private var gradeByID: [UUID: Grade] {
         Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
-    }
-
-    private var clubConfiguration: ClubConfiguration {
-        ClubConfigurationStore.load()
-    }
-
-    private var clubName: String {
-        let trimmed = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Min Man" : trimmed
     }
 
     private func gameListItems(from sourceGames: [Game]) -> [GameListItem] {
@@ -221,6 +234,34 @@ struct GamesView: View {
 
     private func roundDateLabel(for round: RoundGroup) -> String {
         round.date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private func roundOutcomePills(for round: RoundGroup) -> [RoundOutcomePillItem] {
+        orderedGrades.compactMap { grade in
+            guard grade.asksScore else { return nil }
+
+            let gamesInGrade = round.games
+                .filter { $0.gradeID == grade.id }
+                .sorted { $0.date > $1.date }
+            guard let game = gamesInGrade.first else { return nil }
+
+            let ourScore = game.ourGoals * 6 + game.ourBehinds
+            let theirScore = game.theirGoals * 6 + game.theirBehinds
+            let outcome: RoundOutcome
+            if ourScore > theirScore {
+                outcome = .win
+            } else if ourScore < theirScore {
+                outcome = .loss
+            } else {
+                outcome = .draw
+            }
+
+            return RoundOutcomePillItem(
+                gradeID: grade.id,
+                gradeName: grade.name,
+                outcome: outcome
+            )
+        }
     }
 
     private func latestDraft(for gradeID: UUID) -> Game? {
@@ -330,8 +371,8 @@ struct GamesView: View {
                 RoundDetailHeaderCard(
                     roundNumber: round.roundNumber,
                     dateLabel: roundDateLabel(for: round),
-                    clubName: clubName,
-                    opponent: round.opponent
+                    opponent: round.opponent,
+                    outcomePills: roundOutcomePills(for: round)
                 )
 
                 ForEach(roundGamesByGrade(for: round), id: \.grade.id) { grouped in
@@ -354,8 +395,8 @@ struct GamesView: View {
                         RoundCardRow(
                             roundNumber: round.roundNumber,
                             dateLabel: roundDateLabel(for: round),
-                            clubName: clubName,
-                            opponent: round.opponent
+                            opponent: round.opponent,
+                            outcomePills: roundOutcomePills(for: round)
                         )
                     }
                     .buttonStyle(.plain)
@@ -742,22 +783,39 @@ private struct GameCardRow: View {
 private struct RoundTitleLine: View {
     let roundNumber: Int
     let dateLabel: String
-    let clubName: String
     let opponent: String
+    let outcomePills: [GamesView.RoundOutcomePillItem]
     var showsChevron: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text("ROUND \(roundNumber) - \(dateLabel) -")
-                .font(.system(size: 24, weight: .bold))
-                .multilineTextAlignment(.leading)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            OpponentBadge(opponent: clubName, fixedWidth: nil)
-            Text("v")
-                .font(.system(size: 24, weight: .bold))
-            OpponentBadge(opponent: opponent, fixedWidth: nil)
-            Spacer(minLength: 8)
+        HStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Text("ROUND \(roundNumber) - \(dateLabel) -")
+                    .font(.system(size: 22, weight: .bold))
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .layoutPriority(1)
+
+                Text("V")
+                    .font(.system(size: 22, weight: .semibold))
+                    .lineLimit(1)
+
+                OpponentBadge(opponent: opponent)
+                    .layoutPriority(1)
+            }
+            .lineLimit(1)
+
+            Spacer(minLength: 16)
+
+            HStack(spacing: 6) {
+                ForEach(outcomePills) { item in
+                    CompactRoundOutcomePill(item: item)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .layoutPriority(3)
+
             if showsChevron {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 18, weight: .semibold))
@@ -770,15 +828,15 @@ private struct RoundTitleLine: View {
 private struct RoundCardRow: View {
     let roundNumber: Int
     let dateLabel: String
-    let clubName: String
     let opponent: String
+    let outcomePills: [GamesView.RoundOutcomePillItem]
 
     var body: some View {
         RoundTitleLine(
             roundNumber: roundNumber,
             dateLabel: dateLabel,
-            clubName: clubName,
             opponent: opponent,
+            outcomePills: outcomePills,
             showsChevron: true
         )
         .padding(.horizontal, 16)
@@ -798,15 +856,15 @@ private struct RoundCardRow: View {
 private struct RoundDetailHeaderCard: View {
     let roundNumber: Int
     let dateLabel: String
-    let clubName: String
     let opponent: String
+    let outcomePills: [GamesView.RoundOutcomePillItem]
 
     var body: some View {
         RoundTitleLine(
             roundNumber: roundNumber,
             dateLabel: dateLabel,
-            clubName: clubName,
             opponent: opponent,
+            outcomePills: outcomePills,
             showsChevron: false
         )
         .padding(.horizontal, 16)
@@ -820,6 +878,31 @@ private struct RoundDetailHeaderCard: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
+    }
+}
+
+private struct CompactRoundOutcomePill: View {
+    let item: GamesView.RoundOutcomePillItem
+
+    private var foregroundColor: Color {
+        switch item.outcome {
+        case .win: return .green
+        case .draw: return .orange
+        case .loss: return .red
+        }
+    }
+
+    var body: some View {
+        Text(item.outcome.label)
+            .font(.system(size: 14, weight: .bold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(foregroundColor.opacity(0.22))
+            )
+            .foregroundStyle(foregroundColor)
+            .accessibilityLabel("\(item.gradeName) \(item.outcome.label)")
     }
 }
 
