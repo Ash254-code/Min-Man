@@ -282,9 +282,12 @@ struct GamesView: View {
             return .draftOnly
         }
 
-        let cutoff = Date().addingTimeInterval(-48 * 60 * 60)
+        let calendar = Calendar.current
+        let now = Date()
         let hasRecentFinalized = games.contains { game in
-            game.gradeID == gradeID && !game.isDraft && game.date >= cutoff
+            game.gradeID == gradeID &&
+            !game.isDraft &&
+            calendar.isDate(game.date, inSameDayAs: now)
         }
         return hasRecentFinalized ? .gameSaved : .noGameSaved
     }
