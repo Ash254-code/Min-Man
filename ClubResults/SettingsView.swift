@@ -3208,15 +3208,75 @@ private func makeTemplatePreviewPDF(
     let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
     let gradeLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0.name) })
     var gamesByPlayer: [UUID: Int] = [:]
+
+    func guestVotePoints(for rank: Int) -> Int {
+        switch rank {
+        case 1: return 3
+        case 2: return 2
+        case 3: return 1
+        default: return 0
+        }
+    }
+
+    func bestPlayerPoints(for index: Int) -> Int {
+        switch index {
+        case 0: return 3
+        case 1: return 2
+        case 2: return 1
+        default: return 0
+        }
+    }
+
+    func metadataSummary(for game: Game) -> String {
+        var parts: [String] = []
+        if template.includeStaffRoles {
+            let staff = [game.headCoachName, game.assistantCoachName, game.teamManagerName, game.runnerName]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !staff.isEmpty { parts.append("Staff: \(staff.joined(separator: ", "))") }
+        }
+        if template.includeOfficials {
+            let officials = [game.goalUmpireName, game.fieldUmpireName]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !officials.isEmpty { parts.append("Officials: \(officials.joined(separator: ", "))") }
+        }
+        if template.includeUmpires {
+            let umpires = [game.boundaryUmpire1Name, game.boundaryUmpire2Name]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !umpires.isEmpty { parts.append("Boundary: \(umpires.joined(separator: ", "))") }
+        }
+        if template.includeTrainers {
+            let trainers = game.trainers
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !trainers.isEmpty { parts.append("Trainers: \(trainers.joined(separator: ", "))") }
+        }
+        if template.includeMatchNotes {
+            let notes = game.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !notes.isEmpty { parts.append("Notes: \(notes)") }
+        }
+        return parts.joined(separator: " • ")
+    }
     for game in relevantGames {
         var seenPlayerIDs = Set<UUID>()
-        for entry in game.goalKickers {
-            if let playerID = entry.playerID {
+        if template.includeGoalKickers {
+            for entry in game.goalKickers {
+                if let playerID = entry.playerID {
+                    seenPlayerIDs.insert(playerID)
+                }
+            }
+        }
+        if template.includeBestPlayers || template.includeBestAndFairestVotes {
+            for playerID in game.bestPlayersRanked {
                 seenPlayerIDs.insert(playerID)
             }
         }
-        for playerID in game.bestPlayersRanked {
-            seenPlayerIDs.insert(playerID)
+        if template.includePlayerGrades || template.includeBestAndFairestVotes {
+            for vote in game.guestVotesRanked {
+                seenPlayerIDs.insert(vote.playerID)
+            }
         }
         for playerID in seenPlayerIDs {
             gamesByPlayer[playerID, default: 0] += 1
@@ -3338,21 +3398,53 @@ private func makeTemplatePreviewPDF(
                 drawTableHeader()
 
                 var rowsByPlayer: [UUID: (goals: Int, bestCount: Int)] = [:]
-                for entry in game.goalKickers {
-                    guard let playerID = entry.playerID else { continue }
-                    var stats = rowsByPlayer[playerID] ?? (0, 0)
-                    stats.goals += entry.goals
-                    rowsByPlayer[playerID] = stats
+                if template.includeGoalKickers {
+                    for entry in game.goalKickers {
+                        guard let playerID = entry.playerID else { continue }
+                        var stats = rowsByPlayer[playerID] ?? (0, 0)
+                        stats.goals += entry.goals
+                        rowsByPlayer[playerID] = stats
+                    }
                 }
-                for playerID in game.bestPlayersRanked {
-                    var stats = rowsByPlayer[playerID] ?? (0, 0)
-                    stats.bestCount += 1
-                    rowsByPlayer[playerID] = stats
+                if template.includeBestPlayers {
+                    for playerID in game.bestPlayersRanked {
+                        var stats = rowsByPlayer[playerID] ?? (0, 0)
+                        stats.bestCount += 1
+                        rowsByPlayer[playerID] = stats
+                    }
+                }
+                if template.includePlayerGrades {
+                    for vote in game.guestVotesRanked {
+                        var stats = rowsByPlayer[vote.playerID] ?? (0, 0)
+                        stats.bestCount += guestVotePoints(for: vote.rank)
+                        rowsByPlayer[vote.playerID] = stats
+                    }
+                }
+                if template.includeBestAndFairestVotes {
+                    for (index, playerID) in game.bestPlayersRanked.enumerated() {
+                        var stats = rowsByPlayer[playerID] ?? (0, 0)
+                        stats.bestCount += bestPlayerPoints(for: index)
+                        rowsByPlayer[playerID] = stats
+                    }
+                    for vote in game.guestVotesRanked {
+                        var stats = rowsByPlayer[vote.playerID] ?? (0, 0)
+                        stats.bestCount += guestVotePoints(for: vote.rank)
+                        rowsByPlayer[vote.playerID] = stats
+                    }
                 }
 
                 if rowsByPlayer.isEmpty {
-                    drawRow(playerName: "No player stats", guernsey: "-", goals: "-", bestPlayers: "-", gamesPlayed: "0", notes: "")
+                    let summary = metadataSummary(for: game)
+                    drawRow(
+                        playerName: "No player stats",
+                        guernsey: "-",
+                        goals: "-",
+                        bestPlayers: "-",
+                        gamesPlayed: "1",
+                        notes: summary.isEmpty ? "No matching data for selected sections" : summary
+                    )
                 } else {
+                    var drewAnyRows = false
                     for (playerID, stats) in rowsByPlayer.sorted(by: { (lhs, rhs) in
                         (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
                     }) {
@@ -3366,9 +3458,21 @@ private func makeTemplatePreviewPDF(
                             playerName: player?.name ?? "Unknown Player",
                             guernsey: guernsey,
                             goals: template.includeGoalKickers ? "\(stats.goals)" : "-",
-                            bestPlayers: template.includeBestPlayers ? "\(stats.bestCount)" : "-",
+                            bestPlayers: (template.includeBestPlayers || template.includePlayerGrades || template.includeBestAndFairestVotes) ? "\(stats.bestCount)" : "-",
                             gamesPlayed: "1",
                             notes: notes
+                        )
+                        drewAnyRows = true
+                    }
+                    if !drewAnyRows {
+                        let summary = metadataSummary(for: game)
+                        drawRow(
+                            playerName: "No players met minimum games",
+                            guernsey: "-",
+                            goals: "-",
+                            bestPlayers: "-",
+                            gamesPlayed: "1",
+                            notes: summary.isEmpty ? "No matching data for selected sections" : summary
                         )
                     }
                 }
@@ -3384,18 +3488,44 @@ private func makeTemplatePreviewPDF(
                 var rowsByPlayer: [UUID: (goals: Int, bestCount: Int, gamesPlayed: Int)] = [:]
                 for game in gradeGames {
                     var touchedInGame = Set<UUID>()
-                    for entry in game.goalKickers {
-                        guard let playerID = entry.playerID else { continue }
-                        var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
-                        stats.goals += entry.goals
-                        rowsByPlayer[playerID] = stats
-                        touchedInGame.insert(playerID)
+                    if template.includeGoalKickers {
+                        for entry in game.goalKickers {
+                            guard let playerID = entry.playerID else { continue }
+                            var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
+                            stats.goals += entry.goals
+                            rowsByPlayer[playerID] = stats
+                            touchedInGame.insert(playerID)
+                        }
                     }
-                    for playerID in game.bestPlayersRanked {
-                        var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
-                        stats.bestCount += 1
-                        rowsByPlayer[playerID] = stats
-                        touchedInGame.insert(playerID)
+                    if template.includeBestPlayers {
+                        for playerID in game.bestPlayersRanked {
+                            var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
+                            stats.bestCount += 1
+                            rowsByPlayer[playerID] = stats
+                            touchedInGame.insert(playerID)
+                        }
+                    }
+                    if template.includePlayerGrades {
+                        for vote in game.guestVotesRanked {
+                            var stats = rowsByPlayer[vote.playerID] ?? (0, 0, 0)
+                            stats.bestCount += guestVotePoints(for: vote.rank)
+                            rowsByPlayer[vote.playerID] = stats
+                            touchedInGame.insert(vote.playerID)
+                        }
+                    }
+                    if template.includeBestAndFairestVotes {
+                        for (index, playerID) in game.bestPlayersRanked.enumerated() {
+                            var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
+                            stats.bestCount += bestPlayerPoints(for: index)
+                            rowsByPlayer[playerID] = stats
+                            touchedInGame.insert(playerID)
+                        }
+                        for vote in game.guestVotesRanked {
+                            var stats = rowsByPlayer[vote.playerID] ?? (0, 0, 0)
+                            stats.bestCount += guestVotePoints(for: vote.rank)
+                            rowsByPlayer[vote.playerID] = stats
+                            touchedInGame.insert(vote.playerID)
+                        }
                     }
                     for playerID in touchedInGame {
                         var stats = rowsByPlayer[playerID] ?? (0, 0, 0)
@@ -3404,6 +3534,7 @@ private func makeTemplatePreviewPDF(
                     }
                 }
 
+                var drewAnyRows = false
                 for (playerID, stats) in rowsByPlayer.sorted(by: { (lhs, rhs) in
                     (playerLookup[lhs.key]?.name ?? "") < (playerLookup[rhs.key]?.name ?? "")
                 }) {
@@ -3416,9 +3547,23 @@ private func makeTemplatePreviewPDF(
                         playerName: player?.name ?? "Unknown Player",
                         guernsey: guernsey,
                         goals: template.includeGoalKickers ? "\(stats.goals)" : "-",
-                        bestPlayers: template.includeBestPlayers ? "\(stats.bestCount)" : "-",
+                        bestPlayers: (template.includeBestPlayers || template.includePlayerGrades || template.includeBestAndFairestVotes) ? "\(stats.bestCount)" : "-",
                         gamesPlayed: "\(stats.gamesPlayed)",
                         notes: ""
+                    )
+                    drewAnyRows = true
+                }
+                if !drewAnyRows {
+                    let summaries = gradeGames
+                        .map { metadataSummary(for: $0) }
+                        .filter { !$0.isEmpty }
+                    drawRow(
+                        playerName: rowsByPlayer.isEmpty ? "No player stats" : "No players met minimum games",
+                        guernsey: "-",
+                        goals: "-",
+                        bestPlayers: "-",
+                        gamesPlayed: "\(gradeGames.count)",
+                        notes: summaries.isEmpty ? "No matching data for selected sections" : summaries.joined(separator: " | ")
                     )
                 }
                 cursorY += 10
