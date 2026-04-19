@@ -3089,19 +3089,6 @@ struct NewGameWizardView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 8)
 
-                HStack {
-                    Spacer()
-                    Button("Save Game") {
-                        pauseTimer()
-                        onSaveAndContinue()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(canSaveAndContinue ? .blue : .gray)
-                    .disabled(!canSaveAndContinue)
-                }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 8)
-
                 GeometryReader { proxy in
                         let compact = proxy.size.width < 980
                         let cardSpacing: CGFloat = compact ? 14 : 18
@@ -3195,6 +3182,15 @@ struct NewGameWizardView: View {
                         pauseTimer()
                         showCancelConfirmation = true
                     }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save Game") {
+                        pauseTimer()
+                        onSaveAndContinue()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(canSaveAndContinue ? .blue : .gray)
+                    .disabled(!canSaveAndContinue)
                 }
             }
             .alert("If you proceed, all current data for this game will be lost", isPresented: $showCancelConfirmation) {
@@ -3771,11 +3767,11 @@ struct NewGameWizardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 ScorePill(title, style: style, fixedWidth: 170)
 
-                Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
-                    .font(.system(size: 46, weight: .bold, design: .rounded))
-                    .monospacedDigit()
                 Text("\(score)")
                     .font(.system(size: 88, weight: .black, design: .rounded))
+                    .monospacedDigit()
+                Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
+                    .font(.system(size: 46, weight: .bold, design: .rounded))
                     .monospacedDigit()
 
                 HStack(spacing: 12) {
