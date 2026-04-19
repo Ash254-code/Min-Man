@@ -695,7 +695,7 @@ struct NewGameWizardView: View {
         case .staff: return "Coaches"
         case .officials: return "Officials"
         case .medical: return "Medical & Notes"
-        case .score: return supportsLiveGameView ? "Live Scoring" : "Final Score"
+        case .score: return entryMode == .live ? "Live Scoring" : "Final Score"
         case .goals: return "Goal Kickers"
         case .best: return "Best Players"
         case .votes: return "Guest Votes"
@@ -1097,14 +1097,14 @@ struct NewGameWizardView: View {
             }
             .navigationTitle(
                 currentStep == .score
-                    ? (supportsLiveGameView ? "Live Game View" : "Final Score")
+                    ? (entryMode == .live ? "Live Game View" : "Final Score")
                     : ""
             )
             .navigationBarTitleDisplayMode(.inline)
 
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if !isPreviewMode && currentStep == .score {
+                    if !isPreviewMode && currentStep == .score && entryMode == .live {
                         Button("Pause") {
                             pauseAndSaveLiveDraftThenReturnHome()
                         }
