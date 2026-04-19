@@ -159,7 +159,6 @@ struct GradeRecord: Codable {
         case asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes
     }
 
-    @MainActor
     init(_ grade: Grade) {
         id = grade.id
         name = grade.name
