@@ -2470,7 +2470,18 @@ struct ReportsSettingsView: View {
     @State private var templatePreviewing: TemplateRunRequest?
     @State private var isCreatingTemplate = false
     @State private var saveErrorMessage: String?
+    @State private var isMoveModeEnabled = false
+    @AppStorage("reports.templateOrder.v1") private var templateOrderData = ""
     var onOpenContactsSettings: (() -> Void)? = nil
+
+    private var displayedTemplates: [CustomReportTemplate] {
+        let templateByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
+        let storedOrder = persistedTemplateOrderIDs()
+        let orderedFromStore = storedOrder.compactMap { templateByID[$0] }
+        let remaining = templates.filter { !storedOrder.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return orderedFromStore + remaining
+    }
 
     var body: some View {
         ScrollView {
@@ -2498,7 +2509,7 @@ struct ReportsSettingsView: View {
                 }
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
-                    ForEach(templates) { template in
+                    ForEach(displayedTemplates) { template in
                         VStack(spacing: 6) {
                             Text(template.name)
                                 .font(.title3.weight(.semibold))
@@ -2517,6 +2528,7 @@ struct ReportsSettingsView: View {
                         .padding(.vertical, 10)
                         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .onTapGesture {
+                            guard !isMoveModeEnabled else { return }
                             templatePreviewing = TemplateRunRequest(
                                 template: template,
                                 dateRange: reportDateRange(for: template),
@@ -2524,7 +2536,28 @@ struct ReportsSettingsView: View {
                             )
                         }
                         .onLongPressGesture {
+                            guard !isMoveModeEnabled else { return }
                             templateActioning = template
+                        }
+                        .rotationEffect(.degrees(isMoveModeEnabled ? 1.6 : 0))
+                        .animation(
+                            isMoveModeEnabled
+                            ? .easeInOut(duration: 0.14).repeatForever(autoreverses: true)
+                            : .default,
+                            value: isMoveModeEnabled
+                        )
+                        .onDrag {
+                            guard isMoveModeEnabled else { return NSItemProvider() }
+                            return NSItemProvider(object: template.id.uuidString as NSString)
+                        }
+                        .dropDestination(for: String.self) { droppedTemplateIDs, _ in
+                            guard isMoveModeEnabled else { return false }
+                            guard
+                                let droppedIDValue = droppedTemplateIDs.first,
+                                let droppedID = UUID(uuidString: droppedIDValue)
+                            else { return false }
+                            moveTemplate(droppedID, before: template.id)
+                            return true
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 94)
@@ -2557,6 +2590,21 @@ struct ReportsSettingsView: View {
             .padding(.vertical)
         }
         .navigationTitle("Reports")
+        .toolbar {
+            if isMoveModeEnabled {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        isMoveModeEnabled = false
+                    }
+                }
+            }
+        }
+        .onAppear {
+            syncTemplateOrderWithCurrentTemplates()
+        }
+        .onChange(of: templates.map(\.id)) { _ in
+            syncTemplateOrderWithCurrentTemplates()
+        }
         .confirmationDialog("Report actions", isPresented: Binding(
             get: { templateActioning != nil },
             set: { if !$0 { templateActioning = nil } }
@@ -2565,12 +2613,18 @@ struct ReportsSettingsView: View {
                 Button("Edit") {
                     templateEditing = template
                 }
+                Button("Duplicate") {
+                    duplicateTemplate(template)
+                }
                 Button("Preview") {
                     templatePreviewing = TemplateRunRequest(
                         template: template,
                         dateRange: reportDateRange(for: template),
                         emailRecipients: recipientEmails(for: template)
                     )
+                }
+                Button("Move") {
+                    isMoveModeEnabled = true
                 }
                 Button("Delete Report", role: .destructive) {
                     deleteTemplate(template)
@@ -2761,7 +2815,95 @@ struct ReportsSettingsView: View {
             dataContext.delete(recipientContact)
         }
         dataContext.delete(template)
+        removeTemplateIDFromOrder(template.id)
         saveContext()
+    }
+
+    private func duplicateTemplate(_ template: CustomReportTemplate) {
+        let duplicatedTemplate = CustomReportTemplate(
+            name: "\(template.name) Copy",
+            gradeIDs: template.gradeIDs,
+            includeScores: template.includeScores,
+            includeBestPlayers: template.includeBestPlayers,
+            bestPlayersLimit: template.bestPlayersLimit,
+            includePlayerGrades: template.includePlayerGrades,
+            guestVotesLimit: template.guestVotesLimit,
+            includeGoalKickers: template.includeGoalKickers,
+            goalKickersLimit: template.goalKickersLimit,
+            includeGuernseyNumbers: template.includeGuernseyNumbers,
+            includeBestAndFairestVotes: template.includeBestAndFairestVotes,
+            bestAndFairestLimit: template.bestAndFairestLimit,
+            includeStaffRoles: template.includeStaffRoles,
+            includeOfficials: template.includeOfficials,
+            includeUmpires: template.includeUmpires,
+            includeTrainers: template.includeTrainers,
+            includeMatchNotes: template.includeMatchNotes,
+            includeOnlyActiveGrades: template.includeOnlyActiveGrades,
+            minimumGamesPlayed: template.minimumGamesPlayed,
+            groupingModeRawValue: template.groupingModeRawValue,
+            dateRangeQuickPickRawValue: template.dateRangeQuickPickRawValue,
+            customDateRangeStart: template.customDateRangeStart,
+            customDateRangeEnd: template.customDateRangeEnd
+        )
+        dataContext.insert(duplicatedTemplate)
+        for section in customReportRecipientSections where section.templateID == template.id {
+            dataContext.insert(CustomReportRecipientSection(templateID: duplicatedTemplate.id, sectionKey: section.sectionKey))
+        }
+        for group in customReportRecipientGroups where group.templateID == template.id {
+            dataContext.insert(CustomReportRecipientGroup(templateID: duplicatedTemplate.id, groupID: group.groupID))
+        }
+        for contact in customReportRecipientContacts where contact.templateID == template.id {
+            dataContext.insert(CustomReportRecipientContact(templateID: duplicatedTemplate.id, contactID: contact.contactID))
+        }
+        appendTemplateIDToOrder(duplicatedTemplate.id)
+        saveContext()
+        templateEditing = duplicatedTemplate
+    }
+
+    private func moveTemplate(_ sourceID: UUID, before destinationID: UUID) {
+        var currentOrder = displayedTemplates.map(\.id)
+        guard let sourceIndex = currentOrder.firstIndex(of: sourceID) else { return }
+        guard let destinationIndex = currentOrder.firstIndex(of: destinationID) else { return }
+        guard sourceIndex != destinationIndex else { return }
+        let movedID = currentOrder.remove(at: sourceIndex)
+        let adjustedDestination = destinationIndex > sourceIndex ? destinationIndex - 1 : destinationIndex
+        currentOrder.insert(movedID, at: adjustedDestination)
+        persistTemplateOrder(currentOrder)
+    }
+
+    private func persistedTemplateOrderIDs() -> [UUID] {
+        guard let data = templateOrderData.data(using: .utf8),
+              let values = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+        return values.compactMap(UUID.init(uuidString:))
+    }
+
+    private func persistTemplateOrder(_ order: [UUID]) {
+        let values = order.map(\.uuidString)
+        guard let data = try? JSONEncoder().encode(values),
+              let value = String(data: data, encoding: .utf8) else { return }
+        templateOrderData = value
+    }
+
+    private func syncTemplateOrderWithCurrentTemplates() {
+        let currentTemplateIDs = templates.map(\.id)
+        let existingOrder = persistedTemplateOrderIDs().filter { currentTemplateIDs.contains($0) }
+        let missingTemplateIDs = currentTemplateIDs.filter { !existingOrder.contains($0) }
+        persistTemplateOrder(existingOrder + missingTemplateIDs)
+    }
+
+    private func appendTemplateIDToOrder(_ id: UUID) {
+        var order = persistedTemplateOrderIDs()
+        order.removeAll { $0 == id }
+        order.append(id)
+        persistTemplateOrder(order)
+    }
+
+    private func removeTemplateIDFromOrder(_ id: UUID) {
+        var order = persistedTemplateOrderIDs()
+        order.removeAll { $0 == id }
+        persistTemplateOrder(order)
     }
 
     private func gradesSummary(for template: CustomReportTemplate) -> String {
