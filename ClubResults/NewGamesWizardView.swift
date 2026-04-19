@@ -380,6 +380,7 @@ struct NewGameWizardView: View {
             if let start = stored.backgroundCountdownStart {
                 let elapsed = Int(Date().timeIntervalSince(start))
                 session.secondsRemaining = max(0, session.secondsRemaining - max(0, elapsed))
+                session.shouldAutoResumeTimer = session.secondsRemaining > 0
             }
 
             clear(for: gameID)
@@ -2850,6 +2851,7 @@ struct NewGameWizardView: View {
         var rushedPoints: Int = 0
         var periodSnapshots: [PeriodSnapshot] = []
         var isInitialized = false
+        var shouldAutoResumeTimer = false
 
         mutating func configureIfNeeded(initialPeriodMinutes: Int) {
             guard !isInitialized else { return }
@@ -3156,6 +3158,10 @@ struct NewGameWizardView: View {
             }
             .onAppear {
                 applyConfiguredInitialPeriod()
+                if liveSession.shouldAutoResumeTimer {
+                    liveSession.shouldAutoResumeTimer = false
+                    startTimer()
+                }
             }
             .onChange(of: initialPeriodMinutes) { _, _ in
                 applyConfiguredInitialPeriod()
@@ -3809,7 +3815,7 @@ struct NewGameWizardView: View {
         }
 
         private func applyConfiguredInitialPeriod() {
-            guard !timerRunning, liveSession.periodSnapshots.isEmpty else { return }
+            guard !timerRunning, !liveSession.isInitialized, liveSession.periodSnapshots.isEmpty else { return }
             liveSession.periodMinutes = initialPeriodMinutes
             liveSession.secondsRemaining = initialPeriodMinutes * 60
         }
