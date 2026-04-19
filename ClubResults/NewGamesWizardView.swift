@@ -778,8 +778,7 @@ struct NewGameWizardView: View {
         if grade.asksTrainer1 ||
             grade.asksTrainer2 ||
             grade.asksTrainer3 ||
-            grade.asksTrainer4 ||
-            grade.asksNotes {
+            grade.asksTrainer4 {
             steps.append(.medical)
         }
         if entryMode == .live {
