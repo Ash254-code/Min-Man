@@ -2349,6 +2349,8 @@ private struct GroupManagerSheet: View {
 
     @State private var draftGroups: [GroupManagementDraft]
     @State private var initialGroups: [GroupManagementDraft]
+    @State private var pendingDeleteGroupID: GroupManagementDraft.ID?
+    @State private var showDeleteConfirmation = false
 
     init(initialGroups: [GroupManagementDraft], onSave: @escaping ([GroupManagementDraft]) -> Void) {
         self.onSave = onSave
@@ -2369,7 +2371,8 @@ private struct GroupManagerSheet: View {
                             .textInputAutocapitalization(.words)
 
                         Button(role: .destructive) {
-                            draftGroups.removeAll { $0.id == group.id }
+                            pendingDeleteGroupID = group.id
+                            showDeleteConfirmation = true
                         } label: {
                             Image(systemName: "trash")
                         }
@@ -2411,10 +2414,13 @@ private struct GroupManagerSheet: View {
         }
         .alert("Delete group?", isPresented: $showDeleteConfirmation) {
             Button("Delete", role: .destructive) {
-                onDelete()
-                dismiss()
+                guard let groupID = pendingDeleteGroupID else { return }
+                draftGroups.removeAll { $0.id == groupID }
+                pendingDeleteGroupID = nil
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {
+                pendingDeleteGroupID = nil
+            }
         } message: {
             Text("This removes all contacts from the group.")
         }

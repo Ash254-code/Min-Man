@@ -851,6 +851,7 @@ enum AppBackupService {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
     }
 
+    @MainActor
     private static var platformDescription: String {
         "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
     }

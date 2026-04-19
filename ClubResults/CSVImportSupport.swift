@@ -108,7 +108,7 @@ struct CSVHeaderMap {
         gradesIndex = find(["grades", "grade", "grade(s)", "teams", "team"])
     }
 
-    nonisolated private static func normalizeHeader(_ raw: String) -> String {
+    private static func normalizeHeader(_ raw: String) -> String {
         raw
             .replacingOccurrences(of: "\u{feff}", with: "")
             .trimmedLowercased
