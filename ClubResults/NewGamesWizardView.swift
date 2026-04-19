@@ -929,8 +929,9 @@ struct NewGameWizardView: View {
 
                 if !isPreviewMode && currentStep != .score {
                     HStack {
-                        // ✅ hide Back entirely on the first step
-                        if currentStep != .setup {
+                        if currentStep == .setup {
+                            Button("Cancel") { dismiss() }
+                        } else {
                             Button("Back") { back() }
                         }
 
@@ -968,12 +969,9 @@ struct NewGameWizardView: View {
             )
             .navigationBarTitleDisplayMode(.inline)
 
-            // ✅ Cancel in top-left ONLY on first step
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if !isPreviewMode && currentStep == .setup {
-                        Button("Cancel") { dismiss() }
-                    } else if !isPreviewMode && currentStep == .score {
+                    if !isPreviewMode && currentStep == .score {
                         Button("Pause") {
                             pauseAndSaveLiveDraftThenReturnHome()
                         }
