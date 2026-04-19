@@ -519,10 +519,10 @@ enum AppBackupImportError: LocalizedError {
     }
 }
 
-@MainActor
 enum AppBackupService {
     static let backupFormatVersion = 1
 
+    @MainActor
     static func createFullBackupFile(modelContext: ModelContext) throws -> FullBackupExportResult {
         let grades = try modelContext.fetch(FetchDescriptor<Grade>())
         let players = try modelContext.fetch(FetchDescriptor<Player>())
@@ -601,6 +601,7 @@ enum AppBackupService {
         return envelope
     }
 
+    @MainActor
     static func importFullBackupFile(url: URL, modelContext: ModelContext) throws -> FullBackupImportResult {
         let envelope = try previewBackupFile(url: url)
 
@@ -866,4 +867,3 @@ enum AppBackupService {
             .replacingOccurrences(of: " ", with: "")
     }
 }
-

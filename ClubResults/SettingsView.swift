@@ -1569,12 +1569,11 @@ private struct GroupsSettingsView: View {
             }
 
             Section {
-                ReportRecipientsByCustomReportView(
-                    templates: templates,
-                    assignments: customReportRecipientSections
-                )
-            } header: {
-                Text("Report Recipients")
+                NavigationLink {
+                    ReportsSettingsView()
+                } label: {
+                    Label("Report Recipients", systemImage: "doc.text.magnifyingglass")
+                }
             }
         }
         .navigationTitle("Groups")
