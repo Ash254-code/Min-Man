@@ -29,7 +29,7 @@ struct GamesView: View {
     fileprivate struct RoundOutcomePillItem: Identifiable {
         let gradeID: UUID
         let gradeName: String
-        let outcome: RoundOutcome
+        let outcome: RoundOutcome?
 
         var id: UUID { gradeID }
     }
@@ -244,7 +244,14 @@ struct GamesView: View {
             let gamesInGrade = round.games
                 .filter { $0.gradeID == grade.id }
                 .sorted { $0.date > $1.date }
-            guard let game = gamesInGrade.first else { return nil }
+
+            guard let game = gamesInGrade.first else {
+                return RoundOutcomePillItem(
+                    gradeID: grade.id,
+                    gradeName: grade.name,
+                    outcome: nil
+                )
+            }
 
             let ourScore = game.ourGoals * 6 + game.ourBehinds
             let theirScore = game.theirGoals * 6 + game.theirBehinds
@@ -289,6 +296,12 @@ struct GamesView: View {
             calendar.isDate(game.date, inSameDayAs: now)
         }
         return hasRecentFinalized ? .gameSaved : .noGameSaved
+    }
+
+    private var outcomeGradeHeaders: [String] {
+        orderedGrades
+            .filter(\.asksScore)
+            .map(\.name)
     }
 
     private var standardPillWidth: CGFloat {
@@ -446,7 +459,10 @@ struct GamesView: View {
                     )
                     .padding(.horizontal)
 
-                    GamesListSection(minHeight: geometry.size.height * 0.33) {
+                    GamesListSection(
+                        minHeight: geometry.size.height * 0.33,
+                        outcomeGradeHeaders: selectedRoundID == nil ? outcomeGradeHeaders : []
+                    ) {
                         gamesListContent
                     }
                     .padding(.horizontal)
@@ -695,17 +711,27 @@ private struct NewGameQuickStartSection: View {
 
 private struct GamesListSection<Content: View>: View {
     let minHeight: CGFloat
+    let outcomeGradeHeaders: [String]
     let content: Content
 
-    init(minHeight: CGFloat, @ViewBuilder content: () -> Content) {
+    init(minHeight: CGFloat, outcomeGradeHeaders: [String], @ViewBuilder content: () -> Content) {
         self.minHeight = minHeight
+        self.outcomeGradeHeaders = outcomeGradeHeaders
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Games")
-                .font(.system(size: 34, weight: .bold))
+            HStack(alignment: .bottom, spacing: 12) {
+                Text("Games")
+                    .font(.system(size: 34, weight: .bold))
+
+                Spacer(minLength: 10)
+
+                if !outcomeGradeHeaders.isEmpty {
+                    RoundOutcomeColumnHeaders(gradeNames: outcomeGradeHeaders)
+                }
+            }
 
             content
         }
@@ -803,6 +829,29 @@ private struct GameCardRow: View {
     }
 }
 
+
+private enum RoundOutcomeLayout {
+    static let columnWidth: CGFloat = 58
+    static let columnSpacing: CGFloat = 6
+}
+
+private struct RoundOutcomeColumnHeaders: View {
+    let gradeNames: [String]
+
+    var body: some View {
+        HStack(spacing: RoundOutcomeLayout.columnSpacing) {
+            ForEach(gradeNames, id: \.self) { gradeName in
+                Text(gradeName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(width: RoundOutcomeLayout.columnWidth, alignment: .center)
+            }
+        }
+    }
+}
+
 private struct RoundTitleLine: View {
     let roundNumber: Int
     let dateLabel: String
@@ -833,12 +882,11 @@ private struct RoundTitleLine: View {
 
             Spacer(minLength: 16)
 
-            HStack(spacing: 6) {
+            HStack(spacing: RoundOutcomeLayout.columnSpacing) {
                 ForEach(outcomePills) { item in
                     CompactRoundOutcomePill(item: item)
+                        .frame(width: RoundOutcomeLayout.columnWidth)
                 }
-                .frame(maxWidth: 320, alignment: .trailing)
-                .layoutPriority(2)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             .layoutPriority(3)
@@ -913,7 +961,8 @@ private struct CompactRoundOutcomePill: View {
     let item: GamesView.RoundOutcomePillItem
 
     private var foregroundColor: Color {
-        switch item.outcome {
+        guard let outcome = item.outcome else { return .secondary }
+        switch outcome {
         case .win: return .green
         case .draw: return .orange
         case .loss: return .red
@@ -921,16 +970,21 @@ private struct CompactRoundOutcomePill: View {
     }
 
     var body: some View {
-        Text(item.outcome.label)
+        Text(item.outcome?.label ?? "-")
             .font(.system(size: 14, weight: .bold))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
             .background(
                 Capsule(style: .continuous)
-                    .fill(foregroundColor.opacity(0.22))
+                    .fill(item.outcome == nil ? Color.clear : foregroundColor.opacity(0.22))
             )
             .foregroundStyle(foregroundColor)
-            .accessibilityLabel("\(item.gradeName) \(item.outcome.label)")
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color.white.opacity(item.outcome == nil ? 0.18 : 0), lineWidth: 1)
+            )
+            .accessibilityLabel("\(item.gradeName) \(item.outcome?.label ?? "No game")")
     }
 }
 
