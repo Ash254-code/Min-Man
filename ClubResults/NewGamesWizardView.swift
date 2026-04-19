@@ -205,6 +205,8 @@ struct NewGameWizardView: View {
     @Query(sort: \Player.name) private var players: [Player]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
     @Query private var reportRecipients: [ReportRecipient]
+    @Query private var reportRecipientGroups: [ReportRecipientGroup]
+    @Query private var contactGroupMemberships: [ContactGroupMembership]
 
     // ✅ stored defaults per grade + role
     @Query private var staffDefaults: [StaffDefault]
@@ -2847,19 +2849,28 @@ struct NewGameWizardView: View {
             return
         }
 
-        let recipients = reportRecipients.filter { $0.gradeID == gid }
-        let matchedContacts: [(contact: Contact, recipient: ReportRecipient)] = recipients.compactMap { recipient in
-            guard let contact = contacts.first(where: { $0.id == recipient.contactID }) else { return nil }
-            return (contact, recipient)
+        var emailContacts = Set<UUID>()
+        var textContacts = Set<UUID>()
+
+        for recipient in reportRecipients where recipient.gradeID == gid {
+            if recipient.sendEmail { emailContacts.insert(recipient.contactID) }
+            if recipient.sendText { textContacts.insert(recipient.contactID) }
         }
 
-        pendingEmailRecipients = matchedContacts
-            .filter { $0.recipient.sendEmail }
-            .map { $0.contact.email.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let membershipsByGroup = Dictionary(grouping: contactGroupMemberships, by: \.groupID)
+        for recipient in reportRecipientGroups where recipient.gradeID == gid {
+            let memberContactIDs = membershipsByGroup[recipient.groupID, default: []].map(\.contactID)
+            if recipient.sendEmail { emailContacts.formUnion(memberContactIDs) }
+            if recipient.sendText { textContacts.formUnion(memberContactIDs) }
+        }
+
+        pendingEmailRecipients = contacts
+            .filter { emailContacts.contains($0.id) }
+            .map { $0.email.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        pendingTextRecipients = matchedContacts
-            .filter { $0.recipient.sendText }
-            .map { $0.contact.mobile.trimmingCharacters(in: .whitespacesAndNewlines) }
+        pendingTextRecipients = contacts
+            .filter { textContacts.contains($0.id) }
+            .map { $0.mobile.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
         if pendingEmailRecipients.isEmpty && pendingTextRecipients.isEmpty {

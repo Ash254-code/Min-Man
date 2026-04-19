@@ -1293,23 +1293,18 @@ private struct AddGradeWizardView: View {
 private struct ContactsSettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
 
-    @State private var contacts: [Contact] = []
-    @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
-    @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
+    @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
+    @Query(sort: [SortDescriptor(\ContactGroup.name)]) private var groups: [ContactGroup]
+    @Query private var groupMemberships: [ContactGroupMembership]
     @Query private var reportRecipients: [ReportRecipient]
-    @Query private var sectionMemberships: [ContactSectionMembership]
-    @Query private var customReportRecipientSections: [CustomReportRecipientSection]
+    @Query private var groupRecipients: [ReportRecipientGroup]
 
     @State private var showAddContact = false
-    @State private var addSectionKey = ContactSectionKey.registrar.rawValue
-    @State private var showAddExistingContactForSection = false
-    @State private var sectionForExistingContact = ContactSectionKey.registrar.rawValue
+    @State private var showAddGroup = false
     @State private var contactEditing: Contact?
+    @State private var groupEditing: ContactGroup?
+    @State private var selectedContactForMove: Contact?
     @State private var saveErrorMessage: String?
-
-    private var orderedGrades: [Grade] {
-        orderedGradesForDisplay(grades, includeInactive: true)
-    }
 
     var body: some View {
         List {
@@ -1319,30 +1314,92 @@ private struct ContactsSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(primarySections) { section in
-                sectionView(title: section.title, sectionKey: section.rawValue)
-            }
-
             Section {
-                if orderedGrades.isEmpty {
-                    Text("Add club grades in Settings > Club Grades to manage coach contacts by grade.")
+                if contacts.isEmpty {
+                    Text("No contacts added.")
                         .foregroundStyle(.secondary)
-                } else {
-                    ForEach(orderedGrades) { grade in
-                        sectionView(title: grade.name, sectionKey: ContactSectionKey.coachesGrade(grade.id).rawValue)
+                }
+
+                ForEach(contacts) { contact in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(contact.name)
+                            .font(.headline)
+                        Text(contact.mobile)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(contact.email)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(groupName(for: contact.id) ?? "No group")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        contactEditing = contact
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            deleteContact(contact)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+
+                        Button {
+                            selectedContactForMove = contact
+                        } label: {
+                            Label("Move Group", systemImage: "arrow.left.arrow.right")
+                        }
+                        .tint(.blue)
                     }
                 }
+
+                Button {
+                    showAddContact = true
+                } label: {
+                    Label("Add Contact", systemImage: "plus")
+                }
             } header: {
-                Text("Coaches")
+                Text("Contacts")
             }
 
             Section {
-                ReportRecipientsByCustomReportView(
-                    templates: templates,
-                    assignments: customReportRecipientSections
-                )
+                if groups.isEmpty {
+                    Text("No groups created yet.")
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(groups) { group in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(group.name)
+                                .font(.headline)
+                            Text("\(memberCount(for: group.id)) contact(s)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        groupEditing = group
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            deleteGroup(group)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+
+                Button {
+                    showAddGroup = true
+                } label: {
+                    Label("Add Group", systemImage: "plus")
+                }
             } header: {
-                Text("Report Recipients")
+                Text("Groups")
             }
         }
         .navigationTitle("Contacts")
@@ -1351,56 +1408,11 @@ private struct ContactsSettingsView: View {
                 title: "Add Contact",
                 allowsSaveAndAddAnother: false,
                 onSave: { name, mobile, email in
-                    let newContact = Contact(name: name, mobile: mobile, email: email)
-                    dataContext.insert(newContact)
-                    assignContact(newContact.id, toSection: addSectionKey)
-                    contacts.append(newContact)
-                    contacts.sort {
-                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                    }
-                    SettingsBackupStore.saveContacts(contacts)
+                    dataContext.insert(Contact(name: name, mobile: mobile, email: email))
                     saveContext()
-                    reloadContacts()
                     return true
                 }
             )
-            .appPopupStyle()
-        }
-        .sheet(isPresented: $showAddExistingContactForSection) {
-            NavigationStack {
-                List {
-                    let assignedIDs = Set(sectionMemberships.filter { $0.sectionKey == sectionForExistingContact }.map(\.contactID))
-                    let available = contacts.filter { !assignedIDs.contains($0.id) }
-
-                    if available.isEmpty {
-                        Text("No available contacts.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(available) { contact in
-                            Button {
-                                assignContact(contact.id, toSection: sectionForExistingContact)
-                                saveContext()
-                                showAddExistingContactForSection = false
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(contact.name)
-                                    Text(contact.email)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Add Existing")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") {
-                            showAddExistingContactForSection = false
-                        }
-                    }
-                }
-            }
             .appPopupStyle()
         }
         .sheet(item: $contactEditing) { contact in
@@ -1413,13 +1425,89 @@ private struct ContactsSettingsView: View {
                     contact.name = name
                     contact.mobile = mobile
                     contact.email = email
-                    SettingsBackupStore.saveContacts(contacts)
                     saveContext()
-                    reloadContacts()
                     return true
                 },
                 onDelete: {
                     deleteContact(contact)
+                }
+            )
+            .appPopupStyle()
+        }
+        .sheet(item: $selectedContactForMove) { contact in
+            NavigationStack {
+                List {
+                    Button {
+                        setGroup(nil, for: contact.id)
+                    } label: {
+                        HStack {
+                            Text("No group")
+                            Spacer()
+                            if groupID(for: contact.id) == nil {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                    }
+
+                    ForEach(groups) { group in
+                        Button {
+                            setGroup(group.id, for: contact.id)
+                        } label: {
+                            HStack {
+                                Text(group.name)
+                                Spacer()
+                                if groupID(for: contact.id) == group.id {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Move Contact")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") {
+                            selectedContactForMove = nil
+                        }
+                    }
+                }
+            }
+            .appPopupStyle()
+        }
+        .sheet(isPresented: $showAddGroup) {
+            GroupEditSheet(
+                title: "Add Group",
+                onSave: { name in
+                    guard !name.isEmpty else { return false }
+                    dataContext.insert(ContactGroup(name: name))
+                    saveContext()
+                    return true
+                }
+            )
+            .appPopupStyle()
+        }
+        .sheet(item: $groupEditing) { group in
+            GroupMembersSheet(
+                group: group,
+                contacts: contacts,
+                memberships: groupMemberships,
+                onAssign: { contactID in
+                    setGroup(group.id, for: contactID)
+                },
+                onRemove: { contactID in
+                    if groupID(for: contactID) == group.id {
+                        setGroup(nil, for: contactID)
+                    }
+                },
+                onRename: { newName in
+                    group.name = newName
+                    saveContext()
+                },
+                onDelete: {
+                    deleteGroup(group)
+                    groupEditing = nil
                 }
             )
             .appPopupStyle()
@@ -1437,355 +1525,159 @@ private struct ContactsSettingsView: View {
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
-        .task {
-            reloadContacts()
-        }
     }
 
-    private func sectionView(title: String, sectionKey: String) -> some View {
-        Section {
-            let members = contactsForSection(sectionKey)
-
-            if members.isEmpty {
-                Text("No contacts added.")
-                    .foregroundStyle(.secondary)
-            }
-
-            ForEach(members) { contact in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(contact.name)
-                        .font(.headline)
-
-                    Text(contact.mobile)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Text(contact.email)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    contactEditing = contact
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        removeContact(contact.id, fromSection: sectionKey)
-                    } label: {
-                        Label("Remove", systemImage: "minus.circle")
-                    }
-
-                    Button(role: .destructive) {
-                        deleteContact(contact)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-            }
-
-            Menu {
-                Button {
-                    addSectionKey = sectionKey
-                    showAddContact = true
-                } label: {
-                    Label("New Contact", systemImage: "person.badge.plus")
-                }
-
-                Button {
-                    sectionForExistingContact = sectionKey
-                    showAddExistingContactForSection = true
-                } label: {
-                    Label("Existing Contact", systemImage: "person.2")
-                }
-            } label: {
-                Label("Add Contact", systemImage: "plus")
-            }
-        } header: {
-            Text(title)
-        }
+    private func groupID(for contactID: UUID) -> UUID? {
+        groupMemberships.first(where: { $0.contactID == contactID })?.groupID
     }
 
-    private func contactsForSection(_ sectionKey: String) -> [Contact] {
-        let ids = Set(sectionMemberships.filter { $0.sectionKey == sectionKey }.map(\.contactID))
-        return contacts.filter { ids.contains($0.id) }
+    private func groupName(for contactID: UUID) -> String? {
+        guard let gid = groupID(for: contactID) else { return nil }
+        return groups.first(where: { $0.id == gid })?.name
     }
 
-    private func assignContact(_ contactID: UUID, toSection sectionKey: String) {
-        guard !sectionMemberships.contains(where: { $0.contactID == contactID && $0.sectionKey == sectionKey }) else {
-            return
-        }
-        dataContext.insert(ContactSectionMembership(contactID: contactID, sectionKey: sectionKey))
+    private func memberCount(for groupID: UUID) -> Int {
+        groupMemberships.filter { $0.groupID == groupID }.count
     }
 
-    private func removeContact(_ contactID: UUID, fromSection sectionKey: String) {
-        for membership in sectionMemberships where membership.contactID == contactID && membership.sectionKey == sectionKey {
+    private func setGroup(_ groupID: UUID?, for contactID: UUID) {
+        for membership in groupMemberships where membership.contactID == contactID {
             dataContext.delete(membership)
         }
+        if let groupID {
+            dataContext.insert(ContactGroupMembership(contactID: contactID, groupID: groupID))
+        }
         saveContext()
+        selectedContactForMove = nil
     }
 
     private func deleteContact(_ contact: Contact) {
         for recipient in reportRecipients where recipient.contactID == contact.id {
             dataContext.delete(recipient)
         }
-
-        for membership in sectionMemberships where membership.contactID == contact.id {
+        for membership in groupMemberships where membership.contactID == contact.id {
             dataContext.delete(membership)
         }
-
         dataContext.delete(contact)
-        contacts.removeAll { $0.id == contact.id }
-
-        SettingsBackupStore.saveContacts(contacts)
         saveContext()
-        reloadContacts()
+    }
+
+    private func deleteGroup(_ group: ContactGroup) {
+        for membership in groupMemberships where membership.groupID == group.id {
+            dataContext.delete(membership)
+        }
+        for recipient in groupRecipients where recipient.groupID == group.id {
+            dataContext.delete(recipient)
+        }
+        dataContext.delete(group)
+        saveContext()
     }
 
     private func saveContext() {
         do {
             try dataContext.save()
-        } catch {
-            saveErrorMessage = error.localizedDescription
-            let backups = SettingsBackupStore.loadContacts()
-            contacts = backups
-                .map {
-                    Contact(
-                        id: $0.id,
-                        name: $0.name,
-                        mobile: $0.mobile,
-                        email: $0.email
-                    )
-                }
-                .sorted {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
-        }
-    }
-
-    private func reloadContacts() {
-        do {
-            let descriptor = FetchDescriptor<Contact>(
-                sortBy: [SortDescriptor(\Contact.name)]
-            )
-            let fetched = try dataContext.fetch(descriptor)
-
-            if fetched.isEmpty {
-                let backups = SettingsBackupStore.loadContacts()
-                if !backups.isEmpty {
-                    contacts = backups
-                        .map {
-                            Contact(
-                                id: $0.id,
-                                name: $0.name,
-                                mobile: $0.mobile,
-                                email: $0.email
-                            )
-                        }
-                        .sorted {
-                            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                        }
-
-                    for item in backups {
-                        dataContext.insert(
-                            Contact(
-                                id: item.id,
-                                name: item.name,
-                                mobile: item.mobile,
-                                email: item.email
-                            )
-                        )
-                    }
-
-                    try? dataContext.save()
-
-                    let afterRestore = (try? dataContext.fetch(descriptor)) ?? []
-                    if !afterRestore.isEmpty {
-                        contacts = afterRestore
-                    }
-                    return
-                }
-            }
-
-            contacts = fetched
             SettingsBackupStore.saveContacts(contacts)
         } catch {
             saveErrorMessage = error.localizedDescription
         }
     }
-
-    private var primarySections: [ContactSectionKey] {
-        [
-            .registrar,
-            .coordinatorsSenior,
-            .coordinatorsJunior,
-            .marketing,
-            .committee,
-            .other
-        ]
-    }
 }
 
-private enum ContactSectionKey: Hashable, Identifiable {
-    case coaches
-    case coachesGrade(UUID)
-    case registrar
-    case coordinatorsSenior
-    case coordinatorsJunior
-    case marketing
-    case committee
-    case other
+private struct GroupEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
 
-    var id: String { rawValue }
+    let title: String
+    var initialName: String = ""
+    let onSave: (String) -> Bool
 
-    var title: String {
-        switch self {
-        case .coaches: return "Coaches"
-        case .coachesGrade: return "Grade"
-        case .registrar: return "Registrar"
-        case .coordinatorsSenior: return "Coordinators - Senior"
-        case .coordinatorsJunior: return "Coordinators - Junior"
-        case .marketing: return "Marketing"
-        case .committee: return "Committee"
-        case .other: return "Other"
-        }
-    }
-
-    var rawValue: String {
-        switch self {
-        case .coaches:
-            return "coaches"
-        case let .coachesGrade(gradeID):
-            return "coaches:\(gradeID.uuidString)"
-        case .registrar:
-            return "registrar"
-        case .coordinatorsSenior:
-            return "coordinators:senior"
-        case .coordinatorsJunior:
-            return "coordinators:junior"
-        case .marketing:
-            return "marketing"
-        case .committee:
-            return "committee"
-        case .other:
-            return "other"
-        }
-    }
-
-    static func fromRawValue(_ value: String) -> ContactSectionKey {
-        if value == ContactSectionKey.coaches.rawValue { return .coaches }
-        if value == ContactSectionKey.registrar.rawValue { return .registrar }
-        if value == ContactSectionKey.coordinatorsSenior.rawValue { return .coordinatorsSenior }
-        if value == ContactSectionKey.coordinatorsJunior.rawValue { return .coordinatorsJunior }
-        if value == ContactSectionKey.marketing.rawValue { return .marketing }
-        if value == ContactSectionKey.committee.rawValue { return .committee }
-        if value == ContactSectionKey.other.rawValue { return .other }
-        if value.hasPrefix("coaches:"), let uuid = UUID(uuidString: String(value.dropFirst("coaches:".count))) {
-            return .coachesGrade(uuid)
-        }
-        return .other
-    }
-}
-
-private struct ReportRecipientsByCustomReportView: View {
-    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
-
-    let templates: [CustomReportTemplate]
-    let assignments: [CustomReportRecipientSection]
-
-    @State private var saveErrorMessage: String?
+    @State private var name: String = ""
 
     var body: some View {
-        if templates.isEmpty {
-            Text("No custom reports yet. Create one and it will appear here.")
-                .foregroundStyle(.secondary)
-        } else {
-            ForEach(templates) { template in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(template.name)
-                        .font(.headline)
-
-                    let assignedSections = sections(for: template.id)
-                    if assignedSections.isEmpty {
-                        Text("No contact sections assigned.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(assignedSections.joined(separator: ", "))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Menu {
-                        ForEach(reportSectionOptions, id: \.rawValue) { section in
-                            if isAssigned(template.id, section.rawValue) {
-                                Button("Remove \(section.label)", role: .destructive) {
-                                    removeSection(section.rawValue, from: template.id)
-                                }
-                            } else {
-                                Button("Add \(section.label)") {
-                                    addSection(section.rawValue, to: template.id)
-                                }
-                            }
-                        }
-                    } label: {
-                        Label("Manage Sections", systemImage: "slider.horizontal.3")
-                    }
+        NavigationStack {
+            Form {
+                TextField("Group name", text: $name)
+            }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
                 }
-                .padding(.vertical, 4)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if onSave(cleaned) { dismiss() }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .onAppear {
+                name = initialName
             }
         }
-    }
-
-    private func sections(for templateID: UUID) -> [String] {
-        assignments
-            .filter { $0.templateID == templateID }
-            .compactMap { assignment in
-                reportSectionOptions.first(where: { $0.rawValue == assignment.sectionKey })?.label
-            }
-            .sorted()
-    }
-
-    private func isAssigned(_ templateID: UUID, _ sectionKey: String) -> Bool {
-        assignments.contains(where: { $0.templateID == templateID && $0.sectionKey == sectionKey })
-    }
-
-    private func addSection(_ sectionKey: String, to templateID: UUID) {
-        guard !isAssigned(templateID, sectionKey) else { return }
-        dataContext.insert(CustomReportRecipientSection(templateID: templateID, sectionKey: sectionKey))
-        saveContext()
-    }
-
-    private func removeSection(_ sectionKey: String, from templateID: UUID) {
-        for assignment in assignments where assignment.templateID == templateID && assignment.sectionKey == sectionKey {
-            dataContext.delete(assignment)
-        }
-        saveContext()
-    }
-
-    private func saveContext() {
-        do {
-            try dataContext.save()
-        } catch {
-            saveErrorMessage = error.localizedDescription
-        }
-    }
-
-    private var reportSectionOptions: [ReportSectionOption] {
-        [
-            .init(rawValue: ContactSectionKey.coaches.rawValue, label: "Coaches"),
-            .init(rawValue: ContactSectionKey.registrar.rawValue, label: "Registrar"),
-            .init(rawValue: ContactSectionKey.coordinatorsSenior.rawValue, label: "Coordinators - Senior"),
-            .init(rawValue: ContactSectionKey.coordinatorsJunior.rawValue, label: "Coordinators - Junior"),
-            .init(rawValue: ContactSectionKey.marketing.rawValue, label: "Marketing"),
-            .init(rawValue: ContactSectionKey.committee.rawValue, label: "Committee"),
-            .init(rawValue: ContactSectionKey.other.rawValue, label: "Other")
-        ]
     }
 }
 
-private struct ReportSectionOption {
-    let rawValue: String
-    let label: String
+private struct GroupMembersSheet: View {
+    let group: ContactGroup
+    let contacts: [Contact]
+    let memberships: [ContactGroupMembership]
+    let onAssign: (UUID) -> Void
+    let onRemove: (UUID) -> Void
+    let onRename: (String) -> Void
+    let onDelete: () -> Void
+
+    @State private var isRenaming = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(contacts) { contact in
+                    Button {
+                        if isInGroup(contact.id) {
+                            onRemove(contact.id)
+                        } else {
+                            onAssign(contact.id)
+                        }
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(contact.name)
+                                Text(contact.email)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if isInGroup(contact.id) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(group.name)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Rename") { isRenaming = true }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Delete", role: .destructive) { onDelete() }
+                }
+            }
+        }
+        .sheet(isPresented: $isRenaming) {
+            GroupEditSheet(title: "Rename Group", initialName: group.name) { newName in
+                guard !newName.isEmpty else { return false }
+                onRename(newName)
+                return true
+            }
+            .appPopupStyle()
+        }
+    }
+
+    private func isInGroup(_ contactID: UUID) -> Bool {
+        memberships.contains(where: { $0.groupID == group.id && $0.contactID == contactID })
+    }
 }
 
 private struct ContactEditSheet: View {
@@ -1907,6 +1799,8 @@ struct ReportsSettingsView: View {
     @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
+    @Query(sort: [SortDescriptor(\ContactGroup.name)]) private var groups: [ContactGroup]
+    @Query private var groupMemberships: [ContactGroupMembership]
     @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
     @Query(sort: [SortDescriptor(\Player.name)]) private var players: [Player]
 
@@ -2047,7 +1941,9 @@ struct ReportsSettingsView: View {
             CustomReportShareView(
                 template: template,
                 grades: grades,
-                contacts: contacts
+                contacts: contacts,
+                groups: groups,
+                memberships: groupMemberships
             )
             .appPopupStyle()
         }
@@ -2202,8 +2098,11 @@ private struct CustomReportShareView: View {
     let template: CustomReportTemplate
     let grades: [Grade]
     let contacts: [Contact]
+    let groups: [ContactGroup]
+    let memberships: [ContactGroupMembership]
 
     @State private var selectedContactIDs: Set<UUID> = []
+    @State private var selectedGroupIDs: Set<UUID> = []
     @State private var shareItems: [Any] = []
     @State private var showShareSheet = false
 
@@ -2211,21 +2110,53 @@ private struct CustomReportShareView: View {
         contacts.filter { selectedContactIDs.contains($0.id) }
     }
 
+    private var selectedGroups: [ContactGroup] {
+        groups.filter { selectedGroupIDs.contains($0.id) }
+    }
+
     private var shareMessage: String {
         var lines: [String] = []
         lines.append("Custom report: \(template.name)")
         lines.append(buildTemplateDetails(for: template, grades: grades))
-        if selectedContacts.isEmpty {
-            lines.append("Selected contacts: none")
-        } else {
-            lines.append("Selected contacts: \(selectedContacts.map(\.name).joined(separator: ", "))")
-        }
+        lines.append(selectedContacts.isEmpty ? "Selected contacts: none" : "Selected contacts: \(selectedContacts.map(\.name).joined(separator: ", "))")
+        lines.append(selectedGroups.isEmpty ? "Selected groups: none" : "Selected groups: \(selectedGroups.map(\.name).joined(separator: ", "))")
         return lines.joined(separator: "\n")
     }
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    if groups.isEmpty {
+                        Text("No groups found. Add groups in Settings > Contacts first.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(groups) { group in
+                            Button {
+                                if selectedGroupIDs.contains(group.id) { selectedGroupIDs.remove(group.id) }
+                                else { selectedGroupIDs.insert(group.id) }
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(group.name)
+                                        Text("\(memberships.filter { $0.groupID == group.id }.count) contact(s)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if selectedGroupIDs.contains(group.id) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Select Groups")
+                }
+
                 Section {
                     if contacts.isEmpty {
                         Text("No contacts found. Add contacts in Settings > Contacts first.")
@@ -2234,11 +2165,8 @@ private struct CustomReportShareView: View {
                     } else {
                         ForEach(contacts) { contact in
                             Button {
-                                if selectedContactIDs.contains(contact.id) {
-                                    selectedContactIDs.remove(contact.id)
-                                } else {
-                                    selectedContactIDs.insert(contact.id)
-                                }
+                                if selectedContactIDs.contains(contact.id) { selectedContactIDs.remove(contact.id) }
+                                else { selectedContactIDs.insert(contact.id) }
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -2263,16 +2191,14 @@ private struct CustomReportShareView: View {
             .navigationTitle("Share Report")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        dismiss()
-                    }
+                    Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Share") {
                         shareItems = [shareMessage]
                         showShareSheet = true
                     }
-                    .disabled(contacts.isEmpty)
+                    .disabled(contacts.isEmpty && groups.isEmpty)
                 }
             }
         }
@@ -2752,7 +2678,10 @@ private struct ReportRecipientsSettingsView: View {
 
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
+    @Query(sort: [SortDescriptor(\ContactGroup.name)]) private var groups: [ContactGroup]
+    @Query private var memberships: [ContactGroupMembership]
     @Query private var reportRecipients: [ReportRecipient]
+    @Query private var reportRecipientGroups: [ReportRecipientGroup]
     @State private var saveErrorMessage: String?
 
     private enum SendMode: String, CaseIterable, Identifiable {
@@ -2784,99 +2713,115 @@ private struct ReportRecipientsSettingsView: View {
 
             ForEach(configuredGrades) { grade in
                 Section {
-                    let recipients = recipientsForGrade(grade.id)
+                    let contactRecipients = recipientsForGrade(grade.id)
+                    let groupRecipients = groupRecipientsForGrade(grade.id)
 
-                    if recipients.isEmpty {
-                        Text("No contacts added.")
+                    if contactRecipients.isEmpty && groupRecipients.isEmpty {
+                        Text("No contacts or groups added.")
                             .foregroundStyle(.secondary)
                     }
 
-                    ForEach(recipients) { recipient in
+                    ForEach(contactRecipients) { recipient in
                         if let contact = contacts.first(where: { $0.id == recipient.contactID }) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(contact.name)
-                                    .font(.headline)
-
-                                HStack {
-                                    Text(contact.email)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-
-                                    Spacer()
-
-                                    Toggle(
-                                        "Email",
-                                        isOn: Binding(
-                                            get: { recipient.sendEmail },
-                                            set: { newValue in
-                                                recipient.sendEmail = newValue
-                                                if !recipient.sendEmail && !recipient.sendText {
-                                                    recipient.sendText = true
-                                                }
-                                                saveContext()
-                                            }
-                                        )
-                                    )
-                                    .labelsHidden()
-                                }
-
-                                HStack {
-                                    Text(contact.mobile)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-
-                                    Spacer()
-
-                                    Toggle(
-                                        "Text",
-                                        isOn: Binding(
-                                            get: { recipient.sendText },
-                                            set: { newValue in
-                                                recipient.sendText = newValue
-                                                if !recipient.sendEmail && !recipient.sendText {
-                                                    recipient.sendEmail = true
-                                                }
-                                                saveContext()
-                                            }
-                                        )
-                                    )
-                                    .labelsHidden()
-                                }
-
-                                Text(sendModeText(recipient))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            recipientRow(
+                                title: contact.name,
+                                subtitle: contact.email,
+                                secondarySubtitle: contact.mobile,
+                                sendEmail: Binding(
+                                    get: { recipient.sendEmail },
+                                    set: { newValue in
+                                        recipient.sendEmail = newValue
+                                        if !recipient.sendEmail && !recipient.sendText { recipient.sendText = true }
+                                        saveContext()
+                                    }
+                                ),
+                                sendText: Binding(
+                                    get: { recipient.sendText },
+                                    set: { newValue in
+                                        recipient.sendText = newValue
+                                        if !recipient.sendEmail && !recipient.sendText { recipient.sendEmail = true }
+                                        saveContext()
+                                    }
+                                ),
+                                footer: sendModeText(sendEmail: recipient.sendEmail, sendText: recipient.sendText)
+                            ) {
+                                dataContext.delete(recipient)
+                                saveContext()
                             }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    dataContext.delete(recipient)
-                                    saveContext()
-                                } label: {
-                                    Label("Remove", systemImage: "trash")
-                                }
+                        }
+                    }
+
+                    ForEach(groupRecipients) { recipient in
+                        if let group = groups.first(where: { $0.id == recipient.groupID }) {
+                            let count = memberships.filter { $0.groupID == group.id }.count
+                            recipientRow(
+                                title: "Group: \(group.name)",
+                                subtitle: "\(count) contact(s)",
+                                secondarySubtitle: "",
+                                sendEmail: Binding(
+                                    get: { recipient.sendEmail },
+                                    set: { newValue in
+                                        recipient.sendEmail = newValue
+                                        if !recipient.sendEmail && !recipient.sendText { recipient.sendText = true }
+                                        saveContext()
+                                    }
+                                ),
+                                sendText: Binding(
+                                    get: { recipient.sendText },
+                                    set: { newValue in
+                                        recipient.sendText = newValue
+                                        if !recipient.sendEmail && !recipient.sendText { recipient.sendEmail = true }
+                                        saveContext()
+                                    }
+                                ),
+                                footer: sendModeText(sendEmail: recipient.sendEmail, sendText: recipient.sendText)
+                            ) {
+                                dataContext.delete(recipient)
+                                saveContext()
                             }
                         }
                     }
 
                     Menu {
-                        let usedContactIDs = Set(recipients.map(\.contactID))
-                        let available = contacts.filter { !usedContactIDs.contains($0.id) }
+                        let usedContactIDs = Set(contactRecipients.map(\.contactID))
+                        let availableContacts = contacts.filter { !usedContactIDs.contains($0.id) }
 
-                        if available.isEmpty {
+                        if availableContacts.isEmpty {
                             Text("No available contacts")
                         } else {
-                            ForEach(available) { contact in
-                                Menu(contact.name) {
-                                    ForEach(SendMode.allCases) { mode in
-                                        Button("Send via \(mode.title)") {
-                                            addContact(contact, toGrade: grade.id, sendMode: mode)
+                            Menu("Add Contact") {
+                                ForEach(availableContacts) { contact in
+                                    Menu(contact.name) {
+                                        ForEach(SendMode.allCases) { mode in
+                                            Button("Send via \(mode.title)") {
+                                                addContact(contact, toGrade: grade.id, sendMode: mode)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        let usedGroupIDs = Set(groupRecipients.map(\.groupID))
+                        let availableGroups = groups.filter { !usedGroupIDs.contains($0.id) }
+
+                        if availableGroups.isEmpty {
+                            Text("No available groups")
+                        } else {
+                            Menu("Add Group") {
+                                ForEach(availableGroups) { group in
+                                    Menu(group.name) {
+                                        ForEach(SendMode.allCases) { mode in
+                                            Button("Send via \(mode.title)") {
+                                                addGroup(group, toGrade: grade.id, sendMode: mode)
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     } label: {
-                        Label("Add Contact", systemImage: "plus")
+                        Label("Add Recipient", systemImage: "plus")
                     }
                 } header: {
                     Text(grade.name)
@@ -2899,6 +2844,57 @@ private struct ReportRecipientsSettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func recipientRow(
+        title: String,
+        subtitle: String,
+        secondarySubtitle: String,
+        sendEmail: Binding<Bool>,
+        sendText: Binding<Bool>,
+        footer: String,
+        onDelete: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+
+            HStack {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Toggle("Email", isOn: sendEmail)
+                    .labelsHidden()
+            }
+
+            if !secondarySubtitle.isEmpty {
+                HStack {
+                    Text(secondarySubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Toggle("Text", isOn: sendText)
+                        .labelsHidden()
+                }
+            } else {
+                HStack {
+                    Spacer()
+                    Toggle("Text", isOn: sendText)
+                        .labelsHidden()
+                }
+            }
+
+            Text(footer)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive, action: onDelete) {
+                Label("Remove", systemImage: "trash")
+            }
+        }
+    }
+
     private func recipientsForGrade(_ gradeID: UUID) -> [ReportRecipient] {
         reportRecipients
             .filter { $0.gradeID == gradeID }
@@ -2909,27 +2905,46 @@ private struct ReportRecipientsSettingsView: View {
             }
     }
 
-    private func addContact(_ contact: Contact, toGrade gradeID: UUID, sendMode: SendMode) {
-        guard !reportRecipients.contains(where: {
-            $0.gradeID == gradeID && $0.contactID == contact.id
-        }) else { return }
+    private func groupRecipientsForGrade(_ gradeID: UUID) -> [ReportRecipientGroup] {
+        reportRecipientGroups
+            .filter { $0.gradeID == gradeID }
+            .sorted { a, b in
+                let aName = groups.first(where: { $0.id == a.groupID })?.name ?? ""
+                let bName = groups.first(where: { $0.id == b.groupID })?.name ?? ""
+                return aName.localizedCaseInsensitiveCompare(bName) == .orderedAscending
+            }
+    }
 
-        let sendEmail = sendMode == .email || sendMode == .both
-        let sendText = sendMode == .text || sendMode == .both
+    private func addContact(_ contact: Contact, toGrade gradeID: UUID, sendMode: SendMode) {
+        guard !reportRecipients.contains(where: { $0.gradeID == gradeID && $0.contactID == contact.id }) else { return }
 
         dataContext.insert(
             ReportRecipient(
                 gradeID: gradeID,
                 contactID: contact.id,
-                sendEmail: sendEmail,
-                sendText: sendText
+                sendEmail: sendMode == .email || sendMode == .both,
+                sendText: sendMode == .text || sendMode == .both
             )
         )
         saveContext()
     }
 
-    private func sendModeText(_ recipient: ReportRecipient) -> String {
-        switch (recipient.sendEmail, recipient.sendText) {
+    private func addGroup(_ group: ContactGroup, toGrade gradeID: UUID, sendMode: SendMode) {
+        guard !reportRecipientGroups.contains(where: { $0.gradeID == gradeID && $0.groupID == group.id }) else { return }
+
+        dataContext.insert(
+            ReportRecipientGroup(
+                gradeID: gradeID,
+                groupID: group.id,
+                sendEmail: sendMode == .email || sendMode == .both,
+                sendText: sendMode == .text || sendMode == .both
+            )
+        )
+        saveContext()
+    }
+
+    private func sendModeText(sendEmail: Bool, sendText: Bool) -> String {
+        switch (sendEmail, sendText) {
         case (true, true): return "Send via Email + Text"
         case (true, false): return "Send via Email"
         case (false, true): return "Send via Text"
