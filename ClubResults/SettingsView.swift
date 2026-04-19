@@ -19,6 +19,12 @@ struct SettingsView: View {
                     }
 
                     NavigationLink {
+                        PlayersView()
+                    } label: {
+                        settingsRow(title: "Players", icon: "person.3")
+                    }
+
+                    NavigationLink {
                         UmpiresSettingsView()
                     } label: {
                         settingsRow(title: "Umpires", icon: "flag.pattern.checkered")
@@ -34,12 +40,6 @@ struct SettingsView: View {
                         TeamsAndVenuesSettingsView()
                     } label: {
                         settingsRow(title: "Teams & Venues", icon: "flag.2.crossed")
-                    }
-
-                    NavigationLink {
-                        ReportsSettingsView()
-                    } label: {
-                        settingsRow(title: "Reports", icon: "doc.text")
                     }
 
                     NavigationLink {
@@ -1614,7 +1614,7 @@ private struct ContactEditSheet: View {
     }
 }
 
-private struct ReportsSettingsView: View {
+struct ReportsSettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]

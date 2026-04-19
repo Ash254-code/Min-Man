@@ -9,15 +9,14 @@ struct TabsView: View {
             GamesView()
                 .tabItem { Label("Games", systemImage: "list.bullet") }
 
-            PlayersView()
-                .tabItem { Label("Players", systemImage: "person.3") }
-
             TotalsView()
                 .tabItem { Label("Totals", systemImage: "chart.bar") }
 
-            // ✅ NEW: Pres tab
             PresView()
                 .tabItem { Label("Pres", systemImage: "rectangle.stack") }
+
+            ReportsSettingsView()
+                .tabItem { Label("Reports", systemImage: "doc.text") }
 
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
