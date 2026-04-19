@@ -237,7 +237,7 @@ struct NewGameWizardView: View {
     // MARK: Setup
     @State private var gradeID: UUID?
     @State private var date = Date()
-    @State private var gameCountSelection: GameCountSelection = .one
+    @State private var gameCountSelection: GameCountSelection?
 
     @State private var clubConfiguration: ClubConfiguration = ClubConfigurationStore.load()
 
@@ -643,7 +643,11 @@ struct NewGameWizardView: View {
     }
 
     private var isTwoGameFlow: Bool {
-        shouldAskGameCount && gameCountSelection == .two
+        gameCountSelection == .two
+    }
+
+    private var defaultGameCountSelection: GameCountSelection? {
+        shouldAskGameCount ? nil : .one
     }
 
     private var requiredBestPlayersCount: Int {
@@ -816,7 +820,8 @@ struct NewGameWizardView: View {
             return gradeID != nil &&
                    !finalOpponent.isEmpty &&
                    !finalVenue.isEmpty &&
-                   dataEntrySelection != nil
+                   (!shouldAskGameCount || gameCountSelection != nil) &&
+                   (!shouldAskForEntryMode || dataEntrySelection != nil)
 
         case .staff:
             let asksHeadCoach = selectedGrade?.asksHeadCoach ?? true
@@ -1031,10 +1036,10 @@ struct NewGameWizardView: View {
             applyDefaults(for: newGrade)
             syncBestPlayersSelectionCount()
             syncGuestVotesSelectionCount()
-            gameCountSelection = .one
+            gameCountSelection = defaultGameCountSelection
             step = .setup
             entryMode = nil
-            dataEntrySelection = nil
+            dataEntrySelection = supportsLiveGameView ? nil : .postGame
             liveGameSession = LiveGameSessionState()
             editingGame = nil
             guestBestFairestVotesScanPDF = nil
@@ -1261,8 +1266,8 @@ struct NewGameWizardView: View {
 
         isRestoringDraft = true
         editingGame = draft
-        gameCountSelection = .one
         gradeID = draft.gradeID
+        gameCountSelection = defaultGameCountSelection
         date = draft.date
         opponentName = draft.opponent
         venueName = draft.venue
@@ -1332,20 +1337,6 @@ struct NewGameWizardView: View {
                 }
 
                 StaffCard(title: "Game Details", systemImage: "calendar") {
-                    if shouldAskGameCount {
-                        HStack(spacing: 12) {
-                            rowLabel("How many games?")
-                            Spacer()
-                            setupMenuButton(title: gameCountSelection.label) {
-                                ForEach(GameCountSelection.allCases) { option in
-                                    Button(option.label) {
-                                        gameCountSelection = option
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     DatePicker("Date & time", selection: $date, displayedComponents: [.date, .hourAndMinute])
                         .font(wizardBodyFont)
 
@@ -1381,17 +1372,33 @@ struct NewGameWizardView: View {
                         }
                     }
 
-                    HStack(spacing: 12) {
-                        rowLabel("Data Entry")
-                        Spacer()
-                        HStack(spacing: 8) {
-                            ForEach(availableDataEntryOptions) { option in
-                                setupChoiceButton(
-                                    title: option.rawValue,
-                                    isSelected: dataEntrySelection == option
-                                ) {
-                                    dataEntrySelection = option
-                                    entryMode = option == .liveGame ? .live : .postGame
+                    if shouldAskGameCount {
+                        HStack(spacing: 12) {
+                            rowLabel("How many games?")
+                            Spacer()
+                            setupMenuButton(title: gameCountSelection?.label ?? "Select…") {
+                                ForEach(GameCountSelection.allCases) { option in
+                                    Button(option.label) {
+                                        gameCountSelection = option
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if shouldAskForEntryMode {
+                        HStack(spacing: 12) {
+                            rowLabel("Data Entry")
+                            Spacer()
+                            HStack(spacing: 8) {
+                                ForEach(availableDataEntryOptions) { option in
+                                    setupChoiceButton(
+                                        title: option.rawValue,
+                                        isSelected: dataEntrySelection == option
+                                    ) {
+                                        dataEntrySelection = option
+                                        entryMode = option == .liveGame ? .live : .postGame
+                                    }
                                 }
                             }
                         }
