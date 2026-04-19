@@ -215,6 +215,12 @@ struct NewGameWizardView: View {
         case postGame
         case live
     }
+    private enum DataEntrySelection: String, CaseIterable, Identifiable {
+        case postGame = "Post Game"
+        case liveGame = "Live Game"
+
+        var id: String { rawValue }
+    }
     private enum GameCountSelection: String, CaseIterable, Identifiable {
         case one
         case two
@@ -224,6 +230,7 @@ struct NewGameWizardView: View {
     }
     @State private var step: Step = .setup
     @State private var entryMode: EntryMode?
+    @State private var dataEntrySelection: DataEntrySelection?
     @State private var liveGameSession = LiveGameSessionState()
     @State private var editingGame: Game?
 
@@ -777,7 +784,8 @@ struct NewGameWizardView: View {
         case .setup:
             return gradeID != nil &&
                    !finalOpponent.isEmpty &&
-                   !finalVenue.isEmpty
+                   !finalVenue.isEmpty &&
+                   dataEntrySelection != nil
 
         case .staff:
             let asksHeadCoach = selectedGrade?.asksHeadCoach ?? true
@@ -1000,6 +1008,7 @@ struct NewGameWizardView: View {
             gameCountSelection = .one
             step = .setup
             entryMode = nil
+            dataEntrySelection = nil
             liveGameSession = LiveGameSessionState()
             editingGame = nil
             guestBestFairestVotesScanPDF = nil
@@ -1169,6 +1178,7 @@ struct NewGameWizardView: View {
 
         step = previewStep?.wizardStep ?? step
         entryMode = .postGame
+        dataEntrySelection = .postGame
 
         if let previewVenue {
             venueName = previewVenue
@@ -1253,11 +1263,13 @@ struct NewGameWizardView: View {
 
         if reopenLiveViewOnAppear {
             entryMode = .live
+            dataEntrySelection = .liveGame
             startLiveSessionIfNeeded()
             move(to: .score)
             isRestoringDraft = false
         } else {
             entryMode = .postGame
+            dataEntrySelection = .postGame
             isRestoringDraft = false
         }
     }
@@ -1330,6 +1342,21 @@ struct NewGameWizardView: View {
                             }
                         }
                     }
+
+                    HStack(spacing: 12) {
+                        rowLabel("Data Entry")
+                        Spacer()
+                        HStack(spacing: 8) {
+                            ForEach(DataEntrySelection.allCases) { option in
+                                setupChoiceButton(
+                                    title: option.rawValue,
+                                    isSelected: dataEntrySelection == option
+                                ) {
+                                    dataEntrySelection = option
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -1368,6 +1395,26 @@ struct NewGameWizardView: View {
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
+    }
+
+    private func setupChoiceButton(
+        title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(wizardBodyFont)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .lineLimit(1)
+                .padding(.horizontal, isCompactLayout ? 12 : 14)
+                .padding(.vertical, isCompactLayout ? 8 : 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     // Staff step (coaching only)
