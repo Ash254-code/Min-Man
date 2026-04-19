@@ -793,7 +793,6 @@ private struct ClubGradesSettingsView: View {
                     Section {
                         Label("Awards", systemImage: "rosette")
                             .font(.subheadline.weight(.semibold))
-                        Toggle("Notes", isOn: bind(grade, \.asksNotes))
                         Toggle("Score", isOn: bind(grade, \.asksScore))
                         Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
                         Picker("Best Players", selection: bind(grade, \.bestPlayersCount)) {
@@ -1225,7 +1224,6 @@ private struct AddGradeWizardView: View {
                     }
                 case .awards:
                     Section {
-                        Toggle("Notes", isOn: $draft.asksNotes)
                         Toggle("Goal Kickers", isOn: $draft.asksGoalKickers)
                         Picker("Best Players", selection: $draft.bestPlayersCount) {
                             ForEach(1...10, id: \.self) { count in
