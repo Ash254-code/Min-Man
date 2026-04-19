@@ -131,15 +131,6 @@ struct GamesView: View {
         Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
     }
 
-    private var clubConfiguration: ClubConfiguration {
-        ClubConfigurationStore.load()
-    }
-
-    private var clubName: String {
-        let trimmed = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Min Man" : trimmed
-    }
-
     private func gameListItems(from sourceGames: [Game]) -> [GameListItem] {
         var result: [GameListItem] = []
         var used = Set<UUID>()
@@ -378,7 +369,6 @@ struct GamesView: View {
                 RoundDetailHeaderCard(
                     roundNumber: round.roundNumber,
                     dateLabel: roundDateLabel(for: round),
-                    clubName: clubName,
                     opponent: round.opponent,
                     outcomePills: roundOutcomePills(for: round)
                 )
@@ -403,7 +393,6 @@ struct GamesView: View {
                         RoundCardRow(
                             roundNumber: round.roundNumber,
                             dateLabel: roundDateLabel(for: round),
-                            clubName: clubName,
                             opponent: round.opponent,
                             outcomePills: roundOutcomePills(for: round)
                         )
@@ -792,7 +781,6 @@ private struct GameCardRow: View {
 private struct RoundTitleLine: View {
     let roundNumber: Int
     let dateLabel: String
-    let clubName: String
     let opponent: String
     let outcomePills: [GamesView.RoundOutcomePillItem]
     var showsChevron: Bool
@@ -804,12 +792,13 @@ private struct RoundTitleLine: View {
                 .multilineTextAlignment(.leading)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
-                .layoutPriority(0)
-            OpponentBadge(opponent: clubName, fixedWidth: nil)
-            Text("v")
-                .font(.system(size: 24, weight: .bold))
-            OpponentBadge(opponent: opponent, fixedWidth: nil)
+                .layoutPriority(1)
+            Text("V \(opponent)")
+                .font(.system(size: 22, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
             if !outcomePills.isEmpty {
+                Spacer(minLength: 20)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(outcomePills) { item in
@@ -817,11 +806,11 @@ private struct RoundTitleLine: View {
                         }
                     }
                 }
-                .frame(width: 180, alignment: .leading)
+                .frame(maxWidth: 320, alignment: .trailing)
                 .layoutPriority(2)
             }
-            Spacer(minLength: 8)
             if showsChevron {
+                Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -833,7 +822,6 @@ private struct RoundTitleLine: View {
 private struct RoundCardRow: View {
     let roundNumber: Int
     let dateLabel: String
-    let clubName: String
     let opponent: String
     let outcomePills: [GamesView.RoundOutcomePillItem]
 
@@ -841,7 +829,6 @@ private struct RoundCardRow: View {
         RoundTitleLine(
             roundNumber: roundNumber,
             dateLabel: dateLabel,
-            clubName: clubName,
             opponent: opponent,
             outcomePills: outcomePills,
             showsChevron: true
@@ -863,7 +850,6 @@ private struct RoundCardRow: View {
 private struct RoundDetailHeaderCard: View {
     let roundNumber: Int
     let dateLabel: String
-    let clubName: String
     let opponent: String
     let outcomePills: [GamesView.RoundOutcomePillItem]
 
@@ -871,7 +857,6 @@ private struct RoundDetailHeaderCard: View {
         RoundTitleLine(
             roundNumber: roundNumber,
             dateLabel: dateLabel,
-            clubName: clubName,
             opponent: opponent,
             outcomePills: outcomePills,
             showsChevron: false
@@ -903,9 +888,9 @@ private struct CompactRoundOutcomePill: View {
 
     var body: some View {
         Text(item.outcome.label)
-            .font(.system(size: 12, weight: .bold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .font(.system(size: 14, weight: .bold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
                 Capsule(style: .continuous)
                     .fill(foregroundColor.opacity(0.22))
