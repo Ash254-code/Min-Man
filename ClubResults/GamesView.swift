@@ -105,7 +105,6 @@ struct GamesView: View {
         case delete
     }
 
-    private let requiredActionCode = "1234"
 
     // MARK: - Ordered grades (your seeded order + remaining A→Z)
     private var orderedGrades: [Grade] {
@@ -547,7 +546,7 @@ struct GamesView: View {
 
     private func handleCodeSubmission() {
         let trimmed = codePromptValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed == requiredActionCode else {
+        guard DeleteCodeStore.verify(trimmed) else {
             showWrongCodeAlert = true
             return
         }

@@ -24,7 +24,6 @@ struct GameDetailView: View {
         case delete
     }
 
-    private let requiredActionCode = "1234"
 
     private var gradeName: String {
         grades.first(where: { $0.id == game.gradeID })?.name ?? "Unknown"
@@ -351,7 +350,7 @@ struct GameDetailView: View {
 
     private func handleProtectedCodeSubmission() {
         let trimmed = protectedCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed == requiredActionCode else {
+        guard DeleteCodeStore.verify(trimmed) else {
             showWrongCodeAlert = true
             return
         }
