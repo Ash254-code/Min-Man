@@ -112,7 +112,7 @@ struct SettingsView: View {
         .id(resetToken)
     }
 
-    private let settingsIconColumnWidth: CGFloat = 30
+    private let settingsIconColumnWidth: CGFloat = 40
 
     @ViewBuilder
     private func settingsRow(title: String, icon: String) -> some View {
