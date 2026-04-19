@@ -141,6 +141,7 @@ struct ClubResultsTests {
         let decoded = try JSONDecoder().decode(GradeRecord.self, from: data)
 
         #expect(decoded.asksGuestBestFairestVotesScan == false)
+        #expect(decoded.guestBestPlayersCount == 6)
         #expect(decoded.allowsLiveGameView == false)
         #expect(decoded.quarterLengthMinutes == 20)
     }
