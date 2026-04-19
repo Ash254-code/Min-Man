@@ -393,6 +393,7 @@ struct NewGameWizardView: View {
     @State private var hasAppliedInitialGrade = false
     @State private var hasAppliedDraftRestore = false
     @State private var isRestoringDraft = false
+    @State private var suppressNextGradeChangeReset = false
     @State private var reportAttachmentURL: URL?
     @State private var pendingEmailRecipients: [String] = []
     @State private var pendingTextRecipients: [String] = []
@@ -1111,6 +1112,10 @@ struct NewGameWizardView: View {
         }
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
+            if suppressNextGradeChangeReset {
+                suppressNextGradeChangeReset = false
+                return
+            }
             guard !isRestoringDraft else { return }
             applyDefaults(for: newGrade)
             syncBestPlayersSelectionCount()
@@ -1347,6 +1352,7 @@ struct NewGameWizardView: View {
         guard let draft = games.first(where: { $0.id == draftGameID && $0.isDraft }) else { return }
 
         isRestoringDraft = true
+        suppressNextGradeChangeReset = true
         editingGame = draft
         gradeID = draft.gradeID
         gameCountSelection = defaultGameCountSelection
