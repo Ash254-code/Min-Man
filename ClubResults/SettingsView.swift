@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PDFKit
+import MessageUI
 import UIKit
 import UniformTypeIdentifiers
 
@@ -2465,7 +2466,6 @@ struct ReportsSettingsView: View {
     @State private var templateEditing: CustomReportTemplate?
     @State private var templateActioning: CustomReportTemplate?
     @State private var templatePreviewing: TemplateRunRequest?
-    @State private var templateSharing: TemplateRunRequest?
     @State private var isCreatingTemplate = false
     @State private var saveErrorMessage: String?
     var onOpenContactsSettings: (() -> Void)? = nil
@@ -2515,9 +2515,10 @@ struct ReportsSettingsView: View {
                         .padding(.vertical, 10)
                         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .onTapGesture {
-                            templateSharing = TemplateRunRequest(
+                            templatePreviewing = TemplateRunRequest(
                                 template: template,
-                                dateRange: reportDateRange(for: template)
+                                dateRange: reportDateRange(for: template),
+                                emailRecipients: recipientEmails(for: template)
                             )
                         }
                         .onLongPressGesture {
@@ -2565,7 +2566,8 @@ struct ReportsSettingsView: View {
                 Button("Preview") {
                     templatePreviewing = TemplateRunRequest(
                         template: template,
-                        dateRange: reportDateRange(for: template)
+                        dateRange: reportDateRange(for: template),
+                        emailRecipients: recipientEmails(for: template)
                     )
                 }
             }
@@ -2619,7 +2621,11 @@ struct ReportsSettingsView: View {
                     customStartDate: normalizedStart,
                     customEndDate: normalizedEnd
                 )
-                templateSharing = TemplateRunRequest(template: template, dateRange: selectedDateRange)
+                templatePreviewing = TemplateRunRequest(
+                    template: template,
+                    dateRange: selectedDateRange,
+                    emailRecipients: recipientEmails(for: template)
+                )
             }
             .appPopupStyle()
         }
@@ -2629,21 +2635,10 @@ struct ReportsSettingsView: View {
                 grades: grades,
                 games: games,
                 players: players,
-                selectedDateRange: request.dateRange
+                selectedDateRange: request.dateRange,
+                emailRecipients: request.emailRecipients
             )
                 .appPopupStyle()
-        }
-        .sheet(item: $templateSharing) { request in
-            CustomReportShareView(
-                template: request.template,
-                grades: grades,
-                contacts: contacts,
-                groups: groups,
-                memberships: groupMemberships,
-                sectionMemberships: sectionMemberships,
-                selectedDateRange: request.dateRange
-            )
-            .appPopupStyle()
         }
         .sheet(item: $templateEditing) { template in
             CustomReportEditView(
@@ -2778,11 +2773,52 @@ struct ReportsSettingsView: View {
             customEndDate: template.customDateRangeEnd
         )
     }
+
+    private func recipientEmails(for template: CustomReportTemplate) -> [String] {
+        let sectionKeys = Set(
+            customReportRecipientSections
+                .filter { $0.templateID == template.id }
+                .map(\.sectionKey)
+        )
+        let sectionContactIDs = Set(
+            sectionMemberships
+                .filter { sectionKeys.contains($0.sectionKey) }
+                .map(\.contactID)
+        )
+
+        let groupIDs = Set(
+            customReportRecipientGroups
+                .filter { $0.templateID == template.id }
+                .map(\.groupID)
+        )
+        let groupContactIDs = Set(
+            groupMemberships
+                .filter { groupIDs.contains($0.groupID) }
+                .map(\.contactID)
+        )
+
+        let individualContactIDs = Set(
+            customReportRecipientContacts
+                .filter { $0.templateID == template.id }
+                .map(\.contactID)
+        )
+
+        let contactIDs = sectionContactIDs
+            .union(groupContactIDs)
+            .union(individualContactIDs)
+
+        return contacts
+            .filter { contactIDs.contains($0.id) }
+            .map { $0.email.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
 }
 
 private struct TemplateRunRequest: Identifiable {
     let template: CustomReportTemplate
     let dateRange: ReportDateRange
+    let emailRecipients: [String]
 
     var id: String {
         "\(template.id.uuidString)-\(dateRange.start.timeIntervalSince1970)-\(dateRange.end.timeIntervalSince1970)"
@@ -2860,9 +2896,12 @@ private struct CustomReportPreviewView: View {
     let games: [Game]
     let players: [Player]
     let selectedDateRange: ReportDateRange
+    let emailRecipients: [String]
     @State private var pdfURL: URL?
     @State private var errorMessage: String?
     @State private var showShareSheet = false
+    @State private var showMailComposer = false
+    @State private var showMailUnavailableAlert = false
 
     var body: some View {
         NavigationStack {
@@ -2887,11 +2926,16 @@ private struct CustomReportPreviewView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showShareSheet = true
+                        if MFMailComposeViewController.canSendMail() {
+                            showMailComposer = true
+                        } else {
+                            showMailUnavailableAlert = true
+                            showShareSheet = true
+                        }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
-                    .disabled(pdfURL == nil)
+                    .disabled(pdfURL == nil || emailRecipients.isEmpty)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -2905,6 +2949,21 @@ private struct CustomReportPreviewView: View {
                 } else {
                     ShareSheet(items: [])
                 }
+            }
+            .sheet(isPresented: $showMailComposer) {
+                if let pdfURL {
+                    ReportMailComposeView(
+                        recipients: emailRecipients,
+                        subject: "Custom Report: \(template.name)",
+                        body: "Attached is the custom report PDF.",
+                        attachmentURL: pdfURL
+                    )
+                }
+            }
+            .alert("Mail Not Configured", isPresented: $showMailUnavailableAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Mail is not configured on this device. We opened the share sheet so you can still export the PDF.")
             }
             .task {
                 guard pdfURL == nil, errorMessage == nil else { return }
@@ -2920,6 +2979,50 @@ private struct CustomReportPreviewView: View {
                     errorMessage = "Could not generate preview PDF."
                 }
             }
+        }
+    }
+}
+
+private struct ReportMailComposeView: UIViewControllerRepresentable {
+    @Environment(\.dismiss) private var dismiss
+
+    let recipients: [String]
+    let subject: String
+    let body: String
+    let attachmentURL: URL
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onFinish: { dismiss() })
+    }
+
+    func makeUIViewController(context: Context) -> MFMailComposeViewController {
+        let controller = MFMailComposeViewController()
+        controller.mailComposeDelegate = context.coordinator
+        controller.setToRecipients(recipients)
+        controller.setSubject(subject)
+        controller.setMessageBody(body, isHTML: false)
+        if let data = try? Data(contentsOf: attachmentURL) {
+            controller.addAttachmentData(data, mimeType: "application/pdf", fileName: attachmentURL.lastPathComponent)
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {}
+
+    final class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+        let onFinish: () -> Void
+
+        init(onFinish: @escaping () -> Void) {
+            self.onFinish = onFinish
+        }
+
+        func mailComposeController(
+            _ controller: MFMailComposeViewController,
+            didFinishWith result: MFMailComposeResult,
+            error: Error?
+        ) {
+            controller.dismiss(animated: true)
+            onFinish()
         }
     }
 }
