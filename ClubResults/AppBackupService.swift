@@ -714,6 +714,9 @@ enum AppBackupService {
 
     @MainActor
     static func createFullBackupFile(modelContext: ModelContext) throws -> FullBackupExportResult {
+        // Flush pending edits so export reflects what the user currently sees.
+        try modelContext.save()
+
         let grades = try modelContext.fetch(FetchDescriptor<Grade>())
         let players = try modelContext.fetch(FetchDescriptor<Player>())
         let games = try modelContext.fetch(FetchDescriptor<Game>())
