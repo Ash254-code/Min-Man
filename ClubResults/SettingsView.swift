@@ -2494,50 +2494,35 @@ struct ReportsSettingsView: View {
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
                     ForEach(templates) { template in
-                        ZStack(alignment: .topTrailing) {
-                            VStack(spacing: 6) {
-                                Text(template.name)
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(2)
+                        VStack(spacing: 6) {
+                            Text(template.name)
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
 
-                                Text(gradesSummary(for: template))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(2)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .padding(.trailing, 20)
-
-                            Button {
-                                templateEditing = template
-                            } label: {
-                                Image(systemName: "square.and.pencil")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(8)
-                            }
-                            .buttonStyle(.plain)
+                            Text(gradesSummary(for: template))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .onTapGesture {
+                            templateSharing = TemplateRunRequest(
+                                template: template,
+                                dateRange: reportDateRange(for: template)
+                            )
+                        }
+                        .onLongPressGesture {
                             templateActioning = template
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 94)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                dataContext.delete(template)
-                                saveContext()
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
                     }
                     
                     Button {
@@ -2566,24 +2551,43 @@ struct ReportsSettingsView: View {
             .padding(.vertical)
         }
         .navigationTitle("Reports")
-        .sheet(item: $templateActioning) { template in
-            CustomReportDateRangeActionView(template: template, games: games) { selectedDateRange, selectedOption in
-                let request = TemplateRunRequest(template: template, dateRange: selectedDateRange)
-                switch selectedOption {
-                case .preview:
-                    templatePreviewing = request
-                case .share:
-                    templateSharing = request
+        .confirmationDialog("Report actions", isPresented: Binding(
+            get: { templateActioning != nil },
+            set: { if !$0 { templateActioning = nil } }
+        ), titleVisibility: .visible) {
+            if let template = templateActioning {
+                Button("Edit") {
+                    templateEditing = template
+                }
+                Button("Preview") {
+                    templatePreviewing = TemplateRunRequest(
+                        template: template,
+                        dateRange: reportDateRange(for: template)
+                    )
+                }
+                Button("Delete Report", role: .destructive) {
+                    for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
+                        dataContext.delete(recipientSection)
+                    }
+                    for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
+                        dataContext.delete(recipientGroup)
+                    }
+                    for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
+                        dataContext.delete(recipientContact)
+                    }
+                    dataContext.delete(template)
+                    saveContext()
                 }
             }
-            .appPopupStyle()
         }
         .sheet(isPresented: $isCreatingTemplate) {
             CustomReportEditView(
                 grades: grades,
                 contacts: contacts,
                 sectionMemberships: sectionMemberships
-            ) { name, selectedGradeIDs, includeBestPlayers, includeGuestVotes, includeGoalKickers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeBestPlayers, includeGuestVotes, includeGoalKickers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+                let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
+                let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
                 let template = CustomReportTemplate(
                     name: name,
                     gradeIDs: selectedGradeIDs,
@@ -2599,7 +2603,10 @@ struct ReportsSettingsView: View {
                     includeMatchNotes: includeMatchNotes,
                     includeOnlyActiveGrades: includeOnlyActiveGrades,
                     minimumGamesPlayed: minimumGamesPlayed,
-                    groupingModeRawValue: groupingModeRawValue
+                    groupingModeRawValue: groupingModeRawValue,
+                    dateRangeQuickPickRawValue: selectedQuickPickRawValue,
+                    customDateRangeStart: normalizedStart,
+                    customDateRangeEnd: normalizedEnd
                 )
                 dataContext.insert(template)
                 selectedRecipientSectionKeys.forEach { sectionKey in
@@ -2653,6 +2660,9 @@ struct ReportsSettingsView: View {
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
                 initialMinimumGamesPlayed: template.minimumGamesPlayed,
                 initialGroupingModeRawValue: template.groupingModeRawValue,
+                initialDateRangeQuickPickRawValue: template.dateRangeQuickPickRawValue,
+                initialCustomDateRangeStart: template.customDateRangeStart,
+                initialCustomDateRangeEnd: template.customDateRangeEnd,
                 initialRecipientSectionKeys: customReportRecipientSections
                     .filter { $0.templateID == template.id }
                     .map(\.sectionKey),
@@ -2672,7 +2682,9 @@ struct ReportsSettingsView: View {
                     dataContext.delete(template)
                     saveContext()
                 }
-            ) { name, selectedGradeIDs, includeBestPlayers, includeGuestVotes, includeGoalKickers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeBestPlayers, includeGuestVotes, includeGoalKickers, includeBestAndFairestVotes, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+                let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
+                let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
                 template.name = name
                 template.gradeIDs = selectedGradeIDs
                 template.includeBestPlayers = includeBestPlayers
@@ -2688,6 +2700,9 @@ struct ReportsSettingsView: View {
                 template.includeOnlyActiveGrades = includeOnlyActiveGrades
                 template.minimumGamesPlayed = minimumGamesPlayed
                 template.groupingModeRawValue = groupingModeRawValue
+                template.dateRangeQuickPickRawValue = selectedQuickPickRawValue
+                template.customDateRangeStart = normalizedStart
+                template.customDateRangeEnd = normalizedEnd
 
                 for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
                     dataContext.delete(recipientSection)
@@ -2738,6 +2753,17 @@ struct ReportsSettingsView: View {
 
         return selectedGradeNames.isEmpty ? "All grades" : selectedGradeNames.joined(separator: " • ")
     }
+
+    private func reportDateRange(for template: CustomReportTemplate) -> ReportDateRange {
+        let quickPick = ReportRangeQuickPick(rawValue: template.dateRangeQuickPickRawValue) ?? .mostRecentGame
+        return buildDateRange(
+            for: quickPick,
+            template: template,
+            games: games,
+            customStartDate: template.customDateRangeStart,
+            customEndDate: template.customDateRangeEnd
+        )
+    }
 }
 
 private struct TemplateRunRequest: Identifiable {
@@ -2758,11 +2784,6 @@ private struct ReportDateRange {
     }
 }
 
-private enum ReportActionOption {
-    case preview
-    case share
-}
-
 private enum ReportRangeQuickPick: String, CaseIterable, Identifiable {
     case mostRecentGame = "Most Recent Game"
     case previousWeek = "Previous Week"
@@ -2773,98 +2794,47 @@ private enum ReportRangeQuickPick: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private struct CustomReportDateRangeActionView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    let template: CustomReportTemplate
-    let games: [Game]
-    let onSubmit: (ReportDateRange, ReportActionOption) -> Void
-
-    @State private var selectedQuickPick: ReportRangeQuickPick = .mostRecentGame
-    @State private var customStartDate: Date = Calendar.current.startOfDay(for: Date().addingTimeInterval(-60 * 60 * 24 * 7))
-    @State private var customEndDate: Date = Date()
-
-    private var computedRange: ReportDateRange {
-        let calendar = Calendar.current
-        let today = Date()
-        switch selectedQuickPick {
-        case .mostRecentGame:
-            let scopedGames = games
-                .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.gradeID) }
-                .filter { !$0.isDraft && $0.date <= today }
-            let mostRecentGameDate = scopedGames
-                .map(\.date)
-                .max() ?? today
-            let dayStart = calendar.startOfDay(for: mostRecentGameDate)
-            let dayEnd = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: dayStart) ?? mostRecentGameDate
-            return ReportDateRange(start: dayStart, end: dayEnd)
-        case .previousWeek:
-            let dayStart = calendar.startOfDay(for: today)
-            let start = calendar.date(byAdding: .day, value: -7, to: dayStart) ?? dayStart
-            let end = calendar.date(byAdding: DateComponents(second: -1), to: dayStart) ?? today
-            return ReportDateRange(start: start, end: end)
-        case .previousMonth:
-            let dayStart = calendar.startOfDay(for: today)
-            let start = calendar.date(byAdding: .month, value: -1, to: dayStart) ?? dayStart
-            let end = calendar.date(byAdding: DateComponents(second: -1), to: dayStart) ?? today
-            return ReportDateRange(start: start, end: end)
-        case .currentYear:
-            let year = calendar.component(.year, from: today)
-            let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? calendar.startOfDay(for: today)
-            return ReportDateRange(start: start, end: today)
-        case .custom:
-            let start = min(customStartDate, customEndDate)
-            let end = max(customStartDate, customEndDate)
-            return ReportDateRange(start: calendar.startOfDay(for: start), end: calendar.date(byAdding: DateComponents(day: 1, second: -1), to: calendar.startOfDay(for: end)) ?? end)
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Date Range") {
-                    ForEach(ReportRangeQuickPick.allCases) { pick in
-                        Button {
-                            selectedQuickPick = pick
-                        } label: {
-                            HStack {
-                                Text(pick.rawValue)
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                if selectedQuickPick == pick {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                if selectedQuickPick == .custom {
-                    Section("Custom Date Range") {
-                        DatePicker("Start Date", selection: $customStartDate, displayedComponents: .date)
-                        DatePicker("End Date", selection: $customEndDate, displayedComponents: .date)
-                    }
-                }
-            }
-            .navigationTitle(template.name)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItemGroup(placement: .confirmationAction) {
-                    Button("Preview") {
-                        onSubmit(computedRange, .preview)
-                        dismiss()
-                    }
-                    Button("Share") {
-                        onSubmit(computedRange, .share)
-                        dismiss()
-                    }
-                }
-            }
-        }
+private func buildDateRange(
+    for quickPick: ReportRangeQuickPick,
+    template: CustomReportTemplate,
+    games: [Game],
+    customStartDate: Date,
+    customEndDate: Date
+) -> ReportDateRange {
+    let calendar = Calendar.current
+    let today = Date()
+    switch quickPick {
+    case .mostRecentGame:
+        let scopedGames = games
+            .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.gradeID) }
+            .filter { !$0.isDraft && $0.date <= today }
+        let mostRecentGameDate = scopedGames.map(\.date).max() ?? today
+        let dayStart = calendar.startOfDay(for: mostRecentGameDate)
+        let dayEnd = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: dayStart) ?? mostRecentGameDate
+        return ReportDateRange(start: dayStart, end: dayEnd)
+    case .previousWeek:
+        let dayStart = calendar.startOfDay(for: today)
+        let start = calendar.date(byAdding: .day, value: -7, to: dayStart) ?? dayStart
+        let end = calendar.date(byAdding: DateComponents(second: -1), to: dayStart) ?? today
+        return ReportDateRange(start: start, end: end)
+    case .previousMonth:
+        let dayStart = calendar.startOfDay(for: today)
+        let start = calendar.date(byAdding: .month, value: -1, to: dayStart) ?? dayStart
+        let end = calendar.date(byAdding: DateComponents(second: -1), to: dayStart) ?? today
+        return ReportDateRange(start: start, end: end)
+    case .currentYear:
+        let year = calendar.component(.year, from: today)
+        let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? calendar.startOfDay(for: today)
+        return ReportDateRange(start: start, end: today)
+    case .custom:
+        let start = min(customStartDate, customEndDate)
+        let end = max(customStartDate, customEndDate)
+        let startDay = calendar.startOfDay(for: start)
+        let endDay = calendar.startOfDay(for: end)
+        return ReportDateRange(
+            start: startDay,
+            end: calendar.date(byAdding: DateComponents(day: 1, second: -1), to: endDay) ?? end
+        )
     }
 }
 
@@ -3697,7 +3667,7 @@ private struct CustomReportEditView: View {
     let contacts: [Contact]
     let sectionMemberships: [ContactSectionMembership]
     let onDelete: (() -> Void)?
-    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
+    let onSave: (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
@@ -3713,6 +3683,9 @@ private struct CustomReportEditView: View {
     @State private var includeOnlyActiveGrades: Bool
     @State private var minimumGamesPlayed: Int
     @State private var groupingMode: ReportGroupingMode
+    @State private var selectedDateRangeQuickPick: ReportRangeQuickPick
+    @State private var customDateRangeStart: Date
+    @State private var customDateRangeEnd: Date
     @State private var selectedRecipientSectionKeys: Set<String>
     @State private var selectedRecipientContactIDs: Set<UUID>
     @State private var showDeleteConfirmation = false
@@ -3734,12 +3707,15 @@ private struct CustomReportEditView: View {
         initialIncludeTrainers: Bool = false,
         initialIncludeMatchNotes: Bool = false,
         initialIncludeOnlyActiveGrades: Bool = true,
-        initialMinimumGamesPlayed: Int = 1,
-        initialGroupingModeRawValue: Int = 1,
+        initialMinimumGamesPlayed: Int = 0,
+        initialGroupingModeRawValue: Int = 0,
+        initialDateRangeQuickPickRawValue: String = ReportRangeQuickPick.mostRecentGame.rawValue,
+        initialCustomDateRangeStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date(),
+        initialCustomDateRangeEnd: Date = Date(),
         initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
         onDelete: (() -> Void)? = nil,
-        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, [String], [UUID]) -> Void
+        onSave: @escaping (String, [UUID], Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
     ) {
         self.grades = grades
         self.contacts = contacts
@@ -3760,6 +3736,9 @@ private struct CustomReportEditView: View {
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
         _groupingMode = State(initialValue: ReportGroupingMode(rawValue: initialGroupingModeRawValue) ?? .combinedTotals)
+        _selectedDateRangeQuickPick = State(initialValue: ReportRangeQuickPick(rawValue: initialDateRangeQuickPickRawValue) ?? .mostRecentGame)
+        _customDateRangeStart = State(initialValue: initialCustomDateRangeStart)
+        _customDateRangeEnd = State(initialValue: initialCustomDateRangeEnd)
         _selectedRecipientSectionKeys = State(initialValue: Set(initialRecipientSectionKeys))
         _selectedRecipientContactIDs = State(initialValue: Set(initialRecipientContactIDs))
     }
@@ -3775,6 +3754,19 @@ private struct CustomReportEditView: View {
                     TextField("Report name", text: $name)
                 } header: {
                     Text("Template")
+                }
+
+                Section("Date Range") {
+                    Picker("Range", selection: $selectedDateRangeQuickPick) {
+                        ForEach(ReportRangeQuickPick.allCases) { quickPick in
+                            Text(quickPick.rawValue).tag(quickPick)
+                        }
+                    }
+
+                    if selectedDateRangeQuickPick == .custom {
+                        DatePicker("Start Date", selection: $customDateRangeStart, displayedComponents: .date)
+                        DatePicker("End Date", selection: $customDateRangeEnd, displayedComponents: .date)
+                    }
                 }
 
                 Section {
@@ -3950,6 +3942,9 @@ private struct CustomReportEditView: View {
                             includeOnlyActiveGrades,
                             minimumGamesPlayed,
                             groupingMode.rawValue,
+                            selectedDateRangeQuickPick.rawValue,
+                            customDateRangeStart,
+                            customDateRangeEnd,
                             Array(selectedRecipientSectionKeys),
                             Array(selectedRecipientContactIDs)
                         )

@@ -25,6 +25,9 @@ final class CustomReportTemplate {
     var includeOnlyActiveGrades: Bool
     var minimumGamesPlayed: Int
     var groupingModeRawValue: Int
+    var dateRangeQuickPickRawValue: String
+    var customDateRangeStart: Date
+    var customDateRangeEnd: Date
 
     init(
         id: UUID = UUID(),
@@ -42,7 +45,10 @@ final class CustomReportTemplate {
         includeMatchNotes: Bool = false,
         includeOnlyActiveGrades: Bool = true,
         minimumGamesPlayed: Int = 0,
-        groupingModeRawValue: Int = 0
+        groupingModeRawValue: Int = 0,
+        dateRangeQuickPickRawValue: String = "Most Recent Game",
+        customDateRangeStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date(),
+        customDateRangeEnd: Date = Date()
     ) {
         self.id = id
         self.name = name
@@ -60,6 +66,9 @@ final class CustomReportTemplate {
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
         self.minimumGamesPlayed = max(0, minimumGamesPlayed)
         self.groupingModeRawValue = groupingModeRawValue
+        self.dateRangeQuickPickRawValue = dateRangeQuickPickRawValue
+        self.customDateRangeStart = customDateRangeStart
+        self.customDateRangeEnd = customDateRangeEnd
     }
 
     var gradeIDs: [UUID] {
