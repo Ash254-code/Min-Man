@@ -298,6 +298,9 @@ struct NewGameWizardView: View {
     @State private var bestPlayerPickerPrompt: Int?
     @State private var bestPlayerPickerGameNumber: Int = 1
     @State private var bestPlayerPickerDetent: PresentationDetent = .large
+    @State private var showAddPlayerFromBestPicker = false
+    @State private var addPlayerErrorMessage: String?
+    @State private var showAddPlayerError = false
     @State private var guestVotesRanked: [UUID?] = Array(repeating: nil, count: 6)
     @State private var guestVotesRankedGame2: [UUID?] = Array(repeating: nil, count: 6)
     @State private var guestVotePickerPrompt: Int?
@@ -328,6 +331,12 @@ struct NewGameWizardView: View {
 
     // MARK: Helpers
     private func clean(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private func normalizePlayerName(_ s: String) -> String {
+        clean(s)
+            .lowercased()
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
 
     private var finalOpponent: String { clean(opponentName) }
     private var finalVenue: String { clean(venueName) }
@@ -2338,6 +2347,28 @@ struct NewGameWizardView: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { bestPlayerPickerPrompt = nil }
                     }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            showAddPlayerFromBestPicker = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("Add Player")
+                        .disabled(isPreviewMode)
+                    }
+                }
+                .sheet(isPresented: $showAddPlayerFromBestPicker) {
+                    PlayerAddView(
+                        activeGrades: resolvedGrades.filter(\.isActive),
+                        existingPlayers: players,
+                        preselectedGradeID: gradeID,
+                        onSave: createAndSavePlayerFromBestPicker(name:number:gradeIDs:)
+                    )
+                }
+                .alert("Could not save player", isPresented: $showAddPlayerError) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text(addPlayerErrorMessage ?? "Please try again.")
                 }
             }
             .presentationDetents([.height(bestPlayerPickerHeight), setupPickerExpandedDetent], selection: $bestPlayerPickerDetent)
@@ -2583,6 +2614,25 @@ struct NewGameWizardView: View {
             for i in 0..<requiredGuestBestPlayersCount where i != index {
                 if guestVotesRanked[i] == id { guestVotesRanked[i] = nil }
             }
+        }
+    }
+
+    private func createAndSavePlayerFromBestPicker(name: String, number: Int?, gradeIDs: [UUID]) {
+        let trimmed = clean(name)
+        guard !trimmed.isEmpty else { return }
+
+        let normalized = normalizePlayerName(trimmed)
+        guard !players.contains(where: { normalizePlayerName($0.name) == normalized }) else { return }
+
+        let player = Player(name: trimmed, number: number, gradeIDs: gradeIDs)
+        dataContext.insert(player)
+
+        do {
+            try dataContext.save()
+        } catch {
+            dataContext.delete(player)
+            addPlayerErrorMessage = error.localizedDescription
+            showAddPlayerError = true
         }
     }
 
