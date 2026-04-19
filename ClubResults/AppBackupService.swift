@@ -63,11 +63,21 @@ struct AppBackupItemCounts: Codable {
     let customReportTemplates: Int
     let staffMembers: Int
     let staffDefaults: Int
+    let contactGroups: Int
+    let contactGroupMemberships: Int
+    let contactSectionMemberships: Int
+    let reportRecipientGroups: Int
+    let customReportRecipientSections: Int
+    let customReportRecipientGroups: Int
+    let customReportRecipientContacts: Int
     let lastStaffSelections: Int
     let draftResumeFlags: Int
 
     private enum CodingKeys: String, CodingKey {
-        case grades, players, games, contacts, reportRecipients, customReportTemplates, staffMembers, staffDefaults, lastStaffSelections, draftResumeFlags
+        case grades, players, games, contacts, reportRecipients, customReportTemplates, staffMembers, staffDefaults
+        case contactGroups, contactGroupMemberships, contactSectionMemberships
+        case reportRecipientGroups, customReportRecipientSections, customReportRecipientGroups, customReportRecipientContacts
+        case lastStaffSelections, draftResumeFlags
     }
 
     init(
@@ -79,6 +89,13 @@ struct AppBackupItemCounts: Codable {
         customReportTemplates: Int,
         staffMembers: Int,
         staffDefaults: Int,
+        contactGroups: Int,
+        contactGroupMemberships: Int,
+        contactSectionMemberships: Int,
+        reportRecipientGroups: Int,
+        customReportRecipientSections: Int,
+        customReportRecipientGroups: Int,
+        customReportRecipientContacts: Int,
         lastStaffSelections: Int,
         draftResumeFlags: Int
     ) {
@@ -90,6 +107,13 @@ struct AppBackupItemCounts: Codable {
         self.customReportTemplates = customReportTemplates
         self.staffMembers = staffMembers
         self.staffDefaults = staffDefaults
+        self.contactGroups = contactGroups
+        self.contactGroupMemberships = contactGroupMemberships
+        self.contactSectionMemberships = contactSectionMemberships
+        self.reportRecipientGroups = reportRecipientGroups
+        self.customReportRecipientSections = customReportRecipientSections
+        self.customReportRecipientGroups = customReportRecipientGroups
+        self.customReportRecipientContacts = customReportRecipientContacts
         self.lastStaffSelections = lastStaffSelections
         self.draftResumeFlags = draftResumeFlags
     }
@@ -104,6 +128,13 @@ struct AppBackupItemCounts: Codable {
         customReportTemplates = try c.decodeIfPresent(Int.self, forKey: .customReportTemplates) ?? 0
         staffMembers = try c.decodeIfPresent(Int.self, forKey: .staffMembers) ?? 0
         staffDefaults = try c.decodeIfPresent(Int.self, forKey: .staffDefaults) ?? 0
+        contactGroups = try c.decodeIfPresent(Int.self, forKey: .contactGroups) ?? 0
+        contactGroupMemberships = try c.decodeIfPresent(Int.self, forKey: .contactGroupMemberships) ?? 0
+        contactSectionMemberships = try c.decodeIfPresent(Int.self, forKey: .contactSectionMemberships) ?? 0
+        reportRecipientGroups = try c.decodeIfPresent(Int.self, forKey: .reportRecipientGroups) ?? 0
+        customReportRecipientSections = try c.decodeIfPresent(Int.self, forKey: .customReportRecipientSections) ?? 0
+        customReportRecipientGroups = try c.decodeIfPresent(Int.self, forKey: .customReportRecipientGroups) ?? 0
+        customReportRecipientContacts = try c.decodeIfPresent(Int.self, forKey: .customReportRecipientContacts) ?? 0
         lastStaffSelections = try c.decodeIfPresent(Int.self, forKey: .lastStaffSelections) ?? 0
         draftResumeFlags = try c.decodeIfPresent(Int.self, forKey: .draftResumeFlags) ?? 0
     }
@@ -118,6 +149,13 @@ struct AppBackupPayload: Codable {
     let customReportTemplates: [CustomReportTemplateRecord]
     let staffMembers: [StaffMemberRecord]
     let staffDefaults: [StaffDefaultRecord]
+    let contactGroups: [ContactGroupRecord]
+    let contactGroupMemberships: [ContactGroupMembershipRecord]
+    let contactSectionMemberships: [ContactSectionMembershipRecord]
+    let reportRecipientGroups: [ReportRecipientGroupRecord]
+    let customReportRecipientSections: [CustomReportRecipientSectionRecord]
+    let customReportRecipientGroups: [CustomReportRecipientGroupRecord]
+    let customReportRecipientContacts: [CustomReportRecipientContactRecord]
     let appSettings: AppSettingsRecord
 }
 
@@ -465,6 +503,92 @@ struct StaffDefaultRecord: Codable {
     }
 }
 
+struct ContactGroupRecord: Codable {
+    let id: UUID
+    let name: String
+
+    init(_ item: ContactGroup) {
+        id = item.id
+        name = item.name
+    }
+}
+
+struct ContactGroupMembershipRecord: Codable {
+    let id: UUID
+    let contactID: UUID
+    let groupID: UUID
+
+    init(_ item: ContactGroupMembership) {
+        id = item.id
+        contactID = item.contactID
+        groupID = item.groupID
+    }
+}
+
+struct ContactSectionMembershipRecord: Codable {
+    let id: UUID
+    let contactID: UUID
+    let sectionKey: String
+
+    init(_ item: ContactSectionMembership) {
+        id = item.id
+        contactID = item.contactID
+        sectionKey = item.sectionKey
+    }
+}
+
+struct ReportRecipientGroupRecord: Codable {
+    let id: UUID
+    let gradeID: UUID
+    let groupID: UUID
+    let sendEmail: Bool
+    let sendText: Bool
+
+    init(_ item: ReportRecipientGroup) {
+        id = item.id
+        gradeID = item.gradeID
+        groupID = item.groupID
+        sendEmail = item.sendEmail
+        sendText = item.sendText
+    }
+}
+
+struct CustomReportRecipientSectionRecord: Codable {
+    let id: UUID
+    let templateID: UUID
+    let sectionKey: String
+
+    init(_ item: CustomReportRecipientSection) {
+        id = item.id
+        templateID = item.templateID
+        sectionKey = item.sectionKey
+    }
+}
+
+struct CustomReportRecipientGroupRecord: Codable {
+    let id: UUID
+    let templateID: UUID
+    let groupID: UUID
+
+    init(_ item: CustomReportRecipientGroup) {
+        id = item.id
+        templateID = item.templateID
+        groupID = item.groupID
+    }
+}
+
+struct CustomReportRecipientContactRecord: Codable {
+    let id: UUID
+    let templateID: UUID
+    let contactID: UUID
+
+    init(_ item: CustomReportRecipientContact) {
+        id = item.id
+        templateID = item.templateID
+        contactID = item.contactID
+    }
+}
+
 struct AppSettingsRecord: Codable {
     let appAppearanceRawValue: String
     let clubConfiguration: ClubConfiguration
@@ -563,6 +687,13 @@ enum AppBackupService {
         let customReportTemplates = try modelContext.fetch(FetchDescriptor<CustomReportTemplate>())
         let staffMembers = try modelContext.fetch(FetchDescriptor<StaffMember>())
         let staffDefaults = try modelContext.fetch(FetchDescriptor<StaffDefault>())
+        let contactGroups = try modelContext.fetch(FetchDescriptor<ContactGroup>())
+        let contactGroupMemberships = try modelContext.fetch(FetchDescriptor<ContactGroupMembership>())
+        let contactSectionMemberships = try modelContext.fetch(FetchDescriptor<ContactSectionMembership>())
+        let reportRecipientGroups = try modelContext.fetch(FetchDescriptor<ReportRecipientGroup>())
+        let customReportRecipientSections = try modelContext.fetch(FetchDescriptor<CustomReportRecipientSection>())
+        let customReportRecipientGroups = try modelContext.fetch(FetchDescriptor<CustomReportRecipientGroup>())
+        let customReportRecipientContacts = try modelContext.fetch(FetchDescriptor<CustomReportRecipientContact>())
 
         let settings = exportSettings()
         let payload = AppBackupPayload(
@@ -574,6 +705,13 @@ enum AppBackupService {
             customReportTemplates: customReportTemplates.map { CustomReportTemplateRecord($0) },
             staffMembers: staffMembers.map { StaffMemberRecord($0) },
             staffDefaults: staffDefaults.map { StaffDefaultRecord($0) },
+            contactGroups: contactGroups.map { ContactGroupRecord($0) },
+            contactGroupMemberships: contactGroupMemberships.map { ContactGroupMembershipRecord($0) },
+            contactSectionMemberships: contactSectionMemberships.map { ContactSectionMembershipRecord($0) },
+            reportRecipientGroups: reportRecipientGroups.map { ReportRecipientGroupRecord($0) },
+            customReportRecipientSections: customReportRecipientSections.map { CustomReportRecipientSectionRecord($0) },
+            customReportRecipientGroups: customReportRecipientGroups.map { CustomReportRecipientGroupRecord($0) },
+            customReportRecipientContacts: customReportRecipientContacts.map { CustomReportRecipientContactRecord($0) },
             appSettings: settings
         )
 
@@ -586,6 +724,13 @@ enum AppBackupService {
             customReportTemplates: payload.customReportTemplates.count,
             staffMembers: payload.staffMembers.count,
             staffDefaults: payload.staffDefaults.count,
+            contactGroups: payload.contactGroups.count,
+            contactGroupMemberships: payload.contactGroupMemberships.count,
+            contactSectionMemberships: payload.contactSectionMemberships.count,
+            reportRecipientGroups: payload.reportRecipientGroups.count,
+            customReportRecipientSections: payload.customReportRecipientSections.count,
+            customReportRecipientGroups: payload.customReportRecipientGroups.count,
+            customReportRecipientContacts: payload.customReportRecipientContacts.count,
             lastStaffSelections: payload.appSettings.lastStaffSelections.count,
             draftResumeFlags: payload.appSettings.draftResumeOpenLiveFlags.count
         )
@@ -678,6 +823,27 @@ enum AppBackupService {
 
         let staffDefaults = (try? modelContext.fetch(FetchDescriptor<StaffDefault>())) ?? []
         staffDefaults.forEach { modelContext.delete($0) }
+
+        let contactGroups = (try? modelContext.fetch(FetchDescriptor<ContactGroup>())) ?? []
+        contactGroups.forEach { modelContext.delete($0) }
+
+        let contactGroupMemberships = (try? modelContext.fetch(FetchDescriptor<ContactGroupMembership>())) ?? []
+        contactGroupMemberships.forEach { modelContext.delete($0) }
+
+        let contactSectionMemberships = (try? modelContext.fetch(FetchDescriptor<ContactSectionMembership>())) ?? []
+        contactSectionMemberships.forEach { modelContext.delete($0) }
+
+        let reportRecipientGroups = (try? modelContext.fetch(FetchDescriptor<ReportRecipientGroup>())) ?? []
+        reportRecipientGroups.forEach { modelContext.delete($0) }
+
+        let customReportRecipientSections = (try? modelContext.fetch(FetchDescriptor<CustomReportRecipientSection>())) ?? []
+        customReportRecipientSections.forEach { modelContext.delete($0) }
+
+        let customReportRecipientGroups = (try? modelContext.fetch(FetchDescriptor<CustomReportRecipientGroup>())) ?? []
+        customReportRecipientGroups.forEach { modelContext.delete($0) }
+
+        let customReportRecipientContacts = (try? modelContext.fetch(FetchDescriptor<CustomReportRecipientContact>())) ?? []
+        customReportRecipientContacts.forEach { modelContext.delete($0) }
     }
 
     @MainActor
@@ -808,6 +974,42 @@ enum AppBackupService {
         payload.staffDefaults.forEach { item in
             guard let role = StaffRole(rawValue: item.role) else { return }
             modelContext.insert(StaffDefault(id: item.id, gradeID: item.gradeID, role: role, name: item.name))
+        }
+
+        payload.contactGroups.forEach {
+            modelContext.insert(ContactGroup(id: $0.id, name: $0.name))
+        }
+
+        payload.contactGroupMemberships.forEach {
+            modelContext.insert(ContactGroupMembership(id: $0.id, contactID: $0.contactID, groupID: $0.groupID))
+        }
+
+        payload.contactSectionMemberships.forEach {
+            modelContext.insert(ContactSectionMembership(id: $0.id, contactID: $0.contactID, sectionKey: $0.sectionKey))
+        }
+
+        payload.reportRecipientGroups.forEach {
+            modelContext.insert(
+                ReportRecipientGroup(
+                    id: $0.id,
+                    gradeID: $0.gradeID,
+                    groupID: $0.groupID,
+                    sendEmail: $0.sendEmail,
+                    sendText: $0.sendText
+                )
+            )
+        }
+
+        payload.customReportRecipientSections.forEach {
+            modelContext.insert(CustomReportRecipientSection(id: $0.id, templateID: $0.templateID, sectionKey: $0.sectionKey))
+        }
+
+        payload.customReportRecipientGroups.forEach {
+            modelContext.insert(CustomReportRecipientGroup(id: $0.id, templateID: $0.templateID, groupID: $0.groupID))
+        }
+
+        payload.customReportRecipientContacts.forEach {
+            modelContext.insert(CustomReportRecipientContact(id: $0.id, templateID: $0.templateID, contactID: $0.contactID))
         }
     }
 
