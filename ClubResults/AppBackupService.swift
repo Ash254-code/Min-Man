@@ -578,7 +578,7 @@ enum AppBackupService {
         encoder.dateEncodingStrategy = .iso8601
 
         let data = try encoder.encode(envelope)
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(makeFilename(exportedAt: now))
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(makeFilename())
         try data.write(to: fileURL, options: .atomic)
 
         guard let fileSize = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64 else {
@@ -855,15 +855,8 @@ enum AppBackupService {
         "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
     }
 
-    private static func makeFilename(exportedAt: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
-
-        let stamp = formatter.string(from: exportedAt)
-        return "\(safeFileName(appName))-FullBackup-\(stamp).json"
+    private static func makeFilename() -> String {
+        "\(safeFileName(appName))-FullBackup.json"
     }
 
     private static func safeFileName(_ input: String) -> String {
