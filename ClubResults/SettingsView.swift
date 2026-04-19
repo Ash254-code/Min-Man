@@ -19,9 +19,9 @@ struct SettingsView: View {
                     }
 
                     NavigationLink {
-                        BoundaryUmpiresSettingsView()
+                        UmpiresSettingsView()
                     } label: {
-                        settingsRow(title: "Boundary Umpires", icon: "flag.pattern.checkered")
+                        settingsRow(title: "Umpires", icon: "flag.pattern.checkered")
                     }
 
                     NavigationLink {
@@ -565,7 +565,7 @@ private enum AdminPickerType: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-private struct BoundaryUmpiresSettingsView: View {
+private struct UmpiresSettingsView: View {
     @Query private var grades: [Grade]
     @State private var mappings: [UUID: [UUID]] = [:]
 
@@ -575,6 +575,12 @@ private struct BoundaryUmpiresSettingsView: View {
 
     var body: some View {
         List {
+            Section {
+                Text("Choose which grade lists provide names in the umpire duties picker. These selections control the names shown for Umpire 1, Umpire 2, and Field Umpire.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
             ForEach(orderedGrades) { grade in
                 NavigationLink {
                     boundaryGradeSelectionView(for: grade)
@@ -591,7 +597,7 @@ private struct BoundaryUmpiresSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Boundary Umpires")
+        .navigationTitle("Umpires")
         .task {
             mappings = SettingsBackupStore.loadBoundaryUmpireGradeMappings()
             ensureMissingMappingsDefaultToSelf()
@@ -651,10 +657,10 @@ private struct BoundaryUmpiresSettingsView: View {
             .map(\.name)
 
         if selectedNames.isEmpty {
-            return "Boundary players from: \(orderedGrades.first(where: { $0.id == gameGradeID })?.name ?? "This grade")"
+            return "Umpires from: \(orderedGrades.first(where: { $0.id == gameGradeID })?.name ?? "This grade")"
         }
 
-        return "Boundary players from: \(selectedNames.joined(separator: ", "))"
+        return "Umpires from: \(selectedNames.joined(separator: ", "))"
     }
 
     private func ensureMissingMappingsDefaultToSelf() {
@@ -777,8 +783,8 @@ private struct ClubGradesSettingsView: View {
                             .font(.subheadline.weight(.semibold))
                         Toggle("Goal Umpire", isOn: bind(grade, \.asksGoalUmpire))
                         Toggle("Field Umpire", isOn: bind(grade, \.asksFieldUmpire))
-                        Toggle("Boundary Umpire 1", isOn: bind(grade, \.asksBoundaryUmpire1))
-                        Toggle("Boundary Umpire 2", isOn: bind(grade, \.asksBoundaryUmpire2))
+                        Toggle("Umpire 1", isOn: bind(grade, \.asksBoundaryUmpire1))
+                        Toggle("Umpire 2", isOn: bind(grade, \.asksBoundaryUmpire2))
                     }
 
                     Section {
@@ -1208,8 +1214,8 @@ private struct AddGradeWizardView: View {
                     Section {
                         Toggle("Goal Umpire", isOn: $draft.asksGoalUmpire)
                         Toggle("Field Umpire", isOn: $draft.asksFieldUmpire)
-                        Toggle("Boundary Umpire 1", isOn: $draft.asksBoundaryUmpire1)
-                        Toggle("Boundary Umpire 2", isOn: $draft.asksBoundaryUmpire2)
+                        Toggle("Umpire 1", isOn: $draft.asksBoundaryUmpire1)
+                        Toggle("Umpire 2", isOn: $draft.asksBoundaryUmpire2)
                     } header: {
                         Text("Officials")
                     }
