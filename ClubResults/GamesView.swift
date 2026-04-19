@@ -697,7 +697,7 @@ private struct GameCardRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth, useClubColors: true)
+            OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth)
 
             if hasTwoGames {
                 Text("Two games")
@@ -756,7 +756,7 @@ private struct RoundTitleLine: View {
             OpponentBadge(opponent: clubName, fixedWidth: nil)
             Text("v")
                 .font(.system(size: 24, weight: .bold))
-            OpponentBadge(opponent: opponent, fixedWidth: nil, useClubColors: true)
+            OpponentBadge(opponent: opponent, fixedWidth: nil)
             Spacer(minLength: 8)
             if showsChevron {
                 Image(systemName: "chevron.right")
