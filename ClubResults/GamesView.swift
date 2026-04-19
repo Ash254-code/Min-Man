@@ -385,7 +385,7 @@ struct GamesView: View {
                     selectedRoundID = nil
                 } label: {
                     Label("Back to Games", systemImage: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.plain)
 
@@ -831,9 +831,9 @@ private struct GameCardRow: View {
 
 
 private enum RoundOutcomeLayout {
-    static let columnWidth: CGFloat = 74
-    static let columnSpacing: CGFloat = 12
-    static let chevronReserveWidth: CGFloat = 30
+    static let columnWidth: CGFloat = 94
+    static let columnSpacing: CGFloat = 20
+    static let chevronReserveWidth: CGFloat = 34
 }
 
 private struct RoundOutcomeColumnHeaders: View {
@@ -843,7 +843,7 @@ private struct RoundOutcomeColumnHeaders: View {
         HStack(spacing: RoundOutcomeLayout.columnSpacing) {
             ForEach(gradeNames, id: \.self) { gradeName in
                 Text(gradeName)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -973,7 +973,7 @@ private struct CompactRoundOutcomePill: View {
 
     var body: some View {
         Text(item.outcome?.label ?? "-")
-             .font(.system(size: 16, weight: .bold))
+            .font(.system(size: 16, weight: .bold))
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity)
