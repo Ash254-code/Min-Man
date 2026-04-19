@@ -312,6 +312,84 @@ struct NewGameWizardView: View {
     @State private var showGuestVotesScanPrompt = false
     @State private var scannerErrorMessage: String?
     @State private var hasAutoPromptedVotesScanner = false
+
+    private enum LiveDraftResumeStore {
+        private static let statePrefix = "liveDraft.state."
+
+        private struct StoredState: Codable {
+            var periodMinutes: Int
+            var secondsRemaining: Int
+            var pointScorers: [UUID: Int]
+            var rushedPoints: Int
+            var periodSnapshots: [StoredSnapshot]
+            var backgroundCountdownStart: Date?
+        }
+
+        private struct StoredSnapshot: Codable {
+            var label: String
+            var ourGoals: Int
+            var ourBehinds: Int
+            var theirGoals: Int
+            var theirBehinds: Int
+        }
+
+        static func save(_ session: LiveGameSessionState, for gameID: UUID, continueCountdownInBackground: Bool) {
+            let state = StoredState(
+                periodMinutes: session.periodMinutes,
+                secondsRemaining: session.secondsRemaining,
+                pointScorers: session.pointScorers,
+                rushedPoints: session.rushedPoints,
+                periodSnapshots: session.periodSnapshots.map {
+                    StoredSnapshot(
+                        label: $0.label,
+                        ourGoals: $0.ourGoals,
+                        ourBehinds: $0.ourBehinds,
+                        theirGoals: $0.theirGoals,
+                        theirBehinds: $0.theirBehinds
+                    )
+                },
+                backgroundCountdownStart: continueCountdownInBackground ? Date() : nil
+            )
+            guard let data = try? JSONEncoder().encode(state) else { return }
+            UserDefaults.standard.set(data, forKey: statePrefix + gameID.uuidString)
+        }
+
+        static func load(for gameID: UUID) -> LiveGameSessionState? {
+            let key = statePrefix + gameID.uuidString
+            guard let data = UserDefaults.standard.data(forKey: key),
+                  let stored = try? JSONDecoder().decode(StoredState.self, from: data) else {
+                return nil
+            }
+
+            var session = LiveGameSessionState()
+            session.periodMinutes = stored.periodMinutes
+            session.secondsRemaining = max(0, stored.secondsRemaining)
+            session.pointScorers = stored.pointScorers
+            session.rushedPoints = stored.rushedPoints
+            session.periodSnapshots = stored.periodSnapshots.map {
+                PeriodSnapshot(
+                    label: $0.label,
+                    ourGoals: $0.ourGoals,
+                    ourBehinds: $0.ourBehinds,
+                    theirGoals: $0.theirGoals,
+                    theirBehinds: $0.theirBehinds
+                )
+            }
+            session.isInitialized = true
+
+            if let start = stored.backgroundCountdownStart {
+                let elapsed = Int(Date().timeIntervalSince(start))
+                session.secondsRemaining = max(0, session.secondsRemaining - max(0, elapsed))
+            }
+
+            clear(for: gameID)
+            return session
+        }
+
+        static func clear(for gameID: UUID) {
+            UserDefaults.standard.removeObject(forKey: statePrefix + gameID.uuidString)
+        }
+    }
     @State private var hasAppliedInitialGrade = false
     @State private var hasAppliedDraftRestore = false
     @State private var isRestoringDraft = false
@@ -1154,7 +1232,10 @@ struct NewGameWizardView: View {
             return
         }
 
-        _ = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
+        let savedGame = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
+        if let savedGame {
+            LiveDraftResumeStore.save(liveGameSession, for: savedGame.id, continueCountdownInBackground: true)
+        }
         onBackToHomeFromLive?(gid)
         dismiss()
     }
@@ -1309,6 +1390,9 @@ struct NewGameWizardView: View {
             entryMode = .live
             dataEntrySelection = .liveGame
             startLiveSessionIfNeeded()
+            if let resumedSession = LiveDraftResumeStore.load(for: draft.id) {
+                liveGameSession = resumedSession
+            }
             move(to: .score)
             isRestoringDraft = false
         } else {
@@ -2675,6 +2759,10 @@ struct NewGameWizardView: View {
         catch { print("❌ Failed to save game: \(error)"); return nil }
 
         editingGame = game
+
+        if !asDraft {
+            LiveDraftResumeStore.clear(for: game.id)
+        }
 
         if dismissOnSuccess {
             dismiss()

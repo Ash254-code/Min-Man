@@ -45,6 +45,7 @@ struct GamesView: View {
     enum QuickStartGradeStatus {
         case noGameSaved
         case draftOnly
+        case liveInProgress
         case gameSaved
 
         // Backward-compatible aliases for previously used naming.
@@ -56,6 +57,7 @@ struct GamesView: View {
             switch self {
             case .noGameSaved: return .secondary
             case .draftOnly: return .orange
+            case .liveInProgress: return .orange
             case .gameSaved: return .green
             @unknown default: return .secondary
             }
@@ -272,6 +274,10 @@ struct GamesView: View {
     }
 
     private func gradeStatus(for gradeID: UUID) -> QuickStartGradeStatus {
+        if latestDraft(for: gradeID) != nil, DraftResumeStore.shouldOpenLive(for: gradeID) {
+            return .liveInProgress
+        }
+
         if latestDraft(for: gradeID) != nil {
             return .draftOnly
         }
@@ -607,6 +613,12 @@ private struct NewGameQuickStartSection: View {
                                     Text("🏉 New Game")
                                         .font(.system(size: 22, weight: .semibold))
                                 }
+                                if statusForGrade(grade.id) == .liveInProgress {
+                                    Text("Game in progress - Tap to Continue")
+                                        .font(.system(size: horizontalSizeClass == .compact ? 11 : 14, weight: .semibold))
+                                        .foregroundStyle(.orange)
+                                        .multilineTextAlignment(.center)
+                                }
                             }
                             .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .compact ? 84 : 184)
                             .padding(.horizontal, horizontalSizeClass == .compact ? 12 : 16)
@@ -640,6 +652,7 @@ private struct NewGameQuickStartSection: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 legendItem(status: .noGameSaved, text: "No Game Saved")
+                legendItem(status: .liveInProgress, text: "Game in Progress")
                 legendItem(status: .draftOnly, text: "Game in Draft")
                 legendItem(status: .gameSaved, text: "Game Saved")
             }
@@ -659,6 +672,10 @@ private struct NewGameQuickStartSection: View {
     @ViewBuilder
     private func statusDot(_ status: GradeStatus, size: CGFloat = 14) -> some View {
         switch status {
+        case .liveInProgress:
+            Circle()
+                .fill(Color.orange)
+                .frame(width: size, height: size)
         case .draftOnly:
             Circle()
                 .fill(Color.orange)
