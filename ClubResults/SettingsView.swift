@@ -1912,6 +1912,7 @@ struct ReportsSettingsView: View {
 
     @State private var templateEditing: CustomReportTemplate?
     @State private var templateActioning: CustomReportTemplate?
+    @State private var templateInfoing: CustomReportTemplate?
     @State private var templatePreviewing: CustomReportTemplate?
     @State private var templateSharing: CustomReportTemplate?
     @State private var isCreatingTemplate = false
@@ -1927,35 +1928,46 @@ struct ReportsSettingsView: View {
                         .padding(.horizontal)
                 }
 
-                ForEach(templates) { template in
-                    Button {
-                        templateActioning = template
-                    } label: {
-                        VStack(alignment: .leading, spacing: 8) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                    ForEach(templates) { template in
+                        ZStack(alignment: .topTrailing) {
                             Text(template.name)
-                                .font(.title3.weight(.semibold))
+                                .font(.headline.weight(.semibold))
                                 .foregroundStyle(.primary)
-
-                            Text(templateDetails(for: template))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.leading)
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .padding(12)
+                                .padding(.trailing, 24)
+
+                            Button {
+                                templateInfoing = template
+                            } label: {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(8)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+                        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .onTapGesture {
+                            templateActioning = template
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 94)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal)
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            dataContext.delete(template)
-                            saveContext()
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                dataContext.delete(template)
+                                saveContext()
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
+                .padding(.horizontal)
 
                 Button {
                     isCreatingTemplate = true
@@ -2072,6 +2084,19 @@ struct ReportsSettingsView: View {
                 saveContext()
             }
             .appPopupStyle()
+        }
+        .alert(
+            templateInfoing?.name ?? "Custom Report Info",
+            isPresented: Binding(
+                get: { templateInfoing != nil },
+                set: { if !$0 { templateInfoing = nil } }
+            )
+        ) {
+            Button("Close", role: .cancel) {
+                templateInfoing = nil
+            }
+        } message: {
+            Text(templateInfoing.map { templateDetails(for: $0) } ?? "")
         }
         .alert(
             "Save Error",
