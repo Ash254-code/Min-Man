@@ -774,7 +774,6 @@ struct LiveStatsView: View {
     @State private var shareURL: URL?
     @State private var showTotals = false
     @State private var feedbackToken = UUID()
-    @State private var recentPlayerIds: [UUID] = []
     @State private var lastHeardTranscript = ""
     @State private var lastVoiceDebug: VoiceParseResult?
     @State private var remainingQuarterSeconds = 0
@@ -790,6 +789,7 @@ struct LiveStatsView: View {
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
             VStack(spacing: 8) {
                 topStrip
+                possessionLeadersPanel
 
                 HStack(spacing: 10) {
                     playerSelectionPanel
@@ -888,30 +888,66 @@ struct LiveStatsView: View {
         return (goals, behinds, goals * 6 + behinds)
     }
 
+    private var ourTeamName: String {
+        let name = ClubConfigurationStore.load().clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Min Man" : name
+    }
+
+    private var possessionLeaderRows: [(player: Player?, touches: Int)] {
+        let allowedTypeIDs = Set(
+            allStatTypes
+                .filter {
+                    let name = $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    return name == "kick" || name == "handball"
+                }
+                .map(\.id)
+        )
+
+        var totalsByPlayer: [UUID: Int] = [:]
+        for event in sessionEvents where allowedTypeIDs.contains(event.statTypeId) {
+            totalsByPlayer[event.playerId, default: 0] += 1
+        }
+
+        let sorted = totalsByPlayer
+            .compactMap { playerId, touches -> (Player, Int)? in
+                guard let player = playersForGrade.first(where: { $0.id == playerId }) else { return nil }
+                return (player, touches)
+            }
+            .sorted {
+                if $0.1 == $1.1 {
+                    return $0.0.lastName.localizedCaseInsensitiveCompare($1.0.lastName) == .orderedAscending
+                }
+                return $0.1 > $1.1
+            }
+            .prefix(6)
+            .map { (player: Optional($0.0), touches: $0.1) }
+
+        if sorted.count >= 6 { return sorted }
+        return sorted + Array(repeating: (player: nil, touches: 0), count: 6 - sorted.count)
+    }
+
     private var formattedQuarterTime: String {
         String(format: "%02d:%02d", remainingQuarterSeconds / 60, remainingQuarterSeconds % 60)
     }
 
     private var topStrip: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Text("\(gradeName) vs \(session.opposition)")
-                    .font(.headline.weight(.bold))
-                    .lineLimit(1)
+        HStack(spacing: 10) {
+            ScorePill(ourTeamName, style: ourStyle)
+            Text("\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))")
+                .font(.title3.weight(.bold))
+                .monospacedDigit()
 
-                Spacer(minLength: 8)
+            ScorePill(session.opposition, style: oppositionStyle)
+            Text("0.0 (0)")
+                .font(.title3.weight(.bold))
+                .monospacedDigit()
 
-                Text(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Spacer(minLength: 8)
 
-            HStack(spacing: 10) {
-                ScorePill("\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))", style: ourStyle)
-                ScorePill("0.0 (0)", style: oppositionStyle)
-                Spacer(minLength: 8)
-                quarterPicker
-            }
+            Text("\(gradeName) • \(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -928,39 +964,63 @@ struct LiveStatsView: View {
                 .buttonStyle(.bordered)
                 .tint(selectedQuarter == quarter ? .blue : .gray)
                 .font(.subheadline.weight(.bold))
-                .frame(width: 58, height: 34)
+                .frame(width: 52, height: 34)
                 .background(selectedQuarter == quarter ? Color.blue.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
 
-    private var playerSelectionPanel: some View {
-        GeometryReader { panelProxy in
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Selected Player: \(selectedPlayerDisplay)")
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(1)
+    private var possessionLeadersPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Top Possession Getters")
+                .font(.headline.weight(.semibold))
 
-                if !recentPlayers.isEmpty {
-                    HStack(spacing: 6) {
-                        Text("Recent")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.secondary)
-                        ForEach(recentPlayers.prefix(4), id: \.id) { player in
-                            Button {
-                                selectPlayer(player.id)
-                            } label: {
-                                Text(playerChipTitle(player))
-                                    .font(.caption.weight(.semibold))
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
+                ForEach(Array(possessionLeaderRows.enumerated()), id: \.offset) { _, row in
+                    if let player = row.player {
+                        Button {
+                            selectPlayer(player.id)
+                        } label: {
+                            VStack(spacing: 3) {
+                                Text(player.number.map { "#\($0)" } ?? "—")
+                                    .font(.subheadline.weight(.black))
+                                Text(player.lastName.uppercased())
+                                    .font(.caption.weight(.bold))
+                                    .lineLimit(1)
+                                Text("\(row.touches)")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity, minHeight: 58)
+                            .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                         }
+                        .buttonStyle(.plain)
+                    } else {
+                        VStack(spacing: 3) {
+                            Text("—")
+                                .font(.subheadline.weight(.black))
+                            Text("—")
+                                .font(.caption.weight(.bold))
+                            Text("0")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 58)
+                        .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
                     }
                 }
+            }
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
 
+    private var playerSelectionPanel: some View {
+        GeometryReader { panelProxy in
+            VStack(alignment: .leading, spacing: 10) {
                 let columnsCount = max(Int(panelProxy.size.width / 128), 3)
                 let rowsCount = max(Int(ceil(Double(max(playersForGrade.count, 1)) / Double(columnsCount))), 1)
-                let topFixedHeight = !recentPlayers.isEmpty ? 118.0 : 86.0
+                let topFixedHeight = 12.0
                 let usableGridHeight = max(panelProxy.size.height - topFixedHeight, 180)
                 let cellHeight = max(62, min(104, (usableGridHeight - (CGFloat(rowsCount - 1) * 10)) / CGFloat(rowsCount)))
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: columnsCount)
@@ -1077,14 +1137,13 @@ struct LiveStatsView: View {
                 .buttonStyle(.bordered)
             }
 
-            VStack(spacing: 4) {
-                Text(selectedQuarter)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
                 Text(formattedQuarterTime)
-                    .font(.title3.monospacedDigit().weight(.bold))
+                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .frame(minWidth: 140, alignment: .trailing)
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Button {
                         if isQuarterTimerRunning {
                             stopQuarterTimer()
@@ -1105,8 +1164,10 @@ struct LiveStatsView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
+
+                quarterPicker
             }
-            .frame(minWidth: 120)
+            .frame(minWidth: 360, alignment: .leading)
 
             Spacer()
 
@@ -1222,14 +1283,6 @@ struct LiveStatsView: View {
         return player.name
     }
 
-    private var selectedPlayerDisplay: String {
-        guard let selectedPlayerId,
-              let player = playersForGrade.first(where: { $0.id == selectedPlayerId }) else {
-            return "None"
-        }
-        return playerDisplay(player)
-    }
-
     private func playerLabel(for id: UUID) -> String {
         guard let player = allPlayers.first(where: { $0.id == id }) else { return "Unknown" }
         return playerDisplay(player)
@@ -1243,24 +1296,8 @@ struct LiveStatsView: View {
         return player.lastName
     }
 
-    private var recentPlayers: [Player] {
-        recentPlayerIds.compactMap { id in
-            playersForGrade.first(where: { $0.id == id })
-        }
-    }
-
-    private func playerChipTitle(_ player: Player) -> String {
-        if let number = player.number {
-            return "#\(number) \(player.lastName)"
-        }
-        return player.lastName
-    }
-
     private func selectPlayer(_ id: UUID) {
         selectedPlayerId = id
-        recentPlayerIds.removeAll { $0 == id }
-        recentPlayerIds.insert(id, at: 0)
-        recentPlayerIds = Array(recentPlayerIds.prefix(6))
     }
 
     private func configureQuarterTimer(reset: Bool) {
