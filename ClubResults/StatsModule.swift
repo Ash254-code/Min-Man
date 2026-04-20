@@ -777,24 +777,30 @@ struct LiveStatsView: View {
     @State private var recentPlayerIds: [UUID] = []
     @State private var lastHeardTranscript = ""
     @State private var lastVoiceDebug: VoiceParseResult?
+    @State private var remainingQuarterSeconds = 0
+    @State private var isQuarterTimerRunning = false
+    @State private var quarterTimerTask: Task<Void, Never>?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
 
     var body: some View {
         GeometryReader { proxy in
+            let availableWidth = max(proxy.size.width - 24, 640)
+            let leftPanelWidth = min(max(availableWidth * 0.62, 420), availableWidth - 300)
+            let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
             VStack(spacing: 8) {
                 topStrip
 
                 HStack(spacing: 10) {
                     playerSelectionPanel
-                        .frame(width: max(proxy.size.width * 0.62, 560))
+                        .frame(width: leftPanelWidth)
 
                     VStack(spacing: 10) {
                         statButtonsPanel
-                            .frame(maxHeight: max(proxy.size.height * 0.36, 210))
+                            .frame(maxHeight: max(proxy.size.height * 0.34, 210))
                         recentEventsPanel
                     }
-                    .frame(width: max(proxy.size.width * 0.38, 360))
+                    .frame(width: rightPanelWidth)
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -822,9 +828,16 @@ struct LiveStatsView: View {
             }
         }
         .onDisappear {
+            stopQuarterTimer()
             if speechService.isRecording {
                 speechService.stopListening()
             }
+        }
+        .onAppear {
+            configureQuarterTimer(reset: true)
+        }
+        .onChange(of: selectedQuarter) { _, _ in
+            configureQuarterTimer(reset: true)
         }
         .onChange(of: feedbackToken) { _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
@@ -849,25 +862,59 @@ struct LiveStatsView: View {
         allEvents.filter { $0.sessionId == session.sessionId }
     }
 
+    private var selectedGrade: Grade? {
+        grades.first(where: { $0.id == session.gradeId })
+    }
+
+    private var configuredQuarterLengthSeconds: Int {
+        min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30) * 60
+    }
+
+    private var ourStyle: ClubStyle.Style {
+        let configuration = ClubConfigurationStore.load()
+        let teamName = configuration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ClubStyle.style(for: teamName.isEmpty ? "Min Man" : teamName, configuration: configuration)
+    }
+
+    private var oppositionStyle: ClubStyle.Style {
+        ClubStyle.style(for: session.opposition, configuration: ClubConfigurationStore.load())
+    }
+
+    private var scoreSummary: (goals: Int, behinds: Int, points: Int) {
+        let goalTypeIDs = Set(enabledStatTypes.filter { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "goal" }.map(\.id))
+        let behindTypeIDs = Set(enabledStatTypes.filter { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "behind" }.map(\.id))
+        let goals = sessionEvents.filter { goalTypeIDs.contains($0.statTypeId) }.count
+        let behinds = sessionEvents.filter { behindTypeIDs.contains($0.statTypeId) }.count
+        return (goals, behinds, goals * 6 + behinds)
+    }
+
+    private var formattedQuarterTime: String {
+        String(format: "%02d:%02d", remainingQuarterSeconds / 60, remainingQuarterSeconds % 60)
+    }
+
     private var topStrip: some View {
-        HStack(spacing: 10) {
-            Text("\(gradeName) vs \(session.opposition)")
-                .font(.headline.weight(.bold))
-                .lineLimit(1)
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Text("\(gradeName) vs \(session.opposition)")
+                    .font(.headline.weight(.bold))
+                    .lineLimit(1)
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            quarterPicker
-                .frame(maxWidth: 320)
+                Text(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-            Spacer()
-
-            Text(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ScorePill("\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))", style: ourStyle)
+                ScorePill("0.0 (0)", style: oppositionStyle)
+                Spacer(minLength: 8)
+                quarterPicker
+            }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         .frame(maxWidth: .infinity)
     }
@@ -888,18 +935,18 @@ struct LiveStatsView: View {
     }
 
     private var playerSelectionPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Selected Player: \(selectedPlayerDisplay)")
-                .font(.headline.weight(.semibold))
-                .lineLimit(1)
+        GeometryReader { panelProxy in
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Selected Player: \(selectedPlayerDisplay)")
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
 
-            if !recentPlayers.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
+                if !recentPlayers.isEmpty {
                     HStack(spacing: 6) {
                         Text("Recent")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
-                        ForEach(recentPlayers, id: \.id) { player in
+                        ForEach(recentPlayers.prefix(4), id: \.id) { player in
                             Button {
                                 selectPlayer(player.id)
                             } label: {
@@ -910,10 +957,15 @@ struct LiveStatsView: View {
                         }
                     }
                 }
-            }
 
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                let columnsCount = max(Int(panelProxy.size.width / 128), 3)
+                let rowsCount = max(Int(ceil(Double(max(playersForGrade.count, 1)) / Double(columnsCount))), 1)
+                let topFixedHeight = !recentPlayers.isEmpty ? 118.0 : 86.0
+                let usableGridHeight = max(panelProxy.size.height - topFixedHeight, 180)
+                let cellHeight = max(62, min(104, (usableGridHeight - (CGFloat(rowsCount - 1) * 10)) / CGFloat(rowsCount)))
+                let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: columnsCount)
+
+                LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(playersForGrade) { player in
                         Button {
                             selectPlayer(player.id)
@@ -929,13 +981,13 @@ struct LiveStatsView: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
-                            .frame(maxWidth: .infinity, minHeight: 90)
-                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, minHeight: cellHeight)
                             .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .padding(12)
@@ -978,28 +1030,26 @@ struct LiveStatsView: View {
             Text("Recent Events")
                 .font(.title3.bold())
 
-            ScrollView {
-                LazyVStack(spacing: 6) {
-                    ForEach(sessionEvents.prefix(10)) { event in
-                        Button {
-                            showEditEvent = event
-                        } label: {
-                            HStack(spacing: 8) {
-                                Text(event.quarter)
-                                    .font(.caption.bold())
-                                    .frame(width: 26, alignment: .leading)
-                                Text(statName(for: event.statTypeId))
-                                    .font(.subheadline.weight(.semibold))
-                                Text(playerShortLabel(for: event.playerId))
-                                    .font(.subheadline)
-                                Spacer()
-                            }
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 8)
-                            .background(.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            LazyVStack(spacing: 6) {
+                ForEach(sessionEvents.prefix(8)) { event in
+                    Button {
+                        showEditEvent = event
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(event.quarter)
+                                .font(.caption.bold())
+                                .frame(width: 26, alignment: .leading)
+                            Text(statName(for: event.statTypeId))
+                                .font(.subheadline.weight(.semibold))
+                            Text(playerShortLabel(for: event.playerId))
+                                .font(.subheadline)
+                            Spacer()
                         }
-                        .buttonStyle(.plain)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 8)
+                        .background(.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                     }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -1026,6 +1076,38 @@ struct LiveStatsView: View {
                 }
                 .buttonStyle(.bordered)
             }
+
+            VStack(spacing: 4) {
+                Text(selectedQuarter)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(formattedQuarterTime)
+                    .font(.title3.monospacedDigit().weight(.bold))
+
+                HStack(spacing: 10) {
+                    Button {
+                        if isQuarterTimerRunning {
+                            stopQuarterTimer()
+                        } else {
+                            startQuarterTimer()
+                        }
+                    } label: {
+                        Image(systemName: isQuarterTimerRunning ? "pause.fill" : "play.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        configureQuarterTimer(reset: true)
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .frame(minWidth: 120)
+
             Spacer()
 
             VStack(alignment: .trailing, spacing: 6) {
@@ -1179,6 +1261,43 @@ struct LiveStatsView: View {
         recentPlayerIds.removeAll { $0 == id }
         recentPlayerIds.insert(id, at: 0)
         recentPlayerIds = Array(recentPlayerIds.prefix(6))
+    }
+
+    private func configureQuarterTimer(reset: Bool) {
+        if reset {
+            stopQuarterTimer()
+            remainingQuarterSeconds = configuredQuarterLengthSeconds
+        } else if remainingQuarterSeconds <= 0 {
+            remainingQuarterSeconds = configuredQuarterLengthSeconds
+        }
+    }
+
+    private func startQuarterTimer() {
+        if remainingQuarterSeconds <= 0 {
+            remainingQuarterSeconds = configuredQuarterLengthSeconds
+        }
+        guard !isQuarterTimerRunning else { return }
+        isQuarterTimerRunning = true
+        quarterTimerTask?.cancel()
+        quarterTimerTask = Task {
+            while !Task.isCancelled && isQuarterTimerRunning {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                await MainActor.run {
+                    guard isQuarterTimerRunning else { return }
+                    if remainingQuarterSeconds > 0 {
+                        remainingQuarterSeconds -= 1
+                    } else {
+                        stopQuarterTimer()
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopQuarterTimer() {
+        isQuarterTimerRunning = false
+        quarterTimerTask?.cancel()
+        quarterTimerTask = nil
     }
 
     private func statName(for id: UUID) -> String {
