@@ -813,6 +813,7 @@ struct LiveStatsView: View {
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
             VStack(spacing: 8) {
                 combinedScoreAndActionsPanel
+                    .padding(.bottom, 8)
 
                 HStack(spacing: 10) {
                     VStack(spacing: 10) {
@@ -1007,7 +1008,7 @@ struct LiveStatsView: View {
             )
         }
         .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 140)
+        .frame(maxWidth: .infinity, minHeight: 170, maxHeight: 170)
     }
 
     private func combinedTeamPanel(
@@ -1123,7 +1124,7 @@ struct LiveStatsView: View {
                         } label: {
                             playerCardContent(player: player)
                                 .frame(maxWidth: .infinity, minHeight: cellHeight)
-                                .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                                .background(selectedPlayerId == player.id ? Color.blue.opacity(0.5) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
                     }
@@ -2144,8 +2145,9 @@ private struct StatsTotalsView: View {
                                 Text("\(index + 1). \(row.playerLabel)")
                                     .font(.headline)
                                 Spacer()
-                                Text("Possessions: \(row.possessions)")
-                                    .font(.headline.weight(.semibold))
+                                Text("\(row.possessions)")
+                                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
                             }
 
                             HStack(spacing: 14) {
