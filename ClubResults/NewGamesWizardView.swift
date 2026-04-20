@@ -3244,7 +3244,7 @@ struct NewGameWizardView: View {
                         let teamCardWidth = max(300, proxy.size.width * 0.35)
                         let timerWidth = max(280, proxy.size.width * 0.22)
                         let sharedCardHeight = max(368, proxy.size.height * 0.46)
-                        let pressureCardMinHeight: CGFloat = 188
+                        let secondaryRowCardHeight: CGFloat = 250
                         let centerCardTopOffset: CGFloat = 16
                         let sideCardTopOffset: CGFloat = 8
                         let centerTimerHeight = max(300, sharedCardHeight + sideCardTopOffset - centerCardTopOffset)
@@ -3269,11 +3269,11 @@ struct NewGameWizardView: View {
                                         inside50s: liveSession.ourInside50s,
                                         clearanceAction: { liveSession.ourClearances += 1 },
                                         inside50Action: { liveSession.ourInside50s += 1 },
-                                        minHeight: pressureCardMinHeight,
+                                        minHeight: secondaryRowCardHeight,
                                         width: proxy.size.width
                                     )
                                     timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
-                                    goalKickerSummaryCard(width: proxy.size.width)
+                                    goalKickerSummaryCard(width: proxy.size.width, height: secondaryRowCardHeight)
                                     teamScoreCard(
                                         title: oppTeamName,
                                         style: oppStyle,
@@ -3290,7 +3290,7 @@ struct NewGameWizardView: View {
                                         inside50s: liveSession.theirInside50s,
                                         clearanceAction: { liveSession.theirClearances += 1 },
                                         inside50Action: { liveSession.theirInside50s += 1 },
-                                        minHeight: pressureCardMinHeight,
+                                        minHeight: secondaryRowCardHeight,
                                         width: proxy.size.width
                                     )
                                     scoreWormCard(width: proxy.size.width)
@@ -3314,7 +3314,7 @@ struct NewGameWizardView: View {
                                                     inside50s: liveSession.ourInside50s,
                                                     clearanceAction: { liveSession.ourClearances += 1 },
                                                     inside50Action: { liveSession.ourInside50s += 1 },
-                                                    minHeight: pressureCardMinHeight,
+                                                    minHeight: secondaryRowCardHeight,
                                                     width: teamCardWidth
                                                 )
                                             }
@@ -3323,7 +3323,7 @@ struct NewGameWizardView: View {
 
                                             VStack(spacing: cardSpacing) {
                                                 timerCard(minHeight: centerTimerHeight, width: timerWidth)
-                                                goalKickerSummaryCard(width: timerWidth)
+                                                goalKickerSummaryCard(width: timerWidth, height: secondaryRowCardHeight)
                                             }
                                             .frame(width: timerWidth, alignment: .top)
                                             .padding(.top, centerCardTopOffset)
@@ -3345,7 +3345,7 @@ struct NewGameWizardView: View {
                                                     inside50s: liveSession.theirInside50s,
                                                     clearanceAction: { liveSession.theirClearances += 1 },
                                                     inside50Action: { liveSession.theirInside50s += 1 },
-                                                    minHeight: pressureCardMinHeight,
+                                                    minHeight: secondaryRowCardHeight,
                                                     width: teamCardWidth
                                                 )
                                             }
@@ -3617,7 +3617,8 @@ struct NewGameWizardView: View {
             }
         }
 
-        private func goalKickerSummaryCard(width: CGFloat) -> some View {
+        private func goalKickerSummaryCard(width: CGFloat, height: CGFloat) -> some View {
+            let hasManyGoalKickers = scorerTally.count + (liveSession.rushedPoints > 0 ? 1 : 0) > 5
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     ScorePill("Goal Kickers", style: ourStyle)
@@ -3637,28 +3638,38 @@ struct NewGameWizardView: View {
                     Text("No scorers yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(scorerTally, id: \.id) { scorer in
-                        HStack {
-                            Text(playerName(scorer.id))
-                            Spacer()
-                            Text(playerContribution(goals: scorer.goals, points: scorer.points))
-                                .font(.headline)
-                                .monospacedDigit()
+                    ScrollView(showsIndicators: true) {
+                        VStack(spacing: 8) {
+                            ForEach(scorerTally, id: \.id) { scorer in
+                                HStack {
+                                    Text(playerName(scorer.id))
+                                    Spacer()
+                                    Text(playerContribution(goals: scorer.goals, points: scorer.points))
+                                        .font(.headline)
+                                        .monospacedDigit()
+                                }
+                            }
+                            if liveSession.rushedPoints > 0 {
+                                HStack {
+                                    Text("Rushed")
+                                    Spacer()
+                                    Text(playerContribution(goals: 0, points: liveSession.rushedPoints))
+                                        .font(.headline)
+                                        .monospacedDigit()
+                                }
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    if liveSession.rushedPoints > 0 {
-                        HStack {
-                            Text("Rushed")
-                            Spacer()
-                            Text(playerContribution(goals: 0, points: liveSession.rushedPoints))
-                                .font(.headline)
-                                .monospacedDigit()
-                        }
+                    if hasManyGoalKickers {
+                        Label("Scroll to see all goal kickers", systemImage: "arrow.up.and.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
             .padding()
-            .frame(maxWidth: width, alignment: .topLeading)
+            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
 
@@ -3954,7 +3965,7 @@ struct NewGameWizardView: View {
                         .stroke(Color.white, style: .init(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
                     }
                 }
-                .frame(height: 132)
+                .frame(height: 98)
 
                 HStack {
                     Text("Q1")
@@ -3968,7 +3979,7 @@ struct NewGameWizardView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             }
-            .padding(20)
+            .padding(16)
             .frame(maxWidth: width, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
