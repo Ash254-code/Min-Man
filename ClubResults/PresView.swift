@@ -135,8 +135,9 @@ struct PresView: View {
             .navigationTitle("Pres")
             .fullScreenCover(item: $selectedPresentationGrade) { selectedGrade in
                 PresentationGradeFullScreenView(
-                    section: selectedGrade,
-                    shouldShowScore: shouldShowScore(for: selectedGrade.id),
+                    sections: gradeSections,
+                    initiallySelectedGradeID: selectedGrade.id,
+                    shouldShowScore: shouldShowScore(for:),
                     ourTeamName: clubConfiguration.clubTeam.name,
                     goalKickerItems: goalKickerItems(for:),
                     bestPlayerItems: bestPlayerItems(for:),
@@ -170,12 +171,20 @@ private struct PresGradeRow: View {
 private struct PresentationGradeFullScreenView: View {
     @Environment(\.dismiss) private var dismiss
 
-    let section: PresView.GradePresentationSection
-    let shouldShowScore: Bool
+    let sections: [PresView.GradePresentationSection]
+    let initiallySelectedGradeID: UUID
+    let shouldShowScore: (UUID) -> Bool
     let ourTeamName: String
     let goalKickerItems: (Game) -> [PresView.GoalKickerPresentationItem]
     let bestPlayerItems: (Game) -> [String]
     let clubConfiguration: ClubConfiguration
+
+    @State private var selectedPageIndex = 0
+
+    private var selectedSection: PresView.GradePresentationSection? {
+        guard sections.indices.contains(selectedPageIndex) else { return nil }
+        return sections[selectedPageIndex]
+    }
 
     private var ourTeamLabel: String {
         let cleaned = ourTeamName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -193,26 +202,38 @@ private struct PresentationGradeFullScreenView: View {
                     .ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 20) {
-                    Text(section.grade.name)
+                    Text(selectedSection?.grade.name ?? "")
                         .font(.system(size: proxy.size.width > 1000 ? 56 : 42, weight: .black))
                         .padding(.top, 8)
 
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 28) {
-                            ForEach(section.games) { game in
-                                presentationGameCard(
-                                    game: game,
-                                    width: proxy.size.width
-                                )
+                    TabView(selection: $selectedPageIndex) {
+                        ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 28) {
+                                    ForEach(section.games) { game in
+                                        presentationGameCard(
+                                            game: game,
+                                            shouldShowScore: shouldShowScore(section.id),
+                                            width: proxy.size.width
+                                        )
+                                    }
+                                }
+                                .padding(.bottom, 10)
                             }
+                            .scrollIndicators(.hidden)
+                            .tag(index)
                         }
-                        .padding(.bottom, 10)
                     }
-                    .scrollIndicators(.hidden)
+                    .tabViewStyle(.page(indexDisplayMode: .never))
                 }
                 .padding(.horizontal, 32)
                 .padding(.top, 34)
                 .padding(.bottom, 20)
+                .onAppear {
+                    if let index = sections.firstIndex(where: { $0.id == initiallySelectedGradeID }) {
+                        selectedPageIndex = index
+                    }
+                }
 
                 Button {
                     dismiss()
@@ -227,7 +248,7 @@ private struct PresentationGradeFullScreenView: View {
     }
 
     @ViewBuilder
-    private func presentationGameCard(game: Game, width: CGFloat) -> some View {
+    private func presentationGameCard(game: Game, shouldShowScore: Bool, width: CGFloat) -> some View {
         let ourStyle = ClubStyle.style(for: ourTeamLabel, configuration: clubConfiguration)
         let oppositionStyle = ClubStyle.style(for: game.opponent, configuration: clubConfiguration)
 
@@ -239,10 +260,12 @@ private struct PresentationGradeFullScreenView: View {
                         style: ourStyle,
                         fixedWidth: scorePillWidth
                     )
-                    Text(shouldShowScore ? "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))" : "—")
-                        .font(.system(size: width > 1000 ? 52 : 42, weight: .black))
-                        .minimumScaleFactor(0.75)
-                        .lineLimit(1)
+                    if shouldShowScore {
+                        Text("\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))")
+                            .font(.system(size: width > 1000 ? 52 : 42, weight: .black))
+                            .minimumScaleFactor(0.75)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -252,10 +275,12 @@ private struct PresentationGradeFullScreenView: View {
                         style: oppositionStyle,
                         fixedWidth: scorePillWidth
                     )
-                    Text(shouldShowScore ? "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))" : "—")
-                        .font(.system(size: width > 1000 ? 52 : 42, weight: .black))
-                        .minimumScaleFactor(0.75)
-                        .lineLimit(1)
+                    if shouldShowScore {
+                        Text("\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
+                            .font(.system(size: width > 1000 ? 52 : 42, weight: .black))
+                            .minimumScaleFactor(0.75)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
