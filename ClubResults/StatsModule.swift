@@ -765,6 +765,25 @@ private struct TotalsRow: Identifiable {
     let countsByStatId: [UUID: Int]
 }
 
+private enum PlayerGridOrder: String, CaseIterable, Identifiable {
+    case number
+    case firstName
+    case lastName
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .number:
+            return "Number"
+        case .firstName:
+            return "First Name"
+        case .lastName:
+            return "Last Name"
+        }
+    }
+}
+
 private struct ReportPreviewDocument: Identifiable {
     let id = UUID()
     let url: URL
@@ -797,6 +816,8 @@ struct LiveStatsView: View {
     @State private var quarterTimerTask: Task<Void, Never>?
     @State private var visiblePlayerIDs: Set<UUID> = []
     @State private var savedVisiblePlayerIDs: Set<UUID> = []
+    @State private var playerGridOrder: PlayerGridOrder = .number
+    @State private var savedPlayerGridOrder: PlayerGridOrder = .number
     @State private var showPlayerVisibilityEditor = false
     @State private var pendingEfficiencyEventID: UUID?
     @State private var showEfficiencyVotePrompt = false
@@ -881,11 +902,14 @@ struct LiveStatsView: View {
             PlayerVisibilityEditorView(
                 players: playersForGrade,
                 initialSelection: savedVisiblePlayerIDs,
-                onSave: { updated in
-                    savedVisiblePlayerIDs = updated
-                    visiblePlayerIDs = updated
+                initialGridOrder: savedPlayerGridOrder,
+                onSave: { updatedSelection, updatedGridOrder in
+                    savedVisiblePlayerIDs = updatedSelection
+                    visiblePlayerIDs = updatedSelection
+                    savedPlayerGridOrder = updatedGridOrder
+                    playerGridOrder = updatedGridOrder
                     showAllPlayers = false
-                    if let selectedPlayerId, !updated.contains(selectedPlayerId) {
+                    if let selectedPlayerId, !updatedSelection.contains(selectedPlayerId) {
                         self.selectedPlayerId = nil
                     }
                 }
@@ -908,6 +932,7 @@ struct LiveStatsView: View {
                 visiblePlayerIDs = defaults
                 savedVisiblePlayerIDs = defaults
             }
+            playerGridOrder = savedPlayerGridOrder
             showAllPlayers = false
             configureQuarterTimer(reset: true)
         }
@@ -931,8 +956,39 @@ struct LiveStatsView: View {
 
     private var displayedPlayers: [Player] {
         let source = playersForGrade
-        guard !visiblePlayerIDs.isEmpty else { return source }
-        return source.filter { visiblePlayerIDs.contains($0.id) }
+        let filtered = visiblePlayerIDs.isEmpty ? source : source.filter { visiblePlayerIDs.contains($0.id) }
+        return filtered.sorted(by: playerSortPredicate)
+    }
+
+    private func playerSortPredicate(lhs: Player, rhs: Player) -> Bool {
+        switch playerGridOrder {
+        case .number:
+            let leftNumber = lhs.number ?? Int.max
+            let rightNumber = rhs.number ?? Int.max
+            if leftNumber != rightNumber {
+                return leftNumber < rightNumber
+            }
+            if lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) != .orderedSame {
+                return lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) == .orderedAscending
+            }
+            return lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) == .orderedAscending
+        case .firstName:
+            if lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) != .orderedSame {
+                return lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) == .orderedAscending
+            }
+            if lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) != .orderedSame {
+                return lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) == .orderedAscending
+            }
+            return (lhs.number ?? Int.max) < (rhs.number ?? Int.max)
+        case .lastName:
+            if lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) != .orderedSame {
+                return lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) == .orderedAscending
+            }
+            if lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) != .orderedSame {
+                return lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) == .orderedAscending
+            }
+            return (lhs.number ?? Int.max) < (rhs.number ?? Int.max)
+        }
     }
 
     private var enabledStatTypes: [StatType] {
@@ -1975,20 +2031,64 @@ private struct PlayerVisibilityEditorView: View {
 
     let players: [Player]
     let initialSelection: Set<UUID>
-    let onSave: (Set<UUID>) -> Void
+    let initialGridOrder: PlayerGridOrder
+    let onSave: (Set<UUID>, PlayerGridOrder) -> Void
 
     @State private var selectedIDs: Set<UUID>
+    @State private var gridOrder: PlayerGridOrder
     @State private var showDiscardAlert = false
 
-    init(players: [Player], initialSelection: Set<UUID>, onSave: @escaping (Set<UUID>) -> Void) {
+    init(
+        players: [Player],
+        initialSelection: Set<UUID>,
+        initialGridOrder: PlayerGridOrder,
+        onSave: @escaping (Set<UUID>, PlayerGridOrder) -> Void
+    ) {
         self.players = players
         self.initialSelection = initialSelection
+        self.initialGridOrder = initialGridOrder
         self.onSave = onSave
         _selectedIDs = State(initialValue: initialSelection)
+        _gridOrder = State(initialValue: initialGridOrder)
     }
 
     private var hasUnsavedChanges: Bool {
-        selectedIDs != initialSelection
+        selectedIDs != initialSelection || gridOrder != initialGridOrder
+    }
+
+    private var orderedPlayers: [Player] {
+        players.sorted(by: playerSortPredicate)
+    }
+
+    private func playerSortPredicate(lhs: Player, rhs: Player) -> Bool {
+        switch gridOrder {
+        case .number:
+            let leftNumber = lhs.number ?? Int.max
+            let rightNumber = rhs.number ?? Int.max
+            if leftNumber != rightNumber {
+                return leftNumber < rightNumber
+            }
+            if lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) != .orderedSame {
+                return lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) == .orderedAscending
+            }
+            return lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) == .orderedAscending
+        case .firstName:
+            if lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) != .orderedSame {
+                return lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) == .orderedAscending
+            }
+            if lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) != .orderedSame {
+                return lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) == .orderedAscending
+            }
+            return (lhs.number ?? Int.max) < (rhs.number ?? Int.max)
+        case .lastName:
+            if lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) != .orderedSame {
+                return lhs.lastName.localizedCaseInsensitiveCompare(rhs.lastName) == .orderedAscending
+            }
+            if lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) != .orderedSame {
+                return lhs.firstName.localizedCaseInsensitiveCompare(rhs.firstName) == .orderedAscending
+            }
+            return (lhs.number ?? Int.max) < (rhs.number ?? Int.max)
+        }
     }
 
     var body: some View {
@@ -2005,7 +2105,21 @@ private struct PlayerVisibilityEditorView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
 
-                List(players) { player in
+                HStack {
+                    Text("Grid order")
+                        .font(.headline)
+                    Spacer()
+                    Picker("Grid order", selection: $gridOrder) {
+                        ForEach(PlayerGridOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 6)
+
+                List(orderedPlayers) { player in
                     Button {
                         if selectedIDs.contains(player.id) {
                             selectedIDs.remove(player.id)
@@ -2047,7 +2161,7 @@ private struct PlayerVisibilityEditorView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
-                        onSave(selectedIDs)
+                        onSave(selectedIDs, gridOrder)
                         dismiss()
                     }
                     .saveButtonBehavior(isEnabled: hasUnsavedChanges)
