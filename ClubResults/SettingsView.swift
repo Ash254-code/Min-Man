@@ -1746,7 +1746,7 @@ private struct GroupsSettingsView: View {
             )
         ) {
             let sectionKey = sectionEditingKey ?? ""
-            GroupMembersSheet(
+            SectionGroupMembersSheet(
                 title: displayTitle(for: sectionKey, fallback: fallbackTitle(for: sectionKey)),
                 members: contactsForSection(sectionKey),
                 onRemoveContact: { contactID in
@@ -2107,7 +2107,7 @@ private struct GroupsSettingsView: View {
     }
 }
 
-private struct GroupMembersSheet: View {
+private struct SectionGroupMembersSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let title: String
