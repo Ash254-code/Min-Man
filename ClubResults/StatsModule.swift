@@ -1201,8 +1201,8 @@ struct LiveStatsView: View {
                 .frame(maxWidth: .infinity, minHeight: 52)
         }
         .buttonStyle(.borderedProminent)
-        .tint(appliesToSelectedPlayer && selectedPlayerId == nil ? .gray : style.background)
-        .disabled(statType == nil || (appliesToSelectedPlayer && selectedPlayerId == nil))
+        .tint(style.background)
+        .disabled(statType == nil)
     }
 
     private func isGoalOrBehindStat(named value: String) -> Bool {
