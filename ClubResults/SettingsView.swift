@@ -2925,7 +2925,7 @@ struct ReportsSettingsView: View {
         let wobbleDirection = template.id.uuidString.hashValue.isMultiple(of: 2) ? 1.0 : -1.0
         let baseTile = VStack(spacing: 6) {
             Text(template.name)
-                .font(.title2.weight(.semibold))
+                .font(.title.weight(.bold))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -3176,8 +3176,8 @@ struct ReportsSettingsView: View {
     }
 
     private func dateRangeSummary(for template: CustomReportTemplate) -> String {
-        let dateRange = reportDateRange(for: template)
-        return "Date range: \(formattedDate(dateRange.start)) – \(formattedDate(dateRange.end))"
+        let quickPick = ReportRangeQuickPick(rawValue: template.dateRangeQuickPickRawValue) ?? .mostRecentGame
+        return quickPick.rawValue
     }
 
     private func recipientEmails(for template: CustomReportTemplate) -> [String] {
