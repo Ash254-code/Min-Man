@@ -3158,10 +3158,10 @@ struct NewGameWizardView: View {
         private var canSaveAndContinue: Bool { liveSession.periodSnapshots.count == 4 }
         private var nextPeriodLabel: String? {
             switch liveSession.periodSnapshots.count {
-            case 0: return "Quarter Time"
-            case 1: return "Half Time"
-            case 2: return "3 Quarter Time"
-            case 3: return "Full Time"
+            case 0: return "Q1"
+            case 1: return "HT"
+            case 2: return "Q3"
+            case 3: return "FT"
             default: return nil
             }
         }
@@ -3579,9 +3579,6 @@ struct NewGameWizardView: View {
 
         private var periodScoresSection: some View {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Period scores")
-                    .font(.headline)
-
                 if liveSession.periodSnapshots.isEmpty {
                     Text("No period scores saved yet.")
                         .foregroundStyle(.secondary)
