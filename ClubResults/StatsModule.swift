@@ -893,15 +893,27 @@ struct LiveStatsView: View {
             Button {
                 applyEfficiencyVote(.thumbsUp)
             } label: {
-                Label("👍", systemImage: "hand.thumbsup.fill")
-                    .foregroundStyle(.green)
+                HStack(spacing: 10) {
+                    Text("👍")
+                        .font(.system(size: 48))
+                    Image(systemName: "hand.thumbsup.fill")
+                        .font(.system(size: 48, weight: .bold))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .foregroundStyle(.green)
             }
 
             Button {
                 applyEfficiencyVote(.thumbsDown)
             } label: {
-                Label("👎", systemImage: "hand.thumbsdown.fill")
-                    .foregroundStyle(.red)
+                HStack(spacing: 10) {
+                    Text("👎")
+                        .font(.system(size: 48))
+                    Image(systemName: "hand.thumbsdown.fill")
+                        .font(.system(size: 48, weight: .bold))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .foregroundStyle(.red)
             }
 
             Button("Skip", role: .cancel) {
