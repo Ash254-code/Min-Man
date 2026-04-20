@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import PDFKit
 
 @Model
 final class StatType {
@@ -764,6 +765,11 @@ private struct TotalsRow: Identifiable {
     let countsByStatId: [UUID: Int]
 }
 
+private struct ReportPreviewDocument: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 struct LiveStatsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -780,6 +786,7 @@ struct LiveStatsView: View {
     @State private var selectedStatTypeId: UUID?
     @State private var lastMessage: String?
     @State private var showEditEvent: StatEvent?
+    @State private var reportPreviewDocument: ReportPreviewDocument?
     @State private var shareURL: URL?
     @State private var showTotals = false
     @State private var feedbackToken = UUID()
@@ -849,6 +856,12 @@ struct LiveStatsView: View {
                 rows: totalsRows,
                 statTypes: enabledStatTypes,
                 efficiencyForPlayer: efficiencyPercentage(for:)
+            )
+        }
+        .sheet(item: $reportPreviewDocument) { document in
+            StatsReportPreviewSheet(
+                url: document.url,
+                onShare: { shareURL = document.url }
             )
         }
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
@@ -1648,9 +1661,26 @@ struct LiveStatsView: View {
     }
 
     private func generateReport() {
-        let columns = enabledStatTypes
-        let rows = totalsRows
-        let pageRect = CGRect(x: 0, y: 0, width: 595, height: 842) // A4 points
+        let quarterOrder = ["Q1", "Q2", "Q3", "Q4"]
+        let trackedStats: [(label: String, aliases: [String])] = [
+            ("K", ["kick"]),
+            ("H", ["handball", "hand ball", "handpass", "hand pass"]),
+            ("M", ["mark"]),
+            ("T", ["tackle"]),
+            ("G", ["goal"]),
+            ("B", ["behind"])
+        ]
+        let inside50Stat = statTypeMatching(aliases: ["inside 50", "inside50", "inside 50s"])
+        let clearanceStat = statTypeMatching(aliases: ["clearance", "clearances"])
+
+        let players = playersForGrade
+        let playerIDs = Set(players.map(\.id))
+        let eventsForPlayers = sessionEvents.filter { playerIDs.contains($0.playerId) }
+        let byPlayerQuarterAndStat = Dictionary(grouping: eventsForPlayers) { event in
+            "\(event.playerId.uuidString)|\(event.quarter)|\(event.statTypeId.uuidString)"
+        }
+
+        let pageRect = CGRect(x: 0, y: 0, width: 842, height: 595) // A4 landscape points
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
 
         let data = renderer.pdfData { context in
@@ -1660,49 +1690,135 @@ struct LiveStatsView: View {
             if let logo = UIImage(named: "club_logo") {
                 logo.draw(in: CGRect(x: 24, y: y, width: 48, height: 48))
             }
-            y += 8
-            ("Stats Report" as NSString).draw(at: CGPoint(x: 84, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 22)])
-            y += 30
+            y += 4
+            ("Stats Report" as NSString).draw(at: CGPoint(x: 84, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 24)])
+            y += 34
             let details = "Grade: \(gradeName)   Opposition: \(session.opposition)   Date: \(session.date.formatted(date: .abbreviated, time: .omitted))   Venue: \(session.venue)"
-            (details as NSString).draw(in: CGRect(x: 24, y: y, width: pageRect.width - 48, height: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 11)])
-            y += 36
+            (details as NSString).draw(
+                in: CGRect(x: 24, y: y, width: pageRect.width - 48, height: 30),
+                withAttributes: [.font: UIFont.systemFont(ofSize: 11)]
+            )
+            y += 34
 
-            let totalColumns = CGFloat(3 + columns.count)
-            let usableWidth = pageRect.width - 48
-            let colWidth = usableWidth / max(totalColumns, 1)
+            let leftMargin: CGFloat = 24
+            let playerColumnWidth: CGFloat = 160
+            let statColumnWidth: CGFloat = 20
+            let headerRowHeight: CGFloat = 20
+            let dataRowHeight: CGFloat = 18
+            let blockWidth = CGFloat(trackedStats.count) * statColumnWidth
 
-            drawCell("Player", x: 24, y: y, width: colWidth * 1.5, bold: true)
-            drawCell("#", x: 24 + colWidth * 1.5, y: y, width: colWidth * 0.5, bold: true)
-            for (index, column) in columns.enumerated() {
-                drawCell(column.name, x: 24 + colWidth * 2 + (CGFloat(index) * colWidth), y: y, width: colWidth, bold: true)
+            drawCell("Player", x: leftMargin, y: y, width: playerColumnWidth, bold: true)
+            var x = leftMargin + playerColumnWidth
+            for quarter in quarterOrder {
+                drawCell(quarter, x: x, y: y, width: blockWidth, bold: true)
+                x += blockWidth
             }
-            drawCell("Eff %", x: 24 + colWidth * 2 + (CGFloat(columns.count) * colWidth), y: y, width: colWidth, bold: true)
-            y += 22
+            drawCell("Totals", x: x, y: y, width: blockWidth, bold: true)
+            y += headerRowHeight
 
-            for row in rows {
-                if y > pageRect.height - 36 {
+            drawCell("", x: leftMargin, y: y, width: playerColumnWidth, bold: true)
+            x = leftMargin + playerColumnWidth
+            for _ in quarterOrder {
+                for stat in trackedStats {
+                    drawCell(stat.label, x: x, y: y, width: statColumnWidth, bold: true)
+                    x += statColumnWidth
+                }
+            }
+            for stat in trackedStats {
+                drawCell(stat.label, x: x, y: y, width: statColumnWidth, bold: true)
+                x += statColumnWidth
+            }
+            y += headerRowHeight
+
+            for player in players {
+                if y > pageRect.height - 70 {
                     context.beginPage()
                     y = 24
                 }
 
-                drawCell(row.player.name, x: 24, y: y, width: colWidth * 1.5)
-                drawCell(row.player.number.map(String.init) ?? "", x: 24 + colWidth * 1.5, y: y, width: colWidth * 0.5)
-                for (index, column) in columns.enumerated() {
-                    drawCell("\(row.countsByStatId[column.id, default: 0])", x: 24 + colWidth * 2 + (CGFloat(index) * colWidth), y: y, width: colWidth)
+                let playerLabel = player.number.map { "#\($0) \(player.lastName.uppercased())" } ?? player.lastName.uppercased()
+                drawCell(playerLabel, x: leftMargin, y: y, width: playerColumnWidth)
+
+                x = leftMargin + playerColumnWidth
+                for quarter in quarterOrder {
+                    for stat in trackedStats {
+                        let count = statCount(
+                            for: player.id,
+                            quarter: quarter,
+                            aliases: stat.aliases,
+                            lookup: byPlayerQuarterAndStat
+                        )
+                        drawCell("\(count)", x: x, y: y, width: statColumnWidth)
+                        x += statColumnWidth
+                    }
                 }
-                drawCell("\(efficiencyPercentage(for: row.player.id))%", x: 24 + colWidth * 2 + (CGFloat(columns.count) * colWidth), y: y, width: colWidth)
-                y += 20
+                for stat in trackedStats {
+                    let total = quarterOrder.reduce(0) { partialResult, quarter in
+                        partialResult + statCount(
+                            for: player.id,
+                            quarter: quarter,
+                            aliases: stat.aliases,
+                            lookup: byPlayerQuarterAndStat
+                        )
+                    }
+                    drawCell("\(total)", x: x, y: y, width: statColumnWidth)
+                    x += statColumnWidth
+                }
+                y += dataRowHeight
             }
+
+            y += 10
+            let inside50Us = teamStatCount(statType: inside50Stat, teamPlayerId: ourTeamStatPlayerID)
+            let inside50Them = teamStatCount(statType: inside50Stat, teamPlayerId: oppositionTeamStatPlayerID)
+            let clearancesUs = teamStatCount(statType: clearanceStat, teamPlayerId: ourTeamStatPlayerID)
+            let clearancesThem = teamStatCount(statType: clearanceStat, teamPlayerId: oppositionTeamStatPlayerID)
+            let teamSummary = "Inside 50 — Ours: \(inside50Us), Theirs: \(inside50Them)    |    Clearances — Ours: \(clearancesUs), Theirs: \(clearancesThem)"
+            (teamSummary as NSString).draw(
+                in: CGRect(x: leftMargin, y: y, width: pageRect.width - (leftMargin * 2), height: 24),
+                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 12)]
+            )
         }
 
-        let fileName = "Stats_\(gradeName.replacingOccurrences(of: " ", with: "_"))_\(session.date.formatted(date: .numeric, time: .omitted)).pdf"
+        let safeDate = session.date.formatted(.dateTime.year().month().day())
+        let fileName = "Stats_\(gradeName.replacingOccurrences(of: " ", with: "_"))_\(safeDate).pdf"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         do {
             try data.write(to: url, options: .atomic)
-            shareURL = url
+            reportPreviewDocument = ReportPreviewDocument(url: url)
+            lastMessage = "Report generated"
         } catch {
             lastMessage = "Failed to build report"
         }
+    }
+
+    private func statTypeMatching(aliases: [String]) -> StatType? {
+        let normalizedAliases = Set(aliases.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        return enabledStatTypes.first { statType in
+            normalizedAliases.contains(statType.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
+    }
+
+    private func statCount(
+        for playerID: UUID,
+        quarter: String,
+        aliases: [String],
+        lookup: [String: [StatEvent]]
+    ) -> Int {
+        let matchingStatIDs = enabledStatTypes.filter { type in
+            aliases.contains { alias in
+                type.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == alias.lowercased()
+            }
+        }.map(\.id)
+
+        return matchingStatIDs.reduce(0) { partialResult, statID in
+            let key = "\(playerID.uuidString)|\(quarter)|\(statID.uuidString)"
+            return partialResult + (lookup[key]?.count ?? 0)
+        }
+    }
+
+    private func teamStatCount(statType: StatType?, teamPlayerId: UUID) -> Int {
+        guard let statType else { return 0 }
+        return sessionEvents.filter { $0.playerId == teamPlayerId && $0.statTypeId == statType.id }.count
     }
 
     private func drawCell(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, bold: Bool = false) {
@@ -1713,6 +1829,51 @@ struct LiveStatsView: View {
         let path = UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: 20))
         UIColor.systemGray4.setStroke()
         path.stroke()
+    }
+}
+
+private struct StatsReportPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let url: URL
+    let onShare: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            StatsPDFPreview(url: url)
+                .navigationTitle("Report Preview")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Share") {
+                            onShare()
+                        }
+                    }
+                }
+        }
+    }
+}
+
+private struct StatsPDFPreview: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.document = PDFDocument(url: url)
+        return view
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document?.documentURL != url {
+            uiView.document = PDFDocument(url: url)
+        }
     }
 }
 
