@@ -12,3 +12,16 @@ struct LabeledRow<Right: View>: View {
         }
     }
 }
+
+struct StandardListIcon: View {
+    var systemName: String = "circle.fill"
+    var size: CGFloat = 16
+    var columnWidth: CGFloat = 26
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(.blue)
+            .frame(width: columnWidth, alignment: .leading)
+    }
+}

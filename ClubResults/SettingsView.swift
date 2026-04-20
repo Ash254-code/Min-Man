@@ -643,6 +643,7 @@ private struct UmpiresSettingsView: View {
                     toggleBoundaryGrade(option.id, for: gameGrade.id)
                 } label: {
                     HStack {
+                        StandardListIcon()
                         Text(option.name)
                         Spacer()
                         if selectedBoundaryGradeIDs(for: gameGrade.id).contains(option.id) {
@@ -729,6 +730,7 @@ private struct ClubGradesSettingsView: View {
             Section {
                 ForEach(sortedGrades) { grade in
                     HStack {
+                        StandardListIcon()
                         VStack(alignment: .leading, spacing: 4) {
                             Text(grade.name)
                             if !grade.isActive {
@@ -1464,17 +1466,21 @@ private struct ContactsSettingsView: View {
                 }
 
                 ForEach(contacts) { contact in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(contact.name)
-                            .font(.headline)
+                    HStack(alignment: .top, spacing: 8) {
+                        StandardListIcon()
+                            .padding(.top, 2)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(contact.name)
+                                .font(.headline)
 
-                        Text(contact.mobile)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            Text(contact.mobile)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
 
-                        Text(contact.email)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            Text(contact.email)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -1893,9 +1899,12 @@ private struct GroupsSettingsView: View {
             }
 
             ForEach(members) { contact in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(contact.name)
-                        .font(.headline)
+                HStack(spacing: 8) {
+                    StandardListIcon()
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(contact.name)
+                            .font(.headline)
+                    }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -1936,6 +1945,7 @@ private struct GroupsSettingsView: View {
             } else {
                 ForEach(members) { contact in
                     HStack {
+                        StandardListIcon()
                         Text(contact.name)
                         Spacer()
                     }
