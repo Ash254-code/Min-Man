@@ -1,7 +1,5 @@
 import SwiftUI
 import SwiftData
-import Speech
-import AVFoundation
 import UIKit
 
 @Model
@@ -16,6 +14,24 @@ final class StatType {
         self.name = name
         self.isEnabled = isEnabled
         self.sortOrder = sortOrder
+    }
+}
+
+extension StatType {
+    var voiceAliases: [String] {
+        let canonical = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if canonical.isEmpty { return [] }
+        let lowercase = canonical.lowercased()
+        let builtIn: [String: [String]] = [
+            "kick": ["kick", "kicks"],
+            "handball": ["handball", "hand ball", "handpass", "hand pass"],
+            "mark": ["mark", "marks"],
+            "tackle": ["tackle", "tackles"],
+            "goal": ["goal", "goals"],
+            "behind": ["behind", "behinds"]
+        ]
+        let aliases = builtIn[lowercase] ?? [canonical]
+        return Array(Set(aliases + [canonical]))
     }
 }
 
@@ -48,6 +64,8 @@ final class StatEvent {
     var timestamp: Date
     var sourceRaw: String
     var transcript: String?
+    var normalizedTranscript: String?
+    var parserConfidence: Double?
 
     init(
         id: UUID = UUID(),
@@ -57,7 +75,9 @@ final class StatEvent {
         quarter: String,
         timestamp: Date = Date(),
         sourceRaw: String,
-        transcript: String? = nil
+        transcript: String? = nil,
+        normalizedTranscript: String? = nil,
+        parserConfidence: Double? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
@@ -67,6 +87,8 @@ final class StatEvent {
         self.timestamp = timestamp
         self.sourceRaw = sourceRaw
         self.transcript = transcript
+        self.normalizedTranscript = normalizedTranscript
+        self.parserConfidence = parserConfidence
     }
 }
 
@@ -319,13 +341,8 @@ struct LiveStatsView: View {
     @State private var lastMessage: String?
     @State private var showEditEvent: StatEvent?
     @State private var shareURL: URL?
-
-    @State private var recognizer: SFSpeechRecognizer? = SFSpeechRecognizer(locale: Locale(identifier: "en_AU"))
-    @State private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    @State private var recognitionTask: SFSpeechRecognitionTask?
-    @State private var audioEngine = AVAudioEngine()
-    @State private var isRecording = false
-    @State private var liveTranscript = ""
+    @StateObject private var speechService = PressHoldSpeechService()
+    private let parser = StatsVoiceParser()
 
     var body: some View {
         ScrollView {
@@ -354,9 +371,6 @@ struct LiveStatsView: View {
             if let shareURL {
                 ShareSheet(items: [shareURL])
             }
-        }
-        .onDisappear {
-            stopRecordingAndProcess()
         }
     }
 
@@ -404,34 +418,37 @@ struct LiveStatsView: View {
 
     private var voiceButton: some View {
         VStack(spacing: 8) {
-            Text("Current Quarter: \(selectedQuarter)")
-                .font(.title2.bold())
+                Text("Current Quarter: \(selectedQuarter)")
+                    .font(.title2.bold())
             Button {
                 // long-press driven
             } label: {
-                Text(isRecording ? "Listening… release to add" : "Hold to Speak")
+                Text(speechService.isRecording ? "Listening… release to add" : "Hold to Speak")
                     .font(.title3.bold())
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 18)
-                    .background(isRecording ? Color.red.opacity(0.9) : Color.blue)
+                    .background(speechService.isRecording ? Color.red.opacity(0.9) : Color.blue)
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             }
             .simultaneousGesture(
                 LongPressGesture(minimumDuration: 0.1)
                     .onEnded { _ in
-                        startRecording()
+                        speechService.startListening(vocabulary: speechVocabulary)
                     }
             )
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onEnded { _ in
-                        if isRecording { stopRecordingAndProcess() }
+                        if speechService.isRecording {
+                            let transcript = speechService.stopListening()
+                            handleVoiceTranscript(transcript)
+                        }
                     }
             )
 
-            if !liveTranscript.isEmpty {
-                Text("Heard: \(liveTranscript)")
+            if !speechService.liveTranscript.isEmpty {
+                Text("Heard: \(speechService.liveTranscript)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -536,6 +553,19 @@ struct LiveStatsView: View {
         grades.first(where: { $0.id == session.gradeId })?.name ?? "Unknown Grade"
     }
 
+    private var speechVocabulary: [String] {
+        let statPhrases = enabledStatTypes.flatMap { $0.voiceAliases }
+        let rosterPhrases = playersForGrade.flatMap { player -> [String] in
+            var values = [player.name, player.firstName, player.lastName]
+            if let number = player.number {
+                values.append("number \(number)")
+                values.append(String(number))
+            }
+            return values
+        }
+        return Array(Set(statPhrases + rosterPhrases)).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
     private var totalsRows: [TotalsRow] {
         playersForGrade.map { player in
             let events = sessionEvents.filter { $0.playerId == player.id }
@@ -590,127 +620,70 @@ struct LiveStatsView: View {
         lastMessage = "Undid last event"
     }
 
-    private func startRecording() {
-        guard !isRecording else { return }
-
-        SFSpeechRecognizer.requestAuthorization { _ in }
-        recognitionTask?.cancel()
-        recognitionTask = nil
-
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        if #available(iOS 13, *) {
-            request.requiresOnDeviceRecognition = false
+    private func handleVoiceTranscript(_ transcript: String) {
+        let descriptors = enabledStatTypes.map {
+            VoiceStatTypeDescriptor(id: $0.id, canonicalName: $0.name, aliases: $0.voiceAliases)
+        }
+        let roster = playersForGrade.map {
+            VoiceRosterPlayer(
+                id: $0.id,
+                number: $0.number,
+                firstName: $0.firstName,
+                lastName: $0.lastName,
+                fullName: $0.name
+            )
         }
 
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            request.append(buffer)
-        }
+        let result = parser.parse(transcript: transcript, statTypes: descriptors, roster: roster)
 
-        audioEngine.prepare()
-        do {
-            try audioEngine.start()
-            isRecording = true
-            liveTranscript = ""
-        } catch {
-            lastMessage = "Voice unavailable"
+#if DEBUG
+        print("VOICE_PARSE raw='\(result.rawTranscript)' normalized='\(result.normalizedTranscript)' status='\(result.parseStatus)' confidence='\(result.confidence)'")
+#endif
+
+        guard result.parseStatus == .success,
+              let statTypeId = result.matchedStatTypeId,
+              let playerId = result.matchedPlayerId else {
+            lastMessage = parseFailureMessage(result)
             return
         }
 
-        recognitionRequest = request
-        recognitionTask = recognizer?.recognitionTask(with: request) { result, error in
-            if let result {
-                liveTranscript = result.bestTranscription.formattedString.lowercased()
-            }
-            if error != nil {
-                stopRecording()
-            }
-        }
-    }
-
-    private func stopRecording() {
-        if audioEngine.isRunning {
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
-        }
-        recognitionRequest?.endAudio()
-        isRecording = false
-    }
-
-    private func stopRecordingAndProcess() {
-        guard isRecording || !liveTranscript.isEmpty else { return }
-        stopRecording()
-        processVoice(transcript: liveTranscript)
-        liveTranscript = ""
-    }
-
-    private func processVoice(transcript: String) {
-        let cleaned = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else {
-            lastMessage = "No speech detected"
-            return
-        }
-
-        guard let matchedType = enabledStatTypes.first(where: { cleaned.hasPrefix($0.name.lowercased()) }) else {
-            lastMessage = "Stat type not found"
-            return
-        }
-
-        var remainder = cleaned
-        remainder = remainder.replacingOccurrences(of: matchedType.name.lowercased(), with: "")
-        remainder = remainder.replacingOccurrences(of: "number", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let number = Int(remainder.components(separatedBy: CharacterSet.decimalDigits.inverted).joined())
-        let candidates: [Player]
-
-        if let number {
-            candidates = playersForGrade.filter { $0.number == number }
-        } else {
-            let nameKey = remainder.trimmingCharacters(in: .whitespacesAndNewlines)
-            let full = playersForGrade.filter { $0.name.lowercased() == nameKey }
-            let surname = playersForGrade.filter { $0.lastName.lowercased() == nameKey }
-            let first = playersForGrade.filter { $0.firstName.lowercased() == nameKey }
-            if !full.isEmpty {
-                candidates = full
-            } else if !surname.isEmpty {
-                candidates = surname
-            } else if first.count == 1 {
-                candidates = first
-            } else {
-                candidates = first
-            }
-        }
-
-        guard !candidates.isEmpty else {
-            lastMessage = "Player not found"
-            return
-        }
-        guard candidates.count == 1 else {
-            if let text = remainder.split(separator: " ").last {
-                lastMessage = "Multiple matches for \(text.capitalized)"
-            } else {
-                lastMessage = "Multiple player matches"
-            }
-            return
-        }
-
-        let player = candidates[0]
-        let event = StatEvent(
+        let event = StatsEventCreationService.makeVoiceEvent(
             sessionId: session.sessionId,
-            playerId: player.id,
-            statTypeId: matchedType.id,
+            playerId: playerId,
+            statTypeId: statTypeId,
             quarter: selectedQuarter,
-            sourceRaw: StatsEventSource.voice.rawValue,
-            transcript: transcript
+            transcript: result.rawTranscript,
+            normalizedTranscript: result.normalizedTranscript,
+            confidence: result.confidence
         )
         modelContext.insert(event)
         try? modelContext.save()
 
-        lastMessage = "Added: \(matchedType.name) — \(playerDisplay(player)) — \(selectedQuarter)"
+        let playerText = playerLabel(for: playerId)
+        let statText = statName(for: statTypeId)
+        lastMessage = "Added: \(statText) — \(playerText) — \(selectedQuarter)"
+    }
+
+    private func parseFailureMessage(_ result: VoiceParseResult) -> String {
+        switch result.parseStatus {
+        case .emptyTranscript:
+            return "No speech detected"
+        case .noStatFound:
+            return "Stat type not recognised"
+        case .noPlayerFound:
+            return "Player not found"
+        case .ambiguousPlayer:
+            if let first = result.candidatePlayerIds.first {
+                return "Multiple players match '\(playerLabel(for: first))'"
+            }
+            return "Multiple players match"
+        case .ambiguousStat:
+            return "Multiple stat types matched"
+        case .lowConfidence:
+            return "Could not confidently interpret command"
+        case .success:
+            return ""
+        }
     }
 
     private func generateReport() {
