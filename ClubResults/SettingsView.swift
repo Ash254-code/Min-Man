@@ -1652,15 +1652,14 @@ private struct ContactsSettingsView: View {
 
 private struct GroupsSettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var contacts: [Contact] = []
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query private var sectionMemberships: [ContactSectionMembership]
 
-    @State private var showAddContact = false
+    @State private var showAddContactsForSection = false
     @State private var addSectionKey: String?
-    @State private var showAddExistingContactForSection = false
-    @State private var sectionForExistingContact: String?
     @State private var contactEditing: Contact?
     @State private var isManagingGroups = false
     @State private var saveErrorMessage: String?
@@ -1669,36 +1668,20 @@ private struct GroupsSettingsView: View {
     @AppStorage("contactSectionHiddenGroups") private var hiddenSectionKeysData: String = ""
 
     var body: some View {
-        List {
-            ForEach(baseSections.filter {
-                if case .fixed = $0.section { return true }
-                return false
-            }, id: \.sectionKey) { section in
-                sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
-            }
-
-            Section {
-                if orderedGrades.isEmpty {
-                    Text("Add club grades in Settings > Club Grades to manage coach contacts by grade.")
-                        .foregroundStyle(.secondary)
+        GeometryReader { geometry in
+            List {
+                if useTwoColumnLayout(in: geometry.size) {
+                    twoColumnSectionsLayout
                 } else {
-                    ForEach(baseSections.filter { $0.section == .coachesGrade }, id: \.sectionKey) { section in
-                        sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
-                    }
+                    singleColumnSectionsLayout
                 }
-            } header: {
-                Text("Coaching Staff")
-            }
 
-            ForEach(customSections, id: \.sectionKey) { section in
-                sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
-            }
-
-            Section {
-                NavigationLink {
-                    ReportsSettingsView()
-                } label: {
-                    Label("Report Recipients", systemImage: "doc.text.magnifyingglass")
+                Section {
+                    NavigationLink {
+                        ReportsSettingsView()
+                    } label: {
+                        Label("Report Recipients", systemImage: "doc.text.magnifyingglass")
+                    }
                 }
             }
         }
@@ -1713,36 +1696,28 @@ private struct GroupsSettingsView: View {
                 .accessibilityLabel("Manage Groups")
             }
         }
-        .sheet(isPresented: $showAddContact) {
-            ContactEditSheet(
-                title: "Add Contact",
-                allowsSaveAndAddAnother: false,
-                onSave: { name, mobile, email in
+        .sheet(isPresented: $showAddContactsForSection) {
+            AddContactsToSectionSheet(
+                contacts: contacts,
+                assignedContactIDs: Set(
+                    sectionMemberships
+                        .filter { $0.sectionKey == addSectionKey }
+                        .map(\.contactID)
+                ),
+                onAddExisting: { selectedIDs in
+                    guard let sectionKey = addSectionKey else { return }
+                    selectedIDs.forEach { assignContact($0, toSection: sectionKey) }
+                    saveContext()
+                    addSectionKey = nil
+                    showAddContactsForSection = false
+                },
+                onAddNew: { name, mobile, email in
                     let contact = Contact(name: name, mobile: mobile, email: email)
                     dataContext.insert(contact)
                     if let addSectionKey {
                         assignContact(contact.id, toSection: addSectionKey)
                     }
                     saveContext()
-                    return true
-                }
-            )
-            .appPopupStyle()
-        }
-        .sheet(isPresented: $showAddExistingContactForSection) {
-            ExistingContactAssignmentSheet(
-                contacts: contacts,
-                assignedContactIDs: Set(
-                    sectionMemberships
-                        .filter { $0.sectionKey == sectionForExistingContact }
-                        .map(\.contactID)
-                ),
-                onSelect: { contact in
-                    guard let sectionKey = sectionForExistingContact else { return }
-                    assignContact(contact.id, toSection: sectionKey)
-                    saveContext()
-                    sectionForExistingContact = nil
-                    showAddExistingContactForSection = false
                 }
             )
             .appPopupStyle()
@@ -1837,6 +1812,66 @@ private struct GroupsSettingsView: View {
             }
     }
 
+    private var fixedSections: [GroupSectionDescriptor] {
+        baseSections.filter {
+            if case .fixed = $0.section { return true }
+            return false
+        }
+    }
+
+    private var coachingSections: [GroupSectionDescriptor] {
+        baseSections.filter { $0.section == .coachesGrade }
+    }
+
+    @ViewBuilder
+    private var singleColumnSectionsLayout: some View {
+        ForEach(fixedSections, id: \.sectionKey) { section in
+            sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+        }
+
+        Section {
+            if orderedGrades.isEmpty {
+                Text("Add club grades in Settings > Club Grades to manage coach contacts by grade.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(coachingSections, id: \.sectionKey) { section in
+                    sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+                }
+            }
+        } header: {
+            Text("Coaching Staff")
+        }
+
+        ForEach(customSections, id: \.sectionKey) { section in
+            sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+        }
+    }
+
+    private var allDisplayedSections: [GroupSectionDescriptor] {
+        fixedSections + coachingSections + customSections
+    }
+
+    @ViewBuilder
+    private var twoColumnSectionsLayout: some View {
+        let gridColumns = [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ]
+        Section {
+            LazyVGrid(columns: gridColumns, spacing: 12) {
+                ForEach(allDisplayedSections, id: \.sectionKey) { section in
+                    sectionCardView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    private func useTwoColumnLayout(in size: CGSize) -> Bool {
+        size.width > size.height && horizontalSizeClass != .compact
+    }
+
     private var manageableGroups: [GroupManagementDraft] {
         (baseSections + customSections).map { section in
             GroupManagementDraft(
@@ -1861,14 +1896,6 @@ private struct GroupsSettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(contact.name)
                         .font(.headline)
-
-                    Text(contact.mobile)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Text(contact.email)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -1883,20 +1910,9 @@ private struct GroupsSettingsView: View {
                 }
             }
 
-            Menu {
-                Button {
-                    addSectionKey = sectionKey
-                    showAddContact = true
-                } label: {
-                    Label("New Contact", systemImage: "person.badge.plus")
-                }
-
-                Button {
-                    sectionForExistingContact = sectionKey
-                    showAddExistingContactForSection = true
-                } label: {
-                    Label("Existing Contact", systemImage: "person.2")
-                }
+            Button {
+                addSectionKey = sectionKey
+                showAddContactsForSection = true
             } label: {
                 Label("Add Contact", systemImage: "plus")
             }
@@ -1905,6 +1921,42 @@ private struct GroupsSettingsView: View {
                 Text(displayTitle(for: sectionKey, fallback: fallbackTitle))
             }
         }
+    }
+
+    private func sectionCardView(fallbackTitle: String, sectionKey: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(displayTitle(for: sectionKey, fallback: fallbackTitle))
+                .font(.headline)
+
+            let members = contactsForSection(sectionKey)
+            if members.isEmpty {
+                Text("No contacts added.")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+            } else {
+                ForEach(members) { contact in
+                    HStack {
+                        Text(contact.name)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        contactEditing = contact
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                addSectionKey = sectionKey
+                showAddContactsForSection = true
+            } label: {
+                Label("Add Contact", systemImage: "plus")
+            }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func contactsForSection(_ sectionKey: String) -> [Contact] {
@@ -2415,12 +2467,16 @@ private struct ContactEditSheet: View {
     }
 }
 
-private struct ExistingContactAssignmentSheet: View {
+private struct AddContactsToSectionSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let contacts: [Contact]
     let assignedContactIDs: Set<UUID>
-    let onSelect: (Contact) -> Void
+    let onAddExisting: (Set<UUID>) -> Void
+    let onAddNew: (_ name: String, _ mobile: String, _ email: String) -> Void
+
+    @State private var selectedContactIDs: Set<UUID> = []
+    @State private var showingAddNewContact = false
 
     private var availableContacts: [Contact] {
         contacts.filter { !assignedContactIDs.contains($0.id) }
@@ -2435,25 +2491,55 @@ private struct ExistingContactAssignmentSheet: View {
                 } else {
                     ForEach(availableContacts) { contact in
                         Button {
-                            onSelect(contact)
-                            dismiss()
+                            if selectedContactIDs.contains(contact.id) {
+                                selectedContactIDs.remove(contact.id)
+                            } else {
+                                selectedContactIDs.insert(contact.id)
+                            }
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
+                            HStack {
                                 Text(contact.name)
-                                Text(contact.email)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                if selectedContactIDs.contains(contact.id) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.tint)
+                                }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Add Existing Contact")
+            .navigationTitle("Add Contacts")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Add Selected") {
+                        onAddExisting(selectedContactIDs)
+                        dismiss()
+                    }
+                    .disabled(selectedContactIDs.isEmpty)
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Button {
+                        showingAddNewContact = true
+                    } label: {
+                        Label("Add New", systemImage: "person.badge.plus")
+                    }
+                }
             }
+        }
+        .sheet(isPresented: $showingAddNewContact) {
+            ContactEditSheet(
+                title: "Add Contact",
+                allowsSaveAndAddAnother: false,
+                onSave: { name, mobile, email in
+                    onAddNew(name, mobile, email)
+                    return true
+                }
+            )
+            .appPopupStyle()
         }
     }
 }
