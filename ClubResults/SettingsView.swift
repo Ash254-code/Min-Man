@@ -1665,6 +1665,7 @@ private struct GroupsSettingsView: View {
     @Query private var sectionMemberships: [ContactSectionMembership]
 
     @State private var addContactsSection: GroupSectionSelection?
+    @State private var sectionEditing: GroupSectionSelection?
     @State private var contactEditing: Contact?
     @State private var isManagingGroups = false
     @State private var saveErrorMessage: String?
