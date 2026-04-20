@@ -927,7 +927,7 @@ struct LiveStatsView: View {
         .onChange(of: selectedQuarter) { _, _ in
             configureQuarterTimer(reset: true)
         }
-        .onChange(of: feedbackToken) { _ in
+        .onChange(of: feedbackToken) { _, _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
                 if !speechService.isRecording {
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -1770,10 +1770,6 @@ struct LiveStatsView: View {
             }
 
             y += 10
-            let inside50Us = teamStatCount(statType: inside50Stat, teamPlayerId: ourTeamStatPlayerID)
-            let inside50Them = teamStatCount(statType: inside50Stat, teamPlayerId: oppositionTeamStatPlayerID)
-            let clearancesUs = teamStatCount(statType: clearanceStat, teamPlayerId: ourTeamStatPlayerID)
-            let clearancesThem = teamStatCount(statType: clearanceStat, teamPlayerId: oppositionTeamStatPlayerID)
             let teamSummary = "Inside 50 — Ours: \(inside50Us), Theirs: \(inside50Them)    |    Clearances — Ours: \(clearancesUs), Theirs: \(clearancesThem)"
             (teamSummary as NSString).draw(
                 in: CGRect(x: leftMargin, y: y, width: pageRect.width - (leftMargin * 2), height: 24),
