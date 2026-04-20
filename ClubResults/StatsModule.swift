@@ -808,22 +808,27 @@ struct LiveStatsView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let cardSpacing: CGFloat = 8
             let availableWidth = max(proxy.size.width - 24, 640)
             let leftPanelWidth = min(max(availableWidth * 0.62, 420), availableWidth - 300)
-            let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
-            VStack(spacing: 8) {
-                combinedScoreAndActionsPanel
-                    .padding(.bottom, 8)
+            let rightPanelWidth = max(availableWidth - leftPanelWidth - cardSpacing, 290)
+            let topPanelHeight = max(160, min(190, proxy.size.height * 0.20))
+            let bottomBarHeight = max(72, min(84, proxy.size.height * 0.09))
+            let rightStatActionsHeight = max(150, min(190, proxy.size.height * 0.19))
 
-                HStack(spacing: 10) {
-                    VStack(spacing: 10) {
+            VStack(spacing: cardSpacing) {
+                combinedScoreAndActionsPanel
+                    .frame(height: topPanelHeight)
+
+                HStack(spacing: cardSpacing) {
+                    VStack(spacing: cardSpacing) {
                         playerSelectionPanel
                     }
                     .frame(width: leftPanelWidth)
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: cardSpacing) {
                         statButtonsPanel
-                            .frame(maxHeight: max(proxy.size.height * 0.34, 210))
+                            .frame(height: rightStatActionsHeight)
                         recentEventsPanel
                     }
                     .frame(width: rightPanelWidth)
@@ -832,7 +837,7 @@ struct LiveStatsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 bottomControlBar
-                    .frame(height: max(proxy.size.height * 0.11, 90))
+                    .frame(height: bottomBarHeight)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -1005,7 +1010,7 @@ struct LiveStatsView: View {
     }
 
     private var combinedScoreAndActionsPanel: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             combinedTeamPanel(
                 teamName: ourTeamName,
                 scoreText: "\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))",
@@ -1019,7 +1024,7 @@ struct LiveStatsView: View {
                 isOpposition: true
             )
         }
-        .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
+        .frame(maxWidth: .infinity)
     }
 
     private func combinedTeamPanel(
@@ -1028,8 +1033,8 @@ struct LiveStatsView: View {
         style: ClubStyle.Style,
         isOpposition: Bool
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
                 ScorePill(teamName, style: style)
                     .font(.title3.weight(.bold))
                 Text(scoreText)
@@ -1103,7 +1108,7 @@ struct LiveStatsView: View {
 
     private var playerSelectionPanel: some View {
         GeometryReader { panelProxy in
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Spacer()
                     Button {
@@ -1125,10 +1130,10 @@ struct LiveStatsView: View {
                     : maxRows
                 let topFixedHeight = 40.0
                 let usableGridHeight = max(panelProxy.size.height - topFixedHeight, 180)
-                let cellHeight = max(76, min(150, (usableGridHeight - (CGFloat(rowsCount - 1) * 10)) / CGFloat(rowsCount)))
-                let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: columnsCount)
+                let cellHeight = max(72, min(132, (usableGridHeight - (CGFloat(rowsCount - 1) * 8)) / CGFloat(rowsCount)))
+                let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: columnsCount)
 
-                LazyVGrid(columns: columns, spacing: 10) {
+                LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(visiblePlayers) { player in
                         Button {
                             selectPlayer(player.id)
@@ -1168,7 +1173,7 @@ struct LiveStatsView: View {
             Text("Stat Actions")
                 .font(.title3.bold())
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
                 ForEach(playerStatTypes) { type in
                     Button {
                         addManualEvent(statTypeId: type.id)
@@ -1249,7 +1254,7 @@ struct LiveStatsView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 360, maxHeight: 360, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
