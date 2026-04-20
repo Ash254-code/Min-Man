@@ -1618,34 +1618,47 @@ private struct PlayerVisibilityEditorView: View {
 
     var body: some View {
         NavigationStack {
-            List(players) { player in
-                Button {
-                    if selectedIDs.contains(player.id) {
-                        selectedIDs.remove(player.id)
-                    } else {
-                        selectedIDs.insert(player.id)
-                    }
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: selectedIDs.contains(player.id) ? "checkmark.square.fill" : "square")
-                            .foregroundStyle(selectedIDs.contains(player.id) ? .blue : .secondary)
-                        Text(player.number.map { "#\($0)" } ?? "—")
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, alignment: .leading)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(player.lastName.uppercased())
-                                .font(.headline)
-                            Text(player.firstName)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Text("Visible Players")
+                        .font(.largeTitle.bold())
+                    Spacer()
+                    Text("\(selectedIDs.count) Included")
+                        .font(.largeTitle.bold())
+                        .monospacedDigit()
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+
+                List(players) { player in
+                    Button {
+                        if selectedIDs.contains(player.id) {
+                            selectedIDs.remove(player.id)
+                        } else {
+                            selectedIDs.insert(player.id)
+                        }
+                    }
+                    label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: selectedIDs.contains(player.id) ? "checkmark.square.fill" : "square")
+                                .foregroundStyle(selectedIDs.contains(player.id) ? .blue : .secondary)
+                            Text(player.number.map { "#\($0)" } ?? "—")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 44, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(player.lastName.uppercased())
+                                    .font(.headline)
+                                Text(player.firstName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .navigationTitle("Visible Players")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Back") {
@@ -1662,11 +1675,7 @@ private struct PlayerVisibilityEditorView: View {
                         onSave(selectedIDs)
                         dismiss()
                     }
-                    .disabled(!hasUnsavedChanges)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(hasUnsavedChanges ? Color.blue : Color.gray.opacity(0.45), in: Capsule())
-                    .foregroundStyle(.white)
+                    .saveButtonBehavior(isEnabled: hasUnsavedChanges)
                 }
             }
             .alert("Discard unsaved changes?", isPresented: $showDiscardAlert) {
