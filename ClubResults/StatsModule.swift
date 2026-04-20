@@ -810,20 +810,18 @@ struct LiveStatsView: View {
         GeometryReader { proxy in
             let availableWidth = max(proxy.size.width - 24, 640)
             let leftPanelWidth = min(max(availableWidth * 0.62, 420), availableWidth - 300)
-            let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
-            VStack(spacing: 8) {
+            let rightPanelWidth = max(availableWidth - leftPanelWidth - 12, 290)
+            VStack(spacing: 12) {
                 combinedScoreAndActionsPanel
-                    .padding(.bottom, 8)
 
-                HStack(spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 10) {
                         playerSelectionPanel
                     }
                     .frame(width: leftPanelWidth)
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: 12) {
                         statButtonsPanel
-                            .frame(maxHeight: max(proxy.size.height * 0.34, 210))
                         recentEventsPanel
                     }
                     .frame(width: rightPanelWidth)
@@ -833,9 +831,10 @@ struct LiveStatsView: View {
 
                 bottomControlBar
                     .frame(height: max(proxy.size.height * 0.11, 90))
+                    .padding(.top, 2)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
         }
         .navigationTitle("\(gradeName) • \(session.date.formatted(date: .abbreviated, time: .omitted))")
         .navigationBarTitleDisplayMode(.inline)
@@ -1019,7 +1018,7 @@ struct LiveStatsView: View {
                 isOpposition: true
             )
         }
-        .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
+        .frame(maxWidth: .infinity, minHeight: 168, maxHeight: 168)
     }
 
     private func combinedTeamPanel(
@@ -1046,6 +1045,7 @@ struct LiveStatsView: View {
             }
         }
         .padding(.horizontal, 12)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
@@ -1189,7 +1189,7 @@ struct LiveStatsView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 176, alignment: .topLeading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -1249,7 +1249,7 @@ struct LiveStatsView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 360, maxHeight: 360, alignment: .top)
+        .frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity, alignment: .top)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
