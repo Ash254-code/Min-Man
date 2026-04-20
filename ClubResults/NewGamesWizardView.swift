@@ -2252,7 +2252,7 @@ struct NewGameWizardView: View {
     }
 
     private var postGameScoreEntryOnGoalsStep: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: isCompactLayout ? 26 : 40) {
             postGameScoreTeamEntry(
                 title: clubConfiguration.clubTeam.name,
                 style: ourTeamScoreStyle,
@@ -2292,33 +2292,54 @@ struct NewGameWizardView: View {
             }
 
             HStack(spacing: 10) {
-                postGameScoreButton(title: "Goal +", color: style.background) { goals.wrappedValue += 1 }
-                postGameScoreButton(title: "Behind +", color: style.background) { behinds.wrappedValue += 1 }
-            }
-            HStack(spacing: 10) {
-                postGameScoreButton(title: "Goal −", color: .secondary) {
-                    goals.wrappedValue = max(0, goals.wrappedValue - 1)
-                }
-                postGameScoreButton(title: "Behind −", color: .secondary) {
-                    behinds.wrappedValue = max(0, behinds.wrappedValue - 1)
-                }
+                postGameScoreDoubleButton(
+                    title: "Goal",
+                    color: style.background,
+                    onIncrement: { goals.wrappedValue += 1 },
+                    onDecrement: { goals.wrappedValue = max(0, goals.wrappedValue - 1) }
+                )
+                postGameScoreDoubleButton(
+                    title: "Point",
+                    color: style.background,
+                    onIncrement: { behinds.wrappedValue += 1 },
+                    onDecrement: { behinds.wrappedValue = max(0, behinds.wrappedValue - 1) }
+                )
             }
         }
         .padding(.vertical, 6)
     }
 
-    private func postGameScoreButton(title: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: isCompactLayout ? 18 : 22, weight: .bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, isCompactLayout ? 12 : 16)
+    private func postGameScoreDoubleButton(
+        title: String,
+        color: Color,
+        onIncrement: @escaping () -> Void,
+        onDecrement: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 0) {
+            Button(action: onIncrement) {
+                Text("\(title) +")
+                    .font(.system(size: isCompactLayout ? 18 : 22, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, isCompactLayout ? 12 : 16)
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .overlay(Color.white.opacity(0.35))
+
+            Button(action: onDecrement) {
+                Text("\(title) −")
+                    .font(.system(size: isCompactLayout ? 18 : 22, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, isCompactLayout ? 12 : 16)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(color.opacity(0.9))
         )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .foregroundStyle(.white)
     }
 
