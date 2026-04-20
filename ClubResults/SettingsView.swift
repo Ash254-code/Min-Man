@@ -606,7 +606,7 @@ private struct UmpiresSettingsView: View {
     var body: some View {
         List {
             Section {
-                Text("Choose which grade lists provide names in the umpire duties picker. These selections control the names shown for Umpire 1, Umpire 2, and Field Umpire.")
+                Text("Choose which grade lists provide names in the umpire duties picker. These selections control the names shown for Boundary Umpire 1, Boundary Umpire 2, and Field Umpire.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -814,8 +814,8 @@ private struct ClubGradesSettingsView: View {
                             .font(.subheadline.weight(.semibold))
                         Toggle("Goal Umpire", isOn: bind(\.asksGoalUmpire))
                         Toggle("Field Umpire", isOn: bind(\.asksFieldUmpire))
-                        Toggle("Umpire 1", isOn: bind(\.asksBoundaryUmpire1))
-                        Toggle("Umpire 2", isOn: bind(\.asksBoundaryUmpire2))
+                        Toggle("Boundary Umpire 1", isOn: bind(\.asksBoundaryUmpire1))
+                        Toggle("Boundary Umpire 2", isOn: bind(\.asksBoundaryUmpire2))
                     }
 
                     Section {
@@ -1362,8 +1362,8 @@ private struct AddGradeWizardView: View {
                     Section {
                         Toggle("Goal Umpire", isOn: $draft.asksGoalUmpire)
                         Toggle("Field Umpire", isOn: $draft.asksFieldUmpire)
-                        Toggle("Umpire 1", isOn: $draft.asksBoundaryUmpire1)
-                        Toggle("Umpire 2", isOn: $draft.asksBoundaryUmpire2)
+                        Toggle("Boundary Umpire 1", isOn: $draft.asksBoundaryUmpire1)
+                        Toggle("Boundary Umpire 2", isOn: $draft.asksBoundaryUmpire2)
                     } header: {
                         Text("Officials")
                     }
@@ -3622,8 +3622,7 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
     if template.includeGoalKickers { items.append("Goal kickers") }
     if template.includeBestAndFairestVotes { items.append("B&F votes") }
     if template.includeStaffRoles { items.append("Coaches") }
-    if template.includeOfficials { items.append("Officials") }
-    if template.includeUmpires { items.append("Umpires") }
+    if template.includeOfficials || template.includeUmpires { items.append("Officials") }
     if template.includeTrainers { items.append("Trainers") }
     if template.includeMatchNotes { items.append("Match notes") }
 
@@ -3726,17 +3725,18 @@ private func makeTemplatePreviewPDF(
                 .filter { !$0.isEmpty }
             if !staff.isEmpty { parts.append("Staff: \(staff.joined(separator: ", "))") }
         }
-        if template.includeOfficials {
-            let officials = [game.goalUmpireName, game.fieldUmpireName]
+        if template.includeOfficials || template.includeUmpires {
+            var officials: [String] = []
+            if template.includeOfficials {
+                officials += [game.goalUmpireName, game.fieldUmpireName]
+            }
+            if template.includeUmpires {
+                officials += [game.boundaryUmpire1Name, game.boundaryUmpire2Name]
+            }
+            officials = officials
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             if !officials.isEmpty { parts.append("Officials: \(officials.joined(separator: ", "))") }
-        }
-        if template.includeUmpires {
-            let umpires = [game.boundaryUmpire1Name, game.boundaryUmpire2Name]
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            if !umpires.isEmpty { parts.append("Boundary: \(umpires.joined(separator: ", "))") }
         }
         if template.includeTrainers {
             let trainers = game.trainers
@@ -4192,24 +4192,28 @@ private func makeTemplatePreviewPDF(
             drawDetailTable(title: "Coaches", columns: ["Head", "Assistant", "Manager", "Runner"], rows: rows)
         }
 
-        if template.includeOfficials {
-            let rows = primaryGame.map { game in
-                [[
-                    game.goalUmpireName.trimmingCharacters(in: .whitespacesAndNewlines),
-                    game.fieldUmpireName.trimmingCharacters(in: .whitespacesAndNewlines)
-                ]]
-            } ?? []
-            drawDetailTable(title: "Officials", columns: ["Goal", "Field"], rows: rows)
-        }
+        if template.includeOfficials || template.includeUmpires {
+            let columns: [String] = [
+                template.includeOfficials ? "Goal" : nil,
+                template.includeOfficials ? "Field" : nil,
+                template.includeUmpires ? "Boundary Umpire 1" : nil,
+                template.includeUmpires ? "Boundary Umpire 2" : nil
+            ].compactMap { $0 }
 
-        if template.includeUmpires {
             let rows = primaryGame.map { game in
-                [[
-                    game.boundaryUmpire1Name.trimmingCharacters(in: .whitespacesAndNewlines),
-                    game.boundaryUmpire2Name.trimmingCharacters(in: .whitespacesAndNewlines)
-                ]]
+                var row: [String] = []
+                if template.includeOfficials {
+                    row.append(game.goalUmpireName.trimmingCharacters(in: .whitespacesAndNewlines))
+                    row.append(game.fieldUmpireName.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                if template.includeUmpires {
+                    row.append(game.boundaryUmpire1Name.trimmingCharacters(in: .whitespacesAndNewlines))
+                    row.append(game.boundaryUmpire2Name.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                return [row]
             } ?? []
-            drawDetailTable(title: "Umpires", columns: ["Boundary 1", "Boundary 2"], rows: rows)
+
+            drawDetailTable(title: "Officials", columns: columns, rows: rows)
         }
 
         if template.includeTrainers {
@@ -4417,7 +4421,7 @@ private struct CustomReportEditView: View {
                     toggleWithLimitPicker(title: "Best and Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit, defaultLimitWhenEnabled: 5)
                     Toggle("Coaches", isOn: $includeStaffRoles)
                     Toggle("Officials", isOn: $includeOfficials)
-                    Toggle("Umpires", isOn: $includeUmpires)
+                    Toggle("Boundary Umpires", isOn: $includeUmpires)
                     Toggle("Trainers", isOn: $includeTrainers)
                     Toggle("Match notes", isOn: $includeMatchNotes)
                 } header: {

@@ -152,8 +152,8 @@ struct GameEditView: View {
                     StaffPickerField(title: "Runner", role: .runner, gradeID: gradeID, value: $runnerName)
                     StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
                     StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $fieldUmpireName)
-                    StaffPickerField(title: "Umpire 1", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire1Name)
-                    StaffPickerField(title: "Umpire 2", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire2Name)
+                    StaffPickerField(title: "Boundary Umpire 1", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire1Name)
+                    StaffPickerField(title: "Boundary Umpire 2", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire2Name)
                 }
 
                 Section("Trainers") {

@@ -1667,7 +1667,7 @@ struct NewGameWizardView: View {
 
                     if asksBoundaryUmpire1 {
                         StaffPickerField(
-                            title: "Umpire 1",
+                            title: "Boundary Umpire 1",
                             role: .boundaryUmpire,
                             gradeID: gradeID,
                             value: $boundaryUmpire1Name
@@ -1676,7 +1676,7 @@ struct NewGameWizardView: View {
 
                     if asksBoundaryUmpire2 {
                         StaffPickerField(
-                            title: "Umpire 2",
+                            title: "Boundary Umpire 2",
                             role: .boundaryUmpire,
                             gradeID: gradeID,
                             value: $boundaryUmpire2Name
@@ -1684,7 +1684,7 @@ struct NewGameWizardView: View {
                     }
 
                     if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalBoundary1.isEmpty, finalBoundary1 == finalBoundary2 {
-                        Text("Umpire 1 and 2 can’t be the same.")
+                        Text("Boundary Umpire 1 and Boundary Umpire 2 can’t be the same.")
                             .font(.caption)
                             .foregroundStyle(.red)
                             .padding(.top, 6)
@@ -1705,7 +1705,7 @@ struct NewGameWizardView: View {
 
                         if asksBoundaryUmpire1 {
                             StaffPickerField(
-                                title: "Umpire 1",
+                                title: "Boundary Umpire 1",
                                 role: .boundaryUmpire,
                                 gradeID: gradeID,
                                 value: $game2BoundaryUmpire1Name
@@ -1714,7 +1714,7 @@ struct NewGameWizardView: View {
 
                         if asksBoundaryUmpire2 {
                             StaffPickerField(
-                                title: "Umpire 2",
+                                title: "Boundary Umpire 2",
                                 role: .boundaryUmpire,
                                 gradeID: gradeID,
                                 value: $game2BoundaryUmpire2Name
@@ -1722,7 +1722,7 @@ struct NewGameWizardView: View {
                         }
 
                         if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalGame2Boundary1.isEmpty, finalGame2Boundary1 == finalGame2Boundary2 {
-                            Text("Umpire 1 and 2 can’t be the same.")
+                            Text("Boundary Umpire 1 and Boundary Umpire 2 can’t be the same.")
                                 .font(.caption)
                                 .foregroundStyle(.red)
                                 .padding(.top, 6)
