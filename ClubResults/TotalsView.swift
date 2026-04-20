@@ -131,20 +131,22 @@ struct TotalsView: View {
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 2 : 1)
 
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 12) {
+                    LazyVStack(spacing: 18) {
                         ForEach(displayGroups) { group in
-                            VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 14) {
                                 HStack {
                                     Spacer()
                                     ClubPill(text: group.title, bg: ClubTheme.navy, fg: ClubTheme.yellow)
                                     Spacer()
                                 }
 
-                                ForEach(Array(group.sections.enumerated()), id: \.offset) { _, section in
-                                    leaderboardCard(title: section.title, rows: section.rows)
+                                LazyVGrid(columns: columns, spacing: 12) {
+                                    ForEach(Array(group.sections.enumerated()), id: \.offset) { _, section in
+                                        leaderboardCard(title: section.title, rows: section.rows)
+                                    }
                                 }
                             }
-                            .gridCellColumns(isLandscape ? 2 : 1)
+                            .padding(.vertical, 2)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -182,21 +184,37 @@ struct TotalsView: View {
                     selectedGradeIDs = [defaultGradeID]
                 }
             }
-            .sheet(isPresented: $showFilterSheet) {
-                totalsFilterSheet
-                    .presentationDetents([.medium, .large])
+            .overlay {
+                if showFilterSheet {
+                    filterOverlay
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                        .zIndex(2)
+                }
             }
         }
     }
 
-    private var totalsFilterSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Grades")
-                        .font(.headline)
+    private var filterOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture { showFilterSheet = false }
 
-                    FlowPills {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Filters")
+                        .font(.system(size: 40, weight: .bold))
+                    Spacer()
+                    Button("Done") { showFilterSheet = false }
+                        .font(.headline)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionLabel("Grades")
+                    UniformPillGrid {
                         filterPill(
                             title: "All",
                             isSelected: includeAllGrades,
@@ -214,11 +232,12 @@ struct TotalsView: View {
                             )
                         }
                     }
+                }
+                .panelSection()
 
-                    Text("Show")
-                        .font(.headline)
-
-                    FlowPills {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionLabel("Show")
+                    UniformPillGrid {
                         ForEach(TopCountOption.allCases) { option in
                             filterPill(
                                 title: option.rawValue,
@@ -227,22 +246,40 @@ struct TotalsView: View {
                             )
                         }
                     }
+                }
+                .panelSection()
 
-                    if shouldShowCombineToggle {
-                        Toggle("Combine All Grades", isOn: $combineAllGrades)
-                            .toggleStyle(.switch)
-                            .font(.headline)
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionLabel("Layout")
+                    Toggle("Combine All Grades", isOn: $combineAllGrades)
+                        .toggleStyle(.switch)
+                        .font(.headline)
+                        .disabled(!shouldShowCombineToggle)
+                        .opacity(shouldShowCombineToggle ? 1 : 0.45)
+                    if !shouldShowCombineToggle {
+                        Text("Select 2 or more grades to enable.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .padding(16)
+                .panelSection()
             }
-            .navigationTitle("Filters")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { showFilterSheet = false }
-                }
-            }
+            .padding(24)
+            .frame(maxWidth: 880)
+            .frame(height: 560)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
+            .padding(24)
         }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.title3.weight(.bold))
     }
 
     @ViewBuilder
@@ -250,11 +287,12 @@ struct TotalsView: View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
+                .multilineTextAlignment(.center)
                 .foregroundStyle(isSelected ? .white : .primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
                 .background(
-                    Capsule(style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(isSelected ? Color.blue : Color.gray.opacity(0.22))
                 )
         }
@@ -495,13 +533,30 @@ private extension TotalsView {
     }
 }
 
-private struct FlowPills<Content: View>: View {
+private struct UniformPillGrid<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 10)], alignment: .leading, spacing: 10) {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 130, maximum: 130), spacing: 10)],
+            alignment: .leading,
+            spacing: 10
+        ) {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension View {
+    func panelSection() -> some View {
+        self
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
     }
 }
