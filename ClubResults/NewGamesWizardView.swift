@@ -2120,6 +2120,31 @@ struct NewGameWizardView: View {
         .foregroundStyle(.white)
     }
 
+    private func compactGoalsSummaryItem(
+        label: String,
+        value: String,
+        valueColor: Color = .primary
+    ) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value)
+                .font(.headline)
+                .foregroundStyle(valueColor)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+
     private var goalsStep: some View {
         Form {
             if shouldCollectPostGameScoreWithinGoalsStep {
@@ -2129,15 +2154,16 @@ struct NewGameWizardView: View {
             }
 
             Section("Goals summary") {
-                HStack { Text("Our goals (from score)"); Spacer(); Text("\(ourGoals)").font(.headline) }
-                HStack { Text("Allocated to kickers"); Spacer(); Text("\(totalGoalsKicked)").font(.headline) }
-                HStack {
-                    Text(overAllocatedGoals ? "Over allocated" : "Remaining to allocate")
-                    Spacer()
-                    Text("\(abs(remainingGoalsToAllocate))")
-                        .font(.headline)
-                        .foregroundStyle(overAllocatedGoals ? .red : .primary)
+                HStack(spacing: 8) {
+                    compactGoalsSummaryItem(label: "From score", value: "\(ourGoals)")
+                    compactGoalsSummaryItem(label: "Allocated", value: "\(totalGoalsKicked)")
+                    compactGoalsSummaryItem(
+                        label: overAllocatedGoals ? "Over" : "Remaining",
+                        value: "\(abs(remainingGoalsToAllocate))",
+                        valueColor: overAllocatedGoals ? .red : .primary
+                    )
                 }
+                .padding(.vertical, 2)
                 if hasDuplicateGoalKickers {
                     Text("Same player selected more than once.")
                         .font(.caption)
@@ -2252,7 +2278,7 @@ struct NewGameWizardView: View {
     }
 
     private var postGameScoreEntryOnGoalsStep: some View {
-        HStack(alignment: .top, spacing: isCompactLayout ? 26 : 40) {
+        HStack(alignment: .top, spacing: isCompactLayout ? 44 : 72) {
             postGameScoreTeamEntry(
                 title: clubConfiguration.clubTeam.name,
                 style: ourTeamScoreStyle,
