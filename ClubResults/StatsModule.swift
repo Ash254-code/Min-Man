@@ -644,9 +644,9 @@ struct LiveStatsView: View {
     @State private var lastMessage: String?
     @State private var showEditEvent: StatEvent?
     @State private var shareURL: URL?
-    @State private var showPlayerPicker = false
     @State private var showTotals = false
     @State private var feedbackToken = UUID()
+    @State private var recentPlayerIds: [UUID] = []
     @State private var lastHeardTranscript = ""
     @State private var lastVoiceDebug: VoiceParseResult?
     @StateObject private var speechService = PressHoldSpeechService()
@@ -654,30 +654,32 @@ struct LiveStatsView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(spacing: 10) {
-                compactHeader
-                quarterPicker
+            VStack(spacing: 8) {
+                topStrip
 
-                HStack(spacing: 12) {
-                    manualEntryPanel
-                        .frame(width: max(proxy.size.width * 0.58, 420))
-                    recentEventsPanel
+                HStack(spacing: 10) {
+                    playerSelectionPanel
+                        .frame(width: max(proxy.size.width * 0.62, 560))
+
+                    VStack(spacing: 10) {
+                        statButtonsPanel
+                            .frame(maxHeight: max(proxy.size.height * 0.36, 210))
+                        recentEventsPanel
+                    }
+                    .frame(width: max(proxy.size.width * 0.38, 360), maxHeight: .infinity, alignment: .top)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 bottomControlBar
+                    .frame(height: max(proxy.size.height * 0.11, 90))
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
         .navigationTitle("Live Stats")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $showEditEvent) { event in
             EditStatEventView(event: event, players: playersForGrade, statTypes: enabledStatTypes)
-        }
-        .sheet(isPresented: $showPlayerPicker) {
-            PlayerSelectionSheet(players: playersForGrade, selectedPlayerId: $selectedPlayerId)
         }
         .sheet(isPresented: $showTotals) {
             StatsTotalsView(
@@ -718,88 +720,128 @@ struct LiveStatsView: View {
         allEvents.filter { $0.sessionId == session.sessionId }
     }
 
-    private var compactHeader: some View {
+    private var topStrip: some View {
         HStack(spacing: 10) {
             Text("\(gradeName) vs \(session.opposition)")
-                .font(.headline.weight(.semibold))
+                .font(.headline.weight(.bold))
                 .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            quarterPicker
+                .frame(maxWidth: 320)
+
             Spacer()
+
             Text(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         .frame(maxWidth: .infinity)
     }
 
     private var quarterPicker: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             ForEach(["Q1", "Q2", "Q3", "Q4"], id: \.self) { quarter in
                 Button(quarter) {
                     selectedQuarter = quarter
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(selectedQuarter == quarter ? .blue : .gray.opacity(0.8))
-                .font(.title3.weight(.bold))
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.bordered)
+                .tint(selectedQuarter == quarter ? .blue : .gray)
+                .font(.subheadline.weight(.bold))
+                .frame(width: 58, height: 34)
+                .background(selectedQuarter == quarter ? Color.blue.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
             }
         }
-        .frame(maxWidth: .infinity)
     }
 
-    private var manualEntryPanel: some View {
+    private var playerSelectionPanel: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Manual Entry")
-                .font(.title2.bold())
+            Text("Selected Player: \(selectedPlayerDisplay)")
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
 
-            HStack(spacing: 8) {
-                Button {
-                    showPlayerPicker = true
-                } label: {
-                    HStack {
-                        Text(selectedPlayerDisplay)
-                            .font(.title3.weight(.semibold))
-                            .lineLimit(1)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
+            if !recentPlayers.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Text("Recent")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        ForEach(recentPlayers, id: \.id) { player in
+                            Button {
+                                selectPlayer(player.id)
+                            } label: {
+                                Text(playerChipTitle(player))
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 14)
-                    .background(Color.blue.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
                 }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-
-                Button("Clear") {
-                    selectedPlayerId = nil
-                }
-                .buttonStyle(.bordered)
-                .disabled(selectedPlayerId == nil)
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                    ForEach(playersForGrade) { player in
+                        Button {
+                            selectPlayer(player.id)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Text(player.number.map { "#\($0)" } ?? "—")
+                                    .font(.title2.weight(.black))
+                                Text(player.lastName.uppercased())
+                                    .font(.headline.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(player.firstName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 90)
+                            .padding(.vertical, 6)
+                            .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var statButtonsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Stat Actions")
+                .font(.title3.bold())
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                 ForEach(enabledStatTypes) { type in
                     Button {
                         addManualEvent(statTypeId: type.id)
                     } label: {
                         Text(type.name)
                             .font(.title3.weight(.bold))
-                            .frame(maxWidth: .infinity, minHeight: 54)
+                            .frame(maxWidth: .infinity, minHeight: 58)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(selectedPlayerId == nil ? .gray : .blue)
                     .disabled(selectedPlayerId == nil)
                 }
             }
-
             if selectedPlayerId == nil {
-                Text("Select a player, then tap any stat button to add events quickly.")
+                Text("Select a player first")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(14)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var recentEventsPanel: some View {
@@ -816,12 +858,10 @@ struct LiveStatsView: View {
                             HStack(spacing: 8) {
                                 Text(event.quarter)
                                     .font(.caption.bold())
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(.blue.opacity(0.15), in: Capsule())
+                                    .frame(width: 26, alignment: .leading)
                                 Text(statName(for: event.statTypeId))
                                     .font(.subheadline.weight(.semibold))
-                                Text(playerLabel(for: event.playerId))
+                                Text(playerShortLabel(for: event.playerId))
                                     .font(.subheadline)
                                 Spacer()
                             }
@@ -833,7 +873,6 @@ struct LiveStatsView: View {
                     }
                 }
             }
-            .frame(maxHeight: .infinity)
 
             if sessionEvents.isEmpty {
                 Text("No events yet")
@@ -842,11 +881,11 @@ struct LiveStatsView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var bottomControlBar: some View {
-        HStack(alignment: .bottom, spacing: 14) {
+        HStack(alignment: .center, spacing: 12) {
             HStack(spacing: 10) {
                 Button("View Totals") {
                     showTotals = true
@@ -931,7 +970,9 @@ struct LiveStatsView: View {
             }, perform: {})
             .buttonStyle(.plain)
         }
-        .padding(.top, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var gradeName: String {
@@ -973,7 +1014,7 @@ struct LiveStatsView: View {
     private var selectedPlayerDisplay: String {
         guard let selectedPlayerId,
               let player = playersForGrade.first(where: { $0.id == selectedPlayerId }) else {
-            return "Select Player"
+            return "None"
         }
         return playerDisplay(player)
     }
@@ -981,6 +1022,34 @@ struct LiveStatsView: View {
     private func playerLabel(for id: UUID) -> String {
         guard let player = allPlayers.first(where: { $0.id == id }) else { return "Unknown" }
         return playerDisplay(player)
+    }
+
+    private func playerShortLabel(for id: UUID) -> String {
+        guard let player = allPlayers.first(where: { $0.id == id }) else { return "Unknown" }
+        if let number = player.number {
+            return "#\(number) \(player.lastName)"
+        }
+        return player.lastName
+    }
+
+    private var recentPlayers: [Player] {
+        recentPlayerIds.compactMap { id in
+            playersForGrade.first(where: { $0.id == id })
+        }
+    }
+
+    private func playerChipTitle(_ player: Player) -> String {
+        if let number = player.number {
+            return "#\(number) \(player.lastName)"
+        }
+        return player.lastName
+    }
+
+    private func selectPlayer(_ id: UUID) {
+        selectedPlayerId = id
+        recentPlayerIds.removeAll { $0 == id }
+        recentPlayerIds.insert(id, at: 0)
+        recentPlayerIds = Array(recentPlayerIds.prefix(6))
     }
 
     private func statName(for id: UUID) -> String {
