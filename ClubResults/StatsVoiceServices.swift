@@ -487,6 +487,9 @@ final class PressHoldSpeechService: ObservableObject {
     private var task: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
     private var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
+    private var stopTimeoutWorkItem: DispatchWorkItem?
+    private var pendingStopCompletion: ((String) -> Void)?
+    private var awaitingFinalResult = false
 
     func startListening(vocabulary: [String]) {
         guard !isRecording else { return }
@@ -495,13 +498,36 @@ final class PressHoldSpeechService: ObservableObject {
         }
     }
 
-    func stopListening() -> String {
-        let transcript = finalTranscript.isEmpty ? liveTranscript : finalTranscript
-        stopListeningInternal()
-        return transcript
+    func stopListening(onFinalTranscript: ((String) -> Void)? = nil) {
+        print("button released")
+        pendingStopCompletion = onFinalTranscript
+
+        if audioEngine.isRunning {
+            request?.endAudio()
+            print("endAudio called")
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        } else {
+            request?.endAudio()
+            print("endAudio called")
+        }
+        isRecording = false
+        awaitingFinalResult = true
+
+        stopTimeoutWorkItem?.cancel()
+        let timeoutWork = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.awaitingFinalResult else { return }
+            print("timeout reached")
+            self.finishStopAndCleanup()
+        }
+        stopTimeoutWorkItem = timeoutWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: timeoutWork)
     }
 
     private func stopListeningInternal() {
+        stopTimeoutWorkItem?.cancel()
+        stopTimeoutWorkItem = nil
         if audioEngine.isRunning {
             audioEngine.stop()
             audioEngine.inputNode.removeTap(onBus: 0)
@@ -512,10 +538,20 @@ final class PressHoldSpeechService: ObservableObject {
         task = nil
         request = nil
         isRecording = false
+        awaitingFinalResult = false
+        print("cleanup performed")
+    }
+
+    private func finishStopAndCleanup() {
+        let transcript = finalTranscript.isEmpty ? liveTranscript : finalTranscript
+        pendingStopCompletion?(transcript)
+        pendingStopCompletion = nil
+        stopListeningInternal()
     }
 
     private func startListeningAsync(vocabulary: [String]) async {
         guard !isRecording else { return }
+        print("press started")
         lastErrorMessage = nil
 
         do {
@@ -567,10 +603,12 @@ final class PressHoldSpeechService: ObservableObject {
 
             audioEngine.prepare()
             try audioEngine.start()
+            print("audio engine started")
 
             isRecording = true
             liveTranscript = ""
             finalTranscript = ""
+            awaitingFinalResult = false
             self.request = request
             task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
                 guard let self else { return }
@@ -579,13 +617,23 @@ final class PressHoldSpeechService: ObservableObject {
                         let transcript = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
                         self.liveTranscript = transcript
                         self.finalTranscript = transcript
+                        print("final result received")
                         print("Heard: \(transcript)")
+                        if self.awaitingFinalResult {
+                            self.finishStopAndCleanup()
+                            return
+                        }
                     }
                 }
                 if error != nil {
-                    self.stopListeningInternal()
+                    if self.awaitingFinalResult {
+                        self.finishStopAndCleanup()
+                    } else {
+                        self.stopListeningInternal()
+                    }
                 }
             }
+            print("recognition task started")
         } catch {
             lastErrorMessage = "Could not start microphone"
             stopListeningInternal()

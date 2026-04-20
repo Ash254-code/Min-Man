@@ -389,7 +389,7 @@ struct LiveStatsView: View {
         }
         .onDisappear {
             if speechService.isRecording {
-                _ = speechService.stopListening()
+                speechService.stopListening()
             }
         }
         .onChange(of: feedbackToken) { _ in
@@ -621,8 +621,9 @@ struct LiveStatsView: View {
                 if isPressing {
                     speechService.startListening(vocabulary: speechVocabulary)
                 } else if speechService.isRecording {
-                    let transcript = speechService.stopListening()
-                    handleVoiceTranscript(transcript)
+                    speechService.stopListening { transcript in
+                        handleVoiceTranscript(transcript)
+                    }
                 }
             }, perform: {})
             .buttonStyle(.plain)
