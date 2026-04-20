@@ -978,6 +978,14 @@ struct LiveStatsView: View {
         String(format: "%02d:%02d", remainingQuarterSeconds / 60, remainingQuarterSeconds % 60)
     }
 
+    private var topPanelHeight: CGFloat {
+        168
+    }
+
+    private var rightStatActionsHeight: CGFloat {
+        176
+    }
+
     private var combinedScoreAndActionsPanel: some View {
         HStack(spacing: 8) {
             combinedTeamPanel(
