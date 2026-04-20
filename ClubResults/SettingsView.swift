@@ -3885,12 +3885,13 @@ private func makeTemplatePreviewPDF(
         }
 
         func drawTableHeader() {
-            beginNewPageIfNeeded(requiredHeight: 24)
+            let headerHeight: CGFloat = 24
+            beginNewPageIfNeeded(requiredHeight: headerHeight)
             var x = contentRect.minX
             let headerY = cursorY
             for (idx, column) in tableColumns.enumerated() {
                 let width = columnWidths[idx]
-                let rect = CGRect(x: x, y: headerY, width: width, height: 22)
+                let rect = CGRect(x: x, y: headerY, width: width, height: headerHeight)
                 UIColor(white: 0.92, alpha: 1).setFill()
                 UIBezierPath(rect: rect).fill()
                 UIColor.separator.setStroke()
@@ -3898,33 +3899,36 @@ private func makeTemplatePreviewPDF(
                 NSAttributedString(
                     string: column.0,
                     attributes: [.font: headerFont, .foregroundColor: UIColor.black]
-                ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                ).draw(in: rect.insetBy(dx: 4, dy: 6))
                 x += width
             }
-            cursorY += 22
+            cursorY += headerHeight
         }
 
         func drawRow(playerName: String, guernsey: String, goals: String, bestPlayers: String, gamesPlayed: String, notes: String) {
-            beginNewPageIfNeeded(requiredHeight: 20)
+            let rowHeight: CGFloat = 22
+            beginNewPageIfNeeded(requiredHeight: rowHeight)
             var x = contentRect.minX
             let values = [playerName, guernsey, goals, bestPlayers, gamesPlayed, notes]
             for (idx, value) in values.enumerated() {
                 let width = columnWidths[idx]
-                let rect = CGRect(x: x, y: cursorY, width: width, height: 20)
+                let rect = CGRect(x: x, y: cursorY, width: width, height: rowHeight)
                 UIColor.separator.setStroke()
                 UIBezierPath(rect: rect).stroke()
                 NSAttributedString(
                     string: value,
                     attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
-                ).draw(in: rect.insetBy(dx: 4, dy: 4))
+                ).draw(in: rect.insetBy(dx: 4, dy: 5))
                 x += width
             }
-            cursorY += 20
+            cursorY += rowHeight
         }
 
         func drawDetailTable(title: String, columns: [String], rows: [[String]]) {
             drawSectionHeader(title)
-            beginNewPageIfNeeded(requiredHeight: 24)
+            let headerHeight: CGFloat = 24
+            let rowHeight: CGFloat = 22
+            beginNewPageIfNeeded(requiredHeight: headerHeight)
 
             let weights: [CGFloat]
             if columns.count == 2, columns[1].lowercased() == "goals" || columns[1].lowercased() == "points" {
@@ -3941,7 +3945,7 @@ private func makeTemplatePreviewPDF(
             var headerX = contentRect.minX
             for (index, column) in columns.enumerated() {
                 let width = widths[index]
-                let rect = CGRect(x: headerX, y: cursorY, width: width, height: 22)
+                let rect = CGRect(x: headerX, y: cursorY, width: width, height: headerHeight)
                 UIColor(red: 0.93, green: 0.95, blue: 0.99, alpha: 1).setFill()
                 UIBezierPath(rect: rect).fill()
                 UIColor.separator.setStroke()
@@ -3949,31 +3953,31 @@ private func makeTemplatePreviewPDF(
                 NSAttributedString(
                     string: column,
                     attributes: [.font: headerFont, .foregroundColor: UIColor.black]
-                ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                ).draw(in: rect.insetBy(dx: 4, dy: 6))
                 headerX += width
             }
-            cursorY += 22
+            cursorY += headerHeight
 
             let safeRows = rows.isEmpty ? [["No data for selected date range"]] : rows
             for (rowIndex, row) in safeRows.enumerated() {
-                beginNewPageIfNeeded(requiredHeight: 20)
+                beginNewPageIfNeeded(requiredHeight: rowHeight)
                 if rowIndex.isMultiple(of: 2) {
                     UIColor(white: 0.985, alpha: 1).setFill()
-                    UIBezierPath(rect: CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: 20)).fill()
+                    UIBezierPath(rect: CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: rowHeight)).fill()
                 }
                 var x = contentRect.minX
                 for (index, width) in widths.enumerated() {
                     let value = index < row.count ? row[index] : ""
-                    let rect = CGRect(x: x, y: cursorY, width: width, height: 20)
+                    let rect = CGRect(x: x, y: cursorY, width: width, height: rowHeight)
                     UIColor.separator.setStroke()
                     UIBezierPath(rect: rect).stroke()
                     NSAttributedString(
                         string: value,
                         attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
-                    ).draw(in: rect.insetBy(dx: 4, dy: 4))
+                    ).draw(in: rect.insetBy(dx: 4, dy: 5))
                     x += width
                 }
-                cursorY += 20
+                cursorY += rowHeight
             }
             cursorY += 10
         }
@@ -3992,11 +3996,13 @@ private func makeTemplatePreviewPDF(
                 attributes: [.font: sectionFont, .foregroundColor: UIColor.black]
             ).draw(in: sectionRect)
             var localY = cursorY + 22
+            let headerHeight: CGFloat = 22
+            let rowHeight: CGFloat = 20
             let colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
 
             var x = xOrigin
             for (index, column) in columns.enumerated() {
-                let rect = CGRect(x: x, y: localY, width: colWidths[index], height: 20)
+                let rect = CGRect(x: x, y: localY, width: colWidths[index], height: headerHeight)
                 UIColor(white: 0.92, alpha: 1).setFill()
                 UIBezierPath(rect: rect).fill()
                 UIColor.separator.setStroke()
@@ -4004,26 +4010,26 @@ private func makeTemplatePreviewPDF(
                 NSAttributedString(
                     string: column,
                     attributes: [.font: headerFont, .foregroundColor: UIColor.black]
-                ).draw(in: rect.insetBy(dx: 4, dy: 4))
+                ).draw(in: rect.insetBy(dx: 4, dy: 5))
                 x += colWidths[index]
             }
-            localY += 20
+            localY += headerHeight
 
             let safeRows = rows.isEmpty ? [["No data"]] : rows
             for row in safeRows {
                 x = xOrigin
                 for (index, colWidth) in colWidths.enumerated() {
                     let value = index < row.count ? row[index] : ""
-                    let rect = CGRect(x: x, y: localY, width: colWidth, height: 18)
+                    let rect = CGRect(x: x, y: localY, width: colWidth, height: rowHeight)
                     UIColor.separator.setStroke()
                     UIBezierPath(rect: rect).stroke()
                     NSAttributedString(
                         string: value,
                         attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
-                    ).draw(in: rect.insetBy(dx: 4, dy: 3))
+                    ).draw(in: rect.insetBy(dx: 4, dy: 4))
                     x += colWidth
                 }
-                localY += 18
+                localY += rowHeight
             }
             return localY - startY
         }
