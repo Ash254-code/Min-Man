@@ -66,6 +66,7 @@ final class StatEvent {
     var transcript: String?
     var normalizedTranscript: String?
     var parserConfidence: Double?
+    var efficiencyVoteRaw: String?
 
     init(
         id: UUID = UUID(),
@@ -77,7 +78,8 @@ final class StatEvent {
         sourceRaw: String,
         transcript: String? = nil,
         normalizedTranscript: String? = nil,
-        parserConfidence: Double? = nil
+        parserConfidence: Double? = nil,
+        efficiencyVoteRaw: String? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
@@ -89,12 +91,18 @@ final class StatEvent {
         self.transcript = transcript
         self.normalizedTranscript = normalizedTranscript
         self.parserConfidence = parserConfidence
+        self.efficiencyVoteRaw = efficiencyVoteRaw
     }
 }
 
 enum StatsEventSource: String, CaseIterable {
     case manual
     case voice
+}
+
+private enum EfficiencyVote: String {
+    case thumbsUp
+    case thumbsDown
 }
 
 private enum StatsDefaults {
@@ -783,8 +791,12 @@ struct LiveStatsView: View {
     @State private var visiblePlayerIDs: Set<UUID> = []
     @State private var savedVisiblePlayerIDs: Set<UUID> = []
     @State private var showPlayerVisibilityEditor = false
+    @State private var pendingEfficiencyEventID: UUID?
+    @State private var showEfficiencyVotePrompt = false
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
+    private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
+    private let oppositionTeamStatPlayerID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB") ?? UUID()
 
     var body: some View {
         GeometryReader { proxy in
@@ -793,10 +805,10 @@ struct LiveStatsView: View {
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
             VStack(spacing: 8) {
                 topStrip
+                teamStatActionsPanel
 
                 HStack(spacing: 10) {
                     VStack(spacing: 10) {
-                        possessionLeadersPanel
                         playerSelectionPanel
                     }
                     .frame(width: leftPanelWidth)
@@ -835,7 +847,8 @@ struct LiveStatsView: View {
         .sheet(isPresented: $showTotals) {
             StatsTotalsView(
                 rows: totalsRows,
-                statTypes: enabledStatTypes
+                statTypes: enabledStatTypes,
+                efficiencyForPlayer: efficiencyPercentage(for:)
             )
         }
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
@@ -855,6 +868,27 @@ struct LiveStatsView: View {
                     }
                 }
             )
+        }
+        .alert("Efficiency Rating", isPresented: $showEfficiencyVotePrompt) {
+            Button {
+                applyEfficiencyVote(.thumbsUp)
+            } label: {
+                Label("👍", systemImage: "hand.thumbsup.fill")
+                    .foregroundStyle(.green)
+            }
+
+            Button {
+                applyEfficiencyVote(.thumbsDown)
+            } label: {
+                Label("👎", systemImage: "hand.thumbsdown.fill")
+                    .foregroundStyle(.red)
+            }
+
+            Button("Skip", role: .cancel) {
+                pendingEfficiencyEventID = nil
+            }
+        } message: {
+            Text("Was this kick/handball effective?")
         }
         .onDisappear {
             stopQuarterTimer()
@@ -933,39 +967,6 @@ struct LiveStatsView: View {
         return name.isEmpty ? "Min Man" : name
     }
 
-    private var possessionLeaderRows: [(player: Player?, touches: Int)] {
-        let allowedTypeIDs = Set(
-            allStatTypes
-                .filter {
-                    let name = $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                    return name == "kick" || name == "handball"
-                }
-                .map(\.id)
-        )
-
-        var totalsByPlayer: [UUID: Int] = [:]
-        for event in sessionEvents where allowedTypeIDs.contains(event.statTypeId) {
-            totalsByPlayer[event.playerId, default: 0] += 1
-        }
-
-        let sorted = totalsByPlayer
-            .compactMap { playerId, touches -> (Player, Int)? in
-                guard let player = displayedPlayers.first(where: { $0.id == playerId }) else { return nil }
-                return (player, touches)
-            }
-            .sorted {
-                if $0.1 == $1.1 {
-                    return $0.0.lastName.localizedCaseInsensitiveCompare($1.0.lastName) == .orderedAscending
-                }
-                return $0.1 > $1.1
-            }
-            .prefix(6)
-            .map { (player: Optional($0.0), touches: $0.1) }
-
-        if sorted.count >= 6 { return sorted }
-        return sorted + Array(repeating: (player: nil, touches: 0), count: 6 - sorted.count)
-    }
-
     private var formattedQuarterTime: String {
         String(format: "%02d:%02d", remainingQuarterSeconds / 60, remainingQuarterSeconds % 60)
     }
@@ -1019,39 +1020,6 @@ struct LiveStatsView: View {
         }
     }
 
-    private var possessionLeadersPanel: some View {
-        let leaders = possessionLeaderRows
-        return VStack(alignment: .leading, spacing: 8) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
-                ForEach(Array(leaders.enumerated()), id: \.offset) { _, row in
-                    if let player = row.player {
-                        Button {
-                            selectPlayer(player.id)
-                        } label: {
-                            playerCardContent(player: player, touches: row.touches)
-                                .frame(maxWidth: .infinity, minHeight: 58)
-                                .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        VStack(spacing: 3) {
-                            Text("—")
-                                .font(.title2.weight(.black))
-                            Text("—")
-                                .font(.headline.weight(.semibold))
-                            Text(" ")
-                                .font(.caption)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 58)
-                        .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
     private func playerCardContent(player: Player, touches: Int? = nil) -> some View {
         VStack(spacing: 4) {
             Text(player.number.map { "#\($0)" } ?? "—")
@@ -1072,12 +1040,8 @@ struct LiveStatsView: View {
         }
     }
 
-    private var leaderIDs: Set<UUID> {
-        Set(possessionLeaderRows.compactMap { $0.player?.id })
-    }
-
     private var gridPlayers: [Player] {
-        displayedPlayers.filter { !leaderIDs.contains($0.id) }
+        displayedPlayers
     }
 
     private var playerSelectionPanel: some View {
@@ -1127,7 +1091,7 @@ struct LiveStatsView: View {
                 .font(.title3.bold())
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
-                ForEach(enabledStatTypes) { type in
+                ForEach(playerStatTypes) { type in
                     Button {
                         addManualEvent(statTypeId: type.id)
                     } label: {
@@ -1149,6 +1113,57 @@ struct LiveStatsView: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var teamStatActionsPanel: some View {
+        HStack(spacing: 14) {
+            teamStatsColumn(title: ourTeamName, style: ourStyle, isOpposition: false)
+            teamStatsColumn(title: session.opposition, style: oppositionStyle, isOpposition: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 118, maxHeight: 118)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func teamStatsColumn(title: String, style: ClubStyle.Style, isOpposition: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if isOpposition { Spacer() }
+                Text(title)
+                    .font(.headline.weight(.bold))
+                    .lineLimit(1)
+                if !isOpposition { Spacer() }
+            }
+
+            HStack(spacing: 8) {
+                teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
+                teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOpposition)
+                teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOpposition, fallbackName: "Clearances")
+                teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOpposition, fallbackName: "Inside 50s")
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func teamStatButton(
+        _ title: String,
+        name: String,
+        style: ClubStyle.Style,
+        isOpposition: Bool,
+        fallbackName: String? = nil
+    ) -> some View {
+        let statType = statType(named: name, fallbackName: fallbackName)
+        return Button {
+            guard let statType else { return }
+            addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition)
+        } label: {
+            Text(title)
+                .font(.headline.weight(.bold))
+                .frame(maxWidth: .infinity, minHeight: 52)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(style.background)
+        .disabled(statType == nil)
     }
 
     private var recentEventsPanel: some View {
@@ -1346,6 +1361,34 @@ struct LiveStatsView: View {
         }
     }
 
+    private func efficiencyPercentage(for playerID: UUID) -> Int {
+        let relevantEvents = sessionEvents.filter { event in
+            guard event.playerId == playerID else { return false }
+            let name = statName(for: event.statTypeId).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return name == "kick" || name == "handball"
+        }
+        let up = relevantEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsUp.rawValue }.count
+        let down = relevantEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsDown.rawValue }.count
+        let total = up + down
+        guard total > 0 else { return 0 }
+        return Int((Double(up) / Double(total) * 100).rounded())
+    }
+
+    private var playerStatTypes: [StatType] {
+        let teamOnly = Set(["goal", "behind", "clearance", "clearances", "inside 50", "inside 50s"])
+        return enabledStatTypes.filter { !teamOnly.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
+    }
+
+    private func statType(named name: String, fallbackName: String? = nil) -> StatType? {
+        let target = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let primary = enabledStatTypes.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == target }) {
+            return primary
+        }
+        guard let fallbackName else { return nil }
+        let fallback = fallbackName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return enabledStatTypes.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == fallback })
+    }
+
     private func playerDisplay(_ player: Player) -> String {
         if let number = player.number {
             return "#\(number) \(player.name)"
@@ -1359,6 +1402,12 @@ struct LiveStatsView: View {
     }
 
     private func playerShortLabel(for id: UUID) -> String {
+        if id == ourTeamStatPlayerID {
+            return ourTeamName
+        }
+        if id == oppositionTeamStatPlayerID {
+            return session.opposition
+        }
         guard let player = allPlayers.first(where: { $0.id == id }) else { return "Unknown" }
         if let number = player.number {
             return "#\(number) \(player.lastName)"
@@ -1430,6 +1479,8 @@ struct LiveStatsView: View {
         modelContext.insert(event)
         try? modelContext.save()
 
+        promptEfficiencyVoteIfNeeded(for: event)
+
         lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: selectedPlayerId)) — \(selectedQuarter)"
         feedbackToken = UUID()
     }
@@ -1437,6 +1488,21 @@ struct LiveStatsView: View {
     private func addManualEvent(statTypeId: UUID) {
         selectedStatTypeId = statTypeId
         addManualEvent()
+    }
+
+    private func addTeamEvent(statTypeId: UUID, isOpposition: Bool) {
+        let playerID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
+        let event = StatEvent(
+            sessionId: session.sessionId,
+            playerId: playerID,
+            statTypeId: statTypeId,
+            quarter: selectedQuarter,
+            sourceRaw: StatsEventSource.manual.rawValue
+        )
+        modelContext.insert(event)
+        try? modelContext.save()
+        lastMessage = "Added: \(statName(for: statTypeId)) — \(isOpposition ? session.opposition : ourTeamName) — \(selectedQuarter)"
+        feedbackToken = UUID()
     }
 
     private func undoLastEvent() {
@@ -1503,11 +1569,30 @@ struct LiveStatsView: View {
         )
         modelContext.insert(event)
         try? modelContext.save()
+        promptEfficiencyVoteIfNeeded(for: event)
 
         let playerText = playerLabel(for: playerId)
         let statText = statName(for: statTypeId)
         lastMessage = "Added: \(statText) — \(playerText) — \(selectedQuarter)"
         feedbackToken = UUID()
+    }
+
+    private func promptEfficiencyVoteIfNeeded(for event: StatEvent) {
+        let normalized = statName(for: event.statTypeId).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalized == "kick" || normalized == "handball" else { return }
+        pendingEfficiencyEventID = event.id
+        showEfficiencyVotePrompt = true
+    }
+
+    private func applyEfficiencyVote(_ vote: EfficiencyVote) {
+        guard let eventID = pendingEfficiencyEventID,
+              let event = sessionEvents.first(where: { $0.id == eventID }) else {
+            pendingEfficiencyEventID = nil
+            return
+        }
+        event.efficiencyVoteRaw = vote.rawValue
+        try? modelContext.save()
+        pendingEfficiencyEventID = nil
     }
 
     private func parseFailureMessage(_ result: VoiceParseResult) -> String {
@@ -1555,7 +1640,7 @@ struct LiveStatsView: View {
             (details as NSString).draw(in: CGRect(x: 24, y: y, width: pageRect.width - 48, height: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 11)])
             y += 36
 
-            let totalColumns = CGFloat(2 + columns.count)
+            let totalColumns = CGFloat(3 + columns.count)
             let usableWidth = pageRect.width - 48
             let colWidth = usableWidth / max(totalColumns, 1)
 
@@ -1564,6 +1649,7 @@ struct LiveStatsView: View {
             for (index, column) in columns.enumerated() {
                 drawCell(column.name, x: 24 + colWidth * 2 + (CGFloat(index) * colWidth), y: y, width: colWidth, bold: true)
             }
+            drawCell("Eff %", x: 24 + colWidth * 2 + (CGFloat(columns.count) * colWidth), y: y, width: colWidth, bold: true)
             y += 22
 
             for row in rows {
@@ -1577,6 +1663,7 @@ struct LiveStatsView: View {
                 for (index, column) in columns.enumerated() {
                     drawCell("\(row.countsByStatId[column.id, default: 0])", x: 24 + colWidth * 2 + (CGFloat(index) * colWidth), y: y, width: colWidth)
                 }
+                drawCell("\(efficiencyPercentage(for: row.player.id))%", x: 24 + colWidth * 2 + (CGFloat(columns.count) * colWidth), y: y, width: colWidth)
                 y += 20
             }
         }
@@ -1821,6 +1908,7 @@ private struct StatsTotalsView: View {
     @Environment(\.dismiss) private var dismiss
     let rows: [TotalsRow]
     let statTypes: [StatType]
+    let efficiencyForPlayer: (UUID) -> Int
 
     var body: some View {
         NavigationStack {
@@ -1831,6 +1919,7 @@ private struct StatsTotalsView: View {
                         ForEach(statTypes) { stat in
                             cell(stat.name, width: 92, bold: true)
                         }
+                        cell("Efficiency", width: 110, bold: true)
                     }
 
                     ForEach(rows) { row in
@@ -1839,6 +1928,7 @@ private struct StatsTotalsView: View {
                             ForEach(statTypes) { stat in
                                 cell("\(row.countsByStatId[stat.id, default: 0])", width: 92)
                             }
+                            cell("\(efficiencyForPlayer(row.player.id))%", width: 110)
                         }
                     }
                 }
