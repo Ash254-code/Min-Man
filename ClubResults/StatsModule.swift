@@ -808,7 +808,7 @@ struct LiveStatsView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let cardSpacing: CGFloat = 8
+            let _: CGFloat = 8
             let availableWidth = max(proxy.size.width - 24, 640)
             let leftPanelWidth = min(max(availableWidth * 0.62, 420), availableWidth - 300)
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 12, 290)
