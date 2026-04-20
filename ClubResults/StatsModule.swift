@@ -1661,7 +1661,7 @@ struct LiveStatsView: View {
                     .font(.headline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .foregroundStyle(ClubTheme.brandPrimary)
+                    .foregroundStyle(ClubTheme.navy)
                     .background(Capsule().fill(Color.white.opacity(0.17)))
                 }
             }
