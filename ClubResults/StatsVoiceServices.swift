@@ -1,7 +1,7 @@
 import Foundation
 import Speech
 import AVFoundation
-import Combine
+internal import Combine
 
 struct VoiceStatTypeDescriptor: Identifiable, Hashable {
     let id: UUID
@@ -163,7 +163,7 @@ struct StatsVoiceParser {
         )
 
         let fillers: Set<String> = ["um", "uh", "please", "thanks", "thank", "you"]
-        var tokens = working.split(separator: " ").map(String.init).filter { !fillers.contains($0) }
+        let tokens = working.split(separator: " ").map(String.init).filter { !fillers.contains($0) }
 
         var converted: [String] = []
         var index = 0
@@ -419,7 +419,7 @@ final class PressHoldSpeechService: ObservableObject {
                 }
             }
         } catch {
-            stopListening()
+            stopListeningInternal()
         }
     }
 
@@ -427,10 +427,6 @@ final class PressHoldSpeechService: ObservableObject {
         let transcript = liveTranscript
         stopListeningInternal()
         return transcript
-    }
-
-    private func stopListening() {
-        stopListeningInternal()
     }
 
     private func stopListeningInternal() {
