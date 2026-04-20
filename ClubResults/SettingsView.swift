@@ -2415,8 +2415,7 @@ private struct GroupManagerSheet: View {
                         onSave(normalizedDrafts())
                         dismiss()
                     }
-                    .disabled(!hasChanges)
-                    .foregroundStyle(hasChanges ? .blue : .gray)
+                    .saveButtonBehavior(isEnabled: hasChanges)
                 }
             }
         }
