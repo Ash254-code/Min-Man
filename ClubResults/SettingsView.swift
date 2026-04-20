@@ -1666,7 +1666,6 @@ private struct GroupsSettingsView: View {
 
     @State private var addContactsSection: GroupSectionSelection?
     @State private var contactEditing: Contact?
-    @State private var sectionEditing: GroupSectionSelection?
     @State private var isManagingGroups = false
     @State private var saveErrorMessage: String?
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
@@ -1736,16 +1735,6 @@ private struct GroupsSettingsView: View {
                     contact.email = email
                     saveContext()
                     return true
-                }
-            )
-            .appPopupStyle()
-        }
-        .sheet(item: $sectionEditing) { selection in
-            SectionGroupMembersSheet(
-                title: displayTitle(for: selection.sectionKey, fallback: selection.fallbackTitle),
-                members: contactsForSection(selection.sectionKey),
-                onRemoveContact: { contactID in
-                    removeContact(contactID, fromSection: selection.sectionKey)
                 }
             )
             .appPopupStyle()
@@ -1941,16 +1930,20 @@ private struct GroupsSettingsView: View {
                     .font(.title3)
                     .fontWeight(.semibold)
                 Spacer()
-                NavigationLink("Edit") {
-                    SectionGroupMembersSheet(
+                NavigationLink {
+                    SectionGroupContactsView(
                         title: displayTitle(for: sectionKey, fallback: fallbackTitle),
-                        members: contactsForSection(sectionKey),
-                        onRemoveContact: { contactID in
-                            removeContact(contactID, fromSection: sectionKey)
+                        contacts: contacts,
+                        initiallySelectedContactIDs: Set(contactsForSection(sectionKey).map(\.id)),
+                        onSave: { selectedIDs in
+                            syncMembers(for: sectionKey, selectedIDs: selectedIDs)
                         }
                     )
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
                 }
-                .font(.subheadline.weight(.semibold))
             }
 
             let members = contactsForSection(sectionKey)
@@ -1970,14 +1963,6 @@ private struct GroupsSettingsView: View {
                         contactEditing = contact
                     }
                 }
-            }
-
-            Divider()
-
-            Button {
-                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
-            } label: {
-                Label("Add Contact", systemImage: "plus")
             }
         }
         .padding(12)
@@ -2006,6 +1991,22 @@ private struct GroupsSettingsView: View {
     private func removeContact(_ contactID: UUID, fromSection sectionKey: String) {
         for membership in sectionMemberships where membership.contactID == contactID && membership.sectionKey == sectionKey {
             dataContext.delete(membership)
+        }
+        saveContext()
+    }
+
+    private func syncMembers(for sectionKey: String, selectedIDs: Set<UUID>) {
+        let existingIDs = Set(sectionMemberships.filter { $0.sectionKey == sectionKey }.map(\.contactID))
+        let idsToAdd = selectedIDs.subtracting(existingIDs)
+        let idsToRemove = existingIDs.subtracting(selectedIDs)
+
+        for contactID in idsToAdd {
+            assignContact(contactID, toSection: sectionKey)
+        }
+        for contactID in idsToRemove {
+            for membership in sectionMemberships where membership.contactID == contactID && membership.sectionKey == sectionKey {
+                dataContext.delete(membership)
+            }
         }
         saveContext()
     }
@@ -2117,41 +2118,103 @@ private struct GroupSectionSelection: Identifiable {
     var id: String { sectionKey }
 }
 
-private struct SectionGroupMembersSheet: View {
+private struct SectionGroupContactsView: View {
     @Environment(\.dismiss) private var dismiss
 
     let title: String
-    let members: [Contact]
-    let onRemoveContact: (UUID) -> Void
+    let contacts: [Contact]
+    let initiallySelectedContactIDs: Set<UUID>
+    let onSave: (Set<UUID>) -> Void
+
+    @State private var selectedContactIDs: Set<UUID>
+    @State private var showUnsavedWarning = false
+
+    init(
+        title: String,
+        contacts: [Contact],
+        initiallySelectedContactIDs: Set<UUID>,
+        onSave: @escaping (Set<UUID>) -> Void
+    ) {
+        self.title = title
+        self.contacts = contacts
+        self.initiallySelectedContactIDs = initiallySelectedContactIDs
+        self.onSave = onSave
+        _selectedContactIDs = State(initialValue: initiallySelectedContactIDs)
+    }
+
+    private var hasUnsavedChanges: Bool {
+        selectedContactIDs != initiallySelectedContactIDs
+    }
 
     var body: some View {
-        NavigationStack {
-            List {
-                if members.isEmpty {
-                    Text("No contacts added.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(members) { member in
-                        HStack {
-                            Text(member.name)
+        List {
+            if contacts.isEmpty {
+                Text("No contacts available.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(contacts) { contact in
+                    Button {
+                        toggleSelection(for: contact.id)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(contact.name)
+                                .foregroundStyle(.primary)
                             Spacer()
-                            Button(role: .destructive) {
-                                onRemoveContact(member.id)
-                            } label: {
-                                Image(systemName: "minus.circle")
+                            if selectedContactIDs.contains(contact.id) {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.blue)
+                                    .fontWeight(.semibold)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Remove \(member.name)")
                         }
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .navigationTitle("Edit \(title)")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+        }
+        .navigationTitle(title)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    attemptBack()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.headline.weight(.semibold))
                 }
+                .accessibilityLabel("Back")
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Save") {
+                    onSave(selectedContactIDs)
+                    dismiss()
+                }
+                .saveButtonBehavior(isEnabled: hasUnsavedChanges)
+                .disabled(!hasUnsavedChanges)
+            }
+        }
+        .alert("Unsaved Changes", isPresented: $showUnsavedWarning) {
+            Button("Keep Editing", role: .cancel) {}
+            Button("Discard Changes", role: .destructive) {
+                dismiss()
+            }
+        } message: {
+            Text("You have unsaved changes. Are you sure you want to go back?")
+        }
+    }
+
+    private func toggleSelection(for contactID: UUID) {
+        if selectedContactIDs.contains(contactID) {
+            selectedContactIDs.remove(contactID)
+        } else {
+            selectedContactIDs.insert(contactID)
+        }
+    }
+
+    private func attemptBack() {
+        if hasUnsavedChanges {
+            showUnsavedWarning = true
+        } else {
+            dismiss()
         }
     }
 }
