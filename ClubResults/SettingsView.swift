@@ -4213,7 +4213,7 @@ private func makeTemplatePreviewPDF(
                 return [row]
             } ?? []
 
-            drawDetailTable(title: "Officials", columns: columns, rows: rows)
+            drawDetailTable(title: "Officials", columns: columns, rows: rows as! [[String]])
         }
 
         if template.includeTrainers {
