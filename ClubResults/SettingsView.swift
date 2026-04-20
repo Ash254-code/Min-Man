@@ -4075,37 +4075,61 @@ private func makeTemplatePreviewPDF(
         let goalKickersLimit = max(0, min(template.goalKickersLimit, 10))
         let bestAndFairestLimit = max(0, min(template.bestAndFairestLimit, 10))
 
-        func reportRows(for game: Game?) -> (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]]) {
-            let rankedBestPlayerIDs: [UUID] = game?.bestPlayersRanked ?? []
-            let allBestPlayersRows = rankedBestPlayerIDs.enumerated().compactMap { (index: Int, playerID: UUID) -> [String]? in
-                guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
-                return ["\(index + 1)", playerLookup[playerID]?.name ?? "Unknown Player"]
+        func reportRows(for games: [Game]) -> (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]]) {
+            let bestPlayersByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
+                for (index, playerID) in game.bestPlayersRanked.enumerated() {
+                    partialResult[playerID, default: 0] += bestPlayerPoints(for: index)
+                }
             }
+            let allBestPlayersRows = bestPlayersByPlayer
+                .sorted { left, right in
+                    if left.value != right.value { return left.value > right.value }
+                    return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
+                }
+                .compactMap { (playerID, totalPoints) -> [String]? in
+                    guard totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
+                }
             let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
-            let allGuestVoteRows = (game?.guestVotesRanked ?? [])
-                .filter { gamesByPlayer[$0.playerID, default: 0] >= minimumGamesThreshold }
-                .sorted { $0.rank < $1.rank }
-                .map { vote in
-                    ["\(vote.rank)", playerLookup[vote.playerID]?.name ?? "Unknown Player"]
+            let guestVotePointsByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
+                for vote in game.guestVotesRanked {
+                    partialResult[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
+                }
+            }
+            let allGuestVoteRows = guestVotePointsByPlayer
+                .sorted { left, right in
+                    if left.value != right.value { return left.value > right.value }
+                    return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
+                }
+                .compactMap { (playerID, totalPoints) -> [String]? in
+                    guard totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
                 }
             let guestVoteRows = guestVotesLimit == 0 ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
-            let allGoalKickerRows = (game?.goalKickers ?? [])
-                .filter { entry in
-                    guard let playerID = entry.playerID else { return false }
-                    return gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold && entry.goals > 0
+            let goalsByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
+                for entry in game.goalKickers {
+                    guard let playerID = entry.playerID else { continue }
+                    partialResult[playerID, default: 0] += entry.goals
                 }
-                .sorted { $0.goals > $1.goals }
-                .map { entry in
-                    let name = entry.playerID.flatMap { playerLookup[$0]?.name } ?? "Unknown Player"
-                    return [name, "\(entry.goals)"]
+                }
+            let allGoalKickerRows = goalsByPlayer
+                .sorted { left, right in
+                    if left.value != right.value { return left.value > right.value }
+                    return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
+                }
+                .compactMap { (playerID, totalGoals) -> [String]? in
+                    guard totalGoals > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    return [playerLookup[playerID]?.name ?? "Unknown Player", String(totalGoals)]
                 }
             let goalKickerRows = goalKickersLimit == 0 ? allGoalKickerRows : Array(allGoalKickerRows.prefix(goalKickersLimit))
             var bestAndFairestPoints: [UUID: Int] = [:]
-            for (index, playerID) in (game?.bestPlayersRanked ?? []).enumerated() {
-                bestAndFairestPoints[playerID, default: 0] += bestPlayerPoints(for: index)
-            }
-            for vote in (game?.guestVotesRanked ?? []) {
-                bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
+            for game in games {
+                for (index, playerID) in game.bestPlayersRanked.enumerated() {
+                    bestAndFairestPoints[playerID, default: 0] += bestPlayerPoints(for: index)
+                }
+                for vote in game.guestVotesRanked {
+                    bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
+                }
             }
             let allBestAndFairestRows = bestAndFairestPoints
                 .sorted { $0.value > $1.value }
@@ -4126,13 +4150,13 @@ private func makeTemplatePreviewPDF(
         func buildCompactTables(for rows: (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]])) -> [CompactReportTable] {
             var compactTables: [CompactReportTable] = []
             if template.includeBestPlayers {
-                compactTables.append(CompactReportTable(title: "Best Players", columns: ["Rank", "Player"], rows: rows.bestPlayers))
+                compactTables.append(CompactReportTable(title: "Best Players", columns: ["Points", "Player"], rows: rows.bestPlayers))
             }
             if template.includeGoalKickers {
                 compactTables.append(CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows.goalKickers))
             }
             if template.includePlayerGrades {
-                compactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Rank", "Player"], rows: rows.guestVotes))
+                compactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes))
             }
             if template.includeBestAndFairestVotes {
                 compactTables.append(CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest))
@@ -4185,42 +4209,57 @@ private func makeTemplatePreviewPDF(
                 return (gradeLookup[left.key] ?? "") < (gradeLookup[right.key] ?? "")
             }
 
-        let renderedGames: [Game] = {
-            if groupingMode.splitByGradeEnabled, !groupingMode.splitByGameEnabled {
-                return orderedGradeGroups.compactMap { (_, games) in
-                    games.max(by: { $0.date < $1.date })
+        struct RenderedSection {
+            let title: String
+            let games: [Game]
+        }
+
+        let renderedSections: [RenderedSection] = {
+            if groupingMode.splitByGradeEnabled, groupingMode.splitByGameEnabled {
+                return relevantGames.map { game in
+                    let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
+                    let title = "\(gradeName) • \(formattedDate(game.date)) vs \(game.opponent)"
+                    return RenderedSection(title: title, games: [game])
+                }
+            }
+            if groupingMode.splitByGradeEnabled {
+                return orderedGradeGroups.map { (gradeID, games) in
+                    RenderedSection(title: gradeLookup[gradeID] ?? "Unknown Grade", games: games.sorted { $0.date > $1.date })
                 }
             }
             if groupingMode.splitByGameEnabled {
-                return relevantGames
+                return relevantGames.map { game in
+                    RenderedSection(title: "\(formattedDate(game.date)) vs \(game.opponent)", games: [game])
+                }
             }
-            return primaryGame.map { [$0] } ?? []
+            return [RenderedSection(title: "Report", games: relevantGames)]
         }()
 
         if groupingMode.splitByGradeEnabled || groupingMode.splitByGameEnabled {
-            for game in renderedGames {
-                let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
+            for section in renderedSections {
+                guard let sectionGame = section.games.first else { continue }
+                let gradeName = gradeLookup[sectionGame.gradeID] ?? "Unknown Grade"
                 let titleParts: [String] = [
                     groupingMode.splitByGradeEnabled ? gradeName : nil,
-                    groupingMode.splitByGameEnabled ? "\(formattedDate(game.date)) vs \(game.opponent)" : nil
+                    groupingMode.splitByGameEnabled ? "\(formattedDate(sectionGame.date)) vs \(sectionGame.opponent)" : nil
                 ].compactMap { $0 }
-                let sectionTitle = titleParts.isEmpty ? "Report" : titleParts.joined(separator: " • ")
+                let sectionTitle = titleParts.isEmpty ? section.title : titleParts.joined(separator: " • ")
                 drawSectionHeader(sectionTitle)
                 if template.includeScores {
-                    drawScorePills(for: game, title: "Score")
+                    drawScorePills(for: sectionGame, title: "Score")
                 }
-                let rows = reportRows(for: game)
+                let rows = reportRows(for: section.games)
                 drawCompactTables(buildCompactTables(for: rows))
             }
         } else {
             if template.includeScores, let game = primaryGame {
                 drawScorePills(for: game, title: "Score")
             }
-            let rows = reportRows(for: primaryGame)
+            let rows = reportRows(for: relevantGames)
             drawCompactTables(buildCompactTables(for: rows))
         }
 
-        let metadataGame = renderedGames.first ?? primaryGame
+        let metadataGame = renderedSections.first?.games.first ?? primaryGame
 
         if template.includeStaffRoles {
             let rows = metadataGame.map { game in
