@@ -2120,6 +2120,31 @@ struct NewGameWizardView: View {
         .foregroundStyle(.white)
     }
 
+    private func compactGoalsSummaryItem(
+        label: String,
+        value: String,
+        valueColor: Color = .primary
+    ) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value)
+                .font(.headline)
+                .foregroundStyle(valueColor)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+
     private var goalsStep: some View {
         Form {
             if shouldCollectPostGameScoreWithinGoalsStep {
@@ -2129,15 +2154,16 @@ struct NewGameWizardView: View {
             }
 
             Section("Goals summary") {
-                HStack { Text("Our goals (from score)"); Spacer(); Text("\(ourGoals)").font(.headline) }
-                HStack { Text("Allocated to kickers"); Spacer(); Text("\(totalGoalsKicked)").font(.headline) }
-                HStack {
-                    Text(overAllocatedGoals ? "Over allocated" : "Remaining to allocate")
-                    Spacer()
-                    Text("\(abs(remainingGoalsToAllocate))")
-                        .font(.headline)
-                        .foregroundStyle(overAllocatedGoals ? .red : .primary)
+                HStack(spacing: 8) {
+                    compactGoalsSummaryItem(label: "From score", value: "\(ourGoals)")
+                    compactGoalsSummaryItem(label: "Allocated", value: "\(totalGoalsKicked)")
+                    compactGoalsSummaryItem(
+                        label: overAllocatedGoals ? "Over" : "Remaining",
+                        value: "\(abs(remainingGoalsToAllocate))",
+                        valueColor: overAllocatedGoals ? .red : .primary
+                    )
                 }
+                .padding(.vertical, 2)
                 if hasDuplicateGoalKickers {
                     Text("Same player selected more than once.")
                         .font(.caption)
@@ -2252,7 +2278,7 @@ struct NewGameWizardView: View {
     }
 
     private var postGameScoreEntryOnGoalsStep: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: isCompactLayout ? 44 : 72) {
             postGameScoreTeamEntry(
                 title: clubConfiguration.clubTeam.name,
                 style: ourTeamScoreStyle,
@@ -2292,33 +2318,54 @@ struct NewGameWizardView: View {
             }
 
             HStack(spacing: 10) {
-                postGameScoreButton(title: "Goal +", color: style.background) { goals.wrappedValue += 1 }
-                postGameScoreButton(title: "Behind +", color: style.background) { behinds.wrappedValue += 1 }
-            }
-            HStack(spacing: 10) {
-                postGameScoreButton(title: "Goal −", color: .secondary) {
-                    goals.wrappedValue = max(0, goals.wrappedValue - 1)
-                }
-                postGameScoreButton(title: "Behind −", color: .secondary) {
-                    behinds.wrappedValue = max(0, behinds.wrappedValue - 1)
-                }
+                postGameScoreDoubleButton(
+                    title: "Goal",
+                    color: style.background,
+                    onIncrement: { goals.wrappedValue += 1 },
+                    onDecrement: { goals.wrappedValue = max(0, goals.wrappedValue - 1) }
+                )
+                postGameScoreDoubleButton(
+                    title: "Point",
+                    color: style.background,
+                    onIncrement: { behinds.wrappedValue += 1 },
+                    onDecrement: { behinds.wrappedValue = max(0, behinds.wrappedValue - 1) }
+                )
             }
         }
         .padding(.vertical, 6)
     }
 
-    private func postGameScoreButton(title: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: isCompactLayout ? 18 : 22, weight: .bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, isCompactLayout ? 12 : 16)
+    private func postGameScoreDoubleButton(
+        title: String,
+        color: Color,
+        onIncrement: @escaping () -> Void,
+        onDecrement: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 0) {
+            Button(action: onIncrement) {
+                Text("\(title) +")
+                    .font(.system(size: isCompactLayout ? 18 : 22, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, isCompactLayout ? 12 : 16)
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .overlay(Color.white.opacity(0.35))
+
+            Button(action: onDecrement) {
+                Text("\(title) −")
+                    .font(.system(size: isCompactLayout ? 18 : 22, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, isCompactLayout ? 12 : 16)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(color.opacity(0.9))
         )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .foregroundStyle(.white)
     }
 
