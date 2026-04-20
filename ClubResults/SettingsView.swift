@@ -713,7 +713,8 @@ private struct ClubGradesSettingsView: View {
     @State private var newGradeDraft = NewGradeDraft()
 
     @State private var gradeEditing: Grade?
-    @State private var editGradeName = ""
+    @State private var editGradeDraft = EditGradeDraft()
+    @State private var showDiscardChangesAlert = false
 
     @State private var deletionErrorMessage: String?
     @State private var showDeletionError = false
@@ -744,7 +745,7 @@ private struct ClubGradesSettingsView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         gradeEditing = grade
-                        editGradeName = grade.name
+                        editGradeDraft = EditGradeDraft(grade: grade)
                     }
                 }
                 .onMove(perform: moveGrades)
@@ -794,16 +795,16 @@ private struct ClubGradesSettingsView: View {
         .sheet(item: $gradeEditing) { grade in
             NavigationStack {
                 Form {
-                    TextField("Grade name", text: $editGradeName)
+                    TextField("Grade name", text: $editGradeDraft.name)
                         .textInputAutocapitalization(.words)
 
                     Section {
                         Label("Coaches", systemImage: "person.2.fill")
                             .font(.subheadline.weight(.semibold))
-                        Toggle("Head Coach", isOn: bind(grade, \.asksHeadCoach))
-                        Toggle("Assistant Coach", isOn: bind(grade, \.asksAssistantCoach))
-                        Toggle("Team Manager", isOn: bind(grade, \.asksTeamManager))
-                        Toggle("Runner", isOn: bind(grade, \.asksRunner))
+                        Toggle("Head Coach", isOn: bind(\.asksHeadCoach))
+                        Toggle("Assistant Coach", isOn: bind(\.asksAssistantCoach))
+                        Toggle("Team Manager", isOn: bind(\.asksTeamManager))
+                        Toggle("Runner", isOn: bind(\.asksRunner))
                     } header: {
                         Text("New Game Wizard Fields")
                     }
@@ -811,34 +812,34 @@ private struct ClubGradesSettingsView: View {
                     Section {
                         Label("Officials", systemImage: "flag.fill")
                             .font(.subheadline.weight(.semibold))
-                        Toggle("Goal Umpire", isOn: bind(grade, \.asksGoalUmpire))
-                        Toggle("Field Umpire", isOn: bind(grade, \.asksFieldUmpire))
-                        Toggle("Umpire 1", isOn: bind(grade, \.asksBoundaryUmpire1))
-                        Toggle("Umpire 2", isOn: bind(grade, \.asksBoundaryUmpire2))
+                        Toggle("Goal Umpire", isOn: bind(\.asksGoalUmpire))
+                        Toggle("Field Umpire", isOn: bind(\.asksFieldUmpire))
+                        Toggle("Umpire 1", isOn: bind(\.asksBoundaryUmpire1))
+                        Toggle("Umpire 2", isOn: bind(\.asksBoundaryUmpire2))
                     }
 
                     Section {
                         Label("Trainers", systemImage: "cross.case.fill")
                             .font(.subheadline.weight(.semibold))
-                        Toggle("Trainer 1", isOn: bind(grade, \.asksTrainer1))
-                        Toggle("Trainer 2", isOn: bind(grade, \.asksTrainer2))
-                        Toggle("Trainer 3", isOn: bind(grade, \.asksTrainer3))
-                        Toggle("Trainer 4", isOn: bind(grade, \.asksTrainer4))
+                        Toggle("Trainer 1", isOn: bind(\.asksTrainer1))
+                        Toggle("Trainer 2", isOn: bind(\.asksTrainer2))
+                        Toggle("Trainer 3", isOn: bind(\.asksTrainer3))
+                        Toggle("Trainer 4", isOn: bind(\.asksTrainer4))
                     }
 
                     Section {
                         Label("Awards", systemImage: "rosette")
                             .font(.subheadline.weight(.semibold))
-                        Toggle("Score", isOn: bind(grade, \.asksScore))
-                        Toggle("Goal Kickers", isOn: bind(grade, \.asksGoalKickers))
-                        Picker("Best Players", selection: bind(grade, \.bestPlayersCount)) {
+                        Toggle("Score", isOn: bind(\.asksScore))
+                        Toggle("Goal Kickers", isOn: bind(\.asksGoalKickers))
+                        Picker("Best Players", selection: bind(\.bestPlayersCount)) {
                             ForEach(1...10, id: \.self) { count in
                                 Text("\(count)").tag(count)
                             }
                         }
-                        Toggle("Guest Best & Fairest Votes", isOn: bind(grade, \.asksGuestBestFairestVotesScan))
-                        if grade.asksGuestBestFairestVotesScan {
-                            Picker("Guest Best Players", selection: bind(grade, \.guestBestPlayersCount)) {
+                        Toggle("Guest Best & Fairest Votes", isOn: bind(\.asksGuestBestFairestVotesScan))
+                        if editGradeDraft.asksGuestBestFairestVotesScan {
+                            Picker("Guest Best Players", selection: bind(\.guestBestPlayersCount)) {
                                 ForEach(1...10, id: \.self) { count in
                                     Text("\(count)").tag(count)
                                 }
@@ -849,14 +850,11 @@ private struct ClubGradesSettingsView: View {
                     Section {
                         Label("Settings", systemImage: "gearshape.fill")
                             .font(.subheadline.weight(.semibold))
-                        Toggle("Notes", isOn: bind(grade, \.asksNotes))
-                        Toggle("Live Game View", isOn: bind(grade, \.allowsLiveGameView))
+                        Toggle("Notes", isOn: bind(\.asksNotes))
+                        Toggle("Live Game View", isOn: bind(\.allowsLiveGameView))
                         Picker(
                             "Length of Quarters",
-                            selection: Binding(
-                                get: { grade.quarterLengthMinutes },
-                                set: { grade.quarterLengthMinutes = min(max($0, 10), 30) }
-                            )
+                            selection: bind(\.quarterLengthMinutes)
                         ) {
                             ForEach(10...30, id: \.self) { minute in
                                 Text("\(minute) min").tag(minute)
@@ -877,7 +875,13 @@ private struct ClubGradesSettingsView: View {
                 .navigationTitle("Edit Grade")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { gradeEditing = nil }
+                        Button("Cancel") {
+                            if hasUnsavedEditGradeChanges {
+                                showDiscardChangesAlert = true
+                            } else {
+                                gradeEditing = nil
+                            }
+                        }
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") {
@@ -888,6 +892,14 @@ private struct ClubGradesSettingsView: View {
                         .saveButtonBehavior(isEnabled: !isEditGradeSaveDisabled)
                     }
                 }
+                .alert("Discard changes?", isPresented: $showDiscardChangesAlert) {
+                    Button("Keep Editing", role: .cancel) {}
+                    Button("Discard Changes", role: .destructive) {
+                        gradeEditing = nil
+                    }
+                } message: {
+                    Text("You have unsaved changes. If you cancel now, your edits will be lost.")
+                }
             }
             .appPopupStyle()
         }
@@ -896,17 +908,17 @@ private struct ClubGradesSettingsView: View {
         }
     }
 
-    private func bind(_ grade: Grade, _ keyPath: ReferenceWritableKeyPath<Grade, Bool>) -> Binding<Bool> {
+    private func bind(_ keyPath: WritableKeyPath<EditGradeDraft, Bool>) -> Binding<Bool> {
         Binding(
-            get: { grade[keyPath: keyPath] },
-            set: { grade[keyPath: keyPath] = $0 }
+            get: { editGradeDraft[keyPath: keyPath] },
+            set: { editGradeDraft[keyPath: keyPath] = $0 }
         )
     }
 
-    private func bind(_ grade: Grade, _ keyPath: ReferenceWritableKeyPath<Grade, Int>) -> Binding<Int> {
+    private func bind(_ keyPath: WritableKeyPath<EditGradeDraft, Int>) -> Binding<Int> {
         Binding(
-            get: { grade[keyPath: keyPath] },
-            set: { grade[keyPath: keyPath] = min(max($0, 1), 10) }
+            get: { editGradeDraft[keyPath: keyPath] },
+            set: { editGradeDraft[keyPath: keyPath] = keyPath == \.quarterLengthMinutes ? min(max($0, 10), 30) : min(max($0, 1), 10) }
         )
     }
 
@@ -953,12 +965,32 @@ private struct ClubGradesSettingsView: View {
     private func saveEditedGrade() -> Bool {
         guard let gradeEditing else { return false }
 
-        let name = clean(editGradeName)
+        let name = clean(editGradeDraft.name)
         guard !name.isEmpty else { return false }
         guard !grades.contains(where: { $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased() }) else { return false }
 
         gradeEditing.name = name
-        gradeEditing.asksTrainers = gradeEditing.asksTrainer1 || gradeEditing.asksTrainer2 || gradeEditing.asksTrainer3 || gradeEditing.asksTrainer4
+        gradeEditing.asksHeadCoach = editGradeDraft.asksHeadCoach
+        gradeEditing.asksAssistantCoach = editGradeDraft.asksAssistantCoach
+        gradeEditing.asksTeamManager = editGradeDraft.asksTeamManager
+        gradeEditing.asksRunner = editGradeDraft.asksRunner
+        gradeEditing.asksGoalUmpire = editGradeDraft.asksGoalUmpire
+        gradeEditing.asksFieldUmpire = editGradeDraft.asksFieldUmpire
+        gradeEditing.asksBoundaryUmpire1 = editGradeDraft.asksBoundaryUmpire1
+        gradeEditing.asksBoundaryUmpire2 = editGradeDraft.asksBoundaryUmpire2
+        gradeEditing.asksTrainer1 = editGradeDraft.asksTrainer1
+        gradeEditing.asksTrainer2 = editGradeDraft.asksTrainer2
+        gradeEditing.asksTrainer3 = editGradeDraft.asksTrainer3
+        gradeEditing.asksTrainer4 = editGradeDraft.asksTrainer4
+        gradeEditing.asksTrainers = editGradeDraft.hasAnyTrainerEnabled
+        gradeEditing.asksScore = editGradeDraft.asksScore
+        gradeEditing.asksGoalKickers = editGradeDraft.asksGoalKickers
+        gradeEditing.bestPlayersCount = editGradeDraft.bestPlayersCount
+        gradeEditing.asksGuestBestFairestVotesScan = editGradeDraft.asksGuestBestFairestVotesScan
+        gradeEditing.guestBestPlayersCount = editGradeDraft.guestBestPlayersCount
+        gradeEditing.asksNotes = editGradeDraft.asksNotes
+        gradeEditing.allowsLiveGameView = editGradeDraft.allowsLiveGameView
+        gradeEditing.quarterLengthMinutes = editGradeDraft.quarterLengthMinutes
         SettingsBackupStore.saveGrades(grades)
         saveContext()
         reloadGrades()
@@ -967,9 +999,37 @@ private struct ClubGradesSettingsView: View {
 
     private var isEditGradeSaveDisabled: Bool {
         guard let gradeEditing else { return true }
-        let name = clean(editGradeName)
+        let name = clean(editGradeDraft.name)
         guard !name.isEmpty else { return true }
-        return grades.contains(where: { $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased() })
+        let hasDuplicateName = grades.contains(where: { $0.id != gradeEditing.id && clean($0.name).lowercased() == name.lowercased() })
+        return hasDuplicateName || !hasUnsavedEditGradeChanges
+    }
+
+    private var hasUnsavedEditGradeChanges: Bool {
+        guard let gradeEditing else { return false }
+        let normalizedDraft = editGradeDraft.normalizedName(clean)
+        let normalizedGradeName = clean(gradeEditing.name)
+        return normalizedDraft != normalizedGradeName
+            || editGradeDraft.asksHeadCoach != gradeEditing.asksHeadCoach
+            || editGradeDraft.asksAssistantCoach != gradeEditing.asksAssistantCoach
+            || editGradeDraft.asksTeamManager != gradeEditing.asksTeamManager
+            || editGradeDraft.asksRunner != gradeEditing.asksRunner
+            || editGradeDraft.asksGoalUmpire != gradeEditing.asksGoalUmpire
+            || editGradeDraft.asksFieldUmpire != gradeEditing.asksFieldUmpire
+            || editGradeDraft.asksBoundaryUmpire1 != gradeEditing.asksBoundaryUmpire1
+            || editGradeDraft.asksBoundaryUmpire2 != gradeEditing.asksBoundaryUmpire2
+            || editGradeDraft.asksTrainer1 != gradeEditing.asksTrainer1
+            || editGradeDraft.asksTrainer2 != gradeEditing.asksTrainer2
+            || editGradeDraft.asksTrainer3 != gradeEditing.asksTrainer3
+            || editGradeDraft.asksTrainer4 != gradeEditing.asksTrainer4
+            || editGradeDraft.asksScore != gradeEditing.asksScore
+            || editGradeDraft.asksGoalKickers != gradeEditing.asksGoalKickers
+            || editGradeDraft.bestPlayersCount != gradeEditing.bestPlayersCount
+            || editGradeDraft.asksGuestBestFairestVotesScan != gradeEditing.asksGuestBestFairestVotesScan
+            || editGradeDraft.guestBestPlayersCount != gradeEditing.guestBestPlayersCount
+            || editGradeDraft.asksNotes != gradeEditing.asksNotes
+            || editGradeDraft.allowsLiveGameView != gradeEditing.allowsLiveGameView
+            || editGradeDraft.quarterLengthMinutes != gradeEditing.quarterLengthMinutes
     }
 
     private func moveGrades(from source: IndexSet, to destination: Int) {
@@ -1174,6 +1234,64 @@ private struct AppAppearanceSettingsView: View {
             }
         }
         .navigationTitle("App Appearance")
+    }
+}
+
+private struct EditGradeDraft {
+    var name = ""
+    var asksHeadCoach = true
+    var asksAssistantCoach = true
+    var asksTeamManager = true
+    var asksRunner = true
+    var asksGoalUmpire = true
+    var asksFieldUmpire = true
+    var asksBoundaryUmpire1 = true
+    var asksBoundaryUmpire2 = true
+    var asksTrainer1 = true
+    var asksTrainer2 = true
+    var asksTrainer3 = true
+    var asksTrainer4 = true
+    var asksScore = true
+    var asksGoalKickers = true
+    var bestPlayersCount = 6
+    var asksGuestBestFairestVotesScan = false
+    var guestBestPlayersCount = 3
+    var asksNotes = true
+    var allowsLiveGameView = true
+    var quarterLengthMinutes = 20
+
+    init() {}
+
+    init(grade: Grade) {
+        name = grade.name
+        asksHeadCoach = grade.asksHeadCoach
+        asksAssistantCoach = grade.asksAssistantCoach
+        asksTeamManager = grade.asksTeamManager
+        asksRunner = grade.asksRunner
+        asksGoalUmpire = grade.asksGoalUmpire
+        asksFieldUmpire = grade.asksFieldUmpire
+        asksBoundaryUmpire1 = grade.asksBoundaryUmpire1
+        asksBoundaryUmpire2 = grade.asksBoundaryUmpire2
+        asksTrainer1 = grade.asksTrainer1
+        asksTrainer2 = grade.asksTrainer2
+        asksTrainer3 = grade.asksTrainer3
+        asksTrainer4 = grade.asksTrainer4
+        asksScore = grade.asksScore
+        asksGoalKickers = grade.asksGoalKickers
+        bestPlayersCount = grade.bestPlayersCount
+        asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
+        guestBestPlayersCount = grade.guestBestPlayersCount
+        asksNotes = grade.asksNotes
+        allowsLiveGameView = grade.allowsLiveGameView
+        quarterLengthMinutes = grade.quarterLengthMinutes
+    }
+
+    var hasAnyTrainerEnabled: Bool {
+        asksTrainer1 || asksTrainer2 || asksTrainer3 || asksTrainer4
+    }
+
+    func normalizedName(_ cleaner: (String) -> String) -> String {
+        cleaner(name)
     }
 }
 
