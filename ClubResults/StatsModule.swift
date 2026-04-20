@@ -971,23 +971,32 @@ struct LiveStatsView: View {
     }
 
     private var topStrip: some View {
-        HStack(spacing: 10) {
-            ScorePill(ourTeamName, style: ourStyle)
-            Text("\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))")
-                .font(.title3.weight(.bold))
-                .monospacedDigit()
+        HStack(spacing: 12) {
+            HStack(spacing: 10) {
+                ScorePill(ourTeamName, style: ourStyle)
+                    .font(.title3.weight(.bold))
+                Text("\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))")
+                    .font(.title2.weight(.black))
+                    .monospacedDigit()
+            }
 
-            ScorePill(session.opposition, style: oppositionStyle)
-            Text("0.0 (0)")
-                .font(.title3.weight(.bold))
-                .monospacedDigit()
-
-            Spacer(minLength: 8)
+            Spacer(minLength: 16)
 
             Text("\(gradeName) • \(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))")
-                .font(.subheadline.weight(.semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            Spacer(minLength: 16)
+
+            HStack(spacing: 10) {
+                Text("0.0 (0)")
+                    .font(.title2.weight(.black))
+                    .monospacedDigit()
+                ScorePill(session.opposition, style: oppositionStyle)
+                    .font(.title3.weight(.bold))
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -996,15 +1005,15 @@ struct LiveStatsView: View {
     }
 
     private var quarterPicker: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 10) {
             ForEach(["Q1", "Q2", "Q3", "Q4"], id: \.self) { quarter in
                 Button(quarter) {
                     selectedQuarter = quarter
                 }
                 .buttonStyle(.bordered)
                 .tint(selectedQuarter == quarter ? .blue : .gray)
-                .font(.subheadline.weight(.bold))
-                .frame(width: 52, height: 34)
+                .font(.title3.weight(.bold))
+                .frame(width: 100, height: 62)
                 .background(selectedQuarter == quarter ? Color.blue.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
             }
         }
@@ -1013,12 +1022,6 @@ struct LiveStatsView: View {
     private var possessionLeadersPanel: some View {
         let leaders = possessionLeaderRows
         return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Top Possession Getters")
-                    .font(.headline.weight(.semibold))
-                Spacer()
-            }
-
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
                 ForEach(Array(leaders.enumerated()), id: \.offset) { _, row in
                     if let player = row.player {
@@ -1149,23 +1152,24 @@ struct LiveStatsView: View {
     }
 
     private var recentEventsPanel: some View {
+        let recent = Array(sessionEvents.prefix(8))
         VStack(alignment: .leading, spacing: 8) {
             Text("Recent Events")
                 .font(.title3.bold())
 
             LazyVStack(spacing: 6) {
-                ForEach(sessionEvents.prefix(8)) { event in
+                ForEach(recent) { event in
                     Button {
                         showEditEvent = event
                     } label: {
                         HStack(spacing: 8) {
                             Text(event.quarter)
-                                .font(.caption.bold())
-                                .frame(width: 26, alignment: .leading)
+                                .font(.title3.bold())
+                                .frame(width: 40, alignment: .leading)
                             Text(statName(for: event.statTypeId))
-                                .font(.subheadline.weight(.semibold))
+                                .font(.title3.weight(.bold))
                             Text(playerShortLabel(for: event.playerId))
-                                .font(.subheadline)
+                                .font(.title3)
                             Spacer()
                         }
                         .padding(.vertical, 8)
@@ -1182,7 +1186,7 @@ struct LiveStatsView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, minHeight: 360, maxHeight: 360, alignment: .top)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -1227,6 +1231,9 @@ struct LiveStatsView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
+
+                Spacer()
+                    .frame(width: 28)
 
                 quarterPicker
             }
