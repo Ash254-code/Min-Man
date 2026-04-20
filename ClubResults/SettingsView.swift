@@ -2599,7 +2599,7 @@ struct ReportsSettingsView: View {
 
     private let templateGridColumnCount = 4
     private let templateGridSpacing: CGFloat = 12
-    private let templateTileHeight: CGFloat = 94
+    private let templateTileHeight: CGFloat = 118
 
     private var displayedTemplates: [CustomReportTemplate] {
         let templateByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
@@ -2925,7 +2925,7 @@ struct ReportsSettingsView: View {
         let wobbleDirection = template.id.uuidString.hashValue.isMultiple(of: 2) ? 1.0 : -1.0
         let baseTile = VStack(spacing: 6) {
             Text(template.name)
-                .font(.title3.weight(.semibold))
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -2935,6 +2935,12 @@ struct ReportsSettingsView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
+
+            Text(dateRangeSummary(for: template))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(.horizontal, 12)
@@ -3167,6 +3173,11 @@ struct ReportsSettingsView: View {
             customStartDate: template.customDateRangeStart,
             customEndDate: template.customDateRangeEnd
         )
+    }
+
+    private func dateRangeSummary(for template: CustomReportTemplate) -> String {
+        let dateRange = reportDateRange(for: template)
+        return "Date range: \(formattedDate(dateRange.start)) – \(formattedDate(dateRange.end))"
     }
 
     private func recipientEmails(for template: CustomReportTemplate) -> [String] {
