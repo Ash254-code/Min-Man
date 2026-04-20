@@ -2352,6 +2352,15 @@ private struct ContactEditSheet: View {
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+
+                if onDelete != nil {
+                    Section {
+                        Button("Delete Contact", role: .destructive) {
+                            showDeleteConfirmation = true
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                }
             }
             .navigationTitle(title)
             .toolbar {
@@ -2363,19 +2372,9 @@ private struct ContactEditSheet: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 10) {
-                        if onDelete != nil {
-                            Button(role: .destructive) {
-                                showDeleteConfirmation = true
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                        }
-
-                        Button("Save") { saveAndClose() }
-                            .buttonStyle(.borderedProminent)
-                            .saveButtonBehavior(isEnabled: canSave && hasChanges)
-                    }
+                    Button("Save") { saveAndClose() }
+                        .buttonStyle(.borderedProminent)
+                        .saveButtonBehavior(isEnabled: canSave && hasChanges)
                 }
                 if allowsSaveAndAddAnother {
                     ToolbarItem(placement: .topBarTrailing) {
