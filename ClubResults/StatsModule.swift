@@ -758,6 +758,7 @@ private struct TotalsRow: Identifiable {
 
 struct LiveStatsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
 
     let session: StatsSession
 
@@ -779,6 +780,9 @@ struct LiveStatsView: View {
     @State private var remainingQuarterSeconds = 0
     @State private var isQuarterTimerRunning = false
     @State private var quarterTimerTask: Task<Void, Never>?
+    @State private var visiblePlayerIDs: Set<UUID> = []
+    @State private var savedVisiblePlayerIDs: Set<UUID> = []
+    @State private var showPlayerVisibilityEditor = false
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
 
@@ -789,11 +793,13 @@ struct LiveStatsView: View {
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
             VStack(spacing: 8) {
                 topStrip
-                possessionLeadersPanel
 
                 HStack(spacing: 10) {
-                    playerSelectionPanel
-                        .frame(width: leftPanelWidth)
+                    VStack(spacing: 10) {
+                        possessionLeadersPanel
+                        playerSelectionPanel
+                    }
+                    .frame(width: leftPanelWidth)
 
                     VStack(spacing: 10) {
                         statButtonsPanel
@@ -813,6 +819,16 @@ struct LiveStatsView: View {
         }
         .navigationTitle("Live Stats")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+            }
+        }
         .sheet(item: $showEditEvent) { event in
             EditStatEventView(event: event, players: playersForGrade, statTypes: enabledStatTypes)
         }
@@ -827,6 +843,19 @@ struct LiveStatsView: View {
                 ShareSheet(items: [shareURL])
             }
         }
+        .sheet(isPresented: $showPlayerVisibilityEditor) {
+            PlayerVisibilityEditorView(
+                players: playersForGrade,
+                initialSelection: savedVisiblePlayerIDs,
+                onSave: { updated in
+                    savedVisiblePlayerIDs = updated
+                    visiblePlayerIDs = updated
+                    if let selectedPlayerId, !updated.contains(selectedPlayerId) {
+                        self.selectedPlayerId = nil
+                    }
+                }
+            )
+        }
         .onDisappear {
             stopQuarterTimer()
             if speechService.isRecording {
@@ -834,6 +863,11 @@ struct LiveStatsView: View {
             }
         }
         .onAppear {
+            if visiblePlayerIDs.isEmpty {
+                let defaults = Set(playersForGrade.map(\.id))
+                visiblePlayerIDs = defaults
+                savedVisiblePlayerIDs = defaults
+            }
             configureQuarterTimer(reset: true)
         }
         .onChange(of: selectedQuarter) { _, _ in
@@ -852,6 +886,12 @@ struct LiveStatsView: View {
 
     private var playersForGrade: [Player] {
         allPlayers.filter { $0.isActive && $0.gradeIDs.contains(session.gradeId) }
+    }
+
+    private var displayedPlayers: [Player] {
+        let source = playersForGrade
+        guard !visiblePlayerIDs.isEmpty else { return source }
+        return source.filter { visiblePlayerIDs.contains($0.id) }
     }
 
     private var enabledStatTypes: [StatType] {
@@ -910,7 +950,7 @@ struct LiveStatsView: View {
 
         let sorted = totalsByPlayer
             .compactMap { playerId, touches -> (Player, Int)? in
-                guard let player = playersForGrade.first(where: { $0.id == playerId }) else { return nil }
+                guard let player = displayedPlayers.first(where: { $0.id == playerId }) else { return nil }
                 return (player, touches)
             }
             .sorted {
@@ -971,39 +1011,33 @@ struct LiveStatsView: View {
     }
 
     private var possessionLeadersPanel: some View {
+        let leaders = possessionLeaderRows
         VStack(alignment: .leading, spacing: 8) {
-            Text("Top Possession Getters")
-                .font(.headline.weight(.semibold))
+            HStack {
+                Text("Top Possession Getters")
+                    .font(.headline.weight(.semibold))
+                Spacer()
+            }
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
-                ForEach(Array(possessionLeaderRows.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(leaders.enumerated()), id: \.offset) { _, row in
                     if let player = row.player {
                         Button {
                             selectPlayer(player.id)
                         } label: {
-                            VStack(spacing: 3) {
-                                Text(player.number.map { "#\($0)" } ?? "—")
-                                    .font(.subheadline.weight(.black))
-                                Text(player.lastName.uppercased())
-                                    .font(.caption.weight(.bold))
-                                    .lineLimit(1)
-                                Text("\(row.touches)")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 58)
-                            .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                            playerCardContent(player: player, touches: row.touches)
+                                .frame(maxWidth: .infinity, minHeight: 58)
+                                .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
                     } else {
                         VStack(spacing: 3) {
                             Text("—")
-                                .font(.subheadline.weight(.black))
+                                .font(.title2.weight(.black))
                             Text("—")
-                                .font(.caption.weight(.bold))
-                            Text("0")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .font(.headline.weight(.semibold))
+                            Text(" ")
+                                .font(.caption)
                         }
                         .frame(maxWidth: .infinity, minHeight: 58)
                         .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
@@ -1015,34 +1049,63 @@ struct LiveStatsView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
+    private func playerCardContent(player: Player, touches: Int? = nil) -> some View {
+        VStack(spacing: 4) {
+            Text(player.number.map { "#\($0)" } ?? "—")
+                .font(.title2.weight(.black))
+            Text(player.lastName.uppercased())
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+            if let touches {
+                Text("\(touches)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(player.firstName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var leaderIDs: Set<UUID> {
+        Set(possessionLeaderRows.compactMap { $0.player?.id })
+    }
+
+    private var gridPlayers: [Player] {
+        displayedPlayers.filter { !leaderIDs.contains($0.id) }
+    }
+
     private var playerSelectionPanel: some View {
         GeometryReader { panelProxy in
             VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Spacer()
+                    Button {
+                        showPlayerVisibilityEditor = true
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 let columnsCount = max(Int(panelProxy.size.width / 128), 3)
-                let rowsCount = max(Int(ceil(Double(max(playersForGrade.count, 1)) / Double(columnsCount))), 1)
-                let topFixedHeight = 12.0
+                let rowsCount = max(Int(ceil(Double(max(gridPlayers.count, 1)) / Double(columnsCount))), 1)
+                let topFixedHeight = 40.0
                 let usableGridHeight = max(panelProxy.size.height - topFixedHeight, 180)
                 let cellHeight = max(62, min(104, (usableGridHeight - (CGFloat(rowsCount - 1) * 10)) / CGFloat(rowsCount)))
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: columnsCount)
 
                 LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(playersForGrade) { player in
+                    ForEach(gridPlayers) { player in
                         Button {
                             selectPlayer(player.id)
                         } label: {
-                            VStack(spacing: 4) {
-                                Text(player.number.map { "#\($0)" } ?? "—")
-                                    .font(.title2.weight(.black))
-                                Text(player.lastName.uppercased())
-                                    .font(.headline.weight(.semibold))
-                                    .lineLimit(1)
-                                Text(player.firstName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: cellHeight)
-                            .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                            playerCardContent(player: player)
+                                .frame(maxWidth: .infinity, minHeight: cellHeight)
+                                .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
                     }
@@ -1529,6 +1592,90 @@ struct LiveStatsView: View {
         let path = UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: 20))
         UIColor.systemGray4.setStroke()
         path.stroke()
+    }
+}
+
+private struct PlayerVisibilityEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let players: [Player]
+    let initialSelection: Set<UUID>
+    let onSave: (Set<UUID>) -> Void
+
+    @State private var selectedIDs: Set<UUID>
+    @State private var showDiscardAlert = false
+
+    init(players: [Player], initialSelection: Set<UUID>, onSave: @escaping (Set<UUID>) -> Void) {
+        self.players = players
+        self.initialSelection = initialSelection
+        self.onSave = onSave
+        _selectedIDs = State(initialValue: initialSelection)
+    }
+
+    private var hasUnsavedChanges: Bool {
+        selectedIDs != initialSelection
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(players) { player in
+                Button {
+                    if selectedIDs.contains(player.id) {
+                        selectedIDs.remove(player.id)
+                    } else {
+                        selectedIDs.insert(player.id)
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: selectedIDs.contains(player.id) ? "checkmark.square.fill" : "square")
+                            .foregroundStyle(selectedIDs.contains(player.id) ? .blue : .secondary)
+                        Text(player.number.map { "#\($0)" } ?? "—")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(player.lastName.uppercased())
+                                .font(.headline)
+                            Text(player.firstName)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .navigationTitle("Visible Players")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Back") {
+                        if hasUnsavedChanges {
+                            showDiscardAlert = true
+                        } else {
+                            dismiss()
+                        }
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        onSave(selectedIDs)
+                        dismiss()
+                    }
+                    .disabled(!hasUnsavedChanges)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(hasUnsavedChanges ? Color.blue : Color.gray.opacity(0.45), in: Capsule())
+                    .foregroundStyle(.white)
+                }
+            }
+            .alert("Discard unsaved changes?", isPresented: $showDiscardAlert) {
+                Button("Keep Editing", role: .cancel) {}
+                Button("Discard", role: .destructive) { dismiss() }
+            } message: {
+                Text("You have unsaved player visibility changes.")
+            }
+        }
     }
 }
 
