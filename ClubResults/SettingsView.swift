@@ -1654,7 +1654,7 @@ private struct GroupsSettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    @State private var contacts: [Contact] = []
+    @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query private var sectionMemberships: [ContactSectionMembership]
 
@@ -1756,9 +1756,6 @@ private struct GroupsSettingsView: View {
             }
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
-        }
-        .task {
-            reloadContacts()
         }
     }
 
@@ -1911,7 +1908,6 @@ private struct GroupsSettingsView: View {
             }
 
             Button {
-                reloadContacts()
                 addSectionKey = sectionKey
                 showAddContactsForSection = true
             } label: {
@@ -1950,7 +1946,6 @@ private struct GroupsSettingsView: View {
             Divider()
 
             Button {
-                reloadContacts()
                 addSectionKey = sectionKey
                 showAddContactsForSection = true
             } label: {
@@ -1991,22 +1986,8 @@ private struct GroupsSettingsView: View {
     private func saveContext() {
         do {
             try dataContext.save()
-            reloadContacts()
         } catch {
             saveErrorMessage = error.localizedDescription
-            let backups = SettingsBackupStore.loadContacts()
-            contacts = backups
-                .map {
-                    Contact(
-                        id: $0.id,
-                        name: $0.name,
-                        mobile: $0.mobile,
-                        email: $0.email
-                    )
-                }
-                .sorted {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
         }
     }
 
@@ -2019,55 +2000,6 @@ private struct GroupsSettingsView: View {
             .committee,
             .other
         ]
-    }
-
-    private func reloadContacts() {
-        do {
-            let descriptor = FetchDescriptor<Contact>(sortBy: [SortDescriptor(\Contact.name)])
-            let fetched = try dataContext.fetch(descriptor)
-
-            if fetched.isEmpty {
-                let backups = SettingsBackupStore.loadContacts()
-                if !backups.isEmpty {
-                    contacts = backups
-                        .map {
-                            Contact(
-                                id: $0.id,
-                                name: $0.name,
-                                mobile: $0.mobile,
-                                email: $0.email
-                            )
-                        }
-                        .sorted {
-                            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                        }
-
-                    for item in backups {
-                        dataContext.insert(
-                            Contact(
-                                id: item.id,
-                                name: item.name,
-                                mobile: item.mobile,
-                                email: item.email
-                            )
-                        )
-                    }
-
-                    try? dataContext.save()
-
-                    let afterRestore = (try? dataContext.fetch(descriptor)) ?? []
-                    if !afterRestore.isEmpty {
-                        contacts = afterRestore
-                    }
-                    return
-                }
-            }
-
-            contacts = fetched
-            SettingsBackupStore.saveContacts(contacts)
-        } catch {
-            saveErrorMessage = error.localizedDescription
-        }
     }
 
     private var customSectionTitles: [String: String] {
