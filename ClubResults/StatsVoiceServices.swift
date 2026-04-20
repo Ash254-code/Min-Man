@@ -479,6 +479,7 @@ struct StatsVoiceParser {
 final class PressHoldSpeechService: ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var liveTranscript = ""
+    @Published private(set) var finalTranscript = ""
     @Published private(set) var lastErrorMessage: String?
 
     private var recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en_AU"))
@@ -495,7 +496,7 @@ final class PressHoldSpeechService: ObservableObject {
     }
 
     func stopListening() -> String {
-        let transcript = liveTranscript
+        let transcript = finalTranscript.isEmpty ? liveTranscript : finalTranscript
         stopListeningInternal()
         return transcript
     }
@@ -532,17 +533,24 @@ final class PressHoldSpeechService: ObservableObject {
             lastErrorMessage = "Speech recognizer unavailable"
             return
         }
+        guard recognizer?.isAvailable == true else {
+            lastErrorMessage = "Speech recognizer is not currently available"
+            return
+        }
+#if targetEnvironment(simulator)
+        lastErrorMessage = "Speech recognition testing must run on a real device"
+        return
+#endif
 
         task?.cancel()
         task = nil
 
         let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
+        request.shouldReportPartialResults = false
         request.taskHint = .dictation
-        if recognizer?.supportsOnDeviceRecognition == true {
-            request.requiresOnDeviceRecognition = true
-        }
-        let expandedContext = Array(Set(vocabulary + vocabulary.flatMap { $0.split(separator: " ").map(String.init) }))
+        request.requiresOnDeviceRecognition = false
+        let seedVocabulary = ["kick", "handball", "mark", "tackle", "goal", "behind"]
+        let expandedContext = Array(Set(seedVocabulary + vocabulary + vocabulary.flatMap { $0.split(separator: " ").map(String.init) }))
         request.contextualStrings = Array(expandedContext.prefix(400))
 
         do {
@@ -562,11 +570,17 @@ final class PressHoldSpeechService: ObservableObject {
 
             isRecording = true
             liveTranscript = ""
+            finalTranscript = ""
             self.request = request
             task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
                 guard let self else { return }
                 if let result {
-                    self.liveTranscript = result.bestTranscription.formattedString
+                    if result.isFinal {
+                        let transcript = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
+                        self.liveTranscript = transcript
+                        self.finalTranscript = transcript
+                        print("Heard: \(transcript)")
+                    }
                 }
                 if error != nil {
                     self.stopListeningInternal()

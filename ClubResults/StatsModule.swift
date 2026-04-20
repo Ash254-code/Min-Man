@@ -344,6 +344,7 @@ struct LiveStatsView: View {
     @State private var showPlayerPicker = false
     @State private var showTotals = false
     @State private var feedbackToken = UUID()
+    @State private var lastHeardTranscript = ""
     @State private var lastVoiceDebug: VoiceParseResult?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
@@ -571,6 +572,12 @@ struct LiveStatsView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+                if !lastHeardTranscript.isEmpty {
+                    Text("Heard: \(lastHeardTranscript)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
 #if DEBUG
                 if let lastVoiceDebug {
                     VStack(alignment: .trailing, spacing: 2) {
@@ -713,6 +720,16 @@ struct LiveStatsView: View {
     }
 
     private func handleVoiceTranscript(_ transcript: String) {
+        lastHeardTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+#if DEBUG
+        print("Heard: \(lastHeardTranscript)")
+#endif
+        guard !lastHeardTranscript.isEmpty else {
+            lastMessage = "Heard: (empty)"
+            feedbackToken = UUID()
+            return
+        }
+
         let descriptors = enabledStatTypes.map {
             VoiceStatTypeDescriptor(id: $0.id, canonicalName: $0.name, aliases: $0.voiceAliases)
         }
