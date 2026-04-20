@@ -799,7 +799,7 @@ private struct ClubGradesSettingsView: View {
                         .textInputAutocapitalization(.words)
 
                     Section {
-                        Label("Coaches", systemImage: "person.2.fill")
+                        Label("Coaching Staff", systemImage: "person.2.fill")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Head Coach", isOn: bind(\.asksHeadCoach))
                         Toggle("Assistant Coach", isOn: bind(\.asksAssistantCoach))
@@ -1356,7 +1356,7 @@ private struct AddGradeWizardView: View {
                         Toggle("Team Manager", isOn: $draft.asksTeamManager)
                         Toggle("Runner", isOn: $draft.asksRunner)
                     } header: {
-                        Text("Coaches")
+                        Text("Coaching Staff")
                     }
                 case .officials:
                     Section {
@@ -1687,7 +1687,7 @@ private struct GroupsSettingsView: View {
                     }
                 }
             } header: {
-                Text("Coaches")
+                Text("Coaching Staff")
             }
 
             ForEach(customSections, id: \.sectionKey) { section in
@@ -2145,7 +2145,7 @@ private enum ContactSectionKey: Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .coaches: return "Coaches"
+        case .coaches: return "Coaching Staff"
         case .coachesGrade: return "Grade"
         case .registrar: return "Registrar"
         case .coordinatorsSenior: return "Coordinators - Senior"
@@ -3621,7 +3621,7 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
     if template.includePlayerGrades { items.append("Guest Votes") }
     if template.includeGoalKickers { items.append("Goal kickers") }
     if template.includeBestAndFairestVotes { items.append("B&F votes") }
-    if template.includeStaffRoles { items.append("Coaches") }
+    if template.includeStaffRoles { items.append("Coaching Staff") }
     if template.includeOfficials || template.includeUmpires { items.append("Officials") }
     if template.includeTrainers { items.append("Trainers") }
     if template.includeMatchNotes { items.append("Match notes") }
@@ -4189,7 +4189,7 @@ private func makeTemplatePreviewPDF(
                     game.runnerName.trimmingCharacters(in: .whitespacesAndNewlines)
                 ]]
             } ?? []
-            drawDetailTable(title: "Coaches", columns: ["Head", "Assistant", "Manager", "Runner"], rows: rows)
+            drawDetailTable(title: "Coaching Staff", columns: ["Head", "Assistant", "Manager", "Runner"], rows: rows)
         }
 
         if template.includeOfficials || template.includeUmpires {
@@ -4419,7 +4419,7 @@ private struct CustomReportEditView: View {
                     toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit, defaultLimitWhenEnabled: 0)
                     toggleWithLimitPicker(title: "Goal Kickers", isOn: $includeGoalKickers, limit: $goalKickersLimit, defaultLimitWhenEnabled: 0)
                     toggleWithLimitPicker(title: "Best and Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit, defaultLimitWhenEnabled: 5)
-                    Toggle("Coaches", isOn: $includeStaffRoles)
+                    Toggle("Coaching Staff", isOn: $includeStaffRoles)
                     Toggle("Officials", isOn: $includeOfficials)
                     Toggle("Boundary Umpires", isOn: $includeUmpires)
                     Toggle("Trainers", isOn: $includeTrainers)
@@ -4672,7 +4672,7 @@ private struct CustomReportEditView: View {
         }
         switch ContactSectionKey.fromRawValue(sectionKey) {
         case let .coachesGrade(gradeID):
-            return grades.first(where: { $0.id == gradeID })?.name ?? "Coaches"
+            return grades.first(where: { $0.id == gradeID })?.name ?? "Coaching Staff"
         default:
             return ContactSectionKey.fromRawValue(sectionKey).title
         }

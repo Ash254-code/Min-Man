@@ -299,7 +299,7 @@ struct GameDetailView: View {
                 }
             }
             if !game.headCoachName.isEmpty || !game.assistantCoachName.isEmpty || !game.teamManagerName.isEmpty || !game.runnerName.isEmpty {
-                Text("Coaching")
+                Text("Coaching Staff")
                     .font(.subheadline.weight(.semibold))
                 if !game.headCoachName.isEmpty { Text("Head Coach: \(game.headCoachName)").font(.subheadline) }
                 if !game.assistantCoachName.isEmpty { Text("Assistant: \(game.assistantCoachName)").font(.subheadline) }

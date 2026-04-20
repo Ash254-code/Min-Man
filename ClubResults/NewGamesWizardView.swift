@@ -93,7 +93,7 @@ struct NewGameWizardPreviewContainer: View {
     )
 }
 
-#Preview("Coaches") {
+#Preview("Coaching Staff") {
     NewGameWizardPreviewContainer(
         step: .coaches,
         data: NewGameWizardPreviewData.large
@@ -692,7 +692,7 @@ struct NewGameWizardView: View {
     private var currentStepSubtitle: String {
         switch currentStep {
         case .setup: return "Game Details"
-        case .staff: return "Coaches"
+        case .staff: return "Coaching Staff"
         case .officials: return "Officials"
         case .medical: return "Medical & Notes"
         case .score: return entryMode == .live ? "Live Scoring" : "Final Score"
@@ -1612,7 +1612,7 @@ struct NewGameWizardView: View {
         ScrollView {
             VStack(spacing: 14) {
 
-                StaffCard(title: isTwoGameFlow ? "Game 1 · Coaching" : "Coaching", systemImage: "person.2.fill") {
+                StaffCard(title: isTwoGameFlow ? "Game 1 · Coaching Staff" : "Coaching Staff", systemImage: "person.2.fill") {
                     if selectedGrade?.asksHeadCoach ?? true {
                         StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $headCoachName)
                     }
@@ -1628,7 +1628,7 @@ struct NewGameWizardView: View {
                 }
 
                 if isTwoGameFlow {
-                    StaffCard(title: "Game 2 · Coaching", systemImage: "person.2.fill") {
+                    StaffCard(title: "Game 2 · Coaching Staff", systemImage: "person.2.fill") {
                         if selectedGrade?.asksHeadCoach ?? true {
                             StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $game2HeadCoachName)
                         }

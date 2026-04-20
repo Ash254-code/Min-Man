@@ -145,11 +145,14 @@ struct GameEditView: View {
                     Stepper("Their Behinds: \(theirBehinds)", value: $theirBehinds, in: 0...99)
                 }
 
-                Section("Staff & Officials") {
+                Section("Coaching Staff") {
                     StaffPickerField(title: "Head Coach", role: .headCoach, gradeID: gradeID, value: $headCoachName)
                     StaffPickerField(title: "Assistant Coach", role: .assistantCoach, gradeID: gradeID, value: $assistantCoachName)
                     StaffPickerField(title: "Team Manager", role: .teamManager, gradeID: gradeID, value: $teamManagerName)
                     StaffPickerField(title: "Runner", role: .runner, gradeID: gradeID, value: $runnerName)
+                }
+
+                Section("Officials") {
                     StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
                     StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $fieldUmpireName)
                     StaffPickerField(title: "Boundary Umpire 1", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire1Name)
