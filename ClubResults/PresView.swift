@@ -107,30 +107,52 @@ struct PresView: View {
         return gradeByID[gradeID]?.asksScore ?? true
     }
 
+    private func startPresentations() {
+        guard let firstGradeSection = gradeSections.first else { return }
+        selectedPresentationGrade = firstGradeSection
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section("Last 5 Days") {
-                    if sortedGames.isEmpty {
-                        ContentUnavailableView(
-                            "No games in the last 5 days",
-                            systemImage: "calendar",
-                            description: Text("Recent games will appear here.")
-                        )
-                    } else {
-                        ForEach(gradeSections) { section in
-                            Button {
-                                selectedPresentationGrade = section
-                            } label: {
-                                PresGradeRow(
-                                    gradeName: section.grade.name,
-                                    gameCount: section.games.count
-                                )
+            VStack(spacing: 20) {
+                List {
+                    Section("Last 5 Days") {
+                        if sortedGames.isEmpty {
+                            ContentUnavailableView(
+                                "No games in the last 5 days",
+                                systemImage: "calendar",
+                                description: Text("Recent games will appear here.")
+                            )
+                        } else {
+                            ForEach(gradeSections) { section in
+                                Button {
+                                    selectedPresentationGrade = section
+                                } label: {
+                                    PresGradeRow(
+                                        gradeName: section.grade.name,
+                                        gameCount: section.games.count
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
+                Button {
+                    startPresentations()
+                } label: {
+                    Text("Start Presentations")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.blue, in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(gradeSections.isEmpty)
+                .opacity(gradeSections.isEmpty ? 0.45 : 1.0)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
             }
             .navigationTitle("Pres")
             .fullScreenCover(item: $selectedPresentationGrade) { selectedGrade in
