@@ -889,38 +889,10 @@ struct LiveStatsView: View {
                 }
             )
         }
-        .alert("Efficiency Rating", isPresented: $showEfficiencyVotePrompt) {
-            Button {
-                applyEfficiencyVote(.thumbsUp)
-            } label: {
-                HStack(spacing: 10) {
-                    Text("👍")
-                        .font(.system(size: 48))
-                    Image(systemName: "hand.thumbsup.fill")
-                        .font(.system(size: 48, weight: .bold))
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .foregroundStyle(.green)
+        .overlay {
+            if showEfficiencyVotePrompt {
+                efficiencyRatingPrompt
             }
-
-            Button {
-                applyEfficiencyVote(.thumbsDown)
-            } label: {
-                HStack(spacing: 10) {
-                    Text("👎")
-                        .font(.system(size: 48))
-                    Image(systemName: "hand.thumbsdown.fill")
-                        .font(.system(size: 48, weight: .bold))
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .foregroundStyle(.red)
-            }
-
-            Button("Skip", role: .cancel) {
-                pendingEfficiencyEventID = nil
-            }
-        } message: {
-            Text("Was this kick/handball effective?")
         }
         .onDisappear {
             stopQuarterTimer()
@@ -1623,11 +1595,83 @@ struct LiveStatsView: View {
         guard let eventID = pendingEfficiencyEventID,
               let event = sessionEvents.first(where: { $0.id == eventID }) else {
             pendingEfficiencyEventID = nil
+            showEfficiencyVotePrompt = false
             return
         }
         event.efficiencyVoteRaw = vote.rawValue
         try? modelContext.save()
         pendingEfficiencyEventID = nil
+        showEfficiencyVotePrompt = false
+    }
+
+    private func dismissEfficiencyVotePrompt() {
+        pendingEfficiencyEventID = nil
+        showEfficiencyVotePrompt = false
+    }
+
+    private var efficiencyRatingPrompt: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    dismissEfficiencyVotePrompt()
+                }
+
+            VStack(spacing: 14) {
+                Text("Efficiency Rating")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text("Was this kick/handball effective?")
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.88))
+
+                VStack(spacing: 10) {
+                    Button {
+                        applyEfficiencyVote(.thumbsUp)
+                    } label: {
+                        Text("👍")
+                            .font(.system(size: 84))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .foregroundStyle(.green)
+                    }
+                    .buttonStyle(.plain)
+                    .background(Capsule().fill(Color.white.opacity(0.17)))
+
+                    Button {
+                        applyEfficiencyVote(.thumbsDown)
+                    } label: {
+                        Text("👎")
+                            .font(.system(size: 84))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .background(Capsule().fill(Color.white.opacity(0.17)))
+
+                    Button("Skip") {
+                        dismissEfficiencyVotePrompt()
+                    }
+                    .font(.headline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .foregroundStyle(ClubTheme.brandPrimary)
+                    .background(Capsule().fill(Color.white.opacity(0.17)))
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 22)
+            .frame(maxWidth: 460)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(Color.white.opacity(0.24), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 18, x: 0, y: 8)
+            .padding(.horizontal, 20)
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
 
     private func parseFailureMessage(_ result: VoiceParseResult) -> String {
