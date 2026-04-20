@@ -576,26 +576,97 @@ struct StatsSessionSetupView: View {
     @State private var venue = ""
     @State private var createdSession: StatsSession?
     @State private var showLiveStats = false
+    @State private var clubConfiguration = ClubConfigurationStore.load()
 
     var body: some View {
-        Form {
-            Picker("Grade", selection: $selectedGradeId) {
-                Text("Select").tag(Optional<UUID>.none)
-                ForEach(grades.filter { $0.isActive }) { grade in
-                    Text(grade.name).tag(Optional(grade.id))
+        ScrollView {
+            VStack(spacing: 14) {
+                setupCard(title: "Session Setup", systemImage: "sportscourt") {
+                    HStack(spacing: 12) {
+                        rowLabel("Grade")
+                        Spacer()
+                        Menu {
+                            Button("Select…") { selectedGradeId = nil }
+                            ForEach(grades.filter { $0.isActive }) { grade in
+                                Button(grade.name) {
+                                    selectedGradeId = grade.id
+                                }
+                            }
+                        } label: {
+                            setupMenuLabel(title: selectedGradeName ?? "Select…")
+                        }
+                    }
+
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                        .font(.body)
+
+                    HStack(spacing: 12) {
+                        rowLabel("Opponent")
+                        Spacer()
+                        Menu {
+                            Button("Select…") {
+                                opposition = ""
+                                if !venueOptions.contains(venue) {
+                                    venue = ""
+                                }
+                            }
+                            ForEach(oppositionNames, id: \.self) { name in
+                                Button(name) {
+                                    opposition = name
+                                    if !venueOptions.contains(venue) {
+                                        venue = ""
+                                    }
+                                }
+                            }
+                        } label: {
+                            setupMenuLabel(title: opposition.isEmpty ? "Select…" : opposition)
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        rowLabel("Venue")
+                        Spacer()
+                        Menu {
+                            Button("Select…") { venue = "" }
+                            ForEach(venueOptions, id: \.self) { name in
+                                Button(name) {
+                                    venue = name
+                                }
+                            }
+                        } label: {
+                            setupMenuLabel(title: venue.isEmpty ? "Select…" : venue)
+                        }
+                        .disabled(venueOptions.isEmpty)
+                    }
                 }
             }
-
-            TextField("Opposition", text: $opposition)
-            DatePicker("Date", selection: $date, displayedComponents: .date)
-            TextField("Venue", text: $venue)
-
-            Button("Start Session") {
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .background(Color(.systemGroupedBackground))
+        .safeAreaInset(edge: .bottom) {
+            Button {
                 startSession()
+            } label: {
+                Text("Start Session")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
             }
+            .buttonStyle(.plain)
+            .background(canStart ? Color.accentColor : Color.gray.opacity(0.45))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
             .disabled(!canStart)
         }
         .navigationTitle("New Stats Session")
+        .onAppear {
+            clubConfiguration = ClubConfigurationStore.load()
+        }
         .navigationDestination(isPresented: $showLiveStats) {
             if let createdSession {
                 LiveStatsView(session: createdSession)
@@ -605,6 +676,63 @@ struct StatsSessionSetupView: View {
 
     private var canStart: Bool {
         selectedGradeId != nil && !opposition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var selectedGradeName: String? {
+        grades.first(where: { $0.id == selectedGradeId })?.name
+    }
+
+    private var oppositionNames: [String] {
+        clubConfiguration.sortedOppositions.map(\.name)
+    }
+
+    private var selectedOpposition: OppositionTeamProfile? {
+        clubConfiguration.sortedOppositions.first(where: { $0.name == opposition })
+    }
+
+    private var venueOptions: [String] {
+        let combined = clubConfiguration.clubTeam.sanitizedVenues + (selectedOpposition?.sanitizedVenues ?? [])
+        return Array(Set(combined)).sorted()
+    }
+
+    private func rowLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.primary)
+    }
+
+    private func setupMenuLabel(title: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.body)
+                .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption2.weight(.semibold))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func setupCard<Content: View>(
+        title: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
     }
 
     private func startSession() {
