@@ -1739,29 +1739,6 @@ private struct GroupsSettingsView: View {
             )
             .appPopupStyle()
         }
-        .sheet(item: $sectionEditing) { selection in
-            GroupSectionEditorSheet(
-                title: displayTitle(for: selection.sectionKey, fallback: selection.fallbackTitle),
-                contacts: contacts,
-                selectedContactIDs: Set(
-                    sectionMemberships
-                        .filter { $0.sectionKey == selection.sectionKey }
-                        .map(\.contactID)
-                ),
-                onToggleContact: { contactID, isSelected in
-                    if isSelected {
-                        assignContact(contactID, toSection: selection.sectionKey)
-                    } else {
-                        removeContact(contactID, fromSection: selection.sectionKey)
-                    }
-                    saveContext()
-                },
-                onEditContact: { contact in
-                    contactEditing = contact
-                }
-            )
-            .appPopupStyle()
-        }
         .sheet(isPresented: $isManagingGroups) {
             GroupManagerSheet(initialGroups: manageableGroups) { drafts in
                 applyGroupDrafts(drafts)
@@ -1908,21 +1885,36 @@ private struct GroupsSettingsView: View {
         Section {
             let members = contactsForSection(sectionKey)
 
-            Button {
-                sectionEditing = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
-            } label: {
-                HStack {
-                    if members.isEmpty {
-                        Text("No contacts added.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(members.map(\.name).joined(separator: ", "))
-                            .lineLimit(2)
-                            .foregroundStyle(.secondary)
+            if members.isEmpty {
+                Text("No contacts added.")
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(members) { contact in
+                HStack(spacing: 8) {
+                    StandardListIcon(systemName: "person.crop.circle.badge.checkmark")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(contact.name)
+                            .font(.headline)
                     }
-                    Spacer()
-                    Text("Edit")
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    contactEditing = contact
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        removeContact(contact.id, fromSection: sectionKey)
+                    } label: {
+                        Label("Remove", systemImage: "minus.circle")
+                    }
+                }
+            }
+
+            Button {
+                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
+            } label: {
+                Label("Add Contact", systemImage: "plus")
             }
         } header: {
             HStack {
@@ -1938,8 +1930,19 @@ private struct GroupsSettingsView: View {
                     .font(.title3)
                     .fontWeight(.semibold)
                 Spacer()
-                Button("Edit") {
-                    sectionEditing = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
+                NavigationLink {
+                    SectionGroupContactsView(
+                        title: displayTitle(for: sectionKey, fallback: fallbackTitle),
+                        contacts: contacts,
+                        initiallySelectedContactIDs: Set(contactsForSection(sectionKey).map(\.id)),
+                        onSave: { selectedIDs in
+                            syncMembers(for: sectionKey, selectedIDs: selectedIDs)
+                        }
+                    )
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -2115,74 +2118,103 @@ private struct GroupSectionSelection: Identifiable {
     var id: String { sectionKey }
 }
 
-private struct GroupSectionEditorSheet: View {
+private struct SectionGroupContactsView: View {
     @Environment(\.dismiss) private var dismiss
 
     let title: String
     let contacts: [Contact]
-    let selectedContactIDs: Set<UUID>
-    let onToggleContact: (UUID, Bool) -> Void
-    let onEditContact: (Contact) -> Void
+    let initiallySelectedContactIDs: Set<UUID>
+    let onSave: (Set<UUID>) -> Void
+
+    @State private var selectedContactIDs: Set<UUID>
+    @State private var showUnsavedWarning = false
+
+    init(
+        title: String,
+        contacts: [Contact],
+        initiallySelectedContactIDs: Set<UUID>,
+        onSave: @escaping (Set<UUID>) -> Void
+    ) {
+        self.title = title
+        self.contacts = contacts
+        self.initiallySelectedContactIDs = initiallySelectedContactIDs
+        self.onSave = onSave
+        _selectedContactIDs = State(initialValue: initiallySelectedContactIDs)
+    }
+
+    private var hasUnsavedChanges: Bool {
+        selectedContactIDs != initiallySelectedContactIDs
+    }
 
     var body: some View {
-        NavigationStack {
-            List {
-                if contacts.isEmpty {
-                    Text("No contacts available. Add contacts in Settings > Contacts.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(contacts) { contact in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(contact.name)
-                                    .font(.headline)
-                                if !contact.mobile.isEmpty {
-                                    Text(contact.mobile)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                } else if !contact.email.isEmpty {
-                                    Text(contact.email)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+        List {
+            if contacts.isEmpty {
+                Text("No contacts available.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(contacts) { contact in
+                    Button {
+                        toggleSelection(for: contact.id)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(contact.name)
+                                .foregroundStyle(.primary)
                             Spacer()
-                            Button {
-                                let isSelected = selectedContactIDs.contains(contact.id)
-                                onToggleContact(contact.id, !isSelected)
-                            } label: {
-                                Image(systemName: selectedContactIDs.contains(contact.id) ? "checkmark.circle.fill" : "circle")
-                                    .imageScale(.large)
+                            if selectedContactIDs.contains(contact.id) {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.blue)
+                                    .fontWeight(.semibold)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(
-                                selectedContactIDs.contains(contact.id)
-                                    ? "Remove \(contact.name) from \(title)"
-                                    : "Add \(contact.name) to \(title)"
-                            )
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            let isSelected = selectedContactIDs.contains(contact.id)
-                            onToggleContact(contact.id, !isSelected)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button {
-                                onEditContact(contact)
-                            } label: {
-                                Label("Edit Contact", systemImage: "pencil")
-                            }
-                            .tint(.blue)
                         }
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+        }
+        .navigationTitle(title)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    attemptBack()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.headline.weight(.semibold))
                 }
+                .accessibilityLabel("Back")
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Save") {
+                    onSave(selectedContactIDs)
+                    dismiss()
+                }
+                .saveButtonBehavior(isEnabled: hasUnsavedChanges)
+                .disabled(!hasUnsavedChanges)
+            }
+        }
+        .alert("Unsaved Changes", isPresented: $showUnsavedWarning) {
+            Button("Keep Editing", role: .cancel) {}
+            Button("Discard Changes", role: .destructive) {
+                dismiss()
+            }
+        } message: {
+            Text("You have unsaved changes. Are you sure you want to go back?")
+        }
+    }
+
+    private func toggleSelection(for contactID: UUID) {
+        if selectedContactIDs.contains(contactID) {
+            selectedContactIDs.remove(contactID)
+        } else {
+            selectedContactIDs.insert(contactID)
+        }
+    }
+
+    private func attemptBack() {
+        if hasUnsavedChanges {
+            showUnsavedWarning = true
+        } else {
+            dismiss()
         }
     }
 }
