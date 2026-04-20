@@ -1923,7 +1923,7 @@ private struct GroupsSettingsView: View {
             }
 
             Button {
-                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: <#String#>)
+                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
             } label: {
                 Label("Add Contact", systemImage: "plus")
             }
@@ -1975,7 +1975,7 @@ private struct GroupsSettingsView: View {
             Divider()
 
             Button {
-                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: <#String#>)
+                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
             } label: {
                 Label("Add Contact", systemImage: "plus")
             }
