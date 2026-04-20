@@ -1153,7 +1153,7 @@ struct LiveStatsView: View {
 
     private var recentEventsPanel: some View {
         let recent = Array(sessionEvents.prefix(8))
-        VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
             Text("Recent Events")
                 .font(.title3.bold())
 
