@@ -3677,42 +3677,57 @@ struct NewGameWizardView: View {
             height: CGFloat,
             width: CGFloat
         ) -> some View {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    statTally(title: "Clearances", value: clearances)
-                    Spacer()
-                    statTally(title: "Inside 50s", value: inside50s)
-                }
-
-                HStack(spacing: 10) {
-                    prominentActionButton(
-                        title: "Clearance",
-                        background: style.background,
-                        textColor: style.text,
-                        action: clearanceAction
-                    )
-                    prominentActionButton(
-                        title: "Inside 50",
-                        background: style.background,
-                        textColor: style.text,
-                        action: inside50Action
-                    )
-                }
+            HStack(alignment: .top, spacing: 12) {
+                statControlColumn(
+                    title: "Clearances",
+                    value: clearances,
+                    buttonTitle: "Clearance",
+                    style: style,
+                    action: clearanceAction
+                )
+                statControlColumn(
+                    title: "Inside 50s",
+                    value: inside50s,
+                    buttonTitle: "Inside 50",
+                    style: style,
+                    action: inside50Action
+                )
             }
             .padding(18)
-            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
+            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .top)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
         private func statTally(title: String, value: Int) -> some View {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .center, spacing: 2) {
                 Text(title)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Text("\(value)")
-                    .font(.system(size: 46, weight: .bold, design: .rounded))
+                    .font(.system(size: 52, weight: .bold, design: .rounded))
                     .monospacedDigit()
             }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+
+        private func statControlColumn(
+            title: String,
+            value: Int,
+            buttonTitle: String,
+            style: ClubStyle.Style,
+            action: @escaping () -> Void
+        ) -> some View {
+            VStack(spacing: 12) {
+                statTally(title: title, value: value)
+                Spacer(minLength: 0)
+                prominentActionButton(
+                    title: buttonTitle,
+                    background: style.background,
+                    textColor: style.text,
+                    action: action
+                )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
 
         private struct StepAdjuster: View {
@@ -4015,12 +4030,43 @@ struct NewGameWizardView: View {
                     .monospacedDigit()
 
                 HStack(spacing: 12) {
-                    Stepper("Goals: \(goals.wrappedValue)", value: goals, in: 0...200)
-                    Stepper("Points: \(behinds.wrappedValue)", value: behinds, in: 0...200)
+                    compactScoreAdjuster(value: goals, label: "Goals")
+                    compactScoreAdjuster(value: behinds, label: "Points")
                 }
-                .labelsHidden()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private func compactScoreAdjuster(value: Binding<Int>, label: String) -> some View {
+            HStack(spacing: 0) {
+                Button {
+                    value.wrappedValue = max(0, value.wrappedValue - 1)
+                } label: {
+                    Image(systemName: "minus")
+                        .font(.title3.weight(.bold))
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                }
+                .disabled(value.wrappedValue == 0)
+
+                Divider()
+                    .frame(height: 24)
+
+                Button {
+                    value.wrappedValue += 1
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title3.weight(.bold))
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(label)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.secondary.opacity(0.24))
+            )
+            .frame(maxWidth: .infinity)
         }
 
         private func teamActionSection(
