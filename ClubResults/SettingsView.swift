@@ -1989,9 +1989,22 @@ private struct GroupsSettingsView: View {
     private func saveContext() {
         do {
             try dataContext.save()
-            SettingsBackupStore.saveContacts(contacts)
+            reloadContacts()
         } catch {
             saveErrorMessage = error.localizedDescription
+            let backups = SettingsBackupStore.loadContacts()
+            contacts = backups
+                .map {
+                    Contact(
+                        id: $0.id,
+                        name: $0.name,
+                        mobile: $0.mobile,
+                        email: $0.email
+                    )
+                }
+                .sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
         }
     }
 
@@ -2009,7 +2022,47 @@ private struct GroupsSettingsView: View {
     private func reloadContacts() {
         do {
             let descriptor = FetchDescriptor<Contact>(sortBy: [SortDescriptor(\Contact.name)])
-            contacts = try dataContext.fetch(descriptor)
+            let fetched = try dataContext.fetch(descriptor)
+
+            if fetched.isEmpty {
+                let backups = SettingsBackupStore.loadContacts()
+                if !backups.isEmpty {
+                    contacts = backups
+                        .map {
+                            Contact(
+                                id: $0.id,
+                                name: $0.name,
+                                mobile: $0.mobile,
+                                email: $0.email
+                            )
+                        }
+                        .sorted {
+                            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                        }
+
+                    for item in backups {
+                        dataContext.insert(
+                            Contact(
+                                id: item.id,
+                                name: item.name,
+                                mobile: item.mobile,
+                                email: item.email
+                            )
+                        )
+                    }
+
+                    try? dataContext.save()
+
+                    let afterRestore = (try? dataContext.fetch(descriptor)) ?? []
+                    if !afterRestore.isEmpty {
+                        contacts = afterRestore
+                    }
+                    return
+                }
+            }
+
+            contacts = fetched
+            SettingsBackupStore.saveContacts(contacts)
         } catch {
             saveErrorMessage = error.localizedDescription
         }
