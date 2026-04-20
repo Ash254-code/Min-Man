@@ -16,6 +16,10 @@ struct TabsView: View {
                 .tag(AppTab.totals)
                 .tabItem { Label("Totals", systemImage: "chart.bar") }
 
+            StatsRootView()
+                .tag(AppTab.stats)
+                .tabItem { Label("Stats", systemImage: "waveform.circle") }
+
             PresView()
                 .tag(AppTab.pres)
                 .tabItem { Label("Pres", systemImage: "rectangle.stack") }
@@ -65,6 +69,7 @@ struct TabsView: View {
 private enum AppTab: Hashable {
     case games
     case totals
+    case stats
     case pres
     case reports
     case settings
