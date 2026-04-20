@@ -813,6 +813,7 @@ struct LiveStatsView: View {
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
             VStack(spacing: 8) {
                 combinedScoreAndActionsPanel
+                    .padding(.bottom, 8)
 
                 HStack(spacing: 10) {
                     VStack(spacing: 10) {
@@ -854,8 +855,7 @@ struct LiveStatsView: View {
         .sheet(isPresented: $showTotals) {
             StatsTotalsView(
                 rows: totalsRows,
-                statTypes: enabledStatTypes,
-                efficiencyForPlayer: efficiencyPercentage(for:)
+                statTypes: enabledStatTypes
             )
         }
         .sheet(item: $reportPreviewDocument) { document in
@@ -987,17 +987,13 @@ struct LiveStatsView: View {
     }
 
     private var combinedScoreAndActionsPanel: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             combinedTeamPanel(
                 teamName: ourTeamName,
                 scoreText: "\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))",
                 style: ourStyle,
                 isOpposition: false
             )
-
-            Divider()
-                .padding(.vertical, 10)
-
             combinedTeamPanel(
                 teamName: session.opposition,
                 scoreText: "0.0 (0)",
@@ -1005,9 +1001,8 @@ struct LiveStatsView: View {
                 isOpposition: true
             )
         }
-        .padding(.vertical, 6)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 140)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, minHeight: 170, maxHeight: 170)
     }
 
     private func combinedTeamPanel(
@@ -1016,23 +1011,15 @@ struct LiveStatsView: View {
         style: ClubStyle.Style,
         isOpposition: Bool
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                if isOpposition {
-                    Text(scoreText)
-                        .font(.title2.weight(.black))
-                        .monospacedDigit()
-                    ScorePill(teamName, style: style)
-                        .font(.title3.weight(.bold))
-                } else {
-                    ScorePill(teamName, style: style)
-                        .font(.title3.weight(.bold))
-                    Text(scoreText)
-                        .font(.title2.weight(.black))
-                        .monospacedDigit()
-                }
-                Spacer(minLength: 0)
+                ScorePill(teamName, style: style)
+                    .font(.title3.weight(.bold))
+                Text(scoreText)
+                    .font(.title2.weight(.black))
+                    .monospacedDigit()
             }
+            .frame(maxWidth: .infinity, alignment: .center)
 
             HStack(spacing: 8) {
                 teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
@@ -1043,6 +1030,7 @@ struct LiveStatsView: View {
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var quarterPicker: some View {
@@ -1072,6 +1060,9 @@ struct LiveStatsView: View {
         let ringColors = playerNumberRingColors
         return VStack(spacing: 4) {
             ZStack {
+                Circle()
+                    .fill(ringColors.stroke)
+                    .frame(width: 38, height: 38)
                 Circle()
                     .strokeBorder(ringColors.stroke, lineWidth: 2)
                     .frame(width: 38, height: 38)
@@ -1127,7 +1118,7 @@ struct LiveStatsView: View {
                         } label: {
                             playerCardContent(player: player)
                                 .frame(maxWidth: .infinity, minHeight: cellHeight)
-                                .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                                .background(selectedPlayerId == player.id ? Color.blue.opacity(0.5) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
                     }
@@ -1399,19 +1390,6 @@ struct LiveStatsView: View {
             }
             return TotalsRow(player: player, countsByStatId: counts)
         }
-    }
-
-    private func efficiencyPercentage(for playerID: UUID) -> Int {
-        let relevantEvents = sessionEvents.filter { event in
-            guard event.playerId == playerID else { return false }
-            let name = statName(for: event.statTypeId).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return name == "kick" || name == "handball"
-        }
-        let up = relevantEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsUp.rawValue }.count
-        let down = relevantEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsDown.rawValue }.count
-        let total = up + down
-        guard total > 0 else { return 0 }
-        return Int((Double(up) / Double(total) * 100).rounded())
     }
 
     private var playerStatTypes: [StatType] {
@@ -2096,34 +2074,73 @@ private struct StatsTotalsView: View {
     @Environment(\.dismiss) private var dismiss
     let rows: [TotalsRow]
     let statTypes: [StatType]
-    let efficiencyForPlayer: (UUID) -> Int
+
+    private struct TotalsSummaryRow: Identifiable {
+        let id: UUID
+        let playerLabel: String
+        let kicks: Int
+        let handballs: Int
+        let possessions: Int
+        let marks: Int
+        let tackles: Int
+        let goals: Int
+        let behinds: Int
+    }
+
+    private var summaryRows: [TotalsSummaryRow] {
+        rows.map { row in
+            let kicks = count(for: "kick", in: row)
+            let handballs = count(for: "handball", in: row)
+            let possessions = kicks + handballs
+            return TotalsSummaryRow(
+                id: row.id,
+                playerLabel: row.player.number.map { "\($0) \(row.player.name)" } ?? row.player.name,
+                kicks: kicks,
+                handballs: handballs,
+                possessions: possessions,
+                marks: count(for: "mark", in: row),
+                tackles: count(for: "tackle", in: row),
+                goals: count(for: "goal", in: row),
+                behinds: count(for: "behind", in: row)
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.possessions != rhs.possessions { return lhs.possessions > rhs.possessions }
+            return lhs.playerLabel < rhs.playerLabel
+        }
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView([.horizontal, .vertical]) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 0) {
-                        cell("Player", width: 200, bold: true)
-                        ForEach(statTypes) { stat in
-                            cell(stat.name, width: 92, bold: true)
-                        }
-                        cell("Efficiency", width: 110, bold: true)
-                    }
-
-                    ForEach(rows) { row in
-                        HStack(spacing: 0) {
-                            cell(row.player.number.map { "\($0) \(row.player.name)" } ?? row.player.name, width: 200)
-                            ForEach(statTypes) { stat in
-                                cell("\(row.countsByStatId[stat.id, default: 0])", width: 92)
+            List {
+                Section {
+                    ForEach(Array(summaryRows.enumerated()), id: \.element.id) { index, row in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("\(index + 1). \(row.playerLabel)")
+                                    .font(.headline)
+                                Spacer()
+                                Text("\(row.possessions)")
+                                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
                             }
-                            cell("\(efficiencyForPlayer(row.player.id))%", width: 110)
+
+                            HStack(spacing: 14) {
+                                compactValue(title: "Kicks", value: row.kicks)
+                                compactValue(title: "Handballs", value: row.handballs)
+                                compactValue(title: "Marks", value: row.marks)
+                                compactValue(title: "Tackles", value: row.tackles)
+                                compactValue(title: "G/B", value: "\(row.goals)/\(row.behinds)")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         }
+                        .padding(.vertical, 4)
                     }
                 }
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .padding()
             }
-            .navigationTitle("Stats So Far")
+            .listStyle(.plain)
+            .navigationTitle("Totals")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -2132,18 +2149,17 @@ private struct StatsTotalsView: View {
         }
     }
 
-    private func cell(_ text: String, width: CGFloat, bold: Bool = false) -> some View {
-        Text(text)
-            .font(bold ? .headline : .body)
-            .lineLimit(1)
-            .frame(width: width, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-            .overlay(alignment: .bottom) {
-                Divider()
-            }
-            .overlay(alignment: .trailing) {
-                Divider()
-            }
+    private func count(for statName: String, in row: TotalsRow) -> Int {
+        statTypes.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == statName }).map {
+            row.countsByStatId[$0.id, default: 0]
+        } ?? 0
+    }
+
+    private func compactValue(title: String, value: Int) -> some View {
+        Text("\(title): \(value)")
+    }
+
+    private func compactValue(title: String, value: String) -> some View {
+        Text("\(title): \(value)")
     }
 }
