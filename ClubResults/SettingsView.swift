@@ -2475,7 +2475,7 @@ struct ReportsSettingsView: View {
     @State private var draggingTranslation: CGSize = .zero
     @State private var draggingStartIndex: Int?
     @State private var draggingLastTargetIndex: Int?
-    @State private var isWobbleActive = false
+    @State private var wobblePhase = false
     @AppStorage("reports.templateOrder.v1") private var templateOrderData = ""
     var onOpenContactsSettings: (() -> Void)? = nil
 
@@ -2556,25 +2556,26 @@ struct ReportsSettingsView: View {
             .padding(.vertical)
         }
         .navigationTitle("Reports")
-        .toolbar {
+        .overlay(alignment: .topTrailing) {
             if isMoveModeEnabled {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        finishMoveModeAndSave()
-                    }
+                Button("Done") {
+                    finishMoveModeAndSave()
                 }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 8)
+                .padding(.trailing, 16)
             }
         }
         .onAppear {
             syncTemplateOrderWithCurrentTemplates()
-            isWobbleActive = isMoveModeEnabled
+            updateWobbleState(for: isMoveModeEnabled)
         }
         .onChange(of: templates.map(\.id)) { _, _ in
             syncTemplateOrderWithCurrentTemplates()
             syncMoveDraftWithCurrentTemplates()
         }
         .onChange(of: isMoveModeEnabled) { _, newValue in
-            isWobbleActive = newValue
+            updateWobbleState(for: newValue)
         }
         .confirmationDialog("Report actions", isPresented: Binding(
             get: { templateActioning != nil },
@@ -2834,15 +2835,10 @@ struct ReportsSettingsView: View {
             templateActioning = template
         }
         .scaleEffect(draggingTemplateID == template.id ? 1.08 : (isMoveModeEnabled ? 1.02 : 1))
-        .rotationEffect(.degrees(isMoveModeEnabled ? (wobbleDirection * 3.2) : 0))
+        .rotationEffect(.degrees(isMoveModeEnabled ? (wobbleDirection * (wobblePhase ? 3.2 : -3.2)) : 0))
         .offset(draggingTemplateID == template.id ? draggingTranslation : .zero)
         .shadow(color: .black.opacity(draggingTemplateID == template.id ? 0.2 : 0), radius: 12, y: 8)
-        .animation(
-            isMoveModeEnabled
-            ? .easeInOut(duration: 0.1).repeatForever(autoreverses: true)
-            : .default,
-            value: isWobbleActive
-        )
+        .animation(.easeInOut(duration: 0.12), value: wobblePhase)
         .frame(maxWidth: .infinity)
         .frame(height: templateTileHeight)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -2924,6 +2920,17 @@ struct ReportsSettingsView: View {
         draggingTranslation = .zero
         draggingStartIndex = nil
         draggingLastTargetIndex = nil
+    }
+
+    private func updateWobbleState(for isEnabled: Bool) {
+        if isEnabled {
+            wobblePhase = false
+            withAnimation(.easeInOut(duration: 0.12).repeatForever(autoreverses: true)) {
+                wobblePhase = true
+            }
+        } else {
+            wobblePhase = false
+        }
     }
 
     private func activeTemplateOrderIDs() -> [UUID] {
