@@ -372,6 +372,11 @@ struct LiveStatsView: View {
                 ShareSheet(items: [shareURL])
             }
         }
+        .onDisappear {
+            if speechService.isRecording {
+                _ = speechService.stopListening()
+            }
+        }
     }
 
     private var playersForGrade: [Player] {
@@ -431,26 +436,25 @@ struct LiveStatsView: View {
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             }
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.1)
-                    .onEnded { _ in
-                        speechService.startListening(vocabulary: speechVocabulary)
-                    }
-            )
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onEnded { _ in
-                        if speechService.isRecording {
-                            let transcript = speechService.stopListening()
-                            handleVoiceTranscript(transcript)
-                        }
-                    }
-            )
+            .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
+                if isPressing {
+                    speechService.startListening(vocabulary: speechVocabulary)
+                } else if speechService.isRecording {
+                    let transcript = speechService.stopListening()
+                    handleVoiceTranscript(transcript)
+                }
+            }, perform: {})
 
             if !speechService.liveTranscript.isEmpty {
                 Text("Heard: \(speechService.liveTranscript)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+            }
+
+            if let lastError = speechService.lastErrorMessage {
+                Text(lastError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
         }
     }

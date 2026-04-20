@@ -381,45 +381,18 @@ struct StatsVoiceParser {
 final class PressHoldSpeechService: ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var liveTranscript = ""
+    @Published private(set) var lastErrorMessage: String?
 
     private var recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en_AU"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    private var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
 
     func startListening(vocabulary: [String]) {
         guard !isRecording else { return }
-
-        SFSpeechRecognizer.requestAuthorization { _ in }
-        task?.cancel()
-        task = nil
-
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        request.requiresOnDeviceRecognition = recognizer?.supportsOnDeviceRecognition == true
-        request.contextualStrings = vocabulary
-
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.request?.append(buffer)
-        }
-
-        audioEngine.prepare()
-        do {
-            try audioEngine.start()
-            isRecording = true
-            liveTranscript = ""
-            self.request = request
-            task = recognizer?.recognitionTask(with: request) { [weak self] result, _ in
-                guard let self else { return }
-                if let result {
-                    self.liveTranscript = result.bestTranscription.formattedString
-                }
-            }
-        } catch {
-            stopListeningInternal()
+        Task { [weak self] in
+            await self?.startListeningAsync(vocabulary: vocabulary)
         }
     }
 
@@ -434,11 +407,88 @@ final class PressHoldSpeechService: ObservableObject {
             audioEngine.stop()
             audioEngine.inputNode.removeTap(onBus: 0)
         }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         request?.endAudio()
         task?.cancel()
         task = nil
         request = nil
         isRecording = false
+    }
+
+    private func startListeningAsync(vocabulary: [String]) async {
+        guard !isRecording else { return }
+        lastErrorMessage = nil
+
+        do {
+            let status = try await ensureSpeechAuthorization()
+            guard status == .authorized else {
+                lastErrorMessage = "Speech permission not granted"
+                return
+            }
+        } catch {
+            lastErrorMessage = "Speech permission failed"
+            return
+        }
+
+        guard recognizer != nil else {
+            lastErrorMessage = "Speech recognizer unavailable"
+            return
+        }
+
+        task?.cancel()
+        task = nil
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        if recognizer?.supportsOnDeviceRecognition == true {
+            request.requiresOnDeviceRecognition = true
+        }
+        request.contextualStrings = Array(vocabulary.prefix(200))
+
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+            let inputNode = audioEngine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            inputNode.removeTap(onBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+                self?.request?.append(buffer)
+            }
+
+            audioEngine.prepare()
+            try audioEngine.start()
+
+            isRecording = true
+            liveTranscript = ""
+            self.request = request
+            task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
+                guard let self else { return }
+                if let result {
+                    self.liveTranscript = result.bestTranscription.formattedString
+                }
+                if error != nil {
+                    self.stopListeningInternal()
+                }
+            }
+        } catch {
+            lastErrorMessage = "Could not start microphone"
+            stopListeningInternal()
+        }
+    }
+
+    private func ensureSpeechAuthorization() async throws -> SFSpeechRecognizerAuthorizationStatus {
+        if authorizationStatus == .authorized { return .authorized }
+        if authorizationStatus == .denied || authorizationStatus == .restricted { return authorizationStatus }
+
+        let status = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
+        authorizationStatus = status
+        return status
     }
 }
 
