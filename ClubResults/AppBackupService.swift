@@ -336,7 +336,7 @@ struct GradeRecord: Codable {
         asksLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .asksLiveGameView) ?? true
         asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
         bestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) ?? 6
-        guestBestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? bestPlayersCount
+        guestBestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? 3
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? false
         quarterLengthMinutes = try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20
