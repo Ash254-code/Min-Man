@@ -3241,14 +3241,12 @@ struct NewGameWizardView: View {
                 GeometryReader { proxy in
                         let compact = proxy.size.width < 980
                         let cardSpacing: CGFloat = compact ? 14 : 18
-                        let teamCardWidth = max(300, proxy.size.width * 0.35)
-                        let timerWidth = max(280, proxy.size.width * 0.22)
+                        let availableWidth = proxy.size.width
+                        let teamCardWidth = max(280, min(availableWidth * 0.35, (availableWidth - (cardSpacing * 2) - 300) / 2))
+                        let timerWidth = max(260, availableWidth - (teamCardWidth * 2) - (cardSpacing * 2))
                         let sharedCardHeight = max(368, proxy.size.height * 0.46)
                         let secondaryRowCardHeight: CGFloat = 250
-                        let centerCardTopOffset: CGFloat = 16
-                        let sideCardTopOffset: CGFloat = 8
-                        let centerTimerHeight = max(300, sharedCardHeight + sideCardTopOffset - centerCardTopOffset)
-                        let scoreWormWidth = (teamCardWidth * 2) + timerWidth + (cardSpacing * 2)
+                        let scoreWormWidth = availableWidth
 
                         ScrollView {
                             VStack(spacing: cardSpacing) {
@@ -3269,10 +3267,10 @@ struct NewGameWizardView: View {
                                         inside50s: liveSession.ourInside50s,
                                         clearanceAction: { liveSession.ourClearances += 1 },
                                         inside50Action: { liveSession.ourInside50s += 1 },
-                                        minHeight: secondaryRowCardHeight,
+                                        height: secondaryRowCardHeight,
                                         width: proxy.size.width
                                     )
-                                    timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
+                                    timerCard(height: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
                                     goalKickerSummaryCard(width: proxy.size.width, height: secondaryRowCardHeight)
                                     teamScoreCard(
                                         title: oppTeamName,
@@ -3290,7 +3288,7 @@ struct NewGameWizardView: View {
                                         inside50s: liveSession.theirInside50s,
                                         clearanceAction: { liveSession.theirClearances += 1 },
                                         inside50Action: { liveSession.theirInside50s += 1 },
-                                        minHeight: secondaryRowCardHeight,
+                                        height: secondaryRowCardHeight,
                                         width: proxy.size.width
                                     )
                                     scoreWormCard(width: proxy.size.width)
@@ -3314,19 +3312,17 @@ struct NewGameWizardView: View {
                                                     inside50s: liveSession.ourInside50s,
                                                     clearanceAction: { liveSession.ourClearances += 1 },
                                                     inside50Action: { liveSession.ourInside50s += 1 },
-                                                    minHeight: secondaryRowCardHeight,
+                                                    height: secondaryRowCardHeight,
                                                     width: teamCardWidth
                                                 )
                                             }
                                             .frame(width: teamCardWidth, alignment: .topLeading)
-                                            .padding(.top, sideCardTopOffset)
 
                                             VStack(spacing: cardSpacing) {
-                                                timerCard(minHeight: centerTimerHeight, width: timerWidth)
+                                                timerCard(height: sharedCardHeight, width: timerWidth)
                                                 goalKickerSummaryCard(width: timerWidth, height: secondaryRowCardHeight)
                                             }
                                             .frame(width: timerWidth, alignment: .top)
-                                            .padding(.top, centerCardTopOffset)
 
                                             VStack(spacing: cardSpacing) {
                                                 teamScoreCard(
@@ -3345,12 +3341,11 @@ struct NewGameWizardView: View {
                                                     inside50s: liveSession.theirInside50s,
                                                     clearanceAction: { liveSession.theirClearances += 1 },
                                                     inside50Action: { liveSession.theirInside50s += 1 },
-                                                    minHeight: secondaryRowCardHeight,
+                                                    height: secondaryRowCardHeight,
                                                     width: teamCardWidth
                                                 )
                                             }
                                             .frame(width: teamCardWidth, alignment: .topTrailing)
-                                            .padding(.top, sideCardTopOffset)
                                         }
                                         scoreWormCard(width: scoreWormWidth)
                                             .padding(.top, cardSpacing)
@@ -3501,7 +3496,7 @@ struct NewGameWizardView: View {
                 .accessibilityLabel("Swipe down to hide live game view")
         }
 
-        private func timerCard(minHeight: CGFloat, width: CGFloat) -> some View {
+        private func timerCard(height: CGFloat, width: CGFloat) -> some View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     Text("Timer")
@@ -3578,7 +3573,7 @@ struct NewGameWizardView: View {
                 periodScoresSection
             }
             .padding(18)
-            .frame(maxWidth: width, minHeight: minHeight, alignment: .topLeading)
+            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
@@ -3679,7 +3674,7 @@ struct NewGameWizardView: View {
             inside50s: Int,
             clearanceAction: @escaping () -> Void,
             inside50Action: @escaping () -> Void,
-            minHeight: CGFloat,
+            height: CGFloat,
             width: CGFloat
         ) -> some View {
             VStack(alignment: .leading, spacing: 12) {
@@ -3705,7 +3700,7 @@ struct NewGameWizardView: View {
                 }
             }
             .padding(18)
-            .frame(maxWidth: width, minHeight: minHeight, alignment: .topLeading)
+            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
