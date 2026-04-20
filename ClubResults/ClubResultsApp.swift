@@ -75,7 +75,10 @@ struct ClubResultsApp: App {
             ContactGroupMembership.self,
             ReportRecipientGroup.self,
             StaffMember.self,   // ✅ Staff list for pickers
-            StaffDefault.self   // ✅ Default per grade + role
+            StaffDefault.self,   // ✅ Default per grade + role
+            StatType.self,
+            StatsSession.self,
+            StatEvent.self
         ])
     }
 }

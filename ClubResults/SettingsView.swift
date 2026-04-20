@@ -29,6 +29,12 @@ struct SettingsView: View {
                     }
 
                     NavigationLink {
+                        StatsTypesSettingsView()
+                    } label: {
+                        settingsRow(title: "Stats", icon: "chart.xyaxis.line")
+                    }
+
+                    NavigationLink {
                         UmpiresSettingsView()
                     } label: {
                         settingsRow(title: "Umpires", icon: "flag.pattern.checkered")
@@ -89,6 +95,7 @@ struct SettingsView: View {
             }
             .task {
                 seedInitialGradesIfNeeded()
+                seedDefaultStatTypesIfNeeded()
             }
             .onAppear {
                 guard shouldOpenContacts else { return }
@@ -139,6 +146,20 @@ struct SettingsView: View {
 
         for (index, name) in defaults.enumerated() {
             dataContext.insert(Grade(name: name, isActive: true, displayOrder: index))
+        }
+
+        do {
+            try dataContext.save()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+    private func seedDefaultStatTypesIfNeeded() {
+        let existing = (try? dataContext.fetch(FetchDescriptor<StatType>())) ?? []
+        guard existing.isEmpty else { return }
+
+        for (index, name) in ["Kick", "Handball", "Mark", "Tackle", "Goal", "Behind"].enumerated() {
+            dataContext.insert(StatType(name: name, isEnabled: true, sortOrder: index))
         }
 
         do {
