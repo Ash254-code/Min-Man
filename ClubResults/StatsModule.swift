@@ -1186,9 +1186,14 @@ struct LiveStatsView: View {
         fallbackName: String? = nil
     ) -> some View {
         let statType = statType(named: name, fallbackName: fallbackName)
+        let appliesToSelectedPlayer = !isOpposition && isGoalOrBehindStat(named: name)
         return Button {
             guard let statType else { return }
-            addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition)
+            if appliesToSelectedPlayer {
+                addManualEvent(statTypeId: statType.id)
+            } else {
+                addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition)
+            }
         } label: {
             Text(title)
                 .font(.headline.weight(.bold))
@@ -1196,8 +1201,13 @@ struct LiveStatsView: View {
                 .frame(maxWidth: .infinity, minHeight: 52)
         }
         .buttonStyle(.borderedProminent)
-        .tint(style.background)
-        .disabled(statType == nil)
+        .tint(appliesToSelectedPlayer && selectedPlayerId == nil ? .gray : style.background)
+        .disabled(statType == nil || (appliesToSelectedPlayer && selectedPlayerId == nil))
+    }
+
+    private func isGoalOrBehindStat(named value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "goal" || normalized == "behind"
     }
 
     private var recentEventsPanel: some View {
