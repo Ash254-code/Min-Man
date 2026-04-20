@@ -1664,10 +1664,9 @@ private struct GroupsSettingsView: View {
     @Query(sort: [SortDescriptor(\Grade.displayOrder), SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query private var sectionMemberships: [ContactSectionMembership]
 
-    @State private var showAddContactsForSection = false
-    @State private var addSectionKey: String?
+    @State private var addContactsSection: GroupSectionSelection?
     @State private var contactEditing: Contact?
-    @State private var sectionEditingKey: String?
+    @State private var sectionEditing: GroupSectionSelection?
     @State private var isManagingGroups = false
     @State private var saveErrorMessage: String?
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
@@ -1703,27 +1702,23 @@ private struct GroupsSettingsView: View {
                 .accessibilityLabel("Manage Groups")
             }
         }
-        .sheet(isPresented: $showAddContactsForSection) {
+        .sheet(item: $addContactsSection) { selection in
             AddContactsToSectionSheet(
                 contacts: contacts,
                 assignedContactIDs: Set(
                     sectionMemberships
-                        .filter { $0.sectionKey == addSectionKey }
+                        .filter { $0.sectionKey == selection.sectionKey }
                         .map(\.contactID)
                 ),
                 onAddExisting: { selectedIDs in
-                    guard let sectionKey = addSectionKey else { return }
-                    selectedIDs.forEach { assignContact($0, toSection: sectionKey) }
+                    selectedIDs.forEach { assignContact($0, toSection: selection.sectionKey) }
                     saveContext()
-                    addSectionKey = nil
-                    showAddContactsForSection = false
+                    addContactsSection = nil
                 },
                 onAddNew: { name, mobile, email in
                     let contact = Contact(name: name, mobile: mobile, email: email)
                     dataContext.insert(contact)
-                    if let addSectionKey {
-                        assignContact(contact.id, toSection: addSectionKey)
-                    }
+                    assignContact(contact.id, toSection: selection.sectionKey)
                     saveContext()
                 }
             )
@@ -1745,18 +1740,12 @@ private struct GroupsSettingsView: View {
             )
             .appPopupStyle()
         }
-        .sheet(
-            isPresented: Binding(
-                get: { sectionEditingKey != nil },
-                set: { if !$0 { sectionEditingKey = nil } }
-            )
-        ) {
-            let sectionKey = sectionEditingKey ?? ""
+        .sheet(item: $sectionEditing) { selection in
             SectionGroupMembersSheet(
-                title: displayTitle(for: sectionKey, fallback: fallbackTitle(for: sectionKey)),
-                members: contactsForSection(sectionKey),
+                title: displayTitle(for: selection.sectionKey, fallback: selection.fallbackTitle),
+                members: contactsForSection(selection.sectionKey),
                 onRemoveContact: { contactID in
-                    removeContact(contactID, fromSection: sectionKey)
+                    removeContact(contactID, fromSection: selection.sectionKey)
                 }
             )
             .appPopupStyle()
@@ -1934,8 +1923,7 @@ private struct GroupsSettingsView: View {
             }
 
             Button {
-                addSectionKey = sectionKey
-                showAddContactsForSection = true
+                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
             } label: {
                 Label("Add Contact", systemImage: "plus")
             }
@@ -1954,7 +1942,7 @@ private struct GroupsSettingsView: View {
                     .fontWeight(.semibold)
                 Spacer()
                 Button("Edit") {
-                    sectionEditingKey = sectionKey
+                    sectionEditing = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
                 }
                 .font(.subheadline.weight(.semibold))
             }
@@ -1981,8 +1969,7 @@ private struct GroupsSettingsView: View {
             Divider()
 
             Button {
-                addSectionKey = sectionKey
-                showAddContactsForSection = true
+                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
             } label: {
                 Label("Add Contact", systemImage: "plus")
             }
@@ -2115,6 +2102,13 @@ private struct GroupsSettingsView: View {
             setCustomTitle(draft.name, for: draft.sectionKey, fallback: draft.fallbackTitle)
         }
     }
+}
+
+private struct GroupSectionSelection: Identifiable {
+    let sectionKey: String
+    let fallbackTitle: String
+
+    var id: String { sectionKey }
 }
 
 private struct SectionGroupMembersSheet: View {
