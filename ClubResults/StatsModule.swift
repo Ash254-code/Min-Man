@@ -666,7 +666,8 @@ struct LiveStatsView: View {
                             .frame(maxHeight: max(proxy.size.height * 0.36, 210))
                         recentEventsPanel
                     }
-                    .frame(width: max(proxy.size.width * 0.38, 360), maxHeight: .infinity, alignment: .top)
+                    .frame(width: max(proxy.size.width * 0.38, 360))
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
