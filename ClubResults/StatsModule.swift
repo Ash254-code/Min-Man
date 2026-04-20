@@ -1012,7 +1012,7 @@ struct LiveStatsView: View {
 
     private var possessionLeadersPanel: some View {
         let leaders = possessionLeaderRows
-        VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Top Possession Getters")
                     .font(.headline.weight(.semibold))
