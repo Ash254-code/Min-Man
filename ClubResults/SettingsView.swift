@@ -118,7 +118,7 @@ struct SettingsView: View {
     private func settingsRow(title: String, icon: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .foregroundStyle(.appleBlue)
+                .foregroundStyle(.tint)
                 .frame(width: settingsIconColumnWidth, alignment: .leading)
             Text(title)
         }
