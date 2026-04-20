@@ -341,31 +341,44 @@ struct LiveStatsView: View {
     @State private var lastMessage: String?
     @State private var showEditEvent: StatEvent?
     @State private var shareURL: URL?
+    @State private var showPlayerPicker = false
+    @State private var showTotals = false
+    @State private var feedbackToken = UUID()
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                headerCard
+        GeometryReader { proxy in
+            VStack(spacing: 10) {
+                compactHeader
                 quarterPicker
-                voiceButton
-                if let lastMessage {
-                    Text(lastMessage)
-                        .font(.headline)
-                        .foregroundStyle(lastMessage.contains("Added:") ? .green : .red)
-                        .padding(.horizontal)
+
+                HStack(spacing: 12) {
+                    manualEntryPanel
+                        .frame(width: max(proxy.size.width * 0.58, 420))
+                    recentEventsPanel
                 }
-                manualEntryCard
-                recentEventsCard
-                totalsCard
-                reportCard
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                bottomControlBar
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
         }
         .navigationTitle("Live Stats")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $showEditEvent) { event in
             EditStatEventView(event: event, players: playersForGrade, statTypes: enabledStatTypes)
+        }
+        .sheet(isPresented: $showPlayerPicker) {
+            PlayerSelectionSheet(players: playersForGrade, selectedPlayerId: $selectedPlayerId)
+        }
+        .sheet(isPresented: $showTotals) {
+            StatsTotalsView(
+                rows: totalsRows,
+                statTypes: enabledStatTypes
+            )
         }
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
             if let shareURL {
@@ -375,6 +388,15 @@ struct LiveStatsView: View {
         .onDisappear {
             if speechService.isRecording {
                 _ = speechService.stopListening()
+            }
+        }
+        .onChange(of: feedbackToken) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+                if !speechService.isRecording {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        lastMessage = nil
+                    }
+                }
             }
         }
     }
@@ -391,20 +413,17 @@ struct LiveStatsView: View {
         allEvents.filter { $0.sessionId == session.sessionId }
     }
 
-    private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private var compactHeader: some View {
+        HStack(spacing: 10) {
             Text("\(gradeName) vs \(session.opposition)")
-                .font(.title3.bold())
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+            Spacer()
             Text(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))
+                .font(.caption)
                 .foregroundStyle(.secondary)
-            if !session.venue.isEmpty {
-                Text(session.venue)
-                    .foregroundStyle(.secondary)
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity)
     }
 
     private var quarterPicker: some View {
@@ -414,27 +433,163 @@ struct LiveStatsView: View {
                     selectedQuarter = quarter
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(selectedQuarter == quarter ? .blue : .gray)
-                .font(.headline)
+                .tint(selectedQuarter == quarter ? .blue : .gray.opacity(0.8))
+                .font(.title3.weight(.bold))
+                .frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity)
     }
 
-    private var voiceButton: some View {
-        VStack(spacing: 8) {
-                Text("Current Quarter: \(selectedQuarter)")
-                    .font(.title2.bold())
+    private var manualEntryPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Manual Entry")
+                .font(.title2.bold())
+
+            HStack(spacing: 8) {
+                Button {
+                    showPlayerPicker = true
+                } label: {
+                    HStack {
+                        Text(selectedPlayerDisplay)
+                            .font(.title3.weight(.semibold))
+                            .lineLimit(1)
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 14)
+                    .background(Color.blue.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+
+                Button("Clear") {
+                    selectedPlayerId = nil
+                }
+                .buttonStyle(.bordered)
+                .disabled(selectedPlayerId == nil)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
+                ForEach(enabledStatTypes) { type in
+                    Button {
+                        addManualEvent(statTypeId: type.id)
+                    } label: {
+                        Text(type.name)
+                            .font(.title3.weight(.bold))
+                            .frame(maxWidth: .infinity, minHeight: 54)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(selectedPlayerId == nil ? .gray : .blue)
+                    .disabled(selectedPlayerId == nil)
+                }
+            }
+
+            if selectedPlayerId == nil {
+                Text("Select a player, then tap any stat button to add events quickly.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var recentEventsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Recent Events")
+                .font(.title3.bold())
+
+            ScrollView {
+                LazyVStack(spacing: 6) {
+                    ForEach(sessionEvents.prefix(10)) { event in
+                        Button {
+                            showEditEvent = event
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(event.quarter)
+                                    .font(.caption.bold())
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.blue.opacity(0.15), in: Capsule())
+                                Text(statName(for: event.statTypeId))
+                                    .font(.subheadline.weight(.semibold))
+                                Text(playerLabel(for: event.playerId))
+                                    .font(.subheadline)
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 8)
+                            .background(.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity)
+
+            if sessionEvents.isEmpty {
+                Text("No events yet")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var bottomControlBar: some View {
+        HStack(alignment: .bottom, spacing: 14) {
+            HStack(spacing: 10) {
+                Button("View Totals") {
+                    showTotals = true
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Generate Report") {
+                    generateReport()
+                }
+                .buttonStyle(.bordered)
+            }
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 6) {
+                if let lastMessage {
+                    Text(lastMessage)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(lastMessage.contains("Added:") ? .green : .red)
+                } else if speechService.isRecording {
+                    Text("Listening…")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
+                if let lastError = speechService.lastErrorMessage {
+                    Text(lastError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+
+            Button("Undo") {
+                undoLastEvent()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(sessionEvents.isEmpty)
+
             Button {
-                // long-press driven
+                // press-and-hold driven
             } label: {
-                Text(speechService.isRecording ? "Listening… release to add" : "Hold to Speak")
-                    .font(.title3.bold())
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                    .background(speechService.isRecording ? Color.red.opacity(0.9) : Color.blue)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                ZStack {
+                    Circle()
+                        .fill(speechService.isRecording ? Color.red : Color.red.opacity(0.9))
+                        .frame(width: 92, height: 92)
+                    Text("Speak")
+                        .font(.title3.bold())
+                        .foregroundStyle(.white)
+                }
             }
             .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
                 if isPressing {
@@ -444,113 +599,9 @@ struct LiveStatsView: View {
                     handleVoiceTranscript(transcript)
                 }
             }, perform: {})
-
-            if !speechService.liveTranscript.isEmpty {
-                Text("Heard: \(speechService.liveTranscript)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let lastError = speechService.lastErrorMessage {
-                Text(lastError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
+            .buttonStyle(.plain)
         }
-    }
-
-    private var manualEntryCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Manual Entry")
-                .font(.headline)
-
-            Picker("Player", selection: $selectedPlayerId) {
-                Text("Select player").tag(Optional<UUID>.none)
-                ForEach(playersForGrade) { player in
-                    Text(playerDisplay(player)).tag(Optional(player.id))
-                }
-            }
-
-            Picker("Stat", selection: $selectedStatTypeId) {
-                Text("Select stat").tag(Optional<UUID>.none)
-                ForEach(enabledStatTypes) { type in
-                    Text(type.name).tag(Optional(type.id))
-                }
-            }
-
-            HStack {
-                Button("Add Event") {
-                    addManualEvent()
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button("Undo Last") {
-                    undoLastEvent()
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var recentEventsCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Recent Events")
-                .font(.headline)
-
-            ForEach(sessionEvents.prefix(20)) { event in
-                Button {
-                    showEditEvent = event
-                } label: {
-                    HStack {
-                        Text("\(statName(for: event.statTypeId)) — \(playerLabel(for: event.playerId)) — \(event.quarter)")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-
-            if sessionEvents.isEmpty {
-                Text("No events yet")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var totalsCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Totals")
-                .font(.headline)
-
-            ForEach(totalsRows) { row in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(playerDisplay(row.player))
-                        .font(.subheadline.bold())
-                    Text(enabledStatTypes.map { "\($0.name): \(row.countsByStatId[$0.id, default: 0])" }.joined(separator: "  •  "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var reportCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Report")
-                .font(.headline)
-            Button("Generate PDF & Share") {
-                generateReport()
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.top, 4)
     }
 
     private var gradeName: String {
@@ -588,6 +639,14 @@ struct LiveStatsView: View {
         return player.name
     }
 
+    private var selectedPlayerDisplay: String {
+        guard let selectedPlayerId,
+              let player = playersForGrade.first(where: { $0.id == selectedPlayerId }) else {
+            return "Select Player"
+        }
+        return playerDisplay(player)
+    }
+
     private func playerLabel(for id: UUID) -> String {
         guard let player = allPlayers.first(where: { $0.id == id }) else { return "Unknown" }
         return playerDisplay(player)
@@ -598,10 +657,12 @@ struct LiveStatsView: View {
     }
 
     private func addManualEvent() {
-        guard let selectedPlayerId, let selectedStatTypeId else {
-            lastMessage = "Select player and stat type"
+        guard let selectedPlayerId else {
+            lastMessage = "Select a player first"
+            feedbackToken = UUID()
             return
         }
+        guard let selectedStatTypeId else { return }
 
         let event = StatEvent(
             sessionId: session.sessionId,
@@ -615,6 +676,12 @@ struct LiveStatsView: View {
         try? modelContext.save()
 
         lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: selectedPlayerId)) — \(selectedQuarter)"
+        feedbackToken = UUID()
+    }
+
+    private func addManualEvent(statTypeId: UUID) {
+        selectedStatTypeId = statTypeId
+        addManualEvent()
     }
 
     private func undoLastEvent() {
@@ -622,6 +689,7 @@ struct LiveStatsView: View {
         modelContext.delete(latest)
         try? modelContext.save()
         lastMessage = "Undid last event"
+        feedbackToken = UUID()
     }
 
     private func handleVoiceTranscript(_ transcript: String) {
@@ -648,6 +716,7 @@ struct LiveStatsView: View {
               let statTypeId = result.matchedStatTypeId,
               let playerId = result.matchedPlayerId else {
             lastMessage = parseFailureMessage(result)
+            feedbackToken = UUID()
             return
         }
 
@@ -666,6 +735,7 @@ struct LiveStatsView: View {
         let playerText = playerLabel(for: playerId)
         let statText = statName(for: statTypeId)
         lastMessage = "Added: \(statText) — \(playerText) — \(selectedQuarter)"
+        feedbackToken = UUID()
     }
 
     private func parseFailureMessage(_ result: VoiceParseResult) -> String {
@@ -818,5 +888,116 @@ private struct EditStatEventView: View {
                 }
             }
         }
+    }
+}
+
+private struct PlayerSelectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let players: [Player]
+    @Binding var selectedPlayerId: UUID?
+    @State private var searchText = ""
+
+    var body: some View {
+        NavigationStack {
+            List(filteredPlayers) { player in
+                Button {
+                    selectedPlayerId = player.id
+                    dismiss()
+                } label: {
+                    HStack {
+                        Text(player.number.map { "#\($0)" } ?? "#–")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .leading)
+                        Text(player.name)
+                        Spacer()
+                        if selectedPlayerId == player.id {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .searchable(text: $searchText, prompt: "Find player")
+            .navigationTitle("Select Player")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var filteredPlayers: [Player] {
+        let base = players.sorted { lhs, rhs in
+            if lhs.number != rhs.number {
+                return (lhs.number ?? Int.max) < (rhs.number ?? Int.max)
+            }
+            return lhs.name < rhs.name
+        }
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return base
+        }
+        let key = searchText.lowercased()
+        return base.filter {
+            $0.name.lowercased().contains(key)
+            || $0.firstName.lowercased().contains(key)
+            || $0.lastName.lowercased().contains(key)
+            || ($0.number.map(String.init)?.contains(key) ?? false)
+        }
+    }
+}
+
+private struct StatsTotalsView: View {
+    @Environment(\.dismiss) private var dismiss
+    let rows: [TotalsRow]
+    let statTypes: [StatType]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView([.horizontal, .vertical]) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 0) {
+                        cell("Player", width: 200, bold: true)
+                        ForEach(statTypes) { stat in
+                            cell(stat.name, width: 92, bold: true)
+                        }
+                    }
+
+                    ForEach(rows) { row in
+                        HStack(spacing: 0) {
+                            cell(row.player.number.map { "#\($0) \(row.player.name)" } ?? row.player.name, width: 200)
+                            ForEach(statTypes) { stat in
+                                cell("\(row.countsByStatId[stat.id, default: 0])", width: 92)
+                            }
+                        }
+                    }
+                }
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding()
+            }
+            .navigationTitle("Stats So Far")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func cell(_ text: String, width: CGFloat, bold: Bool = false) -> some View {
+        Text(text)
+            .font(bold ? .headline : .body)
+            .lineLimit(1)
+            .frame(width: width, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+            .overlay(alignment: .bottom) {
+                Divider()
+            }
+            .overlay(alignment: .trailing) {
+                Divider()
+            }
     }
 }
