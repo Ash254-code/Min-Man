@@ -2476,6 +2476,7 @@ struct ReportsSettingsView: View {
     @State private var draggingTranslation: CGSize = .zero
     @State private var draggingStartIndex: Int?
     @State private var draggingLastTargetIndex: Int?
+    @State private var isWobbleActive = false
     @AppStorage("reports.templateOrder.v1") private var templateOrderData = ""
     var onOpenContactsSettings: (() -> Void)? = nil
 
@@ -2508,21 +2509,6 @@ struct ReportsSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Spacer()
-                    Button {
-                        onOpenContactsSettings?()
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(10)
-                            .background(.thinMaterial, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal)
-                }
-
                 if templates.isEmpty {
                     Text("No custom reports yet. Create one to save reusable report filters.")
                         .font(.subheadline)
@@ -2537,21 +2523,15 @@ struct ReportsSettingsView: View {
                         / CGFloat(templateGridColumnCount)
                     )
 
-                    Group {
-                        if isMoveModeEnabled {
-                            ZStack(alignment: .topLeading) {
-                                LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
-                                    ForEach(0..<placeholderSlotCount, id: \.self) { _ in
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .fill(Color.gray.opacity(0.14))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                                    .stroke(Color.gray.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
-                                            )
-                                            .frame(height: templateTileHeight)
-                                    }
-                                }
+                    ZStack(alignment: .topLeading) {
+                        LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
+                            ForEach(0..<placeholderSlotCount, id: \.self) { index in
+                                placeholderTile(at: index)
+                            }
+                        }
 
+                        Group {
+                            if isMoveModeEnabled {
                                 LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
                                     ForEach(displayedTemplates) { template in
                                         reportTile(for: template, tileWidth: tileWidth)
@@ -2560,32 +2540,12 @@ struct ReportsSettingsView: View {
                                 }
                                 .animation(.spring(response: 0.25, dampingFraction: 0.78), value: moveDraftOrder)
                             }
-                        } else {
-                            LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
-                                ForEach(displayedTemplates) { template in
-                                    reportTile(for: template, tileWidth: tileWidth)
-                                }
-
-                                Button {
-                                    isCreatingTemplate = true
-                                } label: {
-                                    VStack(spacing: 2) {
-                                        Text("+")
-                                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                                            .lineLimit(1)
-
-                                        Text("Create Custom Report")
-                                            .font(.headline.weight(.semibold))
-                                            .multilineTextAlignment(.center)
-                                            .lineLimit(2)
+                            else {
+                                LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
+                                    ForEach(displayedTemplates) { template in
+                                        reportTile(for: template, tileWidth: tileWidth)
                                     }
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                                    .padding(12)
-                                    .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 }
-                                .buttonStyle(.plain)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: templateTileHeight)
                             }
                         }
                     }
@@ -2608,10 +2568,14 @@ struct ReportsSettingsView: View {
         }
         .onAppear {
             syncTemplateOrderWithCurrentTemplates()
+            isWobbleActive = isMoveModeEnabled
         }
         .onChange(of: templates.map(\.id)) { _, _ in
             syncTemplateOrderWithCurrentTemplates()
             syncMoveDraftWithCurrentTemplates()
+        }
+        .onChange(of: isMoveModeEnabled) { _, newValue in
+            isWobbleActive = newValue
         }
         .confirmationDialog("Report actions", isPresented: Binding(
             get: { templateActioning != nil },
@@ -2804,6 +2768,32 @@ struct ReportsSettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func placeholderTile(at index: Int) -> some View {
+        let isCreateSlot = !isMoveModeEnabled && index == displayedTemplates.count
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.gray.opacity(0.14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.gray.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
+            )
+            .overlay {
+                if isCreateSlot {
+                    Button {
+                        isCreatingTemplate = true
+                    } label: {
+                        Text("+")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundStyle(.accent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Create Custom Report")
+                }
+            }
+            .frame(height: templateTileHeight)
+    }
+
     private func saveContext() {
         do {
             try dataContext.save()
@@ -2852,7 +2842,7 @@ struct ReportsSettingsView: View {
             isMoveModeEnabled
             ? .easeInOut(duration: 0.1).repeatForever(autoreverses: true)
             : .default,
-            value: isMoveModeEnabled
+            value: isWobbleActive
         )
         .frame(maxWidth: .infinity)
         .frame(height: templateTileHeight)
