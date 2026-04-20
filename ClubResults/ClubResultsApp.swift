@@ -51,6 +51,7 @@ struct ClubResultsApp: App {
                 }
             }
             .preferredColorScheme(preferredScheme)
+            .tint(.appleBlue)
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     withAnimation(.easeOut(duration: 0.5)) {

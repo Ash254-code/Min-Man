@@ -94,3 +94,9 @@ struct AppPill: View {
             .lineLimit(1)
     }
 }
+
+
+extension Color {
+    /// Matches Apple's standard iOS blue accent.
+    static let appleBlue = Color(uiColor: .systemBlue)
+}
