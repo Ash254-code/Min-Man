@@ -14,7 +14,7 @@ struct LabeledRow<Right: View>: View {
 }
 
 struct StandardListIcon: View {
-    var systemName: String = "circle.fill"
+    var systemName: String = "sparkles"
     var size: CGFloat = 16
     var columnWidth: CGFloat = 26
 

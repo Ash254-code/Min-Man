@@ -19,7 +19,7 @@ struct SettingsView: View {
                     NavigationLink {
                         ClubGradesSettingsView()
                     } label: {
-                        settingsRow(title: "Club Grades", icon: "list.number")
+                        settingsRow(title: "Club Grades", icon: "person.3.fill")
                     }
 
                     NavigationLink {
@@ -49,7 +49,7 @@ struct SettingsView: View {
                     NavigationLink {
                         ContactsSettingsView()
                     } label: {
-                        settingsRow(title: "Contacts", icon: "person.crop.rectangle")
+                        settingsRow(title: "Contacts", icon: "person.crop.circle.badge.checkmark")
                     }
 
                     NavigationLink {
@@ -643,7 +643,7 @@ private struct UmpiresSettingsView: View {
                     toggleBoundaryGrade(option.id, for: gameGrade.id)
                 } label: {
                     HStack {
-                        StandardListIcon()
+                        StandardListIcon(systemName: "person.3.fill")
                         Text(option.name)
                         Spacer()
                         if selectedBoundaryGradeIDs(for: gameGrade.id).contains(option.id) {
@@ -730,7 +730,7 @@ private struct ClubGradesSettingsView: View {
             Section {
                 ForEach(sortedGrades) { grade in
                     HStack {
-                        StandardListIcon()
+                        StandardListIcon(systemName: "person.3.fill")
                         VStack(alignment: .leading, spacing: 4) {
                             Text(grade.name)
                             if !grade.isActive {
@@ -1467,7 +1467,7 @@ private struct ContactsSettingsView: View {
 
                 ForEach(contacts) { contact in
                     HStack(alignment: .top, spacing: 8) {
-                        StandardListIcon()
+                        StandardListIcon(systemName: "person.crop.circle.badge.checkmark")
                             .padding(.top, 2)
                         VStack(alignment: .leading, spacing: 6) {
                             Text(contact.name)
@@ -1914,7 +1914,7 @@ private struct GroupsSettingsView: View {
 
             ForEach(members) { contact in
                 HStack(spacing: 8) {
-                    StandardListIcon()
+                    StandardListIcon(systemName: "person.crop.circle.badge.checkmark")
                     VStack(alignment: .leading, spacing: 6) {
                         Text(contact.name)
                             .font(.headline)
@@ -1967,7 +1967,7 @@ private struct GroupsSettingsView: View {
             } else {
                 ForEach(members) { contact in
                     HStack {
-                        StandardListIcon()
+                        StandardListIcon(systemName: "person.crop.circle.badge.checkmark")
                         Text(contact.name)
                         Spacer()
                     }
