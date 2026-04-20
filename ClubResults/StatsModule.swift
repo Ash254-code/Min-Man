@@ -1008,7 +1008,7 @@ struct LiveStatsView: View {
             )
         }
         .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, minHeight: 170, maxHeight: 170)
+        .frame(maxWidth: .infinity, minHeight: 190, maxHeight: 190)
     }
 
     private func combinedTeamPanel(
@@ -1124,7 +1124,7 @@ struct LiveStatsView: View {
                         } label: {
                             playerCardContent(player: player)
                                 .frame(maxWidth: .infinity, minHeight: cellHeight)
-                                .background(selectedPlayerId == player.id ? Color.blue.opacity(0.5) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                                .background(selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
                     }
