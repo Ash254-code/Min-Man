@@ -863,6 +863,12 @@ struct LiveStatsView: View {
                 onShare: { shareURL = document.url }
             )
         }
+        .sheet(item: $reportPreviewDocument) { document in
+            StatsReportPreviewSheet(
+                url: document.url,
+                onShare: { shareURL = document.url }
+            )
+        }
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
             if let shareURL {
                 ShareSheet(items: [shareURL])
@@ -1662,39 +1668,57 @@ struct LiveStatsView: View {
 
         let data = renderer.pdfData { context in
             context.beginPage()
-            var y: CGFloat = 24
+            var y: CGFloat = 20
 
             if let logo = UIImage(named: "club_logo") {
-                logo.draw(in: CGRect(x: 24, y: y, width: 48, height: 48))
+                logo.draw(in: CGRect(x: 24, y: y, width: 56, height: 56))
             }
-            y += 4
-            ("Stats Report" as NSString).draw(at: CGPoint(x: 84, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 24)])
-            y += 34
+            ("Stats Report" as NSString).draw(at: CGPoint(x: 96, y: y + 10), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 24)])
+            y += 62
             let details = "Grade: \(gradeName)   Opposition: \(session.opposition)   Date: \(session.date.formatted(date: .abbreviated, time: .omitted))   Venue: \(session.venue)"
             (details as NSString).draw(
                 in: CGRect(x: 24, y: y, width: pageRect.width - 48, height: 30),
                 withAttributes: [.font: UIFont.systemFont(ofSize: 11)]
             )
-            y += 34
+            y += 24
+
+            let inside50Us = teamStatCount(statType: inside50Stat, teamPlayerId: ourTeamStatPlayerID)
+            let inside50Them = teamStatCount(statType: inside50Stat, teamPlayerId: oppositionTeamStatPlayerID)
+            let clearancesUs = teamStatCount(statType: clearanceStat, teamPlayerId: ourTeamStatPlayerID)
+            let clearancesThem = teamStatCount(statType: clearanceStat, teamPlayerId: oppositionTeamStatPlayerID)
+            let inside50Summary = "Inside 50: \(ourTeamName) \(inside50Us)  |  \(session.opposition) \(inside50Them)"
+            let clearancesSummary = "Clearances: \(ourTeamName) \(clearancesUs)  |  \(session.opposition) \(clearancesThem)"
+            (inside50Summary as NSString).draw(
+                at: CGPoint(x: 24, y: y),
+                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 11)]
+            )
+            (clearancesSummary as NSString).draw(
+                at: CGPoint(x: 24, y: y + 16),
+                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 11)]
+            )
+            y += 42
 
             let leftMargin: CGFloat = 24
-            let playerColumnWidth: CGFloat = 160
-            let statColumnWidth: CGFloat = 20
+            let numberColumnWidth: CGFloat = 42
+            let playerColumnWidth: CGFloat = 146
+            let statColumnWidth: CGFloat = 19
             let headerRowHeight: CGFloat = 20
             let dataRowHeight: CGFloat = 18
             let blockWidth = CGFloat(trackedStats.count) * statColumnWidth
 
-            drawCell("Player", x: leftMargin, y: y, width: playerColumnWidth, bold: true)
-            var x = leftMargin + playerColumnWidth
+            drawCell("No", x: leftMargin, y: y, width: numberColumnWidth, bold: true)
+            drawCell("Player", x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth, bold: true)
+            var x = leftMargin + numberColumnWidth + playerColumnWidth
             for quarter in quarterOrder {
                 drawCell(quarter, x: x, y: y, width: blockWidth, bold: true)
                 x += blockWidth
             }
-            drawCell("Totals", x: x, y: y, width: blockWidth, bold: true)
+            drawCell("Totals", x: x, y: y, width: blockWidth, bold: true, emphasize: true)
             y += headerRowHeight
 
-            drawCell("", x: leftMargin, y: y, width: playerColumnWidth, bold: true)
-            x = leftMargin + playerColumnWidth
+            drawCell("", x: leftMargin, y: y, width: numberColumnWidth, bold: true)
+            drawCell("", x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth, bold: true)
+            x = leftMargin + numberColumnWidth + playerColumnWidth
             for _ in quarterOrder {
                 for stat in trackedStats {
                     drawCell(stat.label, x: x, y: y, width: statColumnWidth, bold: true)
@@ -1702,7 +1726,7 @@ struct LiveStatsView: View {
                 }
             }
             for stat in trackedStats {
-                drawCell(stat.label, x: x, y: y, width: statColumnWidth, bold: true)
+                drawCell(stat.label, x: x, y: y, width: statColumnWidth, bold: true, emphasize: true)
                 x += statColumnWidth
             }
             y += headerRowHeight
@@ -1713,10 +1737,11 @@ struct LiveStatsView: View {
                     y = 24
                 }
 
-                let playerLabel = player.number.map { "#\($0) \(player.lastName.uppercased())" } ?? player.lastName.uppercased()
-                drawCell(playerLabel, x: leftMargin, y: y, width: playerColumnWidth)
+                let playerLabel = player.lastName.uppercased()
+                drawCell(player.number.map(String.init) ?? "", x: leftMargin, y: y, width: numberColumnWidth)
+                drawCell(playerLabel, x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth)
 
-                x = leftMargin + playerColumnWidth
+                x = leftMargin + numberColumnWidth + playerColumnWidth
                 for quarter in quarterOrder {
                     for stat in trackedStats {
                         let count = statCount(
@@ -1738,7 +1763,7 @@ struct LiveStatsView: View {
                             lookup: byPlayerQuarterAndStat
                         )
                     }
-                    drawCell("\(total)", x: x, y: y, width: statColumnWidth)
+                    drawCell("\(total)", x: x, y: y, width: statColumnWidth, bold: true, emphasize: true)
                     x += statColumnWidth
                 }
                 y += dataRowHeight
@@ -1798,7 +1823,11 @@ struct LiveStatsView: View {
         return sessionEvents.filter { $0.playerId == teamPlayerId && $0.statTypeId == statType.id }.count
     }
 
-    private func drawCell(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, bold: Bool = false) {
+    private func drawCell(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, bold: Bool = false, emphasize: Bool = false) {
+        if emphasize {
+            UIColor.systemGray6.setFill()
+            UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: 20)).fill()
+        }
         let attributes: [NSAttributedString.Key: Any] = [
             .font: bold ? UIFont.boldSystemFont(ofSize: 10) : UIFont.systemFont(ofSize: 10)
         ]
