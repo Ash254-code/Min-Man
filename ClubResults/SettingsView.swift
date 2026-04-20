@@ -2783,7 +2783,7 @@ struct ReportsSettingsView: View {
                     } label: {
                         Text("+")
                             .font(.system(size: 34, weight: .bold, design: .rounded))
-                            .foregroundStyle(.accent)
+                            .foregroundStyle(.tint)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     }
                     .buttonStyle(.plain)
