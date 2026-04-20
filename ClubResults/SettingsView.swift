@@ -2609,7 +2609,7 @@ struct ReportsSettingsView: View {
         .onAppear {
             syncTemplateOrderWithCurrentTemplates()
         }
-        .onChange(of: templates.map(\.id)) { _ in
+        .onChange(of: templates.map(\.id)) { _, _ in
             syncTemplateOrderWithCurrentTemplates()
             syncMoveDraftWithCurrentTemplates()
         }
@@ -3566,7 +3566,6 @@ private func makeTemplatePreviewPDF(
 ) throws -> URL {
     let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
     let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
-    let groupingMode = ReportGroupingMode(rawValue: template.groupingModeRawValue) ?? .combinedTotals
     let selectedGrades = grades
         .filter { !template.includeOnlyActiveGrades || $0.isActive }
         .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
@@ -4511,7 +4510,7 @@ private struct CustomReportEditView: View {
                 .frame(minWidth: 74, alignment: .trailing)
             }
         }
-        .onChange(of: isOn.wrappedValue) { isEnabled in
+        .onChange(of: isOn.wrappedValue) { _, isEnabled in
             guard isEnabled else { return }
             let clampedDefault = Self.clampedReportItemLimit(defaultLimitWhenEnabled, defaultValue: 0)
             if !(0...10).contains(limit.wrappedValue) {

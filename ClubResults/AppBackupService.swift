@@ -862,6 +862,7 @@ enum AppBackupService {
         return FullBackupExportResult(fileURL: fileURL, itemCounts: counts, exportedAt: now, fileSizeBytes: fileSize)
     }
 
+    @MainActor
     static func previewBackupFile(url: URL) throws -> AppBackupEnvelope {
         guard url.pathExtension.lowercased() == "json"
                 || UTType(filenameExtension: url.pathExtension)?.conforms(to: .json) == true else {
