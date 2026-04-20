@@ -1661,6 +1661,7 @@ private struct GroupsSettingsView: View {
     @State private var showAddContactsForSection = false
     @State private var addSectionKey: String?
     @State private var contactEditing: Contact?
+    @State private var sectionEditingKey: String?
     @State private var isManagingGroups = false
     @State private var saveErrorMessage: String?
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
@@ -1734,6 +1735,22 @@ private struct GroupsSettingsView: View {
                     contact.email = email
                     saveContext()
                     return true
+                }
+            )
+            .appPopupStyle()
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { sectionEditingKey != nil },
+                set: { if !$0 { sectionEditingKey = nil } }
+            )
+        ) {
+            let sectionKey = sectionEditingKey ?? ""
+            GroupMembersSheet(
+                title: displayTitle(for: sectionKey, fallback: fallbackTitle(for: sectionKey)),
+                members: contactsForSection(sectionKey),
+                onRemoveContact: { contactID in
+                    removeContact(contactID, fromSection: sectionKey)
                 }
             )
             .appPopupStyle()
@@ -1922,8 +1939,16 @@ private struct GroupsSettingsView: View {
 
     private func sectionCardView(fallbackTitle: String, sectionKey: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(displayTitle(for: sectionKey, fallback: fallbackTitle))
-                .font(.headline)
+            HStack(alignment: .top) {
+                Text(displayTitle(for: sectionKey, fallback: fallbackTitle))
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button("Edit") {
+                    sectionEditingKey = sectionKey
+                }
+                .font(.subheadline.weight(.semibold))
+            }
 
             let members = contactsForSection(sectionKey)
             if members.isEmpty {
@@ -1954,6 +1979,13 @@ private struct GroupsSettingsView: View {
         }
         .padding(12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func fallbackTitle(for sectionKey: String) -> String {
+        if let section = allDisplayedSections.first(where: { $0.sectionKey == sectionKey }) {
+            return section.fallbackTitle
+        }
+        return "Group"
     }
 
     private func contactsForSection(_ sectionKey: String) -> [Contact] {
@@ -2071,6 +2103,45 @@ private struct GroupsSettingsView: View {
 
         for draft in drafts {
             setCustomTitle(draft.name, for: draft.sectionKey, fallback: draft.fallbackTitle)
+        }
+    }
+}
+
+private struct GroupMembersSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: String
+    let members: [Contact]
+    let onRemoveContact: (UUID) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if members.isEmpty {
+                    Text("No contacts added.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(members) { member in
+                        HStack {
+                            Text(member.name)
+                            Spacer()
+                            Button(role: .destructive) {
+                                onRemoveContact(member.id)
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(member.name)")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Edit \(title)")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }
