@@ -1741,11 +1741,24 @@ private struct GroupsSettingsView: View {
             .appPopupStyle()
         }
         .sheet(item: $sectionEditing) { selection in
-            SectionGroupMembersSheet(
+            GroupSectionEditorSheet(
                 title: displayTitle(for: selection.sectionKey, fallback: selection.fallbackTitle),
-                members: contactsForSection(selection.sectionKey),
-                onRemoveContact: { contactID in
-                    removeContact(contactID, fromSection: selection.sectionKey)
+                contacts: contacts,
+                selectedContactIDs: Set(
+                    sectionMemberships
+                        .filter { $0.sectionKey == selection.sectionKey }
+                        .map(\.contactID)
+                ),
+                onToggleContact: { contactID, isSelected in
+                    if isSelected {
+                        assignContact(contactID, toSection: selection.sectionKey)
+                    } else {
+                        removeContact(contactID, fromSection: selection.sectionKey)
+                    }
+                    saveContext()
+                },
+                onEditContact: { contact in
+                    contactEditing = contact
                 }
             )
             .appPopupStyle()
@@ -1896,36 +1909,21 @@ private struct GroupsSettingsView: View {
         Section {
             let members = contactsForSection(sectionKey)
 
-            if members.isEmpty {
-                Text("No contacts added.")
-                    .foregroundStyle(.secondary)
-            }
-
-            ForEach(members) { contact in
-                HStack(spacing: 8) {
-                    StandardListIcon(systemName: "person.crop.circle.badge.checkmark")
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(contact.name)
-                            .font(.headline)
-                    }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    contactEditing = contact
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        removeContact(contact.id, fromSection: sectionKey)
-                    } label: {
-                        Label("Remove", systemImage: "minus.circle")
-                    }
-                }
-            }
-
             Button {
-                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
+                sectionEditing = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
             } label: {
-                Label("Add Contact", systemImage: "plus")
+                HStack {
+                    if members.isEmpty {
+                        Text("No contacts added.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(members.map(\.name).joined(separator: ", "))
+                            .lineLimit(2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("Edit")
+                }
             }
         } header: {
             HStack {
@@ -1941,14 +1939,8 @@ private struct GroupsSettingsView: View {
                     .font(.title3)
                     .fontWeight(.semibold)
                 Spacer()
-                NavigationLink("Edit") {
-                    SectionGroupMembersSheet(
-                        title: displayTitle(for: sectionKey, fallback: fallbackTitle),
-                        members: contactsForSection(sectionKey),
-                        onRemoveContact: { contactID in
-                            removeContact(contactID, fromSection: sectionKey)
-                        }
-                    )
+                Button("Edit") {
+                    sectionEditing = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
                 }
                 .font(.subheadline.weight(.semibold))
             }
@@ -1970,14 +1962,6 @@ private struct GroupsSettingsView: View {
                         contactEditing = contact
                     }
                 }
-            }
-
-            Divider()
-
-            Button {
-                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
-            } label: {
-                Label("Add Contact", systemImage: "plus")
             }
         }
         .padding(12)
@@ -2117,36 +2101,69 @@ private struct GroupSectionSelection: Identifiable {
     var id: String { sectionKey }
 }
 
-private struct SectionGroupMembersSheet: View {
+private struct GroupSectionEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let title: String
-    let members: [Contact]
-    let onRemoveContact: (UUID) -> Void
+    let contacts: [Contact]
+    let selectedContactIDs: Set<UUID>
+    let onToggleContact: (UUID, Bool) -> Void
+    let onEditContact: (Contact) -> Void
 
     var body: some View {
         NavigationStack {
             List {
-                if members.isEmpty {
-                    Text("No contacts added.")
+                if contacts.isEmpty {
+                    Text("No contacts available. Add contacts in Settings > Contacts.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(members) { member in
+                    ForEach(contacts) { contact in
                         HStack {
-                            Text(member.name)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(contact.name)
+                                    .font(.headline)
+                                if !contact.mobile.isEmpty {
+                                    Text(contact.mobile)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else if !contact.email.isEmpty {
+                                    Text(contact.email)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                             Spacer()
-                            Button(role: .destructive) {
-                                onRemoveContact(member.id)
+                            Button {
+                                let isSelected = selectedContactIDs.contains(contact.id)
+                                onToggleContact(contact.id, !isSelected)
                             } label: {
-                                Image(systemName: "minus.circle")
+                                Image(systemName: selectedContactIDs.contains(contact.id) ? "checkmark.circle.fill" : "circle")
+                                    .imageScale(.large)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Remove \(member.name)")
+                            .accessibilityLabel(
+                                selectedContactIDs.contains(contact.id)
+                                    ? "Remove \(contact.name) from \(title)"
+                                    : "Add \(contact.name) to \(title)"
+                            )
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            let isSelected = selectedContactIDs.contains(contact.id)
+                            onToggleContact(contact.id, !isSelected)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                onEditContact(contact)
+                            } label: {
+                                Label("Edit Contact", systemImage: "pencil")
+                            }
+                            .tint(.blue)
                         }
                     }
                 }
             }
-            .navigationTitle("Edit \(title)")
+            .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
