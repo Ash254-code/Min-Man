@@ -28,7 +28,7 @@ extension StatType {
             "mark": ["mark", "marks"],
             "tackle": ["tackle", "tackles"],
             "goal": ["goal", "goals"],
-            "behind": ["behind", "behinds"]
+            "behind": ["behind", "behinds", "point", "points", "rushed behind"]
         ]
         let aliases = builtIn[lowercase] ?? [canonical]
         return Array(Set(aliases + [canonical]))
@@ -344,6 +344,7 @@ struct LiveStatsView: View {
     @State private var showPlayerPicker = false
     @State private var showTotals = false
     @State private var feedbackToken = UUID()
+    @State private var lastVoiceDebug: VoiceParseResult?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
 
@@ -570,6 +571,24 @@ struct LiveStatsView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+#if DEBUG
+                if let lastVoiceDebug {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Raw: \(lastVoiceDebug.rawTranscript)")
+                        Text("Norm: \(lastVoiceDebug.normalizedTranscript)")
+                        Text("Stat: \(lastVoiceDebug.matchedStatName ?? "—")")
+                        Text("Player: \(lastVoiceDebug.matchedPlayerName ?? "—")")
+                        Text("Conf: \(lastVoiceDebug.confidence.formatted(.number.precision(.fractionLength(2))))")
+                        if let reason = lastVoiceDebug.failureReason {
+                            Text("Fail: \(reason)")
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 260, alignment: .trailing)
+                }
+#endif
             }
 
             Button("Undo") {
@@ -614,6 +633,7 @@ struct LiveStatsView: View {
             var values = [player.name, player.firstName, player.lastName]
             if let number = player.number {
                 values.append("number \(number)")
+                values.append("no \(number)")
                 values.append(String(number))
             }
             return values
@@ -707,15 +727,22 @@ struct LiveStatsView: View {
         }
 
         let result = parser.parse(transcript: transcript, statTypes: descriptors, roster: roster)
+        lastVoiceDebug = result
 
 #if DEBUG
-        print("VOICE_PARSE raw='\(result.rawTranscript)' normalized='\(result.normalizedTranscript)' status='\(result.parseStatus)' confidence='\(result.confidence)'")
+        print("VOICE_PARSE raw='\(result.rawTranscript)' normalized='\(result.normalizedTranscript)' status='\(result.parseStatus)' confidence='\(result.confidence)' statCandidates='\(result.detectedStatCandidates)' playerCandidates='\(result.detectedPlayerCandidates)' matchedStat='\(result.matchedStatName ?? "nil")' matchedPlayer='\(result.matchedPlayerName ?? "nil")' reason='\(result.failureReason ?? "none")'")
 #endif
 
         guard result.parseStatus == .success,
               let statTypeId = result.matchedStatTypeId,
               let playerId = result.matchedPlayerId else {
+            if result.shouldOfferReview,
+               let guessedStat = result.matchedStatName,
+               let guessedPlayer = result.matchedPlayerName {
+                lastMessage = "Did you mean \(guessedStat) — \(guessedPlayer)?"
+            } else {
             lastMessage = parseFailureMessage(result)
+            }
             feedbackToken = UUID()
             return
         }
@@ -745,6 +772,9 @@ struct LiveStatsView: View {
         case .noStatFound:
             return "Stat type not recognised"
         case .noPlayerFound:
+            if let guessed = result.matchedPlayerName {
+                return "Player not found. Closest: \(guessed)"
+            }
             return "Player not found"
         case .ambiguousPlayer:
             if let first = result.candidatePlayerIds.first {

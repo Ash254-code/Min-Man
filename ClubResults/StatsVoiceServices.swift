@@ -37,10 +37,16 @@ struct VoiceParseResult {
     let failureReason: String?
     let candidatePlayerIds: [UUID]
     let candidateStatTypeIds: [UUID]
+    let detectedStatCandidates: [String]
+    let detectedPlayerCandidates: [String]
+    let matchedStatName: String?
+    let matchedPlayerName: String?
+    let shouldOfferReview: Bool
 }
 
 struct StatsVoiceParser {
-    private let minConfidence: Double = 0.90
+    private let minConfidence: Double = 0.86
+    private let reviewConfidence: Double = 0.74
 
     func parse(
         transcript rawTranscript: String,
@@ -58,7 +64,12 @@ struct StatsVoiceParser {
                 confidence: 0,
                 failureReason: "empty transcript",
                 candidatePlayerIds: [],
-                candidateStatTypeIds: []
+                candidateStatTypeIds: [],
+                detectedStatCandidates: [],
+                detectedPlayerCandidates: [],
+                matchedStatName: nil,
+                matchedPlayerName: nil,
+                shouldOfferReview: false
             )
         }
 
@@ -72,7 +83,12 @@ struct StatsVoiceParser {
                 confidence: 0,
                 failureReason: "stat type not recognised",
                 candidatePlayerIds: [],
-                candidateStatTypeIds: []
+                candidateStatTypeIds: [],
+                detectedStatCandidates: [],
+                detectedPlayerCandidates: [],
+                matchedStatName: nil,
+                matchedPlayerName: nil,
+                shouldOfferReview: false
             )
         }
 
@@ -86,7 +102,12 @@ struct StatsVoiceParser {
                 confidence: statMatch.confidence,
                 failureReason: "multiple stat types matched",
                 candidatePlayerIds: [],
-                candidateStatTypeIds: statMatch.candidateStatIds
+                candidateStatTypeIds: statMatch.candidateStatIds,
+                detectedStatCandidates: statMatch.detectedAliases,
+                detectedPlayerCandidates: [],
+                matchedStatName: nil,
+                matchedPlayerName: nil,
+                shouldOfferReview: false
             )
         }
 
@@ -106,7 +127,12 @@ struct StatsVoiceParser {
                     confidence: combined,
                     failureReason: "could not confidently interpret command",
                     candidatePlayerIds: playerResolution.candidates.map(\.id),
-                    candidateStatTypeIds: []
+                    candidateStatTypeIds: [],
+                    detectedStatCandidates: statMatch.detectedAliases,
+                    detectedPlayerCandidates: playerResolution.candidates.map(\.fullName),
+                    matchedStatName: statMatch.statType?.canonicalName,
+                    matchedPlayerName: playerResolution.player?.fullName,
+                    shouldOfferReview: playerResolution.player != nil && combined >= reviewConfidence
                 )
             }
 
@@ -119,9 +145,15 @@ struct StatsVoiceParser {
                 confidence: combined,
                 failureReason: nil,
                 candidatePlayerIds: [],
-                candidateStatTypeIds: []
+                candidateStatTypeIds: [],
+                detectedStatCandidates: statMatch.detectedAliases,
+                detectedPlayerCandidates: playerResolution.player.map { [$0.fullName] } ?? [],
+                matchedStatName: statMatch.statType?.canonicalName,
+                matchedPlayerName: playerResolution.player?.fullName,
+                shouldOfferReview: false
             )
         case .noPlayerFound:
+            let likelyReview = playerResolution.player != nil && min(statMatch.confidence, playerResolution.confidence) >= reviewConfidence
             return VoiceParseResult(
                 rawTranscript: rawTranscript,
                 normalizedTranscript: normalizedTranscript,
@@ -131,7 +163,12 @@ struct StatsVoiceParser {
                 confidence: statMatch.confidence,
                 failureReason: "player not found",
                 candidatePlayerIds: [],
-                candidateStatTypeIds: []
+                candidateStatTypeIds: [],
+                detectedStatCandidates: statMatch.detectedAliases,
+                detectedPlayerCandidates: playerResolution.candidates.map(\.fullName),
+                matchedStatName: statMatch.statType?.canonicalName,
+                matchedPlayerName: playerResolution.player?.fullName,
+                shouldOfferReview: likelyReview
             )
         case .ambiguousPlayer:
             return VoiceParseResult(
@@ -143,7 +180,12 @@ struct StatsVoiceParser {
                 confidence: min(statMatch.confidence, playerResolution.confidence),
                 failureReason: "multiple players match",
                 candidatePlayerIds: playerResolution.candidates.map(\.id),
-                candidateStatTypeIds: []
+                candidateStatTypeIds: [],
+                detectedStatCandidates: statMatch.detectedAliases,
+                detectedPlayerCandidates: playerResolution.candidates.map(\.fullName),
+                matchedStatName: statMatch.statType?.canonicalName,
+                matchedPlayerName: nil,
+                shouldOfferReview: false
             )
         }
     }
@@ -169,16 +211,22 @@ struct StatsVoiceParser {
         var index = 0
         while index < tokens.count {
             let token = tokens[index]
-            if token == "number", index + 1 < tokens.count {
+            if (token == "number" || token == "no"), index + 1 < tokens.count {
+                if let value = parseSpokenNumber(tokens: Array(tokens[(index + 1)...])) {
+                    converted.append(String(value.number))
+                    index = index + 1 + value.consumed
+                    continue
+                }
                 converted.append(tokens[index + 1])
                 index += 2
                 continue
             }
-            if let number = wordToNumber[token] {
-                converted.append(String(number))
-            } else {
-                converted.append(token)
+            if let value = parseSpokenNumber(tokens: Array(tokens[index...])) {
+                converted.append(String(value.number))
+                index += value.consumed
+                continue
             }
+            converted.append(token)
             index += 1
         }
 
@@ -192,8 +240,23 @@ struct StatsVoiceParser {
         "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
         "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
         "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
-        "eighteen": 18, "nineteen": 19, "twenty": 20, "twentyone": 21
+        "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30,
+        "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+        "eighty": 80, "ninety": 90
     ]
+    private let connectorWords: Set<String> = ["to", "for", "by", "on", "at", "with", "from"]
+
+    private func parseSpokenNumber(tokens: [String]) -> (number: Int, consumed: Int)? {
+        guard let first = tokens.first else { return nil }
+        if let direct = Int(first) {
+            return (direct, 1)
+        }
+        guard let firstValue = wordToNumber[first] else { return nil }
+        if firstValue >= 20, firstValue % 10 == 0, tokens.count > 1, let second = wordToNumber[tokens[1]], second < 10 {
+            return (firstValue + second, 2)
+        }
+        return (firstValue, 1)
+    }
 
     private struct StatMatch {
         let statType: VoiceStatTypeDescriptor?
@@ -201,6 +264,7 @@ struct StatsVoiceParser {
         let confidence: Double
         let candidateStatIds: [UUID]
         let isAmbiguous: Bool
+        let detectedAliases: [String]
     }
 
     private func matchStatType(in transcript: String, statTypes: [VoiceStatTypeDescriptor]) -> StatMatch? {
@@ -208,6 +272,7 @@ struct StatsVoiceParser {
         guard !tokens.isEmpty else { return nil }
 
         var candidates: [(VoiceStatTypeDescriptor, String, Double)] = []
+        var fuzzyCandidates: [(VoiceStatTypeDescriptor, String, Double)] = []
         for stat in statTypes {
             for alias in stat.aliases {
                 let normalizedAlias = normalize(alias)
@@ -216,10 +281,20 @@ struct StatsVoiceParser {
                 if containsPhrase(tokens: tokens, phraseTokens: aliasTokens) {
                     let confidence = normalizedAlias == normalize(stat.canonicalName) ? 1.0 : 0.95
                     candidates.append((stat, normalizedAlias, confidence))
+                } else if aliasTokens.count == 1 {
+                    for token in tokens {
+                        let score = similarity(token, normalizedAlias)
+                        if score >= 0.84 {
+                            fuzzyCandidates.append((stat, normalizedAlias, min(0.82, score)))
+                        }
+                    }
                 }
             }
         }
 
+        if candidates.isEmpty {
+            candidates = fuzzyCandidates
+        }
         guard !candidates.isEmpty else { return nil }
 
         let sorted = candidates.sorted {
@@ -236,10 +311,24 @@ struct StatsVoiceParser {
         }
         let uniqueStatIds = Array(Set(sameTier.map { $0.0.id }))
         if uniqueStatIds.count > 1 {
-            return StatMatch(statType: nil, aliasUsed: "", confidence: best.2, candidateStatIds: uniqueStatIds, isAmbiguous: true)
+            return StatMatch(
+                statType: nil,
+                aliasUsed: "",
+                confidence: best.2,
+                candidateStatIds: uniqueStatIds,
+                isAmbiguous: true,
+                detectedAliases: sorted.map(\.1)
+            )
         }
 
-        return StatMatch(statType: best.0, aliasUsed: best.1, confidence: best.2, candidateStatIds: [], isAmbiguous: false)
+        return StatMatch(
+            statType: best.0,
+            aliasUsed: best.1,
+            confidence: best.2,
+            candidateStatIds: [],
+            isAmbiguous: false,
+            detectedAliases: sorted.map(\.1)
+        )
     }
 
     private enum PlayerResolutionStatus {
@@ -261,7 +350,8 @@ struct StatsVoiceParser {
             return PlayerResolution(status: .noPlayerFound, player: nil, candidates: [], confidence: 0)
         }
 
-        let numbers = reference.split(separator: " ").compactMap { Int($0) }
+        let cleaned = reference.split(separator: " ").map(String.init).filter { !connectorWords.contains($0) }.joined(separator: " ")
+        let numbers = cleaned.split(separator: " ").compactMap { Int($0) }
         if let number = numbers.first {
             let matches = roster.filter { $0.number == number }
             if matches.count == 1 {
@@ -270,7 +360,7 @@ struct StatsVoiceParser {
             return PlayerResolution(status: .noPlayerFound, player: nil, candidates: [], confidence: 0)
         }
 
-        let normalized = reference
+        let normalized = cleaned
         let fullMatches = roster.filter { normalize($0.fullName) == normalized }
         if fullMatches.count == 1 {
             return PlayerResolution(status: .success, player: fullMatches[0], candidates: [], confidence: 0.98)
@@ -313,11 +403,17 @@ struct StatsVoiceParser {
     }
 
     private func fuzzyResolve(reference: String, roster: [VoiceRosterPlayer]) -> FuzzyResult {
-        let scored: [(VoiceRosterPlayer, Double)] = roster.map { player in
+        let scored: [(VoiceRosterPlayer, Double, String)] = roster.map { player in
             let full = similarity(reference, normalize(player.fullName))
             let surname = similarity(reference, normalize(player.lastName))
             let first = similarity(reference, normalize(player.firstName))
-            return (player, max(full, surname, first))
+            if surname >= full, surname >= first {
+                return (player, surname, "surname")
+            }
+            if first >= full {
+                return (player, first, "first")
+            }
+            return (player, full, "full")
         }.sorted { $0.1 > $1.1 }
 
         guard let best = scored.first, best.1 >= 0.88 else { return .none }
@@ -325,7 +421,9 @@ struct StatsVoiceParser {
         if best.1 - secondScore < 0.08 {
             return .ambiguous(scored.filter { $0.1 >= best.1 - 0.05 }.map { $0.0 })
         }
-        let confidence = min(max(best.1, 0.75), 0.88)
+        let confidenceFloor: Double = best.2 == "surname" ? 0.80 : 0.74
+        let confidenceCap: Double = best.2 == "surname" ? 0.88 : 0.82
+        let confidence = min(max(best.1, confidenceFloor), confidenceCap)
         return .single(best.0, confidence)
     }
 
@@ -440,10 +538,12 @@ final class PressHoldSpeechService: ObservableObject {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.taskHint = .dictation
         if recognizer?.supportsOnDeviceRecognition == true {
             request.requiresOnDeviceRecognition = true
         }
-        request.contextualStrings = Array(vocabulary.prefix(200))
+        let expandedContext = Array(Set(vocabulary + vocabulary.flatMap { $0.split(separator: " ").map(String.init) }))
+        request.contextualStrings = Array(expandedContext.prefix(400))
 
         do {
             let audioSession = AVAudioSession.sharedInstance()
