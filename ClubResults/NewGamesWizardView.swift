@@ -3045,6 +3045,10 @@ struct NewGameWizardView: View {
         var secondsRemaining: Int = 20 * 60
         var pointScorers: [UUID: Int] = [:]
         var rushedPoints: Int = 0
+        var ourClearances: Int = 0
+        var ourInside50s: Int = 0
+        var theirClearances: Int = 0
+        var theirInside50s: Int = 0
         var periodSnapshots: [PeriodSnapshot] = []
         var scoreEvents: [ScoreEvent] = []
         var isInitialized = false
@@ -3057,6 +3061,10 @@ struct NewGameWizardView: View {
             secondsRemaining = bounded * 60
             pointScorers = [:]
             rushedPoints = 0
+            ourClearances = 0
+            ourInside50s = 0
+            theirClearances = 0
+            theirInside50s = 0
             periodSnapshots = []
             scoreEvents = []
             isInitialized = true
@@ -3253,8 +3261,16 @@ struct NewGameWizardView: View {
                                         pointAction: { showPointPicker = true },
                                         minHeight: sharedCardHeight
                                     )
-                                    goalKickerSummaryCard(width: proxy.size.width)
+                                    teamPressureCard(
+                                        style: ourStyle,
+                                        clearances: liveSession.ourClearances,
+                                        inside50s: liveSession.ourInside50s,
+                                        clearanceAction: { liveSession.ourClearances += 1 },
+                                        inside50Action: { liveSession.ourInside50s += 1 },
+                                        width: proxy.size.width
+                                    )
                                     timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
+                                    goalKickerSummaryCard(width: proxy.size.width)
                                     teamScoreCard(
                                         title: oppTeamName,
                                         style: oppStyle,
@@ -3264,6 +3280,14 @@ struct NewGameWizardView: View {
                                         goalAction: { recordOpponentGoal() },
                                         pointAction: { recordOpponentPoint() },
                                         minHeight: sharedCardHeight
+                                    )
+                                    teamPressureCard(
+                                        style: oppStyle,
+                                        clearances: liveSession.theirClearances,
+                                        inside50s: liveSession.theirInside50s,
+                                        clearanceAction: { liveSession.theirClearances += 1 },
+                                        inside50Action: { liveSession.theirInside50s += 1 },
+                                        width: proxy.size.width
                                     )
                                     scoreWormCard(width: proxy.size.width)
                                 } else {
@@ -3280,13 +3304,21 @@ struct NewGameWizardView: View {
                                                     pointAction: { showPointPicker = true },
                                                     minHeight: sharedCardHeight
                                                 )
-                                                goalKickerSummaryCard(width: teamCardWidth)
+                                                teamPressureCard(
+                                                    style: ourStyle,
+                                                    clearances: liveSession.ourClearances,
+                                                    inside50s: liveSession.ourInside50s,
+                                                    clearanceAction: { liveSession.ourClearances += 1 },
+                                                    inside50Action: { liveSession.ourInside50s += 1 },
+                                                    width: teamCardWidth
+                                                )
                                             }
                                             .frame(width: teamCardWidth, alignment: .topLeading)
                                             .padding(.top, sideCardTopOffset)
 
                                             VStack(spacing: cardSpacing) {
                                                 timerCard(minHeight: centerTimerHeight, width: timerWidth)
+                                                goalKickerSummaryCard(width: timerWidth)
                                             }
                                             .frame(width: timerWidth, alignment: .top)
                                             .padding(.top, centerCardTopOffset)
@@ -3302,11 +3334,20 @@ struct NewGameWizardView: View {
                                                     pointAction: { recordOpponentPoint() },
                                                     minHeight: sharedCardHeight
                                                 )
-                                                scoreWormCard(width: teamCardWidth)
+                                                teamPressureCard(
+                                                    style: oppStyle,
+                                                    clearances: liveSession.theirClearances,
+                                                    inside50s: liveSession.theirInside50s,
+                                                    clearanceAction: { liveSession.theirClearances += 1 },
+                                                    inside50Action: { liveSession.theirInside50s += 1 },
+                                                    width: teamCardWidth
+                                                )
                                             }
                                             .frame(width: teamCardWidth, alignment: .topTrailing)
                                             .padding(.top, sideCardTopOffset)
                                         }
+                                        scoreWormCard(width: proxy.size.width)
+                                            .padding(.top, cardSpacing)
                                     }
                                 }
                             }
@@ -3613,6 +3654,52 @@ struct NewGameWizardView: View {
             .padding()
             .frame(maxWidth: width, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+
+        private func teamPressureCard(
+            style: ClubStyle.Style,
+            clearances: Int,
+            inside50s: Int,
+            clearanceAction: @escaping () -> Void,
+            inside50Action: @escaping () -> Void,
+            width: CGFloat
+        ) -> some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    statTally(title: "Clearances", value: clearances)
+                    Spacer()
+                    statTally(title: "Inside 50s", value: inside50s)
+                }
+
+                HStack(spacing: 10) {
+                    prominentActionButton(
+                        title: "Clearance",
+                        background: style.background,
+                        textColor: style.text,
+                        action: clearanceAction
+                    )
+                    prominentActionButton(
+                        title: "Inside 50",
+                        background: style.background,
+                        textColor: style.text,
+                        action: inside50Action
+                    )
+                }
+            }
+            .padding()
+            .frame(maxWidth: width, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+
+        private func statTally(title: String, value: Int) -> some View {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text("\(value)")
+                    .font(.title2.weight(.black))
+                    .monospacedDigit()
+            }
         }
 
         private struct StepAdjuster: View {
