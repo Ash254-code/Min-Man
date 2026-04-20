@@ -1911,6 +1911,7 @@ private struct GroupsSettingsView: View {
             }
 
             Button {
+                reloadContacts()
                 addSectionKey = sectionKey
                 showAddContactsForSection = true
             } label: {
@@ -1949,6 +1950,7 @@ private struct GroupsSettingsView: View {
             Divider()
 
             Button {
+                reloadContacts()
                 addSectionKey = sectionKey
                 showAddContactsForSection = true
             } label: {
@@ -2531,6 +2533,10 @@ private struct AddContactsToSectionSheet: View {
     @State private var selectedContactIDs: Set<UUID> = []
     @State private var showingAddNewContact = false
 
+    private var hasAnyContacts: Bool {
+        !contacts.isEmpty
+    }
+
     private var availableContacts: [Contact] {
         contacts.filter { !assignedContactIDs.contains($0.id) }
     }
@@ -2539,7 +2545,7 @@ private struct AddContactsToSectionSheet: View {
         NavigationStack {
             List {
                 if availableContacts.isEmpty {
-                    Text("All contacts are already in this section.")
+                    Text(hasAnyContacts ? "All contacts are already in this section." : "No contacts available yet. Add a new contact below.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(availableContacts) { contact in
