@@ -4267,48 +4267,80 @@ private func makeTemplatePreviewPDF(
 
         let metadataGame = renderedSections.first?.games.first ?? primaryGame
 
-        if template.includeStaffRoles {
-            let rows = metadataGame.map { game in
-                [[
-                    game.headCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
-                    game.assistantCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
-                    game.teamManagerName.trimmingCharacters(in: .whitespacesAndNewlines),
-                    game.runnerName.trimmingCharacters(in: .whitespacesAndNewlines)
-                ]]
-            } ?? []
-            drawDetailTable(title: "Coaching Staff", columns: ["Head", "Assistant", "Manager", "Runner"], rows: rows)
+        func normalizedName(_ value: String) -> String {
+            value.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        if template.includeOfficials || template.includeUmpires {
-            let columns: [String] = [
-                template.includeOfficials ? "Goal" : nil,
-                template.includeOfficials ? "Field" : nil,
-                template.includeUmpires ? "Boundary Umpire 1" : nil,
-                template.includeUmpires ? "Boundary Umpire 2" : nil
-            ].compactMap { $0 }
+        var roleColumns: [String] = []
+        if template.includeStaffRoles {
+            roleColumns.append(contentsOf: ["Head Coach", "Assistant Coach", "Team Manager", "Runner"])
+        }
+        if template.includeOfficials {
+            roleColumns.append(contentsOf: ["Goal Umpire", "Field Umpire"])
+        }
+        if template.includeUmpires {
+            roleColumns.append("Boundary Umpire")
+        }
+        if template.includeTrainers {
+            roleColumns.append("Trainer")
+        }
 
-            let rows = metadataGame.map { game in
-                var row: [String] = []
+        if !roleColumns.isEmpty {
+            let selectedPlayers = players
+                .filter { player in
+                    selectedGradeIDs.isEmpty || !Set(player.gradeIDs).isDisjoint(with: selectedGradeIDs)
+                }
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+            var countsByName: [String: [String: Int]] = [:]
+
+            func increment(role: String, name: String) {
+                let trimmedName = normalizedName(name)
+                guard !trimmedName.isEmpty else { return }
+                countsByName[trimmedName, default: [:]][role, default: 0] += 1
+            }
+
+            for game in relevantGames {
+                if template.includeStaffRoles {
+                    increment(role: "Head Coach", name: game.headCoachName)
+                    increment(role: "Assistant Coach", name: game.assistantCoachName)
+                    increment(role: "Team Manager", name: game.teamManagerName)
+                    increment(role: "Runner", name: game.runnerName)
+                }
                 if template.includeOfficials {
-                    row.append(game.goalUmpireName.trimmingCharacters(in: .whitespacesAndNewlines))
-                    row.append(game.fieldUmpireName.trimmingCharacters(in: .whitespacesAndNewlines))
+                    increment(role: "Goal Umpire", name: game.goalUmpireName)
+                    increment(role: "Field Umpire", name: game.fieldUmpireName)
                 }
                 if template.includeUmpires {
-                    row.append(game.boundaryUmpire1Name.trimmingCharacters(in: .whitespacesAndNewlines))
-                    row.append(game.boundaryUmpire2Name.trimmingCharacters(in: .whitespacesAndNewlines))
+                    increment(role: "Boundary Umpire", name: game.boundaryUmpire1Name)
+                    increment(role: "Boundary Umpire", name: game.boundaryUmpire2Name)
                 }
-                return [row]
-            } ?? []
+                if template.includeTrainers {
+                    for trainer in game.trainers {
+                        increment(role: "Trainer", name: trainer)
+                    }
+                }
+            }
 
-            drawDetailTable(title: "Officials", columns: columns, rows: rows as! [[String]])
-        }
+            let playerNames = selectedPlayers.map(\.name).filter { !$0.isEmpty }
+            let nonPlayerNames = countsByName.keys
+                .filter { !playerNames.contains($0) }
+                .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            let allNames = playerNames + nonPlayerNames
 
-        if template.includeTrainers {
-            let rows = metadataGame.map { game in
-                game.trainers
-                    .map { ["Trainer", $0.trimmingCharacters(in: .whitespacesAndNewlines)] }
-            } ?? []
-            drawDetailTable(title: "Trainers", columns: ["Role", "Name"], rows: rows)
+            let rows: [[String]] = allNames.map { name in
+                var row = [name]
+                for role in roleColumns {
+                    row.append(String(countsByName[name]?[role] ?? 0))
+                }
+                return row
+            }
+
+            drawDetailTable(
+                title: "Role Counts by Player",
+                columns: ["Name"] + roleColumns,
+                rows: rows
+            )
         }
 
         if template.includeMatchNotes {
