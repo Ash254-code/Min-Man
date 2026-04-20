@@ -24,18 +24,22 @@ struct TeamsAndVenuesSettingsView: View {
                         onSave: save
                     )
                 } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        teamNamePill(
-                            name: configuration.clubTeam.name,
-                            primaryHex: configuration.clubTeam.primaryColorHex,
-                            secondaryHex: configuration.clubTeam.secondaryColorHex,
-                            tertiaryHex: configuration.clubTeam.tertiaryColorHex,
-                            width: standardPillWidth
-                        )
+                    HStack(alignment: .top, spacing: 8) {
+                        StandardListIcon(systemName: "flag.2.crossed.fill")
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 6) {
+                            teamNamePill(
+                                name: configuration.clubTeam.name,
+                                primaryHex: configuration.clubTeam.primaryColorHex,
+                                secondaryHex: configuration.clubTeam.secondaryColorHex,
+                                tertiaryHex: configuration.clubTeam.tertiaryColorHex,
+                                width: standardPillWidth
+                            )
 
-                        Text(venueSummary(configuration.clubTeam.venues))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Text(venueSummary(configuration.clubTeam.venues))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -59,18 +63,22 @@ struct TeamsAndVenuesSettingsView: View {
                             onSave: save
                         )
                     } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            teamNamePill(
-                                name: opposition.name,
-                                primaryHex: opposition.primaryColorHex,
-                                secondaryHex: opposition.secondaryColorHex,
-                                tertiaryHex: opposition.tertiaryColorHex,
-                                width: standardPillWidth
-                            )
+                        HStack(alignment: .top, spacing: 8) {
+                            StandardListIcon(systemName: "flag.2.crossed.fill")
+                                .padding(.top, 4)
+                            VStack(alignment: .leading, spacing: 6) {
+                                teamNamePill(
+                                    name: opposition.name,
+                                    primaryHex: opposition.primaryColorHex,
+                                    secondaryHex: opposition.secondaryColorHex,
+                                    tertiaryHex: opposition.tertiaryColorHex,
+                                    width: standardPillWidth
+                                )
 
-                            Text(venueSummary(opposition.venues))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                Text(venueSummary(opposition.venues))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -215,6 +223,7 @@ private struct TeamProfileEditorView: View {
             Section("Venues (up to 3)") {
                 ForEach(Array(draftVenues.enumerated()), id: \.offset) { index, _ in
                     HStack {
+                        StandardListIcon(systemName: "mappin.and.ellipse")
                         TextField("Venue", text: Binding(
                             get: { draftVenues[index] },
                             set: { draftVenues[index] = $0 }
