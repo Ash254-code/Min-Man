@@ -3619,7 +3619,7 @@ struct NewGameWizardView: View {
 
         private func goalKickerSummaryCard(width: CGFloat, height: CGFloat) -> some View {
             let hasManyGoalKickers = scorerTally.count + (liveSession.rushedPoints > 0 ? 1 : 0) > 5
-            VStack(alignment: .leading, spacing: 10) {
+            return VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     ScorePill("Goal Kickers", style: ourStyle)
                     Spacer()
