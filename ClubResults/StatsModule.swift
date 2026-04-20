@@ -983,7 +983,7 @@ struct LiveStatsView: View {
     }
 
     private var rightStatActionsHeight: CGFloat {
-        176
+        224
     }
 
     private var combinedScoreAndActionsPanel: some View {
@@ -1015,7 +1015,9 @@ struct LiveStatsView: View {
                 ScorePill(teamName, style: style)
                     .font(.title3.weight(.bold))
                 Text(scoreText)
-                    .font(.title2.weight(.black))
+                    .font(.system(size: 52, weight: .black, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
                     .monospacedDigit()
             }
             .frame(maxWidth: .infinity, alignment: .center)
@@ -1190,6 +1192,7 @@ struct LiveStatsView: View {
         } label: {
             Text(title)
                 .font(.headline.weight(.bold))
+                .foregroundStyle(style.text)
                 .frame(maxWidth: .infinity, minHeight: 52)
         }
         .buttonStyle(.borderedProminent)
@@ -1208,15 +1211,24 @@ struct LiveStatsView: View {
                     Button {
                         showEditEvent = event
                     } label: {
-                        HStack(spacing: 8) {
-                            Text(event.quarter)
-                                .font(.title3.bold())
-                                .frame(width: 40, alignment: .leading)
+                        HStack(spacing: 6) {
+                            Text(playerNameForRecentEvent(for: event.playerId))
+                                .font(.title3)
+                                .lineLimit(1)
+                            Text("-")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
                             Text(statName(for: event.statTypeId))
                                 .font(.title3.weight(.bold))
-                            Text(playerShortLabel(for: event.playerId))
+                                .lineLimit(1)
+                            Text("-")
                                 .font(.title3)
-                            Spacer()
+                                .foregroundStyle(.secondary)
+                            Text(event.timestamp.formatted(date: .omitted, time: .shortened))
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                            Spacer(minLength: 0)
                         }
                         .padding(.vertical, 8)
                         .padding(.horizontal, 8)
@@ -1417,6 +1429,17 @@ struct LiveStatsView: View {
     private func playerLabel(for id: UUID) -> String {
         guard let player = allPlayers.first(where: { $0.id == id }) else { return "Unknown" }
         return playerDisplay(player)
+    }
+
+    private func playerNameForRecentEvent(for id: UUID) -> String {
+        if id == ourTeamStatPlayerID {
+            return ourTeamName
+        }
+        if id == oppositionTeamStatPlayerID {
+            return session.opposition
+        }
+        guard let player = allPlayers.first(where: { $0.id == id }) else { return "Unknown" }
+        return player.name
     }
 
     private func playerShortLabel(for id: UUID) -> String {
