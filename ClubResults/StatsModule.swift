@@ -1394,7 +1394,7 @@ struct LiveStatsView: View {
     }
 
     private var totalsRows: [TotalsRow] {
-        playersForGrade.map { player in
+        displayedPlayers.map { player in
             let events = sessionEvents.filter { $0.playerId == player.id }
             var counts: [UUID: Int] = [:]
             for event in events {
@@ -1746,7 +1746,7 @@ struct LiveStatsView: View {
         let inside50Stat = statTypeMatching(aliases: ["inside 50", "inside50", "inside 50s"])
         let clearanceStat = statTypeMatching(aliases: ["clearance", "clearances"])
 
-        let players = playersForGrade
+        let players = displayedPlayers
         let playerIDs = Set(players.map(\.id))
         let eventsForPlayers = sessionEvents.filter { playerIDs.contains($0.playerId) }
         let byPlayerQuarterAndStat = Dictionary(grouping: eventsForPlayers) { event in
@@ -1793,43 +1793,49 @@ struct LiveStatsView: View {
             let playerColumnWidth: CGFloat = 146
             let statColumnWidth: CGFloat = 19
             let headerRowHeight: CGFloat = 20
-            let dataRowHeight: CGFloat = 18
+            let maxPlayersPerPage: CGFloat = 26
+            let footerReservedHeight: CGFloat = 18
+            let availableHeightForDataRows = max(
+                12 * maxPlayersPerPage,
+                (pageRect.height - y - (headerRowHeight * 2) - footerReservedHeight)
+            )
+            let dataRowHeight = floor(availableHeightForDataRows / maxPlayersPerPage)
             let blockWidth = CGFloat(trackedStats.count) * statColumnWidth
 
-            drawCell("No", x: leftMargin, y: y, width: numberColumnWidth, bold: true)
-            drawCell("Player", x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth, bold: true)
+            drawCell("No", x: leftMargin, y: y, width: numberColumnWidth, height: headerRowHeight, bold: true)
+            drawCell("Player", x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth, height: headerRowHeight, bold: true)
             var x = leftMargin + numberColumnWidth + playerColumnWidth
             for quarter in quarterOrder {
-                drawCell(quarter, x: x, y: y, width: blockWidth, bold: true)
+                drawCell(quarter, x: x, y: y, width: blockWidth, height: headerRowHeight, bold: true)
                 x += blockWidth
             }
-            drawCell("Totals", x: x, y: y, width: blockWidth, bold: true, emphasize: true)
+            drawCell("Totals", x: x, y: y, width: blockWidth, height: headerRowHeight, bold: true)
             y += headerRowHeight
 
-            drawCell("", x: leftMargin, y: y, width: numberColumnWidth, bold: true)
-            drawCell("", x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth, bold: true)
+            drawCell("", x: leftMargin, y: y, width: numberColumnWidth, height: headerRowHeight, bold: true)
+            drawCell("", x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth, height: headerRowHeight, bold: true)
             x = leftMargin + numberColumnWidth + playerColumnWidth
             for _ in quarterOrder {
                 for stat in trackedStats {
-                    drawCell(stat.label, x: x, y: y, width: statColumnWidth, bold: true)
+                    drawCell(stat.label, x: x, y: y, width: statColumnWidth, height: headerRowHeight, bold: true)
                     x += statColumnWidth
                 }
             }
             for stat in trackedStats {
-                drawCell(stat.label, x: x, y: y, width: statColumnWidth, bold: true, emphasize: true)
+                drawCell(stat.label, x: x, y: y, width: statColumnWidth, height: headerRowHeight, bold: true)
                 x += statColumnWidth
             }
             y += headerRowHeight
 
             for player in players {
-                if y > pageRect.height - 70 {
+                if y + dataRowHeight > pageRect.height - footerReservedHeight {
                     context.beginPage()
                     y = 24
                 }
 
                 let playerLabel = player.lastName.uppercased()
-                drawCell(player.number.map(String.init) ?? "", x: leftMargin, y: y, width: numberColumnWidth)
-                drawCell(playerLabel, x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth)
+                drawCell(player.number.map(String.init) ?? "", x: leftMargin, y: y, width: numberColumnWidth, height: dataRowHeight)
+                drawCell(playerLabel, x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth, height: dataRowHeight)
 
                 x = leftMargin + numberColumnWidth + playerColumnWidth
                 for quarter in quarterOrder {
@@ -1840,7 +1846,7 @@ struct LiveStatsView: View {
                             aliases: stat.aliases,
                             lookup: byPlayerQuarterAndStat
                         )
-                        drawCell("\(count)", x: x, y: y, width: statColumnWidth)
+                        drawCell("\(count)", x: x, y: y, width: statColumnWidth, height: dataRowHeight)
                         x += statColumnWidth
                     }
                 }
@@ -1853,18 +1859,12 @@ struct LiveStatsView: View {
                             lookup: byPlayerQuarterAndStat
                         )
                     }
-                    drawCell("\(total)", x: x, y: y, width: statColumnWidth, bold: true, emphasize: true)
+                    drawCell("\(total)", x: x, y: y, width: statColumnWidth, height: dataRowHeight, bold: true)
                     x += statColumnWidth
                 }
                 y += dataRowHeight
             }
 
-            y += 10
-            let teamSummary = "Inside 50 — Ours: \(inside50Us), Theirs: \(inside50Them)    |    Clearances — Ours: \(clearancesUs), Theirs: \(clearancesThem)"
-            (teamSummary as NSString).draw(
-                in: CGRect(x: leftMargin, y: y, width: pageRect.width - (leftMargin * 2), height: 24),
-                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 12)]
-            )
         }
 
         let safeDate = session.date.formatted(.dateTime.year().month().day())
@@ -1909,16 +1909,17 @@ struct LiveStatsView: View {
         return sessionEvents.filter { $0.playerId == teamPlayerId && $0.statTypeId == statType.id }.count
     }
 
-    private func drawCell(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, bold: Bool = false, emphasize: Bool = false) {
+    private func drawCell(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat = 20, bold: Bool = false, emphasize: Bool = false) {
         if emphasize {
             UIColor.systemGray6.setFill()
-            UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: 20)).fill()
+            UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: height)).fill()
         }
         let attributes: [NSAttributedString.Key: Any] = [
             .font: bold ? UIFont.boldSystemFont(ofSize: 10) : UIFont.systemFont(ofSize: 10)
         ]
-        (text as NSString).draw(in: CGRect(x: x + 2, y: y + 3, width: width - 4, height: 18), withAttributes: attributes)
-        let path = UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: 20))
+        let textInsetY = max(1, (height - 14) / 2)
+        (text as NSString).draw(in: CGRect(x: x + 2, y: y + textInsetY, width: width - 4, height: max(12, height - 2)), withAttributes: attributes)
+        let path = UIBezierPath(rect: CGRect(x: x, y: y, width: width, height: height))
         UIColor.systemGray4.setStroke()
         path.stroke()
     }
