@@ -3648,13 +3648,50 @@ private func formattedDate(_ date: Date) -> String {
 private enum ReportGroupingMode: Int, CaseIterable, Identifiable {
     case combinedTotals = 0
     case splitByGameAndGrade = 1
+    case splitByGame = 2
+    case splitByGrade = 3
 
     var id: Int { rawValue }
+
+    var splitByGameEnabled: Bool {
+        switch self {
+        case .combinedTotals, .splitByGrade:
+            return false
+        case .splitByGameAndGrade, .splitByGame:
+            return true
+        }
+    }
+
+    var splitByGradeEnabled: Bool {
+        switch self {
+        case .combinedTotals, .splitByGame:
+            return false
+        case .splitByGameAndGrade, .splitByGrade:
+            return true
+        }
+    }
+
+    static func from(splitByGame: Bool, splitByGrade: Bool) -> ReportGroupingMode {
+        switch (splitByGame, splitByGrade) {
+        case (false, false):
+            return .combinedTotals
+        case (true, true):
+            return .splitByGameAndGrade
+        case (true, false):
+            return .splitByGame
+        case (false, true):
+            return .splitByGrade
+        }
+    }
 
     var title: String {
         switch self {
         case .combinedTotals:
             return "Combine totals"
+        case .splitByGame:
+            return "Split by game"
+        case .splitByGrade:
+            return "Split by grade"
         case .splitByGameAndGrade:
             return "Split by game & grade"
         }
@@ -3664,6 +3701,10 @@ private enum ReportGroupingMode: Int, CaseIterable, Identifiable {
         switch self {
         case .combinedTotals:
             return "combined totals"
+        case .splitByGame:
+            return "split by game"
+        case .splitByGrade:
+            return "split by grade"
         case .splitByGameAndGrade:
             return "split by game and grade"
         }
@@ -4134,24 +4175,37 @@ private func makeTemplatePreviewPDF(
             }
         }
 
+        let groupingMode = ReportGroupingMode(rawValue: template.groupingModeRawValue) ?? .combinedTotals
         let gradeOrderLookup = Dictionary(uniqueKeysWithValues: selectedGrades.enumerated().map { ($0.element.id, $0.offset) })
-        let gradeGames = Dictionary(grouping: relevantGames, by: \.gradeID)
-            .compactMap { gradeID, games -> (gradeID: UUID, game: Game)? in
-                guard let game = games.max(by: { $0.date < $1.date }) else { return nil }
-                return (gradeID: gradeID, game: game)
-            }
-            .sorted {
-                let leftOrder = gradeOrderLookup[$0.gradeID] ?? Int.max
-                let rightOrder = gradeOrderLookup[$1.gradeID] ?? Int.max
+        let orderedGradeGroups = Dictionary(grouping: relevantGames, by: \.gradeID)
+            .sorted { left, right in
+                let leftOrder = gradeOrderLookup[left.key] ?? Int.max
+                let rightOrder = gradeOrderLookup[right.key] ?? Int.max
                 if leftOrder != rightOrder { return leftOrder < rightOrder }
-                return (gradeLookup[$0.gradeID] ?? "") < (gradeLookup[$1.gradeID] ?? "")
+                return (gradeLookup[left.key] ?? "") < (gradeLookup[right.key] ?? "")
             }
 
-        if gradeGames.count > 1 {
-            for gradeGame in gradeGames {
-                let gradeName = gradeLookup[gradeGame.gradeID] ?? "Unknown Grade"
-                drawSectionHeader(gradeName)
-                let game = gradeGame.game
+        let renderedGames: [Game] = {
+            if groupingMode.splitByGradeEnabled, !groupingMode.splitByGameEnabled {
+                return orderedGradeGroups.compactMap { (_, games) in
+                    games.max(by: { $0.date < $1.date })
+                }
+            }
+            if groupingMode.splitByGameEnabled {
+                return relevantGames
+            }
+            return primaryGame.map { [$0] } ?? []
+        }()
+
+        if groupingMode.splitByGradeEnabled || groupingMode.splitByGameEnabled {
+            for game in renderedGames {
+                let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
+                let titleParts: [String] = [
+                    groupingMode.splitByGradeEnabled ? gradeName : nil,
+                    groupingMode.splitByGameEnabled ? "\(formattedDate(game.date)) vs \(game.opponent)" : nil
+                ].compactMap { $0 }
+                let sectionTitle = titleParts.isEmpty ? "Report" : titleParts.joined(separator: " • ")
+                drawSectionHeader(sectionTitle)
                 if template.includeScores {
                     drawScorePills(for: game, title: "Score")
                 }
@@ -4159,29 +4213,17 @@ private func makeTemplatePreviewPDF(
                 drawCompactTables(buildCompactTables(for: rows))
             }
         } else {
-            if template.includeScores {
-                if let game = primaryGame {
-                    drawScorePills(for: game, title: "Score")
-                } else {
-                    let scoreRows = relevantGames.map { game in
-                        let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
-                        let our = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
-                        let opponent = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
-                        return [formattedDate(game.date), gradeName, game.opponent, our, opponent]
-                    }
-                    drawDetailTable(
-                        title: "Scores",
-                        columns: ["Date", "Grade", "Opponent", "Us", "Them"],
-                        rows: scoreRows
-                    )
-                }
+            if template.includeScores, let game = primaryGame {
+                drawScorePills(for: game, title: "Score")
             }
             let rows = reportRows(for: primaryGame)
             drawCompactTables(buildCompactTables(for: rows))
         }
 
+        let metadataGame = renderedGames.first ?? primaryGame
+
         if template.includeStaffRoles {
-            let rows = primaryGame.map { game in
+            let rows = metadataGame.map { game in
                 [[
                     game.headCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
                     game.assistantCoachName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -4200,7 +4242,7 @@ private func makeTemplatePreviewPDF(
                 template.includeUmpires ? "Boundary Umpire 2" : nil
             ].compactMap { $0 }
 
-            let rows = primaryGame.map { game in
+            let rows = metadataGame.map { game in
                 var row: [String] = []
                 if template.includeOfficials {
                     row.append(game.goalUmpireName.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -4217,7 +4259,7 @@ private func makeTemplatePreviewPDF(
         }
 
         if template.includeTrainers {
-            let rows = primaryGame.map { game in
+            let rows = metadataGame.map { game in
                 game.trainers
                     .map { ["Trainer", $0.trimmingCharacters(in: .whitespacesAndNewlines)] }
             } ?? []
@@ -4225,7 +4267,7 @@ private func makeTemplatePreviewPDF(
         }
 
         if template.includeMatchNotes {
-            let rows = primaryGame.map { game in
+            let rows = metadataGame.map { game in
                 [[game.notes.trimmingCharacters(in: .whitespacesAndNewlines)]]
             } ?? []
             drawDetailTable(title: "Match Notes", columns: ["Notes"], rows: rows)
@@ -4356,6 +4398,24 @@ private struct CustomReportEditView: View {
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var splitByGameBinding: Binding<Bool> {
+        Binding(
+            get: { groupingMode.splitByGameEnabled },
+            set: { newValue in
+                groupingMode = ReportGroupingMode.from(splitByGame: newValue, splitByGrade: groupingMode.splitByGradeEnabled)
+            }
+        )
+    }
+
+    private var splitByGradeBinding: Binding<Bool> {
+        Binding(
+            get: { groupingMode.splitByGradeEnabled },
+            set: { newValue in
+                groupingMode = ReportGroupingMode.from(splitByGame: groupingMode.splitByGameEnabled, splitByGrade: newValue)
+            }
+        )
     }
 
     var body: some View {
@@ -4527,11 +4587,8 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
-                    Picker("Report layout", selection: $groupingMode) {
-                        ForEach(ReportGroupingMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
+                    Toggle("Split report by game", isOn: splitByGameBinding)
+                    Toggle("Split report by grade", isOn: splitByGradeBinding)
                     Toggle("Only active grades", isOn: $includeOnlyActiveGrades)
                     Stepper("Minimum games played: \(minimumGamesPlayed)", value: $minimumGamesPlayed, in: 0...100)
                 } header: {
