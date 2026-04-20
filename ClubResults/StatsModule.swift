@@ -1050,14 +1050,14 @@ struct LiveStatsView: View {
     private var playerNumberRingColors: (stroke: Color, text: Color) {
         let team = ClubConfigurationStore.load().clubTeam
         return (
-            stroke: Color(hex: team.secondaryColorHex, fallback: ourStyle.text),
+            stroke: Color(hex: team.secondaryColorHex!, fallback: ourStyle.text),
             text: Color(hex: team.primaryColorHex, fallback: ourStyle.background)
         )
     }
 
     private func playerCardContent(player: Player) -> some View {
         let ringColors = playerNumberRingColors
-        VStack(spacing: 4) {
+        return VStack(spacing: 4) {
             ZStack {
                 Circle()
                     .strokeBorder(ringColors.stroke, lineWidth: 2)
