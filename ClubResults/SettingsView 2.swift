@@ -1923,7 +1923,7 @@ private struct GroupsSettingsView: View {
             }
 
             Button {
-                addContactsSection = GroupSectionSelection(sectionKey: sectionKey)
+                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
             } label: {
                 Label("Add Contact", systemImage: "plus")
             }
@@ -1941,14 +1941,8 @@ private struct GroupsSettingsView: View {
                     .font(.title3)
                     .fontWeight(.semibold)
                 Spacer()
-                NavigationLink("Edit") {
-                    SectionGroupMembersSheet(
-                        title: displayTitle(for: sectionKey, fallback: fallbackTitle),
-                        members: contactsForSection(sectionKey),
-                        onRemoveContact: { contactID in
-                            removeContact(contactID, fromSection: sectionKey)
-                        }
-                    )
+                Button("Edit") {
+                    sectionEditing = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
                 }
                 .font(.subheadline.weight(.semibold))
             }
@@ -1975,7 +1969,7 @@ private struct GroupsSettingsView: View {
             Divider()
 
             Button {
-                addContactsSection = GroupSectionSelection(sectionKey: sectionKey)
+                addContactsSection = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
             } label: {
                 Label("Add Contact", systemImage: "plus")
             }
