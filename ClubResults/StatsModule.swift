@@ -1007,8 +1007,7 @@ struct LiveStatsView: View {
                 isOpposition: true
             )
         }
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, minHeight: 190, maxHeight: 190)
+        .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
     }
 
     private func combinedTeamPanel(
@@ -1035,7 +1034,7 @@ struct LiveStatsView: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
