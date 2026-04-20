@@ -793,6 +793,7 @@ struct LiveStatsView: View {
     @State private var showPlayerVisibilityEditor = false
     @State private var pendingEfficiencyEventID: UUID?
     @State private var showEfficiencyVotePrompt = false
+    @State private var showAllPlayers = false
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -804,8 +805,7 @@ struct LiveStatsView: View {
             let leftPanelWidth = min(max(availableWidth * 0.62, 420), availableWidth - 300)
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 10, 290)
             VStack(spacing: 8) {
-                topStrip
-                teamStatActionsPanel
+                combinedScoreAndActionsPanel
 
                 HStack(spacing: 10) {
                     VStack(spacing: 10) {
@@ -829,7 +829,7 @@ struct LiveStatsView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .navigationTitle("Live Stats")
+        .navigationTitle("\(gradeName) • \(session.date.formatted(date: .abbreviated, time: .omitted))")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -863,6 +863,7 @@ struct LiveStatsView: View {
                 onSave: { updated in
                     savedVisiblePlayerIDs = updated
                     visiblePlayerIDs = updated
+                    showAllPlayers = false
                     if let selectedPlayerId, !updated.contains(selectedPlayerId) {
                         self.selectedPlayerId = nil
                     }
@@ -902,6 +903,7 @@ struct LiveStatsView: View {
                 visiblePlayerIDs = defaults
                 savedVisiblePlayerIDs = defaults
             }
+            showAllPlayers = false
             configureQuarterTimer(reset: true)
         }
         .onChange(of: selectedQuarter) { _, _ in
@@ -971,38 +973,63 @@ struct LiveStatsView: View {
         String(format: "%02d:%02d", remainingQuarterSeconds / 60, remainingQuarterSeconds % 60)
     }
 
-    private var topStrip: some View {
-        HStack(spacing: 12) {
+    private var combinedScoreAndActionsPanel: some View {
+        HStack(spacing: 0) {
+            combinedTeamPanel(
+                teamName: ourTeamName,
+                scoreText: "\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))",
+                style: ourStyle,
+                isOpposition: false
+            )
+
+            Divider()
+                .padding(.vertical, 10)
+
+            combinedTeamPanel(
+                teamName: session.opposition,
+                scoreText: "0.0 (0)",
+                style: oppositionStyle,
+                isOpposition: true
+            )
+        }
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 140)
+    }
+
+    private func combinedTeamPanel(
+        teamName: String,
+        scoreText: String,
+        style: ClubStyle.Style,
+        isOpposition: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                ScorePill(ourTeamName, style: ourStyle)
-                    .font(.title3.weight(.bold))
-                Text("\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))")
-                    .font(.title2.weight(.black))
-                    .monospacedDigit()
+                if isOpposition {
+                    Text(scoreText)
+                        .font(.title2.weight(.black))
+                        .monospacedDigit()
+                    ScorePill(teamName, style: style)
+                        .font(.title3.weight(.bold))
+                } else {
+                    ScorePill(teamName, style: style)
+                        .font(.title3.weight(.bold))
+                    Text(scoreText)
+                        .font(.title2.weight(.black))
+                        .monospacedDigit()
+                }
+                Spacer(minLength: 0)
             }
 
-            Spacer(minLength: 16)
-
-            Text("\(gradeName) • \(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-            Spacer(minLength: 16)
-
-            HStack(spacing: 10) {
-                Text("0.0 (0)")
-                    .font(.title2.weight(.black))
-                    .monospacedDigit()
-                ScorePill(session.opposition, style: oppositionStyle)
-                    .font(.title3.weight(.bold))
+            HStack(spacing: 8) {
+                teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
+                teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOpposition)
+                teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOpposition, fallbackName: "Clearances")
+                teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOpposition, fallbackName: "Inside 50s")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var quarterPicker: some View {
@@ -1020,23 +1047,32 @@ struct LiveStatsView: View {
         }
     }
 
-    private func playerCardContent(player: Player, touches: Int? = nil) -> some View {
+    private var playerNumberRingColors: (stroke: Color, text: Color) {
+        let team = ClubConfigurationStore.load().clubTeam
+        return (
+            stroke: Color(hex: team.secondaryColorHex, fallback: ourStyle.text),
+            text: Color(hex: team.primaryColorHex, fallback: ourStyle.background)
+        )
+    }
+
+    private func playerCardContent(player: Player) -> some View {
+        let ringColors = playerNumberRingColors
         VStack(spacing: 4) {
-            Text(player.number.map { "#\($0)" } ?? "—")
-                .font(.title2.weight(.black))
+            ZStack {
+                Circle()
+                    .strokeBorder(ringColors.stroke, lineWidth: 2)
+                    .frame(width: 38, height: 38)
+                Text(player.number.map(String.init) ?? "—")
+                    .font(.headline.weight(.black))
+                    .foregroundStyle(ringColors.text)
+            }
             Text(player.lastName.uppercased())
                 .font(.headline.weight(.semibold))
                 .lineLimit(1)
-            if let touches {
-                Text("\(touches)")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(player.firstName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            Text(player.firstName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
@@ -1059,20 +1095,41 @@ struct LiveStatsView: View {
                 }
 
                 let columnsCount = max(Int(panelProxy.size.width / 128), 3)
-                let rowsCount = max(Int(ceil(Double(max(gridPlayers.count, 1)) / Double(columnsCount))), 1)
+                let maxRows = 4
+                let maxVisibleCards = columnsCount * maxRows
+                let hasOverflow = !showAllPlayers && gridPlayers.count > maxVisibleCards
+                let visiblePlayers = hasOverflow ? Array(gridPlayers.prefix(max(maxVisibleCards - 1, 0))) : gridPlayers
+                let rowsCount = showAllPlayers
+                    ? max(Int(ceil(Double(max(gridPlayers.count, 1)) / Double(columnsCount))), 1)
+                    : maxRows
                 let topFixedHeight = 40.0
                 let usableGridHeight = max(panelProxy.size.height - topFixedHeight, 180)
-                let cellHeight = max(62, min(104, (usableGridHeight - (CGFloat(rowsCount - 1) * 10)) / CGFloat(rowsCount)))
+                let cellHeight = max(76, min(150, (usableGridHeight - (CGFloat(rowsCount - 1) * 10)) / CGFloat(rowsCount)))
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: columnsCount)
 
                 LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(gridPlayers) { player in
+                    ForEach(visiblePlayers) { player in
                         Button {
                             selectPlayer(player.id)
                         } label: {
                             playerCardContent(player: player)
                                 .frame(maxWidth: .infinity, minHeight: cellHeight)
                                 .background(selectedPlayerId == player.id ? Color.blue.opacity(0.25) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if hasOverflow {
+                        Button {
+                            showAllPlayers = true
+                        } label: {
+                            VStack {
+                                Text("…")
+                                    .font(.system(size: 40, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: cellHeight)
+                            .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
                     }
@@ -1113,36 +1170,6 @@ struct LiveStatsView: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var teamStatActionsPanel: some View {
-        HStack(spacing: 14) {
-            teamStatsColumn(title: ourTeamName, style: ourStyle, isOpposition: false)
-            teamStatsColumn(title: session.opposition, style: oppositionStyle, isOpposition: true)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 118, maxHeight: 118)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func teamStatsColumn(title: String, style: ClubStyle.Style, isOpposition: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                if isOpposition { Spacer() }
-                Text(title)
-                    .font(.headline.weight(.bold))
-                    .lineLimit(1)
-                if !isOpposition { Spacer() }
-            }
-
-            HStack(spacing: 8) {
-                teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
-                teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOpposition)
-                teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOpposition, fallbackName: "Clearances")
-                teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOpposition, fallbackName: "Inside 50s")
-            }
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private func teamStatButton(
@@ -1391,7 +1418,7 @@ struct LiveStatsView: View {
 
     private func playerDisplay(_ player: Player) -> String {
         if let number = player.number {
-            return "#\(number) \(player.name)"
+            return "\(number) \(player.name)"
         }
         return player.name
     }
@@ -1410,7 +1437,7 @@ struct LiveStatsView: View {
         }
         guard let player = allPlayers.first(where: { $0.id == id }) else { return "Unknown" }
         if let number = player.number {
-            return "#\(number) \(player.lastName)"
+            return "\(number) \(player.lastName)"
         }
         return player.lastName
     }
@@ -1924,7 +1951,7 @@ private struct StatsTotalsView: View {
 
                     ForEach(rows) { row in
                         HStack(spacing: 0) {
-                            cell(row.player.number.map { "#\($0) \(row.player.name)" } ?? row.player.name, width: 200)
+                            cell(row.player.number.map { "\($0) \(row.player.name)" } ?? row.player.name, width: 200)
                             ForEach(statTypes) { stat in
                                 cell("\(row.countsByStatId[stat.id, default: 0])", width: 92)
                             }
