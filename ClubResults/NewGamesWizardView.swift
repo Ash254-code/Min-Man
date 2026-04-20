@@ -3244,9 +3244,11 @@ struct NewGameWizardView: View {
                         let teamCardWidth = max(300, proxy.size.width * 0.35)
                         let timerWidth = max(280, proxy.size.width * 0.22)
                         let sharedCardHeight = max(368, proxy.size.height * 0.46)
+                        let pressureCardMinHeight: CGFloat = 188
                         let centerCardTopOffset: CGFloat = 16
                         let sideCardTopOffset: CGFloat = 8
                         let centerTimerHeight = max(300, sharedCardHeight + sideCardTopOffset - centerCardTopOffset)
+                        let scoreWormWidth = (teamCardWidth * 2) + timerWidth + (cardSpacing * 2)
 
                         ScrollView {
                             VStack(spacing: cardSpacing) {
@@ -3267,6 +3269,7 @@ struct NewGameWizardView: View {
                                         inside50s: liveSession.ourInside50s,
                                         clearanceAction: { liveSession.ourClearances += 1 },
                                         inside50Action: { liveSession.ourInside50s += 1 },
+                                        minHeight: pressureCardMinHeight,
                                         width: proxy.size.width
                                     )
                                     timerCard(minHeight: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
@@ -3287,6 +3290,7 @@ struct NewGameWizardView: View {
                                         inside50s: liveSession.theirInside50s,
                                         clearanceAction: { liveSession.theirClearances += 1 },
                                         inside50Action: { liveSession.theirInside50s += 1 },
+                                        minHeight: pressureCardMinHeight,
                                         width: proxy.size.width
                                     )
                                     scoreWormCard(width: proxy.size.width)
@@ -3310,6 +3314,7 @@ struct NewGameWizardView: View {
                                                     inside50s: liveSession.ourInside50s,
                                                     clearanceAction: { liveSession.ourClearances += 1 },
                                                     inside50Action: { liveSession.ourInside50s += 1 },
+                                                    minHeight: pressureCardMinHeight,
                                                     width: teamCardWidth
                                                 )
                                             }
@@ -3340,13 +3345,14 @@ struct NewGameWizardView: View {
                                                     inside50s: liveSession.theirInside50s,
                                                     clearanceAction: { liveSession.theirClearances += 1 },
                                                     inside50Action: { liveSession.theirInside50s += 1 },
+                                                    minHeight: pressureCardMinHeight,
                                                     width: teamCardWidth
                                                 )
                                             }
                                             .frame(width: teamCardWidth, alignment: .topTrailing)
                                             .padding(.top, sideCardTopOffset)
                                         }
-                                        scoreWormCard(width: proxy.size.width)
+                                        scoreWormCard(width: scoreWormWidth)
                                             .padding(.top, cardSpacing)
                                     }
                                 }
@@ -3662,6 +3668,7 @@ struct NewGameWizardView: View {
             inside50s: Int,
             clearanceAction: @escaping () -> Void,
             inside50Action: @escaping () -> Void,
+            minHeight: CGFloat,
             width: CGFloat
         ) -> some View {
             VStack(alignment: .leading, spacing: 12) {
@@ -3686,18 +3693,18 @@ struct NewGameWizardView: View {
                     )
                 }
             }
-            .padding()
-            .frame(maxWidth: width, alignment: .topLeading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .padding(18)
+            .frame(maxWidth: width, minHeight: minHeight, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
         private func statTally(title: String, value: Int) -> some View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Text("\(value)")
-                    .font(.title2.weight(.black))
+                    .font(.system(size: 46, weight: .bold, design: .rounded))
                     .monospacedDigit()
             }
         }
@@ -3947,7 +3954,7 @@ struct NewGameWizardView: View {
                         .stroke(Color.white, style: .init(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
                     }
                 }
-                .frame(height: 170)
+                .frame(height: 132)
 
                 HStack {
                     Text("Q1")
@@ -3961,9 +3968,9 @@ struct NewGameWizardView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             }
-            .padding()
+            .padding(20)
             .frame(maxWidth: width, alignment: .topLeading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
         private func playerContribution(goals: Int, points: Int) -> String {
