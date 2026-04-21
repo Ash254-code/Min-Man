@@ -2567,13 +2567,15 @@ private struct StatsTotalsView: View {
                     HStack(spacing: 12) {
                         scorePool(
                             teamName: ourTeamName,
-                            score: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds)",
+                            goals: ourScoreSummary.goals,
+                            behinds: ourScoreSummary.behinds,
                             points: ourScoreSummary.points,
                             style: ourStyle
                         )
                         scorePool(
                             teamName: oppositionName,
-                            score: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds)",
+                            goals: oppositionScoreSummary.goals,
+                            behinds: oppositionScoreSummary.behinds,
                             points: oppositionScoreSummary.points,
                             style: oppositionStyle
                         )
@@ -2595,6 +2597,13 @@ private struct StatsTotalsView: View {
                     }
 
                     HStack(spacing: 12) {
+                        teamStatPool(title: "Inside 50s", value: ourInside50s, style: ourStyle)
+                        teamStatPool(title: "Clearances", value: ourClearances, style: ourStyle)
+                        teamStatPool(title: "Inside 50s", value: theirInside50s, style: oppositionStyle)
+                        teamStatPool(title: "Clearances", value: theirClearances, style: oppositionStyle)
+                    }
+
+                    HStack(spacing: 12) {
                         efficiencyPool(title: "\(ourTeamName) Efficiency", value: ourTeamEfficiency, style: ourStyle)
                         efficiencyPool(title: "\(oppositionName) Efficiency", value: oppositionTeamEfficiency, style: oppositionStyle)
                     }
@@ -2609,7 +2618,7 @@ private struct StatsTotalsView: View {
                         leaderboardPool(
                             title: "Top 5 Goal Kickers",
                             entries: topGoalKickers.map {
-                                ("\($0.playerLabel)", "\($0.goals)", "Behinds \($0.behinds)")
+                                ("\($0.playerLabel)", "\($0.goals)", "Goals \($0.goals) • Behinds \($0.behinds)")
                             }
                         )
                     }
@@ -2661,12 +2670,12 @@ private struct StatsTotalsView: View {
     }
 
     @ViewBuilder
-    private func scorePool(teamName: String, score: String, points: Int, style: ClubStyle.Style) -> some View {
+    private func scorePool(teamName: String, goals: Int, behinds: Int, points: Int, style: ClubStyle.Style) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(teamName.uppercased())
                 .font(.title3.weight(.black))
                 .lineLimit(1)
-            Text(score)
+            Text("\(goals).\(behinds) (\(points))")
                 .font(.system(size: 52, weight: .black, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
@@ -2685,52 +2694,9 @@ private struct StatsTotalsView: View {
         )
     }
 
-    private func comparisonPool(title: String, ourValue: Int, theirValue: Int) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title3.weight(.black))
-            HStack {
-                teamMetricColumn(name: ourTeamName, value: ourValue, style: ourStyle)
-                teamMetricColumn(name: oppositionName, value: theirValue, style: oppositionStyle)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-
-    private func teamStatsPool(teamName: String, style: ClubStyle.Style, inside50s: Int, clearances: Int) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(teamName)
-                .font(.title3.weight(.black))
-                .lineLimit(1)
-                .foregroundStyle(style.text)
-
-            teamNamedMetric(title: "Inside 50s", value: inside50s, style: style)
-            teamNamedMetric(title: "Clearances", value: clearances, style: style)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-
-    private func teamNamedMetric(title: String, value: Int, style: ClubStyle.Style) -> some View {
+    private func teamStatPool(title: String, value: Int, style: ClubStyle.Style) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.headline.weight(.semibold))
-            Text("\(value)")
-                .font(.system(size: 38, weight: .black, design: .rounded))
-                .monospacedDigit()
-        }
-        .foregroundStyle(style.text)
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(style.background.opacity(0.92), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private func teamMetricColumn(name: String, value: Int, style: ClubStyle.Style) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(name)
                 .font(.headline.weight(.semibold))
                 .lineLimit(1)
             Text("\(value)")
@@ -2741,6 +2707,10 @@ private struct StatsTotalsView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(style.background.opacity(0.92), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(style.border.opacity(0.75), lineWidth: 2)
+        )
     }
 
     private func efficiencyPool(title: String, value: String, style: ClubStyle.Style) -> some View {
