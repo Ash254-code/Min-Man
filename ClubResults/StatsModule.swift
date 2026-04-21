@@ -181,15 +181,21 @@ struct StatsTypesSettingsView: View {
     @State private var newName = ""
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
+    @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
 
     var body: some View {
-        ScrollView(.horizontal) {
+        GeometryReader { geometry in
+            let paneWidth = max((geometry.size.width - 16) / 2, 0)
+
             HStack(alignment: .top, spacing: 16) {
                 statsPane(title: "Our Club")
+                    .frame(width: paneWidth)
                 statsPane(title: "Opposition")
+                    .frame(width: paneWidth)
             }
             .padding(.horizontal)
             .padding(.bottom)
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         }
         .navigationTitle("Stats")
         .toolbar {
@@ -208,17 +214,18 @@ struct StatsTypesSettingsView: View {
                 .padding(.horizontal, 8)
 
             List {
+                Section("Tracking") {
+                    Toggle("Track Disposal Efficiency", isOn: $trackDisposalEfficiency)
+                    Toggle("Track Contested Possessions", isOn: $trackContestedPossessions)
+                    Toggle("Individual Tracking", isOn: $trackIndividualTracking)
+                }
+
                 Section("Add Stat Type") {
                     TextField("Stat name", text: $newName)
                     Button("Add") {
                         addStatType()
                     }
                     .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-
-                Section("Tracking") {
-                    Toggle("Track Disposal Efficiency", isOn: $trackDisposalEfficiency)
-                    Toggle("Track Contested Possessions", isOn: $trackContestedPossessions)
                 }
 
                 Section("Stat Types") {
@@ -269,11 +276,11 @@ struct StatsTypesSettingsView: View {
                     }
                 }
             }
-            .frame(minWidth: 420, maxWidth: .infinity, minHeight: 560)
+            .frame(maxWidth: .infinity, minHeight: 560)
             .listStyle(.insetGrouped)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .frame(minWidth: 420, maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private func addStatType() {
