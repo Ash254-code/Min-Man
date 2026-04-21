@@ -1216,10 +1216,28 @@ struct LiveStatsView: View {
     }
 
     private func scoreSummary(includeEvent: (StatEvent) -> Bool) -> (goals: Int, behinds: Int, points: Int) {
-        let goalTypeIDs = Set(enabledStatTypes.filter { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "goal" }.map(\.id))
-        let behindTypeIDs = Set(enabledStatTypes.filter { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "behind" }.map(\.id))
-        let goals = sessionEvents.filter { includeEvent($0) && goalTypeIDs.contains($0.statTypeId) }.count
-        let behinds = sessionEvents.filter { includeEvent($0) && behindTypeIDs.contains($0.statTypeId) }.count
+        let goalTypeIDs = Set(enabledStatTypes.filter { normalizedStatName($0.name) == "goal" }.map(\.id))
+        let behindTypeIDs = Set(enabledStatTypes.filter { normalizedStatName($0.name) == "behind" }.map(\.id))
+        let scoresTypeIDs = Set(enabledStatTypes.filter { normalizedStatName($0.name) == "scores" }.map(\.id))
+
+        let goals: Int
+        let behinds: Int
+
+        if !goalTypeIDs.isEmpty || !behindTypeIDs.isEmpty {
+            goals = sessionEvents.filter { includeEvent($0) && goalTypeIDs.contains($0.statTypeId) }.count
+            behinds = sessionEvents.filter { includeEvent($0) && behindTypeIDs.contains($0.statTypeId) }.count
+        } else {
+            goals = sessionEvents.filter {
+                includeEvent($0)
+                    && scoresTypeIDs.contains($0.statTypeId)
+                    && normalizedStatName($0.transcript ?? "") == "goal"
+            }.count
+            behinds = sessionEvents.filter {
+                includeEvent($0)
+                    && scoresTypeIDs.contains($0.statTypeId)
+                    && normalizedStatName($0.transcript ?? "") == "behind"
+            }.count
+        }
         return (goals, behinds, goals * 6 + behinds)
     }
 
@@ -1555,18 +1573,32 @@ struct LiveStatsView: View {
         isOpposition: Bool,
         fallbackName: String? = nil
     ) -> some View {
-        let statType = statType(named: name, fallbackName: fallbackName)
+        let statType = statType(
+            named: name,
+            fallbackName: fallbackName,
+            extraFallbackNames: ["Scores"]
+        )
+        let normalizedName = normalizedStatName(name)
+        let requiresSelectedPlayer = !isOpposition && (normalizedName == "kick" || normalizedName == "handball")
         return Button {
             guard let statType else { return }
-            addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition)
+            if requiresSelectedPlayer {
+                addManualEvent(statTypeId: statType.id)
+            } else {
+                let scoreKind: String? = (normalizedName == "goal" || normalizedName == "behind") ? normalizedName : nil
+                addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition, scoreKind: scoreKind)
+            }
         } label: {
             Text(title)
                 .font(.headline.weight(.bold))
                 .foregroundStyle(style.text)
                 .frame(maxWidth: .infinity, minHeight: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(style.background.opacity(statType == nil ? 0.35 : 1))
+                )
         }
-        .buttonStyle(.borderedProminent)
-        .tint(style.background)
+        .buttonStyle(.plain)
         .disabled(statType == nil)
     }
 
@@ -1757,14 +1789,22 @@ struct LiveStatsView: View {
         return enabledStatTypes.filter { !teamOnly.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
     }
 
-    private func statType(named name: String, fallbackName: String? = nil) -> StatType? {
-        let target = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if let primary = enabledStatTypes.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == target }) {
+    private func statType(named name: String, fallbackName: String? = nil, extraFallbackNames: [String] = []) -> StatType? {
+        let target = normalizedStatName(name)
+        if let primary = enabledStatTypes.first(where: { normalizedStatName($0.name) == target }) {
             return primary
         }
-        guard let fallbackName else { return nil }
-        let fallback = fallbackName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return enabledStatTypes.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == fallback })
+        let fallbacks = ([fallbackName].compactMap { $0 } + extraFallbackNames).map(normalizedStatName)
+        for fallback in fallbacks {
+            if let stat = enabledStatTypes.first(where: { normalizedStatName($0.name) == fallback }) {
+                return stat
+            }
+        }
+        return nil
+    }
+
+    private func normalizedStatName(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private func playerDisplay(_ player: Player) -> String {
@@ -1884,14 +1924,15 @@ struct LiveStatsView: View {
         addManualEvent()
     }
 
-    private func addTeamEvent(statTypeId: UUID, isOpposition: Bool) {
+    private func addTeamEvent(statTypeId: UUID, isOpposition: Bool, scoreKind: String? = nil) {
         let playerID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
         let event = StatEvent(
             sessionId: session.sessionId,
             playerId: playerID,
             statTypeId: statTypeId,
             quarter: selectedQuarter,
-            sourceRaw: StatsEventSource.manual.rawValue
+            sourceRaw: StatsEventSource.manual.rawValue,
+            transcript: scoreKind
         )
         modelContext.insert(event)
         try? modelContext.save()
