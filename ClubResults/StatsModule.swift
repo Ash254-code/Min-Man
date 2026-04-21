@@ -1117,15 +1117,17 @@ struct LiveStatsView: View {
 
     private var ourTeamEfficiencyText: String {
         guard !displayedPlayers.isEmpty else { return "0%" }
-        let averageEfficiency = displayedPlayers.reduce(0.0) { partialResult, player in
-            let (effectiveCount, nonEffectiveCount) = efficiencyVoteCounts(for: player.id, events: sessionEvents)
-            let totalRatedDisposals = effectiveCount + nonEffectiveCount
-            let playerEfficiency = totalRatedDisposals > 0
-                ? (Double(effectiveCount) / Double(totalRatedDisposals))
-                : 0
-            return partialResult + playerEfficiency
-        } / Double(displayedPlayers.count)
-        return "\(Int(round(averageEfficiency * 100)))%"
+        let totals = displayedPlayers.reduce((effective: 0, nonEffective: 0)) { partialResult, player in
+            let counts = efficiencyVoteCounts(for: player.id, events: sessionEvents)
+            return (
+                effective: partialResult.effective + counts.effective,
+                nonEffective: partialResult.nonEffective + counts.nonEffective
+            )
+        }
+        let ratedCount = totals.effective + totals.nonEffective
+        guard ratedCount > 0 else { return "0%" }
+        let efficiency = Int(round((Double(totals.effective) / Double(ratedCount)) * 100))
+        return "\(efficiency)%"
     }
 
     private func combinedTeamPanel(
