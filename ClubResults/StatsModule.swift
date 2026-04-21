@@ -804,6 +804,8 @@ private struct ReportPreviewDocument: Identifiable {
 struct LiveStatsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
+    @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
 
     let session: StatsSession
 
@@ -1782,6 +1784,7 @@ struct LiveStatsView: View {
     }
 
     private func promptEfficiencyVoteIfNeeded(for event: StatEvent) -> Bool {
+        guard trackDisposalEfficiency else { return false }
         let normalized = statName(for: event.statTypeId).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard normalized == "kick" || normalized == "handball" else { return false }
         pendingEfficiencyEventID = event.id
@@ -1870,31 +1873,17 @@ struct LiveStatsView: View {
                     .foregroundStyle(.white.opacity(0.88))
 
                 VStack(spacing: 10) {
-                    Button {
-                        applyEfficiencyVote(.thumbsUp)
-                    } label: {
-                        Text("👍")
-                            .font(.system(size: 84))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .foregroundStyle(.green)
-                            .background(Capsule().fill(Color.white.opacity(0.17)))
-                            .contentShape(Capsule())
+                    if trackContestedPossessions {
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                            efficiencyVoteButton(emoji: "👍", color: .red, vote: .thumbsUp)
+                            efficiencyVoteButton(emoji: "👍", color: .green, vote: .thumbsUp)
+                            efficiencyVoteButton(emoji: "👎", color: .red, vote: .thumbsDown)
+                            efficiencyVoteButton(emoji: "👎", color: .green, vote: .thumbsDown)
+                        }
+                    } else {
+                        efficiencyVoteButton(emoji: "👍", color: .green, vote: .thumbsUp)
+                        efficiencyVoteButton(emoji: "👎", color: .red, vote: .thumbsDown)
                     }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        applyEfficiencyVote(.thumbsDown)
-                    } label: {
-                        Text("👎")
-                            .font(.system(size: 84))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .foregroundStyle(.red)
-                            .background(Capsule().fill(Color.white.opacity(0.17)))
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
 
                     Button("Skip") {
                         dismissEfficiencyVotePrompt()
@@ -1918,6 +1907,21 @@ struct LiveStatsView: View {
             .padding(.horizontal, 20)
         }
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
+    }
+
+    private func efficiencyVoteButton(emoji: String, color: Color, vote: EfficiencyVote) -> some View {
+        Button {
+            applyEfficiencyVote(vote)
+        } label: {
+            Text(emoji)
+                .font(.system(size: 84))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .foregroundStyle(color)
+                .background(Capsule().fill(Color.white.opacity(0.17)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func parseFailureMessage(_ result: VoiceParseResult) -> String {
