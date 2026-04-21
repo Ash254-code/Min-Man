@@ -1025,6 +1025,7 @@ struct LiveStatsView: View {
     @State private var activeContestedHoverVote: ContestedPossessionVote?
     @State private var suppressTapForButtonKey: String?
     @State private var activePlayerQuickStatsPlayerID: UUID?
+    @State private var activePlayerQuickFanGlobalMidX: CGFloat = UIScreen.main.bounds.midX
     @State private var hoveredPlayerQuickStatName: String?
     @State private var hoveredPlayerQuickEfficiencyVote: EfficiencyVote?
     @State private var hoveredPlayerQuickContestedVote: ContestedPossessionVote?
@@ -1550,7 +1551,14 @@ struct LiveStatsView: View {
                         .overlay(alignment: .top) {
                             GeometryReader { overlayProxy in
                                 if activePlayerQuickStatsPlayerID == player.id {
-                                    playerQuickStatsFan(cardSize: overlayProxy.size)
+                                    let midX = overlayProxy.frame(in: .global).midX
+                                    playerQuickStatsFan(cardSize: overlayProxy.size, globalMidX: midX)
+                                        .onAppear {
+                                            activePlayerQuickFanGlobalMidX = midX
+                                        }
+                                        .onChange(of: midX) { _, newValue in
+                                            activePlayerQuickFanGlobalMidX = newValue
+                                        }
                                         .transition(.opacity.combined(with: .scale(scale: 0.94)))
                                         .zIndex(3000)
                                 }
@@ -2195,8 +2203,14 @@ struct LiveStatsView: View {
         ]
     }
 
-    private func playerQuickStatsFan(cardSize: CGSize) -> some View {
-        let statRects = quickStatRects(cardSize: cardSize)
+    private func playerQuickStatsFan(cardSize: CGSize, globalMidX: CGFloat) -> some View {
+        let statRects = quickStatRects(cardSize: cardSize, globalMidX: globalMidX)
+        let selectedRect = hoveredQuickStatIndex.flatMap { idx in
+            guard statRects.indices.contains(idx) else { return nil }
+            return statRects[idx]
+        }
+        let contestedPopupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
+        let efficiencyPopupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
         return ZStack {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
                 let rect = statRects[index]
@@ -2207,7 +2221,7 @@ struct LiveStatsView: View {
                     .frame(width: rect.width, height: rect.height)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(isHovered ? Color.cyan : (option.statType == nil ? Color.gray.opacity(0.6) : Color.blue))
+                            .fill(isHovered ? Color.cyan : (option.statType == nil ? Color.gray.opacity(0.35) : Color.black.opacity(0.72)))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -2225,7 +2239,7 @@ struct LiveStatsView: View {
                     rightActive: hoveredPlayerQuickContestedVote == .uncontested,
                     rightColor: .blue
                 )
-                .position(x: cardSize.width / 2, y: -126)
+                .position(x: contestedPopupX, y: (selectedRect?.minY ?? -110) - 58)
             }
 
             if shouldShowEfficiencyPopup {
@@ -2237,7 +2251,7 @@ struct LiveStatsView: View {
                     rightActive: hoveredPlayerQuickEfficiencyVote == .thumbsDown,
                     rightColor: .red
                 )
-                .position(x: cardSize.width / 2, y: -204)
+                .position(x: efficiencyPopupX, y: (selectedRect?.minY ?? -110) - 136)
             }
         }
     }
@@ -2289,24 +2303,53 @@ struct LiveStatsView: View {
         return true
     }
 
-    private func quickStatRects(cardSize: CGSize) -> [CGRect] {
-        let buttonWidth: CGFloat = 112
+    private func quickStatRects(cardSize: CGSize, globalMidX: CGFloat) -> [CGRect] {
+        let buttonWidth: CGFloat = 104
         let buttonHeight: CGFloat = 58
-        let spacing: CGFloat = 12
-        let totalWidth = (buttonWidth * 6) + (spacing * 5)
-        let startX = (cardSize.width - totalWidth) / 2
+        let radius: CGFloat = 152
+        let anchor = CGPoint(x: cardSize.width / 2, y: 22)
+        let angles = fanAngles(globalMidX: globalMidX)
         return Array(0..<6).map { index in
+            let radians = angles[index] * (.pi / 180)
+            let center = CGPoint(
+                x: anchor.x + cos(radians) * radius,
+                y: anchor.y + sin(radians) * radius
+            )
             CGRect(
-                x: startX + CGFloat(index) * (buttonWidth + spacing),
-                y: -52 + CGFloat(abs(index - 2)) * 5,
+                x: center.x - (buttonWidth / 2),
+                y: center.y - (buttonHeight / 2),
                 width: buttonWidth,
                 height: buttonHeight
             )
         }
     }
 
+    private func fanAngles(globalMidX: CGFloat) -> [CGFloat] {
+        let screenWidth = UIScreen.main.bounds.width
+        if globalMidX < 210 {
+            // Clockwise around right side when near left edge.
+            return [-120, -88, -56, -24, 8, 40]
+        }
+        if globalMidX > screenWidth - 210 {
+            // Counterclockwise around left side when near right edge.
+            return [-220, -188, -156, -124, -92, -60]
+        }
+        // Tight true semicircle over the player card.
+        return [-170, -138, -106, -74, -42, -10]
+    }
+
+    private var hoveredQuickStatIndex: Int? {
+        guard let hoveredPlayerQuickStatName else { return nil }
+        return playerQuickStatOptions.firstIndex(where: { $0.id == hoveredPlayerQuickStatName })
+    }
+
+    private func clampedPopupX(targetX: CGFloat, popupWidth: CGFloat, containerWidth: CGFloat) -> CGFloat {
+        let half = popupWidth / 2
+        return min(max(targetX, half + 8), containerWidth - half - 8)
+    }
+
     private func updateQuickStatHover(location: CGPoint, cardSize: CGSize) {
-        let rects = quickStatRects(cardSize: cardSize)
+        let rects = quickStatRects(cardSize: cardSize, globalMidX: activePlayerQuickFanGlobalMidX)
         if let statIndex = rects.firstIndex(where: { $0.contains(location) }) {
             hoveredPlayerQuickStatName = playerQuickStatOptions[statIndex].id
             hoveredPlayerQuickContestedVote = nil
@@ -2316,8 +2359,13 @@ struct LiveStatsView: View {
 
         guard let statID = hoveredPlayerQuickStatName, needsQuickStatVotes(for: statID) else { return }
 
-        let contestedRectLeft = CGRect(x: (cardSize.width / 2) - 178, y: -162, width: 170, height: 70)
-        let contestedRectRight = CGRect(x: (cardSize.width / 2) + 8, y: -162, width: 170, height: 70)
+        let selectedRect = hoveredQuickStatIndex.flatMap { idx in
+            guard rects.indices.contains(idx) else { return nil }
+            return rects[idx]
+        }
+        let popupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
+        let contestedRectLeft = CGRect(x: popupX - 184, y: (selectedRect?.minY ?? -110) - 92, width: 170, height: 70)
+        let contestedRectRight = CGRect(x: popupX + 14, y: (selectedRect?.minY ?? -110) - 92, width: 170, height: 70)
         if trackContestedPossessions {
             if contestedRectLeft.contains(location) {
                 hoveredPlayerQuickContestedVote = .contested
@@ -2329,8 +2377,8 @@ struct LiveStatsView: View {
         if !trackDisposalEfficiency { return }
         if trackContestedPossessions && hoveredPlayerQuickContestedVote == nil { return }
 
-        let efficiencyRectLeft = CGRect(x: (cardSize.width / 2) - 178, y: -240, width: 170, height: 70)
-        let efficiencyRectRight = CGRect(x: (cardSize.width / 2) + 8, y: -240, width: 170, height: 70)
+        let efficiencyRectLeft = CGRect(x: popupX - 184, y: (selectedRect?.minY ?? -110) - 170, width: 170, height: 70)
+        let efficiencyRectRight = CGRect(x: popupX + 14, y: (selectedRect?.minY ?? -110) - 170, width: 170, height: 70)
         if efficiencyRectLeft.contains(location) {
             hoveredPlayerQuickEfficiencyVote = .thumbsUp
         } else if efficiencyRectRight.contains(location) {
