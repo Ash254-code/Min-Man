@@ -1595,6 +1595,7 @@ struct LiveStatsView: View {
         try? modelContext.save()
 
         promptEfficiencyVoteIfNeeded(for: event)
+        selectedPlayerId = nil
 
         lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: selectedPlayerId)) — \(selectedQuarter)"
         feedbackToken = UUID()
@@ -1685,6 +1686,7 @@ struct LiveStatsView: View {
         modelContext.insert(event)
         try? modelContext.save()
         promptEfficiencyVoteIfNeeded(for: event)
+        selectedPlayerId = nil
 
         let playerText = playerLabel(for: playerId)
         let statText = statName(for: statTypeId)
