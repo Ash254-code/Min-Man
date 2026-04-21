@@ -1025,10 +1025,9 @@ struct LiveStatsView: View {
     @State private var activeContestedHoverVote: ContestedPossessionVote?
     @State private var suppressTapForButtonKey: String?
     @State private var activePlayerQuickStatsPlayerID: UUID?
-    @State private var pendingPlayerQuickStatName: String?
-    @State private var pendingPlayerQuickStatPlayerID: UUID?
-    @State private var pendingPlayerQuickEfficiencyVote: EfficiencyVote?
-    @State private var pendingPlayerQuickContestedVote: ContestedPossessionVote?
+    @State private var hoveredPlayerQuickStatName: String?
+    @State private var hoveredPlayerQuickEfficiencyVote: EfficiencyVote?
+    @State private var hoveredPlayerQuickContestedVote: ContestedPossessionVote?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -1549,20 +1548,36 @@ struct LiveStatsView: View {
                                 .background(selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                         .overlay(alignment: .top) {
-                            if activePlayerQuickStatsPlayerID == player.id {
-                                playerQuickStatsFan(for: player)
-                                    .offset(y: -28)
-                                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                                    .zIndex(3000)
+                            GeometryReader { overlayProxy in
+                                if activePlayerQuickStatsPlayerID == player.id {
+                                    playerQuickStatsFan(cardSize: overlayProxy.size)
+                                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                                        .zIndex(3000)
+                                }
                             }
                         }
                         .buttonStyle(.plain)
                         .highPriorityGesture(
-                            LongPressGesture(minimumDuration: 0.35)
+                            LongPressGesture(minimumDuration: 0.25)
+                                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                                .onChanged { value in
+                                    switch value {
+                                    case .first(true):
+                                        selectedPlayerId = player.id
+                                        activePlayerQuickStatsPlayerID = player.id
+                                        clearPendingPlayerQuickStat()
+                                    case .second(true, let drag?):
+                                        selectedPlayerId = player.id
+                                        activePlayerQuickStatsPlayerID = player.id
+                                        updateQuickStatHover(location: drag.location, cardSize: CGSize(width: panelProxy.size.width / CGFloat(columnsCount), height: cellHeight))
+                                    default:
+                                        break
+                                    }
+                                }
                                 .onEnded { _ in
-                                    selectPlayer(player.id)
+                                    commitPendingPlayerQuickStatIfValid(playerID: player.id)
                                     clearPendingPlayerQuickStat()
-                                    activePlayerQuickStatsPlayerID = player.id
+                                    activePlayerQuickStatsPlayerID = nil
                                 }
                         )
                     }
@@ -2180,110 +2195,147 @@ struct LiveStatsView: View {
         ]
     }
 
-    private func playerQuickStatsFan(for player: Player) -> some View {
-        HStack(spacing: 10) {
+    private func playerQuickStatsFan(cardSize: CGSize) -> some View {
+        let statRects = quickStatRects(cardSize: cardSize)
+        return ZStack {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
-                Button {
-                    handlePlayerQuickStatTap(playerID: player.id, option: option)
-                } label: {
-                    Text(option.title)
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                        .frame(minWidth: 82, minHeight: 46)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(option.statType == nil ? Color.gray.opacity(0.6) : Color.blue)
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(option.statType == nil)
-                .offset(y: CGFloat(abs(index - 2)) * 4)
-                .overlay(alignment: .top) {
-                    if pendingPlayerQuickStatName == option.id,
-                       pendingPlayerQuickStatPlayerID == player.id,
-                       needsQuickStatVotes(for: option.id) {
-                        playerQuickVotePopup
-                            .offset(y: -122)
-                    }
-                }
+                let rect = statRects[index]
+                let isHovered = hoveredPlayerQuickStatName == option.id
+                Text(option.title)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: rect.width, height: rect.height)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(isHovered ? Color.cyan : (option.statType == nil ? Color.gray.opacity(0.6) : Color.blue))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.35), lineWidth: isHovered ? 2 : 1)
+                    )
+                    .position(x: rect.midX, y: rect.midY)
+            }
+
+            if shouldShowContestedPopup {
+                dualOptionPopup(
+                    leftTitle: "Contested",
+                    leftActive: hoveredPlayerQuickContestedVote == .contested,
+                    leftColor: .orange,
+                    rightTitle: "Uncontested",
+                    rightActive: hoveredPlayerQuickContestedVote == .uncontested,
+                    rightColor: .blue
+                )
+                .position(x: cardSize.width / 2, y: -126)
+            }
+
+            if shouldShowEfficiencyPopup {
+                dualOptionPopup(
+                    leftTitle: "Effective",
+                    leftActive: hoveredPlayerQuickEfficiencyVote == .thumbsUp,
+                    leftColor: .green,
+                    rightTitle: "Non Effective",
+                    rightActive: hoveredPlayerQuickEfficiencyVote == .thumbsDown,
+                    rightColor: .red
+                )
+                .position(x: cardSize.width / 2, y: -204)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
     }
 
-    private var playerQuickVotePopup: some View {
-        VStack(spacing: 8) {
-            if trackDisposalEfficiency {
-                HStack(spacing: 8) {
-                    voteChip("Effective", isActive: pendingPlayerQuickEfficiencyVote == .thumbsUp, tint: .green) {
-                        pendingPlayerQuickEfficiencyVote = .thumbsUp
-                    }
-                    voteChip("Non effective", isActive: pendingPlayerQuickEfficiencyVote == .thumbsDown, tint: .red) {
-                        pendingPlayerQuickEfficiencyVote = .thumbsDown
-                    }
-                }
-            }
-            if trackContestedPossessions {
-                HStack(spacing: 8) {
-                    voteChip("Contested", isActive: pendingPlayerQuickContestedVote == .contested, tint: .orange) {
-                        pendingPlayerQuickContestedVote = .contested
-                    }
-                    voteChip("Uncontested", isActive: pendingPlayerQuickContestedVote == .uncontested, tint: .blue) {
-                        pendingPlayerQuickContestedVote = .uncontested
-                    }
-                }
-            }
-            Button("Add Stat") {
-                commitPendingPlayerQuickStatIfValid()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+    private func dualOptionPopup(
+        leftTitle: String,
+        leftActive: Bool,
+        leftColor: Color,
+        rightTitle: String,
+        rightActive: Bool,
+        rightColor: Color
+    ) -> some View {
+        HStack(spacing: 14) {
+            popupOption(title: leftTitle, isActive: leftActive, tint: leftColor)
+            popupOption(title: rightTitle, isActive: rightActive, tint: rightColor)
         }
-        .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.white.opacity(0.28), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 3)
     }
 
-    private func voteChip(_ title: String, isActive: Bool, tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isActive ? Color.white : Color.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isActive ? tint : Color.gray.opacity(0.32))
-                )
+    private func popupOption(title: String, isActive: Bool, tint: Color) -> some View {
+        Text(title)
+            .font(.title3.weight(.bold))
+            .foregroundStyle(.white)
+            .frame(width: 170, height: 70)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isActive ? tint : Color.gray.opacity(0.45))
+            )
+    }
+
+    private var shouldShowContestedPopup: Bool {
+        guard let statID = hoveredPlayerQuickStatName else { return false }
+        return needsQuickStatVotes(for: statID) && trackContestedPossessions
+    }
+
+    private var shouldShowEfficiencyPopup: Bool {
+        guard let statID = hoveredPlayerQuickStatName else { return false }
+        guard needsQuickStatVotes(for: statID), trackDisposalEfficiency else { return false }
+        if trackContestedPossessions {
+            return hoveredPlayerQuickContestedVote != nil
         }
-        .buttonStyle(.plain)
+        return true
     }
 
-    private func handlePlayerQuickStatTap(playerID: UUID, option: PlayerQuickStatOption) {
-        guard let statType = option.statType else { return }
-        selectedPlayerId = playerID
-        if needsQuickStatVotes(for: option.id) {
-            pendingPlayerQuickStatName = option.id
-            pendingPlayerQuickStatPlayerID = playerID
-            pendingPlayerQuickEfficiencyVote = nil
-            pendingPlayerQuickContestedVote = nil
+    private func quickStatRects(cardSize: CGSize) -> [CGRect] {
+        let buttonWidth: CGFloat = 112
+        let buttonHeight: CGFloat = 58
+        let spacing: CGFloat = 12
+        let totalWidth = (buttonWidth * 6) + (spacing * 5)
+        let startX = (cardSize.width - totalWidth) / 2
+        return Array(0..<6).map { index in
+            CGRect(
+                x: startX + CGFloat(index) * (buttonWidth + spacing),
+                y: -52 + CGFloat(abs(index - 2)) * 5,
+                width: buttonWidth,
+                height: buttonHeight
+            )
+        }
+    }
+
+    private func updateQuickStatHover(location: CGPoint, cardSize: CGSize) {
+        let rects = quickStatRects(cardSize: cardSize)
+        if let statIndex = rects.firstIndex(where: { $0.contains(location) }) {
+            hoveredPlayerQuickStatName = playerQuickStatOptions[statIndex].id
+            hoveredPlayerQuickContestedVote = nil
+            hoveredPlayerQuickEfficiencyVote = nil
             return
         }
-        addManualEvent(statTypeId: statType.id, transcript: option.transcript)
-        clearPendingPlayerQuickStat()
-        activePlayerQuickStatsPlayerID = nil
+
+        guard let statID = hoveredPlayerQuickStatName, needsQuickStatVotes(for: statID) else { return }
+
+        let contestedRectLeft = CGRect(x: (cardSize.width / 2) - 178, y: -162, width: 170, height: 70)
+        let contestedRectRight = CGRect(x: (cardSize.width / 2) + 8, y: -162, width: 170, height: 70)
+        if trackContestedPossessions {
+            if contestedRectLeft.contains(location) {
+                hoveredPlayerQuickContestedVote = .contested
+            } else if contestedRectRight.contains(location) {
+                hoveredPlayerQuickContestedVote = .uncontested
+            }
+        }
+
+        if !trackDisposalEfficiency { return }
+        if trackContestedPossessions && hoveredPlayerQuickContestedVote == nil { return }
+
+        let efficiencyRectLeft = CGRect(x: (cardSize.width / 2) - 178, y: -240, width: 170, height: 70)
+        let efficiencyRectRight = CGRect(x: (cardSize.width / 2) + 8, y: -240, width: 170, height: 70)
+        if efficiencyRectLeft.contains(location) {
+            hoveredPlayerQuickEfficiencyVote = .thumbsUp
+        } else if efficiencyRectRight.contains(location) {
+            hoveredPlayerQuickEfficiencyVote = .thumbsDown
+        }
     }
 
     private func needsQuickStatVotes(for statID: String) -> Bool {
@@ -2291,10 +2343,9 @@ struct LiveStatsView: View {
         return applies && (trackDisposalEfficiency || trackContestedPossessions)
     }
 
-    private func commitPendingPlayerQuickStatIfValid() {
+    private func commitPendingPlayerQuickStatIfValid(playerID: UUID) {
         guard
-            let statID = pendingPlayerQuickStatName,
-            let playerID = pendingPlayerQuickStatPlayerID,
+            let statID = hoveredPlayerQuickStatName,
             let option = playerQuickStatOptions.first(where: { $0.id == statID }),
             let statType = option.statType
         else {
@@ -2302,26 +2353,25 @@ struct LiveStatsView: View {
             return
         }
 
-        let hasRequiredEfficiency = !trackDisposalEfficiency || pendingPlayerQuickEfficiencyVote != nil
-        let hasRequiredContested = !trackContestedPossessions || pendingPlayerQuickContestedVote != nil
+        let hasRequiredEfficiency = !trackDisposalEfficiency || !needsQuickStatVotes(for: statID) || hoveredPlayerQuickEfficiencyVote != nil
+        let hasRequiredContested = !trackContestedPossessions || !needsQuickStatVotes(for: statID) || hoveredPlayerQuickContestedVote != nil
         guard hasRequiredEfficiency && hasRequiredContested else { return }
 
         selectedPlayerId = playerID
         addManualEvent(
             statTypeId: statType.id,
             transcript: option.transcript,
-            efficiencyVote: pendingPlayerQuickEfficiencyVote,
-            contestedVote: pendingPlayerQuickContestedVote
+            efficiencyVote: hoveredPlayerQuickEfficiencyVote,
+            contestedVote: hoveredPlayerQuickContestedVote
         )
         clearPendingPlayerQuickStat()
         activePlayerQuickStatsPlayerID = nil
     }
 
     private func clearPendingPlayerQuickStat() {
-        pendingPlayerQuickStatName = nil
-        pendingPlayerQuickStatPlayerID = nil
-        pendingPlayerQuickEfficiencyVote = nil
-        pendingPlayerQuickContestedVote = nil
+        hoveredPlayerQuickStatName = nil
+        hoveredPlayerQuickEfficiencyVote = nil
+        hoveredPlayerQuickContestedVote = nil
     }
 
     private func configureQuarterTimer(reset: Bool) {
