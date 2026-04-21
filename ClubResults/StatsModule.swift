@@ -1469,17 +1469,20 @@ struct LiveStatsView: View {
                 name: name,
                 style: style,
                 isOpposition: isOpposition,
-                presetEfficiencyVote: .thumbsUp
+                presetEfficiencyVote: .thumbsUp,
+                minHeight: 27
             )
             teamStatButton(
                 "\(title) 👎🏽",
                 name: name,
                 style: style,
                 isOpposition: isOpposition,
-                presetEfficiencyVote: .thumbsDown
+                presetEfficiencyVote: .thumbsDown,
+                minHeight: 27
             )
         }
         .frame(maxWidth: .infinity)
+        .frame(minHeight: 60)
     }
 
     private var quarterPicker: some View {
@@ -1638,7 +1641,8 @@ struct LiveStatsView: View {
         style: ClubStyle.Style,
         isOpposition: Bool,
         fallbackName: String? = nil,
-        presetEfficiencyVote: EfficiencyVote? = nil
+        presetEfficiencyVote: EfficiencyVote? = nil,
+        minHeight: CGFloat = 60
     ) -> some View {
         let statType = statType(
             named: name,
@@ -1702,9 +1706,9 @@ struct LiveStatsView: View {
             }
         } label: {
             Text(title)
-                .font(.headline.weight(.bold))
+                .font(minHeight < 40 ? .subheadline.weight(.bold) : .headline.weight(.bold))
                 .foregroundStyle(style.text)
-                .frame(maxWidth: .infinity, minHeight: 60)
+                .frame(maxWidth: .infinity, minHeight: minHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(style.background.opacity(statType == nil ? 0.35 : 1))
