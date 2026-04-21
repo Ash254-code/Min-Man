@@ -1591,11 +1591,7 @@ struct LiveStatsView: View {
             || normalizedName == "clearances"
             || normalizedName == "inside 50"
             || normalizedName == "inside 50s"
-        let requiresSelectedPlayer = !isOpposition && (
-            trackIndividualTracking
-                ? !isOptionalUsStat
-                : (normalizedName == "kick" || normalizedName == "handball")
-        )
+        let requiresSelectedPlayer = !isOpposition && trackIndividualTracking && !isOptionalUsStat
         return Button {
             guard let statType else { return }
             if isOpposition {
@@ -1603,7 +1599,9 @@ struct LiveStatsView: View {
                 return
             }
 
-            if trackIndividualTracking && isOptionalUsStat {
+            if !trackIndividualTracking {
+                addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
+            } else if isOptionalUsStat {
                 if selectedPlayerId == nil {
                     addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
                 } else {
