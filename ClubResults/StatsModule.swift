@@ -884,10 +884,17 @@ struct LiveStatsView: View {
         .sheet(item: $showEditEvent) { event in
             EditStatEventView(event: event, players: playersForGrade, statTypes: enabledStatTypes)
         }
-        .sheet(isPresented: $showTotals) {
+        .fullScreenCover(isPresented: $showTotals) {
             StatsTotalsView(
                 rows: totalsRows,
-                statTypes: enabledStatTypes
+                statTypes: enabledStatTypes,
+                sessionEvents: sessionEvents,
+                ourTeamName: ourTeamName,
+                oppositionName: session.opposition,
+                ourStyle: ourStyle,
+                oppositionStyle: oppositionStyle,
+                ourScoreSummary: ourScoreSummary,
+                oppositionScoreSummary: oppositionScoreSummary
             )
         }
         .sheet(item: $reportPreviewDocument) { document in
@@ -2444,6 +2451,14 @@ private struct StatsTotalsView: View {
     @Environment(\.dismiss) private var dismiss
     let rows: [TotalsRow]
     let statTypes: [StatType]
+    let sessionEvents: [StatEvent]
+    let ourTeamName: String
+    let oppositionName: String
+    let ourStyle: ClubStyle.Style
+    let oppositionStyle: ClubStyle.Style
+    let ourScoreSummary: (goals: Int, behinds: Int, points: Int)
+    let oppositionScoreSummary: (goals: Int, behinds: Int, points: Int)
+    private let oppositionTeamStatPlayerID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB") ?? UUID()
 
     private struct TotalsSummaryRow: Identifiable {
         let id: UUID
@@ -2480,43 +2495,144 @@ private struct StatsTotalsView: View {
         }
     }
 
+    private var topPossessionRows: [TotalsSummaryRow] {
+        Array(summaryRows.prefix(5))
+    }
+
+    private var topGoalKickers: [TotalsSummaryRow] {
+        summaryRows
+            .filter { $0.goals > 0 }
+            .sorted { lhs, rhs in
+                if lhs.goals != rhs.goals { return lhs.goals > rhs.goals }
+                if lhs.behinds != rhs.behinds { return lhs.behinds > rhs.behinds }
+                return lhs.playerLabel < rhs.playerLabel
+            }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    private var inside50Stat: StatType? {
+        statType(aliases: ["inside 50", "inside50", "inside 50s"])
+    }
+
+    private var clearanceStat: StatType? {
+        statType(aliases: ["clearance", "clearances"])
+    }
+
+    private var ourInside50s: Int {
+        teamCount(for: inside50Stat, isOpposition: false)
+    }
+
+    private var theirInside50s: Int {
+        teamCount(for: inside50Stat, isOpposition: true)
+    }
+
+    private var ourClearances: Int {
+        teamCount(for: clearanceStat, isOpposition: false)
+    }
+
+    private var theirClearances: Int {
+        teamCount(for: clearanceStat, isOpposition: true)
+    }
+
+    private var ourTeamEfficiency: String {
+        teamEfficiencyText(isOpposition: false)
+    }
+
+    private var oppositionTeamEfficiency: String {
+        teamEfficiencyText(isOpposition: true)
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    ForEach(Array(summaryRows.enumerated()), id: \.element.id) { index, row in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("\(index + 1). \(row.playerLabel)")
-                                    .font(.headline)
-                                Spacer()
-                                Text("\(row.possessions)")
-                                    .font(.system(size: 36, weight: .bold, design: .rounded))
-                                    .monospacedDigit()
-                            }
+            ScrollView {
+                VStack(spacing: 14) {
+                    HStack(spacing: 12) {
+                        scorePool(
+                            teamName: ourTeamName,
+                            score: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds)",
+                            points: ourScoreSummary.points,
+                            style: ourStyle
+                        )
+                        scorePool(
+                            teamName: oppositionName,
+                            score: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds)",
+                            points: oppositionScoreSummary.points,
+                            style: oppositionStyle
+                        )
+                    }
 
-                            HStack(spacing: 14) {
-                                compactValue(title: "Kicks", value: row.kicks)
-                                compactValue(title: "Handballs", value: row.handballs)
-                                compactValue(title: "Marks", value: row.marks)
-                                compactValue(title: "Tackles", value: row.tackles)
-                                compactValue(title: "G/B", value: "\(row.goals)/\(row.behinds)")
+                    HStack(spacing: 12) {
+                        comparisonPool(
+                            title: "Inside 50s",
+                            ourValue: ourInside50s,
+                            theirValue: theirInside50s
+                        )
+                        comparisonPool(
+                            title: "Clearances",
+                            ourValue: ourClearances,
+                            theirValue: theirClearances
+                        )
+                    }
+
+                    HStack(spacing: 12) {
+                        efficiencyPool(title: "\(ourTeamName) Efficiency", value: ourTeamEfficiency, style: ourStyle)
+                        efficiencyPool(title: "\(oppositionName) Efficiency", value: oppositionTeamEfficiency, style: oppositionStyle)
+                    }
+
+                    HStack(alignment: .top, spacing: 12) {
+                        leaderboardPool(
+                            title: "Top 5 Possession Getters",
+                            entries: topPossessionRows.map {
+                                ("\($0.playerLabel)", "\($0.possessions)", "K\($0.kicks) • H\($0.handballs)")
                             }
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
+                        )
+                        leaderboardPool(
+                            title: "Top 3 Goal Kickers",
+                            entries: topGoalKickers.map {
+                                ("\($0.playerLabel)", "\($0.goals)", "Behinds \($0.behinds)")
+                            }
+                        )
                     }
                 }
+                .padding(16)
             }
-            .listStyle(.plain)
-            .navigationTitle("Totals")
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Game Totals")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }
         }
+    }
+
+    private func statType(aliases: [String]) -> StatType? {
+        let normalizedAliases = Set(aliases.map { $0.lowercased() })
+        return statTypes.first { type in
+            normalizedAliases.contains(type.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
+    }
+
+    private func teamCount(for statType: StatType?, isOpposition: Bool) -> Int {
+        guard let statType else { return 0 }
+        return sessionEvents.filter { event in
+            let isOppositionEvent = event.playerId == oppositionTeamStatPlayerID
+            return isOppositionEvent == isOpposition && event.statTypeId == statType.id
+        }.count
+    }
+
+    private func teamEfficiencyText(isOpposition: Bool) -> String {
+        let relevant = sessionEvents.filter { event in
+            let isOppositionEvent = event.playerId == oppositionTeamStatPlayerID
+            return isOppositionEvent == isOpposition
+        }
+        let effective = relevant.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsUp.rawValue }.count
+        let nonEffective = relevant.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsDown.rawValue }.count
+        let total = effective + nonEffective
+        guard total > 0 else { return "-" }
+        return "\(Int(round((Double(effective) / Double(total)) * 100)))%"
     }
 
     private func count(for statName: String, in row: TotalsRow) -> Int {
@@ -2525,11 +2641,111 @@ private struct StatsTotalsView: View {
         } ?? 0
     }
 
-    private func compactValue(title: String, value: Int) -> some View {
-        Text("\(title): \(value)")
+    @ViewBuilder
+    private func scorePool(teamName: String, score: String, points: Int, style: ClubStyle.Style) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(teamName.uppercased())
+                .font(.title3.weight(.black))
+                .lineLimit(1)
+            Text(score)
+                .font(.system(size: 52, weight: .black, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            Text("\(points) points")
+                .font(.title2.weight(.bold))
+                .monospacedDigit()
+        }
+        .foregroundStyle(style.text)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(style.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(style.border.opacity(0.75), lineWidth: 2)
+        )
     }
 
-    private func compactValue(title: String, value: String) -> some View {
-        Text("\(title): \(value)")
+    private func comparisonPool(title: String, ourValue: Int, theirValue: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.title3.weight(.black))
+            HStack {
+                teamMetricColumn(name: ourTeamName, value: ourValue, style: ourStyle)
+                teamMetricColumn(name: oppositionName, value: theirValue, style: oppositionStyle)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func teamMetricColumn(name: String, value: Int, style: ClubStyle.Style) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(name)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+            Text("\(value)")
+                .font(.system(size: 38, weight: .black, design: .rounded))
+                .monospacedDigit()
+        }
+        .foregroundStyle(style.text)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(style.background.opacity(0.92), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func efficiencyPool(title: String, value: String, style: ClubStyle.Style) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline.weight(.black))
+                .lineLimit(1)
+            Text(value)
+                .font(.system(size: 44, weight: .black, design: .rounded))
+                .monospacedDigit()
+        }
+        .foregroundStyle(style.text)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(style.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(style.border.opacity(0.8), lineWidth: 2)
+        )
+    }
+
+    private func leaderboardPool(title: String, entries: [(name: String, mainValue: String, subValue: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.title3.weight(.black))
+            if entries.isEmpty {
+                Text("No data yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(index + 1).")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.name)
+                                .font(.headline.weight(.semibold))
+                                .lineLimit(1)
+                            Text(entry.subValue)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Text(entry.mainValue)
+                            .font(.system(size: 34, weight: .black, design: .rounded))
+                            .monospacedDigit()
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
