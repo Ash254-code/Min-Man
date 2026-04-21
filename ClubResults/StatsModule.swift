@@ -1012,6 +1012,9 @@ struct LiveStatsView: View {
     @State private var statusBanner: StatRecordBanner?
     @State private var statusBannerTask: Task<Void, Never>?
     @State private var showStatsSettings = false
+    @State private var activeEfficiencyButtonKey: String?
+    @State private var activeEfficiencyHoverVote: EfficiencyVote?
+    @State private var suppressTapForButtonKey: String?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -1609,27 +1612,21 @@ struct LiveStatsView: View {
             || normalizedName == "clearances"
             || normalizedName == "inside 50"
             || normalizedName == "inside 50s"
-        let requiresSelectedPlayer = !isOpposition && trackIndividualTracking && !isOptionalUsStat
+        let buttonKey = "\(normalizedName)-\(isOpposition ? "opp" : "our")"
+        let supportsEfficiencyLongPress = supportsEfficiencyLongPress(for: normalizedName, isOpposition: isOpposition)
         return Button {
-            guard let statType else { return }
-            if isOpposition {
-                addTeamEvent(statTypeId: statType.id, isOpposition: true, scoreKind: scoreKind)
+            if suppressTapForButtonKey == buttonKey {
+                suppressTapForButtonKey = nil
                 return
             }
-
-            if !trackIndividualTracking {
-                addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
-            } else if isOptionalUsStat {
-                if selectedPlayerId == nil {
-                    addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
-                } else {
-                    addManualEvent(statTypeId: statType.id, transcript: scoreKind)
-                }
-            } else if requiresSelectedPlayer {
-                addManualEvent(statTypeId: statType.id, transcript: scoreKind)
-            } else {
-                addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
-            }
+            guard let statType else { return }
+            handleTeamStatAction(
+                statTypeId: statType.id,
+                isOpposition: isOpposition,
+                scoreKind: scoreKind,
+                isOptionalUsStat: isOptionalUsStat,
+                efficiencyVote: nil
+            )
         } label: {
             Text(title)
                 .font(.headline.weight(.bold))
@@ -1640,8 +1637,120 @@ struct LiveStatsView: View {
                         .fill(style.background.opacity(statType == nil ? 0.35 : 1))
                 )
         }
+        .overlay(alignment: .top) {
+            if activeEfficiencyButtonKey == buttonKey {
+                efficiencySlidePopup
+                    .offset(y: -88)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+            }
+        }
         .buttonStyle(.plain)
         .disabled(statType == nil)
+        .highPriorityGesture(
+            supportsEfficiencyLongPress ? AnyGesture(
+                LongPressGesture(minimumDuration: 0.28)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                    .onChanged { value in
+                        switch value {
+                        case .first(true):
+                            activeEfficiencyButtonKey = buttonKey
+                            activeEfficiencyHoverVote = .thumbsUp
+                        case .second(true, let drag?):
+                            activeEfficiencyHoverVote = drag.location.x < 110 ? .thumbsUp : .thumbsDown
+                        default:
+                            break
+                        }
+                    }
+                    .onEnded { value in
+                        guard let statType else {
+                            activeEfficiencyButtonKey = nil
+                            activeEfficiencyHoverVote = nil
+                            return
+                        }
+                        var didCommit = false
+                        switch value {
+                        case .second(true, _):
+                            let vote = activeEfficiencyHoverVote ?? .thumbsUp
+                            suppressTapForButtonKey = buttonKey
+                            handleTeamStatAction(
+                                statTypeId: statType.id,
+                                isOpposition: isOpposition,
+                                scoreKind: scoreKind,
+                                isOptionalUsStat: isOptionalUsStat,
+                                efficiencyVote: vote
+                            )
+                            didCommit = true
+                        default:
+                            break
+                        }
+                        if !didCommit {
+                            suppressTapForButtonKey = nil
+                        }
+                        activeEfficiencyButtonKey = nil
+                        activeEfficiencyHoverVote = nil
+                    }
+            ) : AnyGesture(EmptyGesture())
+        )
+    }
+
+    private var efficiencySlidePopup: some View {
+        HStack(spacing: 8) {
+            efficiencySlideOption(title: "Efficient", vote: .thumbsUp, tint: .green)
+            efficiencySlideOption(title: "Non-efficient", vote: .thumbsDown, tint: .red)
+        }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.28), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 3)
+    }
+
+    private func efficiencySlideOption(title: String, vote: EfficiencyVote, tint: Color) -> some View {
+        let isSelected = activeEfficiencyHoverVote == vote
+        return Text(title)
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .frame(width: 102, height: 64)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? tint : Color.white.opacity(0.2))
+            )
+    }
+
+    private func supportsEfficiencyLongPress(for normalizedName: String, isOpposition: Bool) -> Bool {
+        guard trackDisposalEfficiency else { return false }
+        guard !isOpposition else { return false }
+        return normalizedName == "kick" || normalizedName == "handball" || normalizedName == "mark"
+    }
+
+    private func handleTeamStatAction(
+        statTypeId: UUID,
+        isOpposition: Bool,
+        scoreKind: String?,
+        isOptionalUsStat: Bool,
+        efficiencyVote: EfficiencyVote?
+    ) {
+        let requiresSelectedPlayer = !isOpposition && trackIndividualTracking && !isOptionalUsStat
+        if isOpposition {
+            addTeamEvent(statTypeId: statTypeId, isOpposition: true, scoreKind: scoreKind, efficiencyVote: efficiencyVote)
+            return
+        }
+
+        if !trackIndividualTracking {
+            addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote)
+        } else if isOptionalUsStat {
+            if selectedPlayerId == nil {
+                addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote)
+            } else {
+                addManualEvent(statTypeId: statTypeId, transcript: scoreKind, efficiencyVote: efficiencyVote)
+            }
+        } else if requiresSelectedPlayer {
+            addManualEvent(statTypeId: statTypeId, transcript: scoreKind, efficiencyVote: efficiencyVote)
+        } else {
+            addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote)
+        }
     }
 
     private func efficiencyEmojiForRecentEvent(_ event: StatEvent) -> String? {
@@ -1931,7 +2040,7 @@ struct LiveStatsView: View {
         allStatTypes.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
-    private func addManualEvent(statTypeId: UUID, transcript: String? = nil) {
+    private func addManualEvent(statTypeId: UUID, transcript: String? = nil, efficiencyVote: EfficiencyVote? = nil) {
         guard let currentSelectedPlayerId = selectedPlayerId else {
             lastMessage = "Select a player first"
             showStatusBanner(text: "ERROR • Select a player first", isSuccess: false)
@@ -1947,10 +2056,13 @@ struct LiveStatsView: View {
             sourceRaw: StatsEventSource.manual.rawValue,
             transcript: transcript
         )
+        if let efficiencyVote {
+            event.efficiencyVoteRaw = efficiencyVote.rawValue
+        }
         modelContext.insert(event)
         try? modelContext.save()
 
-        let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event)
+        let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event, preselectedVote: efficiencyVote)
         selectedPlayerId = nil
 
         lastMessage = "Added: \(statName(for: statTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
@@ -1960,7 +2072,12 @@ struct LiveStatsView: View {
         feedbackToken = UUID()
     }
 
-    private func addTeamEvent(statTypeId: UUID, isOpposition: Bool, scoreKind: String? = nil) {
+    private func addTeamEvent(
+        statTypeId: UUID,
+        isOpposition: Bool,
+        scoreKind: String? = nil,
+        efficiencyVote: EfficiencyVote? = nil
+    ) {
         let playerID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
         let event = StatEvent(
             sessionId: session.sessionId,
@@ -1970,10 +2087,16 @@ struct LiveStatsView: View {
             sourceRaw: StatsEventSource.manual.rawValue,
             transcript: scoreKind
         )
+        if let efficiencyVote {
+            event.efficiencyVoteRaw = efficiencyVote.rawValue
+        }
         modelContext.insert(event)
         try? modelContext.save()
         lastMessage = "Added: \(statName(for: statTypeId)) — \(isOpposition ? session.opposition : ourTeamName) — \(selectedQuarter)"
-        showSuccessBanner(for: event)
+        let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event, preselectedVote: efficiencyVote)
+        if !shouldDelaySuccessBanner {
+            showSuccessBanner(for: event)
+        }
         feedbackToken = UUID()
     }
 
@@ -2057,7 +2180,12 @@ struct LiveStatsView: View {
         feedbackToken = UUID()
     }
 
-    private func promptEfficiencyVoteIfNeeded(for event: StatEvent) -> Bool {
+    private func promptEfficiencyVoteIfNeeded(for event: StatEvent, preselectedVote: EfficiencyVote? = nil) -> Bool {
+        if let preselectedVote {
+            event.efficiencyVoteRaw = preselectedVote.rawValue
+            try? modelContext.save()
+            return false
+        }
         guard trackDisposalEfficiency else { return false }
         let normalized = statName(for: event.statTypeId).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard normalized == "kick" || normalized == "handball" else { return false }
