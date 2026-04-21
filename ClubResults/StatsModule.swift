@@ -183,67 +183,13 @@ struct StatsTypesSettingsView: View {
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
 
     var body: some View {
-        List {
-            Section("Add Stat Type") {
-                TextField("Stat name", text: $newName)
-                Button("Add") {
-                    addStatType()
-                }
-                .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        ScrollView(.horizontal) {
+            HStack(alignment: .top, spacing: 16) {
+                statsPane(title: "Our Club")
+                statsPane(title: "Opposition")
             }
-
-            Section("Tracking") {
-                Toggle("Track Disposal Efficiency", isOn: $trackDisposalEfficiency)
-                Toggle("Track Contested Possessions", isOn: $trackContestedPossessions)
-            }
-
-            Section("Stat Types") {
-                ForEach(Array(statTypes.enumerated()), id: \.element.id) { index, type in
-                    HStack {
-                        TextField("Name", text: Binding(
-                            get: { type.name },
-                            set: {
-                                type.name = $0
-                                save()
-                            }
-                        ))
-
-                        Toggle("Enabled", isOn: Binding(
-                            get: { type.isEnabled },
-                            set: {
-                                type.isEnabled = $0
-                                save()
-                            }
-                        ))
-                        .labelsHidden()
-                    }
-                    .swipeActions {
-                        Button(role: .destructive) {
-                            modelContext.delete(type)
-                            resequence()
-                            save()
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                    .moveDisabled(false)
-                    .onAppear {
-                        if type.sortOrder != index {
-                            type.sortOrder = index
-                            save()
-                        }
-                    }
-                }
-                .onMove(perform: move)
-            }
-
-            Section("Speech") {
-                NavigationLink {
-                    SpeechSetupView()
-                } label: {
-                    Label("Speech Setup", systemImage: "waveform.badge.mic")
-                }
-            }
+            .padding(.horizontal)
+            .padding(.bottom)
         }
         .navigationTitle("Stats")
         .toolbar {
@@ -252,6 +198,82 @@ struct StatsTypesSettingsView: View {
         .task {
             seedDefaultStatTypesIfNeeded()
         }
+    }
+
+    @ViewBuilder
+    private func statsPane(title: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+                .padding(.horizontal, 8)
+
+            List {
+                Section("Add Stat Type") {
+                    TextField("Stat name", text: $newName)
+                    Button("Add") {
+                        addStatType()
+                    }
+                    .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                Section("Tracking") {
+                    Toggle("Track Disposal Efficiency", isOn: $trackDisposalEfficiency)
+                    Toggle("Track Contested Possessions", isOn: $trackContestedPossessions)
+                }
+
+                Section("Stat Types") {
+                    ForEach(Array(statTypes.enumerated()), id: \.element.id) { index, type in
+                        HStack {
+                            TextField("Name", text: Binding(
+                                get: { type.name },
+                                set: {
+                                    type.name = $0
+                                    save()
+                                }
+                            ))
+
+                            Toggle("Enabled", isOn: Binding(
+                                get: { type.isEnabled },
+                                set: {
+                                    type.isEnabled = $0
+                                    save()
+                                }
+                            ))
+                            .labelsHidden()
+                        }
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                modelContext.delete(type)
+                                resequence()
+                                save()
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .moveDisabled(false)
+                        .onAppear {
+                            if type.sortOrder != index {
+                                type.sortOrder = index
+                                save()
+                            }
+                        }
+                    }
+                    .onMove(perform: move)
+                }
+
+                Section("Speech") {
+                    NavigationLink {
+                        SpeechSetupView()
+                    } label: {
+                        Label("Speech Setup", systemImage: "waveform.badge.mic")
+                    }
+                }
+            }
+            .frame(minWidth: 420, maxWidth: .infinity, minHeight: 560)
+            .listStyle(.insetGrouped)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .frame(minWidth: 420, maxWidth: .infinity, alignment: .topLeading)
     }
 
     private func addStatType() {
