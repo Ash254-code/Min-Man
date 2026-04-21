@@ -993,6 +993,7 @@ struct LiveStatsView: View {
     @State private var showAllPlayers = false
     @State private var statusBanner: StatRecordBanner?
     @State private var statusBannerTask: Task<Void, Never>?
+    @State private var showStatsSettings = false
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -1047,6 +1048,14 @@ struct LiveStatsView: View {
                     Image(systemName: "chevron.left")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showStatsSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel("Stats Settings")
+            }
         }
         .sheet(item: $showEditEvent) { event in
             EditStatEventView(event: event, players: playersForGrade, statTypes: enabledStatTypes)
@@ -1079,6 +1088,11 @@ struct LiveStatsView: View {
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
             if let shareURL {
                 ShareSheet(items: [shareURL])
+            }
+        }
+        .sheet(isPresented: $showStatsSettings) {
+            NavigationStack {
+                StatsTypesSettingsView()
             }
         }
         .sheet(isPresented: $showPlayerVisibilityEditor) {
@@ -1542,14 +1556,9 @@ struct LiveStatsView: View {
         fallbackName: String? = nil
     ) -> some View {
         let statType = statType(named: name, fallbackName: fallbackName)
-        let appliesToSelectedPlayer = !isOpposition && isGoalOrBehindStat(named: name)
         return Button {
             guard let statType else { return }
-            if appliesToSelectedPlayer {
-                addManualEvent(statTypeId: statType.id)
-            } else {
-                addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition)
-            }
+            addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition)
         } label: {
             Text(title)
                 .font(.headline.weight(.bold))
@@ -1559,11 +1568,6 @@ struct LiveStatsView: View {
         .buttonStyle(.borderedProminent)
         .tint(style.background)
         .disabled(statType == nil)
-    }
-
-    private func isGoalOrBehindStat(named value: String) -> Bool {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized == "goal" || normalized == "behind"
     }
 
     private func efficiencyEmojiForRecentEvent(_ event: StatEvent) -> String? {
