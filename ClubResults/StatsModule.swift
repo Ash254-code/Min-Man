@@ -213,6 +213,7 @@ struct StatsTypesSettingsView: View {
             normalizeGoalAndBehindToScoresIfNeeded()
             seedDefaultStatTypesIfNeeded()
             ensureAlwaysOnStatTypesIfNeeded()
+            enforceOppositionTrackingDependency()
         }
     }
 
@@ -225,12 +226,16 @@ struct StatsTypesSettingsView: View {
 
             List {
                 Section("Tracking") {
-                    Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
-                    Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
                     if side == .ourClub {
+                        Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
+                        Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
                         Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
                     } else {
                         Toggle("Track Possesions", isOn: trackingBinding(for: side, type: .oppositionPossessions))
+                        Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
+                            .disabled(!oppositionTrackPossessions)
+                        Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
+                            .disabled(!oppositionTrackPossessions)
                     }
                 }
 
@@ -338,8 +343,8 @@ struct StatsTypesSettingsView: View {
                 case (.ourClub, .contestedPossessions): return trackContestedPossessions
                 case (.ourClub, .individualTracking): return trackIndividualTracking
                 case (.ourClub, .oppositionPossessions): return trackContestedPossessions
-                case (.opposition, .disposalEfficiency): return oppositionTrackDisposalEfficiency
-                case (.opposition, .contestedPossessions): return oppositionTrackContestedPossessions
+                case (.opposition, .disposalEfficiency): return oppositionTrackPossessions ? oppositionTrackDisposalEfficiency : false
+                case (.opposition, .contestedPossessions): return oppositionTrackPossessions ? oppositionTrackContestedPossessions : false
                 case (.opposition, .individualTracking): return oppositionTrackPossessions
                 case (.opposition, .oppositionPossessions): return oppositionTrackPossessions
                 }
@@ -350,13 +355,26 @@ struct StatsTypesSettingsView: View {
                 case (.ourClub, .contestedPossessions): trackContestedPossessions = newValue
                 case (.ourClub, .individualTracking): trackIndividualTracking = newValue
                 case (.ourClub, .oppositionPossessions): trackContestedPossessions = newValue
-                case (.opposition, .disposalEfficiency): oppositionTrackDisposalEfficiency = newValue
-                case (.opposition, .contestedPossessions): oppositionTrackContestedPossessions = newValue
+                case (.opposition, .disposalEfficiency):
+                    oppositionTrackDisposalEfficiency = oppositionTrackPossessions ? newValue : false
+                case (.opposition, .contestedPossessions):
+                    oppositionTrackContestedPossessions = oppositionTrackPossessions ? newValue : false
                 case (.opposition, .individualTracking): oppositionTrackPossessions = newValue
-                case (.opposition, .oppositionPossessions): oppositionTrackPossessions = newValue
+                case (.opposition, .oppositionPossessions):
+                    oppositionTrackPossessions = newValue
+                    if !newValue {
+                        oppositionTrackDisposalEfficiency = false
+                        oppositionTrackContestedPossessions = false
+                    }
                 }
             }
         )
+    }
+
+    private func enforceOppositionTrackingDependency() {
+        guard !oppositionTrackPossessions else { return }
+        oppositionTrackDisposalEfficiency = false
+        oppositionTrackContestedPossessions = false
     }
 
     private func statTypeEnabledBinding(for type: StatType, side: StatsSide) -> Binding<Bool> {
@@ -960,6 +978,8 @@ struct LiveStatsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
+    @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
+    @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
 
     let session: StatsSession
 
@@ -970,7 +990,6 @@ struct LiveStatsView: View {
 
     @State private var selectedQuarter = "Q1"
     @State private var selectedPlayerId: UUID?
-    @State private var selectedStatTypeId: UUID?
     @State private var lastMessage: String?
     @State private var showEditEvent: StatEvent?
     @State private var reportPreviewDocument: ReportPreviewDocument?
@@ -992,6 +1011,7 @@ struct LiveStatsView: View {
     @State private var showAllPlayers = false
     @State private var statusBanner: StatRecordBanner?
     @State private var statusBannerTask: Task<Void, Never>?
+    @State private var showStatsSettings = false
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -1001,7 +1021,8 @@ struct LiveStatsView: View {
         GeometryReader { proxy in
             let _: CGFloat = 8
             let availableWidth = max(proxy.size.width - 24, 640)
-            let leftPanelWidth = min(max(availableWidth * 0.62, 420), availableWidth - 300)
+            let leftWidthRatio: CGFloat = oppositionTrackPossessions ? 0.72 : 0.62
+            let leftPanelWidth = min(max(availableWidth * leftWidthRatio, 420), availableWidth - 300)
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 12, 290)
             VStack(spacing: 12) {
                 headerBannerArea
@@ -1016,8 +1037,10 @@ struct LiveStatsView: View {
                     .frame(width: leftPanelWidth)
 
                     VStack(spacing: 12) {
-                        statButtonsPanel
-                            .frame(height: rightStatActionsHeight)
+                        if !oppositionTrackPossessions {
+                            statButtonsPanel
+                                .frame(height: rightStatActionsHeight)
+                        }
                         recentEventsPanel
                     }
                     .frame(width: rightPanelWidth)
@@ -1042,6 +1065,14 @@ struct LiveStatsView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                 }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showStatsSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel("Stats Settings")
             }
         }
         .sheet(item: $showEditEvent) { event in
@@ -1075,6 +1106,11 @@ struct LiveStatsView: View {
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
             if let shareURL {
                 ShareSheet(items: [shareURL])
+            }
+        }
+        .sheet(isPresented: $showStatsSettings) {
+            NavigationStack {
+                StatsTypesSettingsView()
             }
         }
         .sheet(isPresented: $showPlayerVisibilityEditor) {
@@ -1198,10 +1234,28 @@ struct LiveStatsView: View {
     }
 
     private func scoreSummary(includeEvent: (StatEvent) -> Bool) -> (goals: Int, behinds: Int, points: Int) {
-        let goalTypeIDs = Set(enabledStatTypes.filter { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "goal" }.map(\.id))
-        let behindTypeIDs = Set(enabledStatTypes.filter { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "behind" }.map(\.id))
-        let goals = sessionEvents.filter { includeEvent($0) && goalTypeIDs.contains($0.statTypeId) }.count
-        let behinds = sessionEvents.filter { includeEvent($0) && behindTypeIDs.contains($0.statTypeId) }.count
+        let goalTypeIDs = Set(enabledStatTypes.filter { normalizedStatName($0.name) == "goal" }.map(\.id))
+        let behindTypeIDs = Set(enabledStatTypes.filter { normalizedStatName($0.name) == "behind" }.map(\.id))
+        let scoresTypeIDs = Set(enabledStatTypes.filter { normalizedStatName($0.name) == "scores" }.map(\.id))
+
+        let goals: Int
+        let behinds: Int
+
+        if !goalTypeIDs.isEmpty || !behindTypeIDs.isEmpty {
+            goals = sessionEvents.filter { includeEvent($0) && goalTypeIDs.contains($0.statTypeId) }.count
+            behinds = sessionEvents.filter { includeEvent($0) && behindTypeIDs.contains($0.statTypeId) }.count
+        } else {
+            goals = sessionEvents.filter {
+                includeEvent($0)
+                    && scoresTypeIDs.contains($0.statTypeId)
+                    && normalizedStatName($0.transcript ?? "") == "goal"
+            }.count
+            behinds = sessionEvents.filter {
+                includeEvent($0)
+                    && scoresTypeIDs.contains($0.statTypeId)
+                    && normalizedStatName($0.transcript ?? "") == "behind"
+            }.count
+        }
         return (goals, behinds, goals * 6 + behinds)
     }
 
@@ -1223,7 +1277,7 @@ struct LiveStatsView: View {
     }
 
     private var topPanelHeight: CGFloat {
-        168
+        oppositionTrackPossessions ? 326 : 168
     }
 
     private var rightStatActionsHeight: CGFloat {
@@ -1282,7 +1336,7 @@ struct LiveStatsView: View {
                 isOpposition: true
             )
         }
-        .frame(maxWidth: .infinity, minHeight: 168, maxHeight: 168)
+        .frame(maxWidth: .infinity, minHeight: topPanelHeight, maxHeight: topPanelHeight)
     }
 
     private var ourTeamEfficiencyText: String {
@@ -1318,11 +1372,15 @@ struct LiveStatsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            HStack(spacing: 8) {
-                teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
-                teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOpposition)
-                teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOpposition, fallbackName: "Clearances")
-                teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOpposition, fallbackName: "Inside 50s")
+            if oppositionTrackPossessions {
+                teamStatsExpandedGrid(style: style, isOpposition: isOpposition)
+            } else {
+                HStack(spacing: 8) {
+                    teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
+                    teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOpposition)
+                    teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOpposition, fallbackName: "Clearances")
+                    teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOpposition, fallbackName: "Inside 50s")
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -1343,6 +1401,44 @@ struct LiveStatsView: View {
                 .padding(.trailing, 10)
             }
         }
+    }
+
+    private func teamStatsExpandedGrid(style: ClubStyle.Style, isOpposition: Bool) -> some View {
+        let fixedRows: [[(title: String, name: String, fallback: String?)]] = [
+            [("Goal", "Goal", nil), ("Behind", "Behind", nil), ("Clearance", "Clearance", "Clearances"), ("Inside 50", "Inside 50", "Inside 50s")],
+            [("Kick", "Kick", nil), ("Handball", "Handball", nil), ("Mark", "Mark", nil), ("Tackle", "Tackle", nil)]
+        ]
+        let fixedNames = Set(fixedRows.flatMap { $0.map { normalizedStatName($0.name) } })
+        let excludedThirdRowNames: Set<String> = fixedNames.union([
+            "scores",
+            "score",
+            "clearances",
+            "inside 50s"
+        ])
+        let thirdRowStats = enabledStatTypes
+            .filter { !excludedThirdRowNames.contains(normalizedStatName($0.name)) }
+            .prefix(4)
+
+        return VStack(spacing: 6) {
+            ForEach(0..<fixedRows.count, id: \.self) { rowIndex in
+                HStack(spacing: 8) {
+                    ForEach(0..<fixedRows[rowIndex].count, id: \.self) { columnIndex in
+                        let entry = fixedRows[rowIndex][columnIndex]
+                        teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                ForEach(Array(thirdRowStats), id: \.id) { statType in
+                    teamStatButton(statType.name, name: statType.name, style: style, isOpposition: isOpposition)
+                }
+                ForEach(Array(thirdRowStats).count..<4, id: \.self) { _ in
+                    Color.clear
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                }
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var quarterPicker: some View {
@@ -1502,29 +1598,50 @@ struct LiveStatsView: View {
         isOpposition: Bool,
         fallbackName: String? = nil
     ) -> some View {
-        let statType = statType(named: name, fallbackName: fallbackName)
-        let appliesToSelectedPlayer = !isOpposition && isGoalOrBehindStat(named: name)
+        let statType = statType(
+            named: name,
+            fallbackName: fallbackName,
+            extraFallbackNames: ["Scores"]
+        )
+        let normalizedName = normalizedStatName(name)
+        let scoreKind: String? = (normalizedName == "goal" || normalizedName == "behind") ? normalizedName : nil
+        let isOptionalUsStat = normalizedName == "clearance"
+            || normalizedName == "clearances"
+            || normalizedName == "inside 50"
+            || normalizedName == "inside 50s"
+        let requiresSelectedPlayer = !isOpposition && trackIndividualTracking && !isOptionalUsStat
         return Button {
             guard let statType else { return }
-            if appliesToSelectedPlayer {
-                addManualEvent(statTypeId: statType.id)
+            if isOpposition {
+                addTeamEvent(statTypeId: statType.id, isOpposition: true, scoreKind: scoreKind)
+                return
+            }
+
+            if !trackIndividualTracking {
+                addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
+            } else if isOptionalUsStat {
+                if selectedPlayerId == nil {
+                    addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
+                } else {
+                    addManualEvent(statTypeId: statType.id, transcript: scoreKind)
+                }
+            } else if requiresSelectedPlayer {
+                addManualEvent(statTypeId: statType.id, transcript: scoreKind)
             } else {
-                addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition)
+                addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
             }
         } label: {
             Text(title)
                 .font(.headline.weight(.bold))
                 .foregroundStyle(style.text)
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .frame(maxWidth: .infinity, minHeight: 60)
+                .background(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(style.background.opacity(statType == nil ? 0.35 : 1))
+                )
         }
-        .buttonStyle(.borderedProminent)
-        .tint(style.background)
+        .buttonStyle(.plain)
         .disabled(statType == nil)
-    }
-
-    private func isGoalOrBehindStat(named value: String) -> Bool {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized == "goal" || normalized == "behind"
     }
 
     private func efficiencyEmojiForRecentEvent(_ event: StatEvent) -> String? {
@@ -1714,14 +1831,22 @@ struct LiveStatsView: View {
         return enabledStatTypes.filter { !teamOnly.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
     }
 
-    private func statType(named name: String, fallbackName: String? = nil) -> StatType? {
-        let target = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if let primary = enabledStatTypes.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == target }) {
+    private func statType(named name: String, fallbackName: String? = nil, extraFallbackNames: [String] = []) -> StatType? {
+        let target = normalizedStatName(name)
+        if let primary = enabledStatTypes.first(where: { normalizedStatName($0.name) == target }) {
             return primary
         }
-        guard let fallbackName else { return nil }
-        let fallback = fallbackName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return enabledStatTypes.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == fallback })
+        let fallbacks = ([fallbackName].compactMap { $0 } + extraFallbackNames).map(normalizedStatName)
+        for fallback in fallbacks {
+            if let stat = enabledStatTypes.first(where: { normalizedStatName($0.name) == fallback }) {
+                return stat
+            }
+        }
+        return nil
+    }
+
+    private func normalizedStatName(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private func playerDisplay(_ player: Player) -> String {
@@ -1806,22 +1931,21 @@ struct LiveStatsView: View {
         allStatTypes.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
-    private func addManualEvent() {
+    private func addManualEvent(statTypeId: UUID, transcript: String? = nil) {
         guard let currentSelectedPlayerId = selectedPlayerId else {
             lastMessage = "Select a player first"
             showStatusBanner(text: "ERROR • Select a player first", isSuccess: false)
             feedbackToken = UUID()
             return
         }
-        guard let selectedStatTypeId else { return }
 
         let event = StatEvent(
             sessionId: session.sessionId,
             playerId: currentSelectedPlayerId,
-            statTypeId: selectedStatTypeId,
+            statTypeId: statTypeId,
             quarter: selectedQuarter,
             sourceRaw: StatsEventSource.manual.rawValue,
-            transcript: nil
+            transcript: transcript
         )
         modelContext.insert(event)
         try? modelContext.save()
@@ -1829,26 +1953,22 @@ struct LiveStatsView: View {
         let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event)
         selectedPlayerId = nil
 
-        lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
+        lastMessage = "Added: \(statName(for: statTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
         if !shouldDelaySuccessBanner {
             showSuccessBanner(for: event)
         }
         feedbackToken = UUID()
     }
 
-    private func addManualEvent(statTypeId: UUID) {
-        selectedStatTypeId = statTypeId
-        addManualEvent()
-    }
-
-    private func addTeamEvent(statTypeId: UUID, isOpposition: Bool) {
+    private func addTeamEvent(statTypeId: UUID, isOpposition: Bool, scoreKind: String? = nil) {
         let playerID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
         let event = StatEvent(
             sessionId: session.sessionId,
             playerId: playerID,
             statTypeId: statTypeId,
             quarter: selectedQuarter,
-            sourceRaw: StatsEventSource.manual.rawValue
+            sourceRaw: StatsEventSource.manual.rawValue,
+            transcript: scoreKind
         )
         modelContext.insert(event)
         try? modelContext.save()
