@@ -1425,64 +1425,35 @@ struct LiveStatsView: View {
                 HStack(spacing: 8) {
                     ForEach(0..<fixedRows[rowIndex].count, id: \.self) { columnIndex in
                         let entry = fixedRows[rowIndex][columnIndex]
-                        if shouldShowDualDisposalButtons(for: entry.name, isOpposition: isOpposition) {
-                            disposalEfficiencyButtonStack(
-                                title: entry.title,
-                                name: entry.name,
-                                style: style,
-                                isOpposition: isOpposition
-                            )
-                        } else {
-                            teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
-                        }
+                        teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
                     }
                 }
             }
-            HStack(spacing: 8) {
-                ForEach(Array(thirdRowStats), id: \.id) { statType in
-                    teamStatButton(statType.name, name: statType.name, style: style, isOpposition: isOpposition)
+
+            if shouldShowEfficiencyRow(isOpposition: isOpposition) {
+                HStack(spacing: 8) {
+                    teamStatButton("Kick 👍🏽", name: "Kick", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsUp)
+                    teamStatButton("Kick 👎🏽", name: "Kick", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsDown)
+                    teamStatButton("Handball 👍🏽", name: "Handball", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsUp)
+                    teamStatButton("Handball 👎🏽", name: "Handball", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsDown)
                 }
-                ForEach(Array(thirdRowStats).count..<4, id: \.self) { _ in
-                    Color.clear
-                        .frame(maxWidth: .infinity, minHeight: 60)
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(Array(thirdRowStats), id: \.id) { statType in
+                        teamStatButton(statType.name, name: statType.name, style: style, isOpposition: isOpposition)
+                    }
+                    ForEach(Array(thirdRowStats).count..<4, id: \.self) { _ in
+                        Color.clear
+                            .frame(maxWidth: .infinity, minHeight: 60)
+                    }
                 }
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private func shouldShowDualDisposalButtons(for statName: String, isOpposition: Bool) -> Bool {
-        let normalized = normalizedStatName(statName)
-        guard normalized == "kick" || normalized == "handball" else { return false }
+    private func shouldShowEfficiencyRow(isOpposition: Bool) -> Bool {
         return isOpposition ? oppositionTrackDisposalEfficiency : trackDisposalEfficiency
-    }
-
-    private func disposalEfficiencyButtonStack(
-        title: String,
-        name: String,
-        style: ClubStyle.Style,
-        isOpposition: Bool
-    ) -> some View {
-        VStack(spacing: 6) {
-            teamStatButton(
-                "\(title) 👍🏽",
-                name: name,
-                style: style,
-                isOpposition: isOpposition,
-                presetEfficiencyVote: .thumbsUp,
-                minHeight: 27
-            )
-            teamStatButton(
-                "\(title) 👎🏽",
-                name: name,
-                style: style,
-                isOpposition: isOpposition,
-                presetEfficiencyVote: .thumbsDown,
-                minHeight: 27
-            )
-        }
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: 60)
     }
 
     private var quarterPicker: some View {
@@ -1641,8 +1612,7 @@ struct LiveStatsView: View {
         style: ClubStyle.Style,
         isOpposition: Bool,
         fallbackName: String? = nil,
-        presetEfficiencyVote: EfficiencyVote? = nil,
-        minHeight: CGFloat = 60
+        presetEfficiencyVote: EfficiencyVote? = nil
     ) -> some View {
         let statType = statType(
             named: name,
@@ -1706,9 +1676,9 @@ struct LiveStatsView: View {
             }
         } label: {
             Text(title)
-                .font(minHeight < 40 ? .subheadline.weight(.bold) : .headline.weight(.bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(style.text)
-                .frame(maxWidth: .infinity, minHeight: minHeight)
+                .frame(maxWidth: .infinity, minHeight: 60)
                 .background(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(style.background.opacity(statType == nil ? 0.35 : 1))
