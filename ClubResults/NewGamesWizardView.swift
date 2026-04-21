@@ -2848,14 +2848,16 @@ struct NewGameWizardView: View {
 
         let cleanedNotes = asksNotes ? notes.trimmingCharacters(in: .whitespacesAndNewlines) : ""
 
-        let modelGoalKickers: [GameGoalKickerEntry] = asksGoalKickers ? goalKickers.compactMap { entry in
-            guard let pid = entry.playerID, entry.goals > 0 else { return nil }
-            return GameGoalKickerEntry(
-                playerID: pid,
-                goals: entry.goals,
-                points: liveSession.pointScorers[pid, default: 0]
-            )
-        } : []
+        let modelGoalKickers: [GameGoalKickerEntry]
+        if asksGoalKickers {
+            modelGoalKickers = goalKickers
+                .compactMap { entry -> GameGoalKickerEntry? in
+                    guard entry.goals > 0, let playerID = entry.playerID else { return nil }
+                    return GameGoalKickerEntry(playerID: playerID, goals: entry.goals)
+                }
+        } else {
+            modelGoalKickers = []
+        }
 
         let game: Game
         if let existingGame = editingGame {
