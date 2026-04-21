@@ -1290,8 +1290,16 @@ struct LiveStatsView: View {
 
     private var statButtonsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Stat Actions")
-                .font(.title3.bold())
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Stat Actions")
+                    .font(.title3.bold())
+
+                if selectedPlayerId == nil {
+                    Text("Select a player first")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
                 ForEach(playerStatTypes) { type in
@@ -1310,11 +1318,6 @@ struct LiveStatsView: View {
                     .buttonStyle(.plain)
                     .disabled(selectedPlayerId == nil)
                 }
-            }
-            if selectedPlayerId == nil {
-                Text("Select a player first")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(12)
