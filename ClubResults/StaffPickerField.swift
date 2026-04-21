@@ -44,7 +44,7 @@ struct StaffPickerField: View {
         let selectedGradeIDSet = Set(selectedGradeIDs)
 
         return players
-            .filter { $0.isActive && !selectedGradeIDSet.isDisjoint(with: $0.gradeIDs) }
+            .filter { !selectedGradeIDSet.isDisjoint(with: $0.gradeIDs) }
             .map(\.name)
     }
 
