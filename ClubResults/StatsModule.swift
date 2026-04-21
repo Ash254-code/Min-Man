@@ -106,6 +106,11 @@ private enum EfficiencyVote: String {
     case thumbsDown
 }
 
+private struct StatRecordBanner: Equatable {
+    let text: String
+    let isSuccess: Bool
+}
+
 private enum StatsDefaults {
     static let statNames = ["Kick", "Handball", "Mark", "Tackle", "Goal", "Behind"]
 }
@@ -822,6 +827,8 @@ struct LiveStatsView: View {
     @State private var pendingEfficiencyEventID: UUID?
     @State private var showEfficiencyVotePrompt = false
     @State private var showAllPlayers = false
+    @State private var statusBanner: StatRecordBanner?
+    @State private var statusBannerTask: Task<Void, Never>?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -834,6 +841,8 @@ struct LiveStatsView: View {
             let leftPanelWidth = min(max(availableWidth * 0.62, 420), availableWidth - 300)
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 12, 290)
             VStack(spacing: 12) {
+                headerBannerArea
+                    .frame(height: 76)
                 combinedScoreAndActionsPanel
                     .frame(height: topPanelHeight)
 
@@ -860,7 +869,7 @@ struct LiveStatsView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
-        .navigationTitle("\(gradeName) • \(session.date.formatted(date: .abbreviated, time: .omitted))")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -921,6 +930,7 @@ struct LiveStatsView: View {
             }
         }
         .onDisappear {
+            statusBannerTask?.cancel()
             stopQuarterTimer()
             if speechService.isRecording {
                 speechService.stopListening()
@@ -1048,6 +1058,43 @@ struct LiveStatsView: View {
 
     private var rightStatActionsHeight: CGFloat {
         224
+    }
+
+    private var headerBannerArea: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.thinMaterial)
+            HStack(spacing: 10) {
+                Text(gradeName)
+                    .font(.title.weight(.black))
+                    .lineLimit(1)
+                Text("•")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Text(session.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18)
+
+            if let statusBanner {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(statusBanner.isSuccess ? Color.green : Color.red)
+                    .overlay {
+                        Text(statusBanner.text)
+                            .font(.system(size: 34, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .padding(.horizontal, 16)
+                    }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .animation(.spring(response: 0.4, dampingFraction: 0.86), value: statusBanner)
     }
 
     private var combinedScoreAndActionsPanel: some View {
@@ -1373,47 +1420,6 @@ struct LiveStatsView: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 6) {
-                if let lastMessage {
-                    Text(lastMessage)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(lastMessage.contains("Added:") ? .green : .red)
-                } else if speechService.isRecording {
-                    Text("Listening…")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.red)
-                }
-                if let lastError = speechService.lastErrorMessage {
-                    Text(lastError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-                if !lastHeardTranscript.isEmpty {
-                    Text("Heard: \(lastHeardTranscript)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-#if DEBUG
-                if let lastVoiceDebug {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("Raw: \(lastVoiceDebug.rawTranscript)")
-                        Text("Norm: \(lastVoiceDebug.normalizedTranscript)")
-                        Text("Stat: \(lastVoiceDebug.matchedStatName ?? "—")")
-                        Text("Player: \(lastVoiceDebug.matchedPlayerName ?? "—")")
-                        Text("Conf: \(lastVoiceDebug.confidence.formatted(.number.precision(.fractionLength(2))))")
-                        if let reason = lastVoiceDebug.failureReason {
-                            Text("Fail: \(reason)")
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: 260, alignment: .trailing)
-                }
-#endif
-            }
-
             Button("Undo") {
                 undoLastEvent()
             }
@@ -1578,6 +1584,7 @@ struct LiveStatsView: View {
     private func addManualEvent() {
         guard let currentSelectedPlayerId = selectedPlayerId else {
             lastMessage = "Select a player first"
+            showStatusBanner(text: "ERROR • Select a player first", isSuccess: false)
             feedbackToken = UUID()
             return
         }
@@ -1598,6 +1605,7 @@ struct LiveStatsView: View {
         selectedPlayerId = nil
 
         lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
+        showSuccessBanner(for: event)
         feedbackToken = UUID()
     }
 
@@ -1618,6 +1626,7 @@ struct LiveStatsView: View {
         modelContext.insert(event)
         try? modelContext.save()
         lastMessage = "Added: \(statName(for: statTypeId)) — \(isOpposition ? session.opposition : ourTeamName) — \(selectedQuarter)"
+        showSuccessBanner(for: event)
         feedbackToken = UUID()
     }
 
@@ -1626,6 +1635,7 @@ struct LiveStatsView: View {
         modelContext.delete(latest)
         try? modelContext.save()
         lastMessage = "Undid last event"
+        showStatusBanner(text: "UNDO • Last event removed", isSuccess: false)
         feedbackToken = UUID()
     }
 
@@ -1636,6 +1646,7 @@ struct LiveStatsView: View {
 #endif
         guard !lastHeardTranscript.isEmpty else {
             lastMessage = "Heard: (empty)"
+            showStatusBanner(text: "ERROR • Heard empty input", isSuccess: false)
             feedbackToken = UUID()
             return
         }
@@ -1667,8 +1678,10 @@ struct LiveStatsView: View {
                let guessedStat = result.matchedStatName,
                let guessedPlayer = result.matchedPlayerName {
                 lastMessage = "Did you mean \(guessedStat) — \(guessedPlayer)?"
+                showStatusBanner(text: "ERROR • Did you mean \(guessedPlayer) \(guessedStat)?", isSuccess: false)
             } else {
             lastMessage = parseFailureMessage(result)
+                showStatusBanner(text: "ERROR • \(parseFailureMessage(result))", isSuccess: false)
             }
             feedbackToken = UUID()
             return
@@ -1691,6 +1704,7 @@ struct LiveStatsView: View {
         let playerText = playerLabel(for: playerId)
         let statText = statName(for: statTypeId)
         lastMessage = "Added: \(statText) — \(playerText) — \(selectedQuarter)"
+        showSuccessBanner(for: event)
         feedbackToken = UUID()
     }
 
@@ -1710,6 +1724,7 @@ struct LiveStatsView: View {
         }
         event.efficiencyVoteRaw = vote.rawValue
         try? modelContext.save()
+        showSuccessBanner(for: event)
         pendingEfficiencyEventID = nil
         showEfficiencyVotePrompt = false
     }
@@ -1717,6 +1732,47 @@ struct LiveStatsView: View {
     private func dismissEfficiencyVotePrompt() {
         pendingEfficiencyEventID = nil
         showEfficiencyVotePrompt = false
+    }
+
+    private func showSuccessBanner(for event: StatEvent) {
+        showStatusBanner(text: successBannerText(for: event), isSuccess: true)
+    }
+
+    private func showStatusBanner(text: String, isSuccess: Bool) {
+        statusBannerTask?.cancel()
+        withAnimation {
+            statusBanner = StatRecordBanner(text: text, isSuccess: isSuccess)
+        }
+        statusBannerTask = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation {
+                    statusBanner = nil
+                }
+            }
+        }
+    }
+
+    private func successBannerText(for event: StatEvent) -> String {
+        let playerText = playerBannerLabel(for: event.playerId)
+        let statText = statName(for: event.statTypeId).uppercased()
+        if let vote = event.efficiencyVoteRaw {
+            let emoji = vote == EfficiencyVote.thumbsUp.rawValue ? "👍" : "👎"
+            return "\(playerText) • \(statText) • EFFICIENCY \(emoji)"
+        }
+        return "\(playerText) • \(statText)"
+    }
+
+    private func playerBannerLabel(for id: UUID) -> String {
+        if id == ourTeamStatPlayerID {
+            return ourTeamName.uppercased()
+        }
+        if id == oppositionTeamStatPlayerID {
+            return session.opposition.uppercased()
+        }
+        guard let player = allPlayers.first(where: { $0.id == id }) else { return "UNKNOWN" }
+        return player.lastName.uppercased()
     }
 
     private var efficiencyRatingPrompt: some View {
