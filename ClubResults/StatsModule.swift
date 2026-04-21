@@ -1070,6 +1070,9 @@ struct LiveStatsView: View {
                     .frame(height: max(proxy.size.height * 0.11, 90))
                     .padding(.top, 2)
             }
+            .task(id: proxy.size.width) {
+                interfaceScreenWidth = max(proxy.size.width, 1)
+            }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
@@ -1168,11 +1171,7 @@ struct LiveStatsView: View {
             }
             playerGridOrder = savedPlayerGridOrder
             showAllPlayers = false
-            interfaceScreenWidth = max(proxy.size.width, 1)
             configureQuarterTimer(reset: true)
-        }
-        .onChange(of: proxy.size.width) { _, newValue in
-            interfaceScreenWidth = max(newValue, 1)
         }
         .onChange(of: selectedQuarter) { _, _ in
             configureQuarterTimer(reset: true)
