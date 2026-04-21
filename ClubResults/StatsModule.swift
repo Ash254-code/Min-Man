@@ -1998,26 +1998,11 @@ struct LiveStatsView: View {
                     drawCell("\(total)", x: x, y: y, width: statColumnWidth, height: dataRowHeight, bold: true)
                     x += statColumnWidth
                 }
-                let goals = quarterOrder.reduce(0) { partialResult, quarter in
-                    partialResult + statCount(
-                        for: player.id,
-                        quarter: quarter,
-                        aliases: ["goal", "goals"],
-                        lookup: byPlayerQuarterAndStat
-                    )
-                }
-                let behinds = quarterOrder.reduce(0) { partialResult, quarter in
-                    partialResult + statCount(
-                        for: player.id,
-                        quarter: quarter,
-                        aliases: ["behind", "behinds"],
-                        lookup: byPlayerQuarterAndStat
-                    )
-                }
-                let totalShots = goals + behinds
                 let efficiencyText: String
-                if totalShots > 0 {
-                    let efficiency = Int(round((Double(goals) / Double(totalShots)) * 100))
+                let (effectiveCount, nonEffectiveCount) = efficiencyVoteCounts(for: player.id, events: eventsForPlayers)
+                let totalRatedDisposals = effectiveCount + nonEffectiveCount
+                if totalRatedDisposals > 0 {
+                    let efficiency = Int(round((Double(effectiveCount) / Double(totalRatedDisposals)) * 100))
                     efficiencyText = "\(efficiency)%"
                 } else {
                     efficiencyText = "-"
@@ -2068,6 +2053,17 @@ struct LiveStatsView: View {
     private func teamStatCount(statType: StatType?, teamPlayerId: UUID) -> Int {
         guard let statType else { return 0 }
         return sessionEvents.filter { $0.playerId == teamPlayerId && $0.statTypeId == statType.id }.count
+    }
+
+    private func efficiencyVoteCounts(for playerID: UUID, events: [StatEvent]) -> (effective: Int, nonEffective: Int) {
+        let ratedEvents = events.filter { $0.playerId == playerID }
+        let effective = ratedEvents.reduce(0) { partialResult, event in
+            partialResult + (event.efficiencyVoteRaw == EfficiencyVote.thumbsUp.rawValue ? 1 : 0)
+        }
+        let nonEffective = ratedEvents.reduce(0) { partialResult, event in
+            partialResult + (event.efficiencyVoteRaw == EfficiencyVote.thumbsDown.rawValue ? 1 : 0)
+        }
+        return (effective, nonEffective)
     }
 
     private func drawCell(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat = 20, bold: Bool = false, emphasize: Bool = false) {
