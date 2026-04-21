@@ -1024,6 +1024,11 @@ struct LiveStatsView: View {
     @State private var activeEfficiencyHoverVote: EfficiencyVote?
     @State private var activeContestedHoverVote: ContestedPossessionVote?
     @State private var suppressTapForButtonKey: String?
+    @State private var activePlayerQuickStatsPlayerID: UUID?
+    @State private var pendingPlayerQuickStatName: String?
+    @State private var pendingPlayerQuickStatPlayerID: UUID?
+    @State private var pendingPlayerQuickEfficiencyVote: EfficiencyVote?
+    @State private var pendingPlayerQuickContestedVote: ContestedPossessionVote?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -1534,13 +1539,32 @@ struct LiveStatsView: View {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(visiblePlayers) { player in
                         Button {
+                            if activePlayerQuickStatsPlayerID == player.id {
+                                activePlayerQuickStatsPlayerID = nil
+                            }
                             selectPlayer(player.id)
                         } label: {
                             playerCardContent(player: player)
                                 .frame(maxWidth: .infinity, minHeight: cellHeight)
                                 .background(selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
+                        .overlay(alignment: .top) {
+                            if activePlayerQuickStatsPlayerID == player.id {
+                                playerQuickStatsFan(for: player)
+                                    .offset(y: -84)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                                    .zIndex(3000)
+                            }
+                        }
                         .buttonStyle(.plain)
+                        .highPriorityGesture(
+                            LongPressGesture(minimumDuration: 0.35)
+                                .onEnded { _ in
+                                    selectPlayer(player.id)
+                                    clearPendingPlayerQuickStat()
+                                    activePlayerQuickStatsPlayerID = player.id
+                                }
+                        )
                     }
 
                     if hasOverflow {
@@ -2103,7 +2127,196 @@ struct LiveStatsView: View {
     }
 
     private func selectPlayer(_ id: UUID) {
+        clearPendingPlayerQuickStat()
+        activePlayerQuickStatsPlayerID = nil
         selectedPlayerId = id
+    }
+
+    private struct PlayerQuickStatOption: Identifiable {
+        let id: String
+        let title: String
+        let transcript: String?
+        let statType: StatType?
+    }
+
+    private var playerQuickStatOptions: [PlayerQuickStatOption] {
+        [
+            PlayerQuickStatOption(
+                id: "kick",
+                title: "Kick",
+                transcript: nil,
+                statType: statType(named: "Kick")
+            ),
+            PlayerQuickStatOption(
+                id: "handball",
+                title: "Handball",
+                transcript: nil,
+                statType: statType(named: "Handball")
+            ),
+            PlayerQuickStatOption(
+                id: "mark",
+                title: "Mark",
+                transcript: nil,
+                statType: statType(named: "Mark")
+            ),
+            PlayerQuickStatOption(
+                id: "tackle",
+                title: "Tackle",
+                transcript: nil,
+                statType: statType(named: "Tackle")
+            ),
+            PlayerQuickStatOption(
+                id: "goal",
+                title: "Goal",
+                transcript: "goal",
+                statType: statType(named: "Goal", fallbackName: "Scores", extraFallbackNames: ["Behind"])
+            ),
+            PlayerQuickStatOption(
+                id: "behind",
+                title: "Behind",
+                transcript: "behind",
+                statType: statType(named: "Behind", fallbackName: "Scores", extraFallbackNames: ["Goal"])
+            )
+        ]
+    }
+
+    private func playerQuickStatsFan(for player: Player) -> some View {
+        HStack(spacing: 8) {
+            ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
+                let angle = Angle(degrees: Double(index - 2) * 7.0)
+                Button {
+                    handlePlayerQuickStatTap(playerID: player.id, option: option)
+                } label: {
+                    Text(option.title)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(option.statType == nil ? Color.gray.opacity(0.6) : Color.blue)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(option.statType == nil)
+                .rotationEffect(angle)
+                .overlay(alignment: .top) {
+                    if pendingPlayerQuickStatName == option.id,
+                       pendingPlayerQuickStatPlayerID == player.id,
+                       needsQuickStatVotes(for: option.id) {
+                        playerQuickVotePopup
+                            .offset(y: -96)
+                    }
+                }
+            }
+        }
+        .padding(8)
+        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 2)
+    }
+
+    private var playerQuickVotePopup: some View {
+        VStack(spacing: 8) {
+            if trackDisposalEfficiency {
+                HStack(spacing: 8) {
+                    voteChip("Effective", isActive: pendingPlayerQuickEfficiencyVote == .thumbsUp, tint: .green) {
+                        pendingPlayerQuickEfficiencyVote = .thumbsUp
+                    }
+                    voteChip("Non effective", isActive: pendingPlayerQuickEfficiencyVote == .thumbsDown, tint: .red) {
+                        pendingPlayerQuickEfficiencyVote = .thumbsDown
+                    }
+                }
+            }
+            if trackContestedPossessions {
+                HStack(spacing: 8) {
+                    voteChip("Contested", isActive: pendingPlayerQuickContestedVote == .contested, tint: .orange) {
+                        pendingPlayerQuickContestedVote = .contested
+                    }
+                    voteChip("Uncontested", isActive: pendingPlayerQuickContestedVote == .uncontested, tint: .blue) {
+                        pendingPlayerQuickContestedVote = .uncontested
+                    }
+                }
+            }
+            Button("Add Stat") {
+                commitPendingPlayerQuickStatIfValid()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.28), lineWidth: 1)
+        )
+    }
+
+    private func voteChip(_ title: String, isActive: Bool, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(isActive ? Color.white : Color.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isActive ? tint : Color.gray.opacity(0.32))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func handlePlayerQuickStatTap(playerID: UUID, option: PlayerQuickStatOption) {
+        guard let statType = option.statType else { return }
+        selectedPlayerId = playerID
+        if needsQuickStatVotes(for: option.id) {
+            pendingPlayerQuickStatName = option.id
+            pendingPlayerQuickStatPlayerID = playerID
+            pendingPlayerQuickEfficiencyVote = nil
+            pendingPlayerQuickContestedVote = nil
+            return
+        }
+        addManualEvent(statTypeId: statType.id, transcript: option.transcript)
+        clearPendingPlayerQuickStat()
+        activePlayerQuickStatsPlayerID = nil
+    }
+
+    private func needsQuickStatVotes(for statID: String) -> Bool {
+        let applies = statID == "kick" || statID == "mark" || statID == "handball"
+        return applies && (trackDisposalEfficiency || trackContestedPossessions)
+    }
+
+    private func commitPendingPlayerQuickStatIfValid() {
+        guard
+            let statID = pendingPlayerQuickStatName,
+            let playerID = pendingPlayerQuickStatPlayerID,
+            let option = playerQuickStatOptions.first(where: { $0.id == statID }),
+            let statType = option.statType
+        else {
+            clearPendingPlayerQuickStat()
+            return
+        }
+
+        let hasRequiredEfficiency = !trackDisposalEfficiency || pendingPlayerQuickEfficiencyVote != nil
+        let hasRequiredContested = !trackContestedPossessions || pendingPlayerQuickContestedVote != nil
+        guard hasRequiredEfficiency && hasRequiredContested else { return }
+
+        selectedPlayerId = playerID
+        addManualEvent(
+            statTypeId: statType.id,
+            transcript: option.transcript,
+            efficiencyVote: pendingPlayerQuickEfficiencyVote,
+            contestedVote: pendingPlayerQuickContestedVote
+        )
+        clearPendingPlayerQuickStat()
+        activePlayerQuickStatsPlayerID = nil
+    }
+
+    private func clearPendingPlayerQuickStat() {
+        pendingPlayerQuickStatName = nil
+        pendingPlayerQuickStatPlayerID = nil
+        pendingPlayerQuickEfficiencyVote = nil
+        pendingPlayerQuickContestedVote = nil
     }
 
     private func configureQuarterTimer(reset: Bool) {
