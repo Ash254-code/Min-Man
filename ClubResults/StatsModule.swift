@@ -2713,6 +2713,27 @@ private struct StatsTotalsView: View {
         )
     }
 
+    private func teamStatsPool(
+        teamName: String,
+        style: ClubStyle.Style,
+        inside50s: Int,
+        clearances: Int
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(teamName.uppercased())
+                .font(.headline.weight(.black))
+                .lineLimit(1)
+
+            HStack(spacing: 10) {
+                teamStatPool(title: "Inside 50s", value: inside50s, style: style)
+                teamStatPool(title: "Clearances", value: clearances, style: style)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
     private func efficiencyPool(title: String, value: String, style: ClubStyle.Style) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
