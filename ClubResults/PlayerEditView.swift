@@ -14,6 +14,7 @@ struct PlayerEditView: View {
 
     @State private var draftName: String = ""
     @State private var draftNumberText: String = ""
+    @State private var draftIsActive: Bool = true
 
     init(
         player: Player,
@@ -28,6 +29,7 @@ struct PlayerEditView: View {
 
         _draftName = State(initialValue: player.name)
         _draftNumberText = State(initialValue: player.number.map(String.init) ?? "")
+        _draftIsActive = State(initialValue: player.isActive)
     }
 
     private var nameTrimmed: String {
@@ -51,7 +53,8 @@ struct PlayerEditView: View {
 
     private var hasChanges: Bool {
         nameTrimmed != player.name.trimmingCharacters(in: .whitespacesAndNewlines) ||
-        parsedNumber != player.number
+        parsedNumber != player.number ||
+        draftIsActive != player.isActive
     }
 
     var body: some View {
@@ -79,6 +82,8 @@ struct PlayerEditView: View {
                         .multilineTextAlignment(.trailing)
                         .keyboardType(.numberPad)
                 }
+
+                Toggle("Active", isOn: $draftIsActive)
             }
 
             Section("Grades") {
@@ -121,6 +126,7 @@ struct PlayerEditView: View {
                     let split = Player.splitName(nameTrimmed)
                     player.setName(firstName: split.first, lastName: split.last)
                     player.number = parsedNumber
+                    player.isActive = draftIsActive
                     try? dataContext.save()
                     dismiss()
                 }

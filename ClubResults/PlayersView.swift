@@ -217,7 +217,8 @@ struct PlayersView: View {
                     PlayerRowAFL(
                         name: player.name,
                         number: player.number,
-                        gradeNames: gradeNamesArray(for: player)
+                        gradeNames: gradeNamesArray(for: player),
+                        isActive: player.isActive
                     )
                 }
                 .buttonStyle(.plain)
@@ -528,14 +529,15 @@ private struct PlayerRowAFL: View {
     let name: String
     let number: Int?
     let gradeNames: [String]
+    let isActive: Bool
 
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                Circle().fill(ClubTheme.yellow)
+                Circle().fill(numberPillColor)
                 Text(numberText)
                     .font(.system(size: 14, weight: .heavy, design: .rounded))
-                    .foregroundStyle(ClubTheme.navy)
+                    .foregroundStyle(numberTextColor)
             }
             .frame(width: 36, height: 36)
 
@@ -565,6 +567,14 @@ private struct PlayerRowAFL: View {
     private var numberText: String {
         if let n = number, n > 0 { return "\(n)" }
         return "—"
+    }
+
+    private var numberPillColor: Color {
+        isActive ? ClubTheme.yellow : Color.gray.opacity(0.6)
+    }
+
+    private var numberTextColor: Color {
+        isActive ? ClubTheme.navy : Color.white.opacity(0.9)
     }
 }
 
