@@ -1270,11 +1270,15 @@ struct LiveStatsView: View {
                         addManualEvent(statTypeId: type.id)
                     } label: {
                         Text(type.name)
-                            .font(.title3.weight(.bold))
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(selectedPlayerId == nil ? .secondary : .white)
                             .frame(maxWidth: .infinity, minHeight: 58)
+                            .background(
+                                selectedPlayerId == nil ? Color.black.opacity(0.06) : Color.blue,
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(selectedPlayerId == nil ? .gray : .blue)
+                    .buttonStyle(.plain)
                     .disabled(selectedPlayerId == nil)
                 }
             }
@@ -1322,7 +1326,7 @@ struct LiveStatsView: View {
     }
 
     private var recentEventsPanel: some View {
-        let recent = Array(sessionEvents.prefix(8))
+        let recent = Array(sessionEvents.prefix(5))
         return VStack(alignment: .leading, spacing: 8) {
             Text("Recent Events")
                 .font(.title3.bold())
