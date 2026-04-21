@@ -1862,9 +1862,10 @@ struct LiveStatsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                             .foregroundStyle(.green)
+                            .background(Capsule().fill(Color.white.opacity(0.17)))
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .background(Capsule().fill(Color.white.opacity(0.17)))
 
                     Button {
                         applyEfficiencyVote(.thumbsDown)
@@ -1874,9 +1875,10 @@ struct LiveStatsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                             .foregroundStyle(.red)
+                            .background(Capsule().fill(Color.white.opacity(0.17)))
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .background(Capsule().fill(Color.white.opacity(0.17)))
 
                     Button("Skip") {
                         dismissEfficiencyVotePrompt()
