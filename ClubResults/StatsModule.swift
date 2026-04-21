@@ -2524,7 +2524,7 @@ private struct StatsTotalsView: View {
                 if lhs.behinds != rhs.behinds { return lhs.behinds > rhs.behinds }
                 return lhs.playerLabel < rhs.playerLabel
             }
-            .prefix(3)
+            .prefix(5)
             .map { $0 }
     }
 
@@ -2579,16 +2579,18 @@ private struct StatsTotalsView: View {
                         )
                     }
 
-                    HStack(spacing: 12) {
-                        comparisonPool(
-                            title: "Inside 50s",
-                            ourValue: ourInside50s,
-                            theirValue: theirInside50s
+                    HStack(alignment: .top, spacing: 12) {
+                        teamStatsPool(
+                            teamName: ourTeamName,
+                            style: ourStyle,
+                            inside50s: ourInside50s,
+                            clearances: ourClearances
                         )
-                        comparisonPool(
-                            title: "Clearances",
-                            ourValue: ourClearances,
-                            theirValue: theirClearances
+                        teamStatsPool(
+                            teamName: oppositionName,
+                            style: oppositionStyle,
+                            inside50s: theirInside50s,
+                            clearances: theirClearances
                         )
                     }
 
@@ -2605,7 +2607,7 @@ private struct StatsTotalsView: View {
                             }
                         )
                         leaderboardPool(
-                            title: "Top 3 Goal Kickers",
+                            title: "Top 5 Goal Kickers",
                             entries: topGoalKickers.map {
                                 ("\($0.playerLabel)", "\($0.goals)", "Behinds \($0.behinds)")
                             }
@@ -2695,6 +2697,35 @@ private struct StatsTotalsView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func teamStatsPool(teamName: String, style: ClubStyle.Style, inside50s: Int, clearances: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(teamName)
+                .font(.title3.weight(.black))
+                .lineLimit(1)
+                .foregroundStyle(style.text)
+
+            teamNamedMetric(title: "Inside 50s", value: inside50s, style: style)
+            teamNamedMetric(title: "Clearances", value: clearances, style: style)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func teamNamedMetric(title: String, value: Int, style: ClubStyle.Style) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.headline.weight(.semibold))
+            Text("\(value)")
+                .font(.system(size: 38, weight: .black, design: .rounded))
+                .monospacedDigit()
+        }
+        .foregroundStyle(style.text)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(style.background.opacity(0.92), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func teamMetricColumn(name: String, value: Int, style: ClubStyle.Style) -> some View {
