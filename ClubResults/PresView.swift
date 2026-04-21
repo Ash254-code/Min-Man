@@ -321,7 +321,7 @@ private struct PresentationGradeFullScreenView: View {
                 presentationListColumn(
                     title: "Best Players",
                     items: bestPlayerItems(game),
-                    style: oppositionStyle,
+                    style: ourStyle,
                     width: width
                 )
             }
