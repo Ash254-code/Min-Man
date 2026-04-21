@@ -1259,7 +1259,7 @@ struct LiveStatsView: View {
     }
 
     private var topPanelHeight: CGFloat {
-        oppositionTrackPossessions ? 310 : 168
+        oppositionTrackPossessions ? 326 : 168
     }
 
     private var rightStatActionsHeight: CGFloat {
@@ -1390,12 +1390,18 @@ struct LiveStatsView: View {
             [("Goal", "Goal", nil), ("Behind", "Behind", nil), ("Clearance", "Clearance", "Clearances"), ("Inside 50", "Inside 50", "Inside 50s")],
             [("Kick", "Kick", nil), ("Handball", "Handball", nil), ("Mark", "Mark", nil), ("Tackle", "Tackle", nil)]
         ]
-        let fixedNames = Set(fixedRows.flatMap { $0.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() } })
+        let fixedNames = Set(fixedRows.flatMap { $0.map { normalizedStatName($0.name) } })
+        let excludedThirdRowNames: Set<String> = fixedNames.union([
+            "scores",
+            "score",
+            "clearances",
+            "inside 50s"
+        ])
         let thirdRowStats = enabledStatTypes
-            .filter { !fixedNames.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
+            .filter { !excludedThirdRowNames.contains(normalizedStatName($0.name)) }
             .prefix(4)
 
-        return VStack(spacing: 8) {
+        return VStack(spacing: 6) {
             ForEach(0..<fixedRows.count, id: \.self) { rowIndex in
                 HStack(spacing: 8) {
                     ForEach(0..<fixedRows[rowIndex].count, id: \.self) { columnIndex in
@@ -1410,10 +1416,11 @@ struct LiveStatsView: View {
                 }
                 ForEach(Array(thirdRowStats).count..<4, id: \.self) { _ in
                     Color.clear
-                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .frame(maxWidth: .infinity, minHeight: 60)
                 }
             }
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var quarterPicker: some View {
@@ -1592,7 +1599,7 @@ struct LiveStatsView: View {
             Text(title)
                 .font(.headline.weight(.bold))
                 .foregroundStyle(style.text)
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .frame(maxWidth: .infinity, minHeight: 60)
                 .background(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(style.background.opacity(statType == nil ? 0.35 : 1))
