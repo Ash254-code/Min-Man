@@ -213,6 +213,7 @@ struct StatsTypesSettingsView: View {
             normalizeGoalAndBehindToScoresIfNeeded()
             seedDefaultStatTypesIfNeeded()
             ensureAlwaysOnStatTypesIfNeeded()
+            enforceOppositionTrackingDependency()
         }
     }
 
@@ -225,12 +226,16 @@ struct StatsTypesSettingsView: View {
 
             List {
                 Section("Tracking") {
-                    Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
-                    Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
                     if side == .ourClub {
+                        Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
+                        Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
                         Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
                     } else {
                         Toggle("Track Possesions", isOn: trackingBinding(for: side, type: .oppositionPossessions))
+                        Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
+                            .disabled(!oppositionTrackPossessions)
+                        Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
+                            .disabled(!oppositionTrackPossessions)
                     }
                 }
 
@@ -338,8 +343,8 @@ struct StatsTypesSettingsView: View {
                 case (.ourClub, .contestedPossessions): return trackContestedPossessions
                 case (.ourClub, .individualTracking): return trackIndividualTracking
                 case (.ourClub, .oppositionPossessions): return trackContestedPossessions
-                case (.opposition, .disposalEfficiency): return oppositionTrackDisposalEfficiency
-                case (.opposition, .contestedPossessions): return oppositionTrackContestedPossessions
+                case (.opposition, .disposalEfficiency): return oppositionTrackPossessions ? oppositionTrackDisposalEfficiency : false
+                case (.opposition, .contestedPossessions): return oppositionTrackPossessions ? oppositionTrackContestedPossessions : false
                 case (.opposition, .individualTracking): return oppositionTrackPossessions
                 case (.opposition, .oppositionPossessions): return oppositionTrackPossessions
                 }
@@ -350,13 +355,26 @@ struct StatsTypesSettingsView: View {
                 case (.ourClub, .contestedPossessions): trackContestedPossessions = newValue
                 case (.ourClub, .individualTracking): trackIndividualTracking = newValue
                 case (.ourClub, .oppositionPossessions): trackContestedPossessions = newValue
-                case (.opposition, .disposalEfficiency): oppositionTrackDisposalEfficiency = newValue
-                case (.opposition, .contestedPossessions): oppositionTrackContestedPossessions = newValue
+                case (.opposition, .disposalEfficiency):
+                    oppositionTrackDisposalEfficiency = oppositionTrackPossessions ? newValue : false
+                case (.opposition, .contestedPossessions):
+                    oppositionTrackContestedPossessions = oppositionTrackPossessions ? newValue : false
                 case (.opposition, .individualTracking): oppositionTrackPossessions = newValue
-                case (.opposition, .oppositionPossessions): oppositionTrackPossessions = newValue
+                case (.opposition, .oppositionPossessions):
+                    oppositionTrackPossessions = newValue
+                    if !newValue {
+                        oppositionTrackDisposalEfficiency = false
+                        oppositionTrackContestedPossessions = false
+                    }
                 }
             }
         )
+    }
+
+    private func enforceOppositionTrackingDependency() {
+        guard !oppositionTrackPossessions else { return }
+        oppositionTrackDisposalEfficiency = false
+        oppositionTrackContestedPossessions = false
     }
 
     private func statTypeEnabledBinding(for type: StatType, side: StatsSide) -> Binding<Bool> {
