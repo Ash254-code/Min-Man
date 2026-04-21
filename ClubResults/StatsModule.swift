@@ -1576,7 +1576,7 @@ struct LiveStatsView: View {
     }
 
     private func addManualEvent() {
-        guard let selectedPlayerId else {
+        guard let currentSelectedPlayerId = selectedPlayerId else {
             lastMessage = "Select a player first"
             feedbackToken = UUID()
             return
@@ -1585,7 +1585,7 @@ struct LiveStatsView: View {
 
         let event = StatEvent(
             sessionId: session.sessionId,
-            playerId: selectedPlayerId,
+            playerId: currentSelectedPlayerId,
             statTypeId: selectedStatTypeId,
             quarter: selectedQuarter,
             sourceRaw: StatsEventSource.manual.rawValue,
@@ -1597,7 +1597,7 @@ struct LiveStatsView: View {
         promptEfficiencyVoteIfNeeded(for: event)
         selectedPlayerId = nil
 
-        lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: selectedPlayerId)) — \(selectedQuarter)"
+        lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
         feedbackToken = UUID()
     }
 
