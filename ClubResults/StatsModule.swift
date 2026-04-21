@@ -960,6 +960,7 @@ struct LiveStatsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
+    @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
 
     let session: StatsSession
@@ -971,7 +972,6 @@ struct LiveStatsView: View {
 
     @State private var selectedQuarter = "Q1"
     @State private var selectedPlayerId: UUID?
-    @State private var selectedStatTypeId: UUID?
     @State private var lastMessage: String?
     @State private var showEditEvent: StatEvent?
     @State private var reportPreviewDocument: ReportPreviewDocument?
@@ -1586,14 +1586,33 @@ struct LiveStatsView: View {
             extraFallbackNames: ["Scores"]
         )
         let normalizedName = normalizedStatName(name)
-        let requiresSelectedPlayer = !isOpposition && (normalizedName == "kick" || normalizedName == "handball")
+        let scoreKind: String? = (normalizedName == "goal" || normalizedName == "behind") ? normalizedName : nil
+        let isOptionalUsStat = normalizedName == "clearance"
+            || normalizedName == "clearances"
+            || normalizedName == "inside 50"
+            || normalizedName == "inside 50s"
+        let requiresSelectedPlayer = !isOpposition && (
+            trackIndividualTracking
+                ? !isOptionalUsStat
+                : (normalizedName == "kick" || normalizedName == "handball")
+        )
         return Button {
             guard let statType else { return }
-            if requiresSelectedPlayer {
-                addManualEvent(statTypeId: statType.id)
+            if isOpposition {
+                addTeamEvent(statTypeId: statType.id, isOpposition: true, scoreKind: scoreKind)
+                return
+            }
+
+            if trackIndividualTracking && isOptionalUsStat {
+                if selectedPlayerId == nil {
+                    addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
+                } else {
+                    addManualEvent(statTypeId: statType.id, transcript: scoreKind)
+                }
+            } else if requiresSelectedPlayer {
+                addManualEvent(statTypeId: statType.id, transcript: scoreKind)
             } else {
-                let scoreKind: String? = (normalizedName == "goal" || normalizedName == "behind") ? normalizedName : nil
-                addTeamEvent(statTypeId: statType.id, isOpposition: isOpposition, scoreKind: scoreKind)
+                addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
             }
         } label: {
             Text(title)
@@ -1896,22 +1915,21 @@ struct LiveStatsView: View {
         allStatTypes.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
-    private func addManualEvent() {
+    private func addManualEvent(statTypeId: UUID, transcript: String? = nil) {
         guard let currentSelectedPlayerId = selectedPlayerId else {
             lastMessage = "Select a player first"
             showStatusBanner(text: "ERROR • Select a player first", isSuccess: false)
             feedbackToken = UUID()
             return
         }
-        guard let selectedStatTypeId else { return }
 
         let event = StatEvent(
             sessionId: session.sessionId,
             playerId: currentSelectedPlayerId,
-            statTypeId: selectedStatTypeId,
+            statTypeId: statTypeId,
             quarter: selectedQuarter,
             sourceRaw: StatsEventSource.manual.rawValue,
-            transcript: nil
+            transcript: transcript
         )
         modelContext.insert(event)
         try? modelContext.save()
@@ -1919,16 +1937,11 @@ struct LiveStatsView: View {
         let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event)
         selectedPlayerId = nil
 
-        lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
+        lastMessage = "Added: \(statName(for: statTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
         if !shouldDelaySuccessBanner {
             showSuccessBanner(for: event)
         }
         feedbackToken = UUID()
-    }
-
-    private func addManualEvent(statTypeId: UUID) {
-        selectedStatTypeId = statTypeId
-        addManualEvent()
     }
 
     private func addTeamEvent(statTypeId: UUID, isOpposition: Bool, scoreKind: String? = nil) {
