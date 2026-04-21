@@ -2209,10 +2209,10 @@ struct LiveStatsView: View {
 
     private func playerQuickStatsFan(cardSize: CGSize, globalMidX: CGFloat) -> some View {
         let statRects = quickStatRects(cardSize: cardSize, globalMidX: globalMidX)
-        let selectedRect = hoveredQuickStatIndex.flatMap { idx in
-            guard statRects.indices.contains(idx) else { return nil }
+        let selectedRect: CGRect? = {
+            guard let idx = hoveredQuickStatIndex, statRects.indices.contains(idx) else { return nil }
             return statRects[idx]
-        }
+        }()
         let contestedPopupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
         let efficiencyPopupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
         return ZStack {
@@ -2363,10 +2363,10 @@ struct LiveStatsView: View {
 
         guard let statID = hoveredPlayerQuickStatName, needsQuickStatVotes(for: statID) else { return }
 
-        let selectedRect = hoveredQuickStatIndex.flatMap { idx in
-            guard rects.indices.contains(idx) else { return nil }
+        let selectedRect: CGRect? = {
+            guard let idx = hoveredQuickStatIndex, rects.indices.contains(idx) else { return nil }
             return rects[idx]
-        }
+        }()
         let popupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
         let contestedRectLeft = CGRect(x: popupX - 184, y: (selectedRect?.minY ?? -110) - 92, width: 170, height: 70)
         let contestedRectRight = CGRect(x: popupX + 14, y: (selectedRect?.minY ?? -110) - 92, width: 170, height: 70)
