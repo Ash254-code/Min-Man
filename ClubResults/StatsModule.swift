@@ -235,9 +235,9 @@ struct StatsTypesSettingsView: View {
             List {
                 Section("Tracking") {
                     if side == .ourClub {
+                        Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
                         Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
                         Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
-                        Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
                     } else {
                         Toggle("Track Possesions", isOn: trackingBinding(for: side, type: .oppositionPossessions))
                         Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
