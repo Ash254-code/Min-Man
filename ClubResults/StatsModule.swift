@@ -1115,6 +1115,19 @@ struct LiveStatsView: View {
         .frame(maxWidth: .infinity, minHeight: 168, maxHeight: 168)
     }
 
+    private var ourTeamEfficiencyText: String {
+        guard !displayedPlayers.isEmpty else { return "0%" }
+        let averageEfficiency = displayedPlayers.reduce(0.0) { partialResult, player in
+            let (effectiveCount, nonEffectiveCount) = efficiencyVoteCounts(for: player.id, events: sessionEvents)
+            let totalRatedDisposals = effectiveCount + nonEffectiveCount
+            let playerEfficiency = totalRatedDisposals > 0
+                ? (Double(effectiveCount) / Double(totalRatedDisposals))
+                : 0
+            return partialResult + playerEfficiency
+        } / Double(displayedPlayers.count)
+        return "\(Int(round(averageEfficiency * 100)))%"
+    }
+
     private func combinedTeamPanel(
         teamName: String,
         scoreText: String,
@@ -1144,6 +1157,20 @@ struct LiveStatsView: View {
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(alignment: .topTrailing) {
+            if !isOpposition {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Team Eff.")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(ourTeamEfficiencyText)
+                        .font(.headline.weight(.black))
+                        .monospacedDigit()
+                }
+                .padding(.top, 8)
+                .padding(.trailing, 10)
+            }
+        }
     }
 
     private var quarterPicker: some View {
