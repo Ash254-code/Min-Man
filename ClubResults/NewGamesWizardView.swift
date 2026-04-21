@@ -2850,7 +2850,11 @@ struct NewGameWizardView: View {
 
         let modelGoalKickers: [GameGoalKickerEntry] = asksGoalKickers ? goalKickers.compactMap { entry in
             guard let pid = entry.playerID, entry.goals > 0 else { return nil }
-            return GameGoalKickerEntry(playerID: pid, goals: entry.goals)
+            return GameGoalKickerEntry(
+                playerID: pid,
+                goals: entry.goals,
+                points: liveSession.pointScorers[pid, default: 0]
+            )
         } : []
 
         let game: Game

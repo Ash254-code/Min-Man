@@ -101,7 +101,10 @@ struct TotalsView: View {
         return games.filter { gradeIDs.contains($0.gradeID) }
     }
 
-    private func constrained(_ rows: [LeaderRow]) -> [LeaderRow] {
+    private func constrained(_ rows: [LeaderRow], sectionTitle: String) -> [LeaderRow] {
+        if sectionTitle == "Goal Kickers" {
+            return Array(rows.prefix(5))
+        }
         guard let limit = topCount.limit else { return rows }
         return Array(rows.prefix(limit))
     }
@@ -364,7 +367,7 @@ private extension TotalsView {
 
             bigPillHeader(title)
 
-            let visibleRows = constrained(rows)
+            let visibleRows = constrained(rows, sectionTitle: title)
 
             if visibleRows.isEmpty {
                 Text("No data yet.")
@@ -432,27 +435,33 @@ private extension TotalsView {
         }
     }
 
-    // Goal Kickers leaderboard: sum goals across games
+    // Goal Kickers leaderboard: sum goals and points (behinds) across games
     func topGoalKickers(in gradeIDs: Set<UUID>) -> [LeaderRow] {
-        var totals: [UUID: Int] = [:]
+        var totals: [UUID: (goals: Int, points: Int)] = [:]
 
         for g in filteredGames(in: gradeIDs) {
             for entry in g.goalKickers {
                 if let pid = entry.playerID {
-                    totals[pid, default: 0] += entry.goals
+                    totals[pid, default: (goals: 0, points: 0)].goals += entry.goals
+                    totals[pid, default: (goals: 0, points: 0)].points += entry.points
                 }
             }
         }
 
         let sorted = totals
             .sorted { a, b in
-                if a.value != b.value { return a.value > b.value }
+                if a.value.goals != b.value.goals { return a.value.goals > b.value.goals }
+                if a.value.points != b.value.points { return a.value.points > b.value.points }
                 return playerName(for: a.key)
                     .localizedCaseInsensitiveCompare(playerName(for: b.key)) == .orderedAscending
             }
 
         return sorted.enumerated().map { i, item in
-            LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) goals")
+            LeaderRow(
+                rank: i + 1,
+                name: playerName(for: item.key),
+                valueText: "\(item.value.goals).\(item.value.points)"
+            )
         }
     }
 
