@@ -1601,11 +1601,13 @@ struct LiveStatsView: View {
         modelContext.insert(event)
         try? modelContext.save()
 
-        promptEfficiencyVoteIfNeeded(for: event)
+        let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event)
         selectedPlayerId = nil
 
         lastMessage = "Added: \(statName(for: selectedStatTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
-        showSuccessBanner(for: event)
+        if !shouldDelaySuccessBanner {
+            showSuccessBanner(for: event)
+        }
         feedbackToken = UUID()
     }
 
@@ -1698,21 +1700,24 @@ struct LiveStatsView: View {
         )
         modelContext.insert(event)
         try? modelContext.save()
-        promptEfficiencyVoteIfNeeded(for: event)
+        let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event)
         selectedPlayerId = nil
 
         let playerText = playerLabel(for: playerId)
         let statText = statName(for: statTypeId)
         lastMessage = "Added: \(statText) — \(playerText) — \(selectedQuarter)"
-        showSuccessBanner(for: event)
+        if !shouldDelaySuccessBanner {
+            showSuccessBanner(for: event)
+        }
         feedbackToken = UUID()
     }
 
-    private func promptEfficiencyVoteIfNeeded(for event: StatEvent) {
+    private func promptEfficiencyVoteIfNeeded(for event: StatEvent) -> Bool {
         let normalized = statName(for: event.statTypeId).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard normalized == "kick" || normalized == "handball" else { return }
+        guard normalized == "kick" || normalized == "handball" else { return false }
         pendingEfficiencyEventID = event.id
         showEfficiencyVotePrompt = true
+        return true
     }
 
     private func applyEfficiencyVote(_ vote: EfficiencyVote) {
@@ -1730,6 +1735,10 @@ struct LiveStatsView: View {
     }
 
     private func dismissEfficiencyVotePrompt() {
+        if let eventID = pendingEfficiencyEventID,
+           let event = sessionEvents.first(where: { $0.id == eventID }) {
+            showSuccessBanner(for: event)
+        }
         pendingEfficiencyEventID = nil
         showEfficiencyVotePrompt = false
     }
