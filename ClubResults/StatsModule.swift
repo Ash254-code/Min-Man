@@ -979,7 +979,7 @@ struct LiveStatsView: View {
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
     @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
-    @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
+    @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
 
     let session: StatsSession
@@ -1405,9 +1405,12 @@ struct LiveStatsView: View {
     }
 
     private func teamStatsExpandedGrid(style: ClubStyle.Style, isOpposition: Bool) -> some View {
+        let showContestedRow = shouldShowContestedRow(isOpposition: isOpposition)
         let fixedRows: [[(title: String, name: String, fallback: String?)]] = [
             [("Goal", "Goal", nil), ("Behind", "Behind", nil), ("Clearance", "Clearance", "Clearances"), ("Inside 50", "Inside 50", "Inside 50s")],
-            [("Kick", "Kick", nil), ("Handball", "Handball", nil), ("Mark", "Mark", nil), ("Tackle", "Tackle", nil)]
+            showContestedRow
+                ? [("Mark", "Mark", nil), ("Tackle", "Tackle", nil)]
+                : [("Kick", "Kick", nil), ("Handball", "Handball", nil), ("Mark", "Mark", nil), ("Tackle", "Tackle", nil)]
         ]
         let fixedNames = Set(fixedRows.flatMap { $0.map { normalizedStatName($0.name) } })
         let excludedThirdRowNames: Set<String> = fixedNames.union([
@@ -1427,15 +1430,19 @@ struct LiveStatsView: View {
                         let entry = fixedRows[rowIndex][columnIndex]
                         teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
                     }
+                    ForEach(fixedRows[rowIndex].count..<4, id: \.self) { _ in
+                        Color.clear
+                            .frame(maxWidth: .infinity, minHeight: 60)
+                    }
                 }
             }
 
-            if shouldShowEfficiencyRow(isOpposition: isOpposition) {
+            if showContestedRow {
                 HStack(spacing: 8) {
-                    teamStatButton("Kick 👍🏽", name: "Kick", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsUp)
-                    teamStatButton("Kick 👎🏽", name: "Kick", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsDown)
-                    teamStatButton("Handball 👍🏽", name: "Handball", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsUp)
-                    teamStatButton("Handball 👎🏽", name: "Handball", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsDown)
+                    teamStatButton("Kick", name: "Kick", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsUp, subtitle: "Contested", subtitleIndicatorColor: .red)
+                    teamStatButton("Kick", name: "Kick", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsDown, subtitle: "Uncontested", subtitleIndicatorColor: .green)
+                    teamStatButton("Handball", name: "Handball", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsUp, subtitle: "Contested", subtitleIndicatorColor: .red)
+                    teamStatButton("Handball", name: "Handball", style: style, isOpposition: isOpposition, presetEfficiencyVote: .thumbsDown, subtitle: "Uncontested", subtitleIndicatorColor: .green)
                 }
             } else {
                 HStack(spacing: 8) {
@@ -1452,8 +1459,8 @@ struct LiveStatsView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private func shouldShowEfficiencyRow(isOpposition: Bool) -> Bool {
-        return isOpposition ? oppositionTrackDisposalEfficiency : trackDisposalEfficiency
+    private func shouldShowContestedRow(isOpposition: Bool) -> Bool {
+        return isOpposition ? oppositionTrackContestedPossessions : trackContestedPossessions
     }
 
     private var quarterPicker: some View {
@@ -1612,7 +1619,9 @@ struct LiveStatsView: View {
         style: ClubStyle.Style,
         isOpposition: Bool,
         fallbackName: String? = nil,
-        presetEfficiencyVote: EfficiencyVote? = nil
+        presetEfficiencyVote: EfficiencyVote? = nil,
+        subtitle: String? = nil,
+        subtitleIndicatorColor: Color? = nil
     ) -> some View {
         let statType = statType(
             named: name,
@@ -1675,9 +1684,26 @@ struct LiveStatsView: View {
                 )
             }
         } label: {
-            Text(title)
-                .font(.headline.weight(.bold))
-                .foregroundStyle(style.text)
+            VStack(spacing: subtitle == nil ? 0 : 2) {
+                Text(title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(style.text)
+                    .lineLimit(1)
+
+                if let subtitle {
+                    HStack(spacing: 4) {
+                        if let subtitleIndicatorColor {
+                            Circle()
+                                .fill(subtitleIndicatorColor)
+                                .frame(width: 9, height: 9)
+                        }
+                        Text(subtitle)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(style.text)
+                            .lineLimit(1)
+                    }
+                }
+            }
                 .frame(maxWidth: .infinity, minHeight: 60)
                 .background(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
