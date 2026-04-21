@@ -979,6 +979,7 @@ struct LiveStatsView: View {
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
     @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
+    @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
 
     let session: StatsSession
@@ -1424,7 +1425,16 @@ struct LiveStatsView: View {
                 HStack(spacing: 8) {
                     ForEach(0..<fixedRows[rowIndex].count, id: \.self) { columnIndex in
                         let entry = fixedRows[rowIndex][columnIndex]
-                        teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
+                        if shouldShowDualDisposalButtons(for: entry.name, isOpposition: isOpposition) {
+                            disposalEfficiencyButtonStack(
+                                title: entry.title,
+                                name: entry.name,
+                                style: style,
+                                isOpposition: isOpposition
+                            )
+                        } else {
+                            teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
+                        }
                     }
                 }
             }
@@ -1439,6 +1449,37 @@ struct LiveStatsView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private func shouldShowDualDisposalButtons(for statName: String, isOpposition: Bool) -> Bool {
+        let normalized = normalizedStatName(statName)
+        guard normalized == "kick" || normalized == "handball" else { return false }
+        return isOpposition ? oppositionTrackDisposalEfficiency : trackDisposalEfficiency
+    }
+
+    private func disposalEfficiencyButtonStack(
+        title: String,
+        name: String,
+        style: ClubStyle.Style,
+        isOpposition: Bool
+    ) -> some View {
+        VStack(spacing: 6) {
+            teamStatButton(
+                "\(title) 👍🏽",
+                name: name,
+                style: style,
+                isOpposition: isOpposition,
+                presetEfficiencyVote: .thumbsUp
+            )
+            teamStatButton(
+                "\(title) 👎🏽",
+                name: name,
+                style: style,
+                isOpposition: isOpposition,
+                presetEfficiencyVote: .thumbsDown
+            )
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var quarterPicker: some View {
@@ -1596,7 +1637,8 @@ struct LiveStatsView: View {
         name: String,
         style: ClubStyle.Style,
         isOpposition: Bool,
-        fallbackName: String? = nil
+        fallbackName: String? = nil,
+        presetEfficiencyVote: EfficiencyVote? = nil
     ) -> some View {
         let statType = statType(
             named: name,
@@ -1613,22 +1655,50 @@ struct LiveStatsView: View {
         return Button {
             guard let statType else { return }
             if isOpposition {
-                addTeamEvent(statTypeId: statType.id, isOpposition: true, scoreKind: scoreKind)
+                addTeamEvent(
+                    statTypeId: statType.id,
+                    isOpposition: true,
+                    scoreKind: scoreKind,
+                    presetEfficiencyVote: presetEfficiencyVote
+                )
                 return
             }
 
             if !trackIndividualTracking {
-                addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
+                addTeamEvent(
+                    statTypeId: statType.id,
+                    isOpposition: false,
+                    scoreKind: scoreKind,
+                    presetEfficiencyVote: presetEfficiencyVote
+                )
             } else if isOptionalUsStat {
                 if selectedPlayerId == nil {
-                    addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
+                    addTeamEvent(
+                        statTypeId: statType.id,
+                        isOpposition: false,
+                        scoreKind: scoreKind,
+                        presetEfficiencyVote: presetEfficiencyVote
+                    )
                 } else {
-                    addManualEvent(statTypeId: statType.id, transcript: scoreKind)
+                    addManualEvent(
+                        statTypeId: statType.id,
+                        transcript: scoreKind,
+                        presetEfficiencyVote: presetEfficiencyVote
+                    )
                 }
             } else if requiresSelectedPlayer {
-                addManualEvent(statTypeId: statType.id, transcript: scoreKind)
+                addManualEvent(
+                    statTypeId: statType.id,
+                    transcript: scoreKind,
+                    presetEfficiencyVote: presetEfficiencyVote
+                )
             } else {
-                addTeamEvent(statTypeId: statType.id, isOpposition: false, scoreKind: scoreKind)
+                addTeamEvent(
+                    statTypeId: statType.id,
+                    isOpposition: false,
+                    scoreKind: scoreKind,
+                    presetEfficiencyVote: presetEfficiencyVote
+                )
             }
         } label: {
             Text(title)
@@ -1931,7 +2001,11 @@ struct LiveStatsView: View {
         allStatTypes.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
-    private func addManualEvent(statTypeId: UUID, transcript: String? = nil) {
+    private func addManualEvent(
+        statTypeId: UUID,
+        transcript: String? = nil,
+        presetEfficiencyVote: EfficiencyVote? = nil
+    ) {
         guard let currentSelectedPlayerId = selectedPlayerId else {
             lastMessage = "Select a player first"
             showStatusBanner(text: "ERROR • Select a player first", isSuccess: false)
@@ -1950,7 +2024,11 @@ struct LiveStatsView: View {
         modelContext.insert(event)
         try? modelContext.save()
 
-        let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event)
+        if let presetEfficiencyVote {
+            event.efficiencyVoteRaw = presetEfficiencyVote.rawValue
+            try? modelContext.save()
+        }
+        let shouldDelaySuccessBanner = presetEfficiencyVote == nil && promptEfficiencyVoteIfNeeded(for: event)
         selectedPlayerId = nil
 
         lastMessage = "Added: \(statName(for: statTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
@@ -1960,7 +2038,12 @@ struct LiveStatsView: View {
         feedbackToken = UUID()
     }
 
-    private func addTeamEvent(statTypeId: UUID, isOpposition: Bool, scoreKind: String? = nil) {
+    private func addTeamEvent(
+        statTypeId: UUID,
+        isOpposition: Bool,
+        scoreKind: String? = nil,
+        presetEfficiencyVote: EfficiencyVote? = nil
+    ) {
         let playerID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
         let event = StatEvent(
             sessionId: session.sessionId,
@@ -1970,6 +2053,9 @@ struct LiveStatsView: View {
             sourceRaw: StatsEventSource.manual.rawValue,
             transcript: scoreKind
         )
+        if let presetEfficiencyVote {
+            event.efficiencyVoteRaw = presetEfficiencyVote.rawValue
+        }
         modelContext.insert(event)
         try? modelContext.save()
         lastMessage = "Added: \(statName(for: statTypeId)) — \(isOpposition ? session.opposition : ourTeamName) — \(selectedQuarter)"
