@@ -68,6 +68,7 @@ final class StatEvent {
     var normalizedTranscript: String?
     var parserConfidence: Double?
     var efficiencyVoteRaw: String?
+    var contestedVoteRaw: String?
 
     init(
         id: UUID = UUID(),
@@ -80,7 +81,8 @@ final class StatEvent {
         transcript: String? = nil,
         normalizedTranscript: String? = nil,
         parserConfidence: Double? = nil,
-        efficiencyVoteRaw: String? = nil
+        efficiencyVoteRaw: String? = nil,
+        contestedVoteRaw: String? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
@@ -93,6 +95,7 @@ final class StatEvent {
         self.normalizedTranscript = normalizedTranscript
         self.parserConfidence = parserConfidence
         self.efficiencyVoteRaw = efficiencyVoteRaw
+        self.contestedVoteRaw = contestedVoteRaw
     }
 }
 
@@ -104,6 +107,11 @@ enum StatsEventSource: String, CaseIterable {
 private enum EfficiencyVote: String {
     case thumbsUp
     case thumbsDown
+}
+
+private enum ContestedPossessionVote: String {
+    case contested
+    case uncontested
 }
 
 private struct StatRecordBanner: Equatable {
@@ -1014,6 +1022,7 @@ struct LiveStatsView: View {
     @State private var showStatsSettings = false
     @State private var activeEfficiencyButtonKey: String?
     @State private var activeEfficiencyHoverVote: EfficiencyVote?
+    @State private var activeContestedHoverVote: ContestedPossessionVote?
     @State private var suppressTapForButtonKey: String?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
@@ -1639,9 +1648,16 @@ struct LiveStatsView: View {
         }
         .overlay(alignment: .top) {
             if activeEfficiencyButtonKey == buttonKey {
-                efficiencySlidePopup
-                    .offset(y: -88)
-                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                VStack(spacing: 8) {
+                    if trackDisposalEfficiency {
+                        efficiencySlidePopup
+                    }
+                    if trackContestedPossessions {
+                        contestedSlidePopup
+                    }
+                }
+                .offset(y: trackDisposalEfficiency && trackContestedPossessions ? -160 : -88)
+                .transition(.opacity.combined(with: .scale(scale: 0.94)))
             }
         }
         .buttonStyle(.plain)
@@ -1655,9 +1671,26 @@ struct LiveStatsView: View {
                         switch value {
                         case .first(true):
                             activeEfficiencyButtonKey = buttonKey
-                            activeEfficiencyHoverVote = .thumbsUp
+                            activeEfficiencyHoverVote = nil
+                            activeContestedHoverVote = nil
+                            if trackDisposalEfficiency {
+                                activeEfficiencyHoverVote = .thumbsUp
+                            }
+                            if trackContestedPossessions {
+                                activeContestedHoverVote = .contested
+                            }
                         case .second(true, let drag?):
-                            activeEfficiencyHoverVote = drag.location.x < 110 ? .thumbsUp : .thumbsDown
+                            if trackDisposalEfficiency && trackContestedPossessions {
+                                if drag.location.y < -76 {
+                                    activeEfficiencyHoverVote = drag.location.x < 110 ? .thumbsUp : .thumbsDown
+                                } else {
+                                    activeContestedHoverVote = drag.location.x < 110 ? .contested : .uncontested
+                                }
+                            } else if trackDisposalEfficiency {
+                                activeEfficiencyHoverVote = drag.location.x < 110 ? .thumbsUp : .thumbsDown
+                            } else if trackContestedPossessions {
+                                activeContestedHoverVote = drag.location.x < 110 ? .contested : .uncontested
+                            }
                         default:
                             break
                         }
@@ -1666,19 +1699,22 @@ struct LiveStatsView: View {
                         guard let statType else {
                             activeEfficiencyButtonKey = nil
                             activeEfficiencyHoverVote = nil
+                            activeContestedHoverVote = nil
                             return
                         }
                         var didCommit = false
                         switch value {
                         case .second(true, _):
-                            let vote = activeEfficiencyHoverVote ?? .thumbsUp
+                            let vote = trackDisposalEfficiency ? (activeEfficiencyHoverVote ?? .thumbsUp) : nil
+                            let contestedVote = trackContestedPossessions ? (activeContestedHoverVote ?? .contested) : nil
                             suppressTapForButtonKey = buttonKey
                             handleTeamStatAction(
                                 statTypeId: statType.id,
                                 isOpposition: isOpposition,
                                 scoreKind: scoreKind,
                                 isOptionalUsStat: isOptionalUsStat,
-                                efficiencyVote: vote
+                                efficiencyVote: vote,
+                                contestedVote: contestedVote
                             )
                             didCommit = true
                         default:
@@ -1689,6 +1725,7 @@ struct LiveStatsView: View {
                         }
                         activeEfficiencyButtonKey = nil
                         activeEfficiencyHoverVote = nil
+                        activeContestedHoverVote = nil
                     }
             ))
         } else {
@@ -1698,8 +1735,8 @@ struct LiveStatsView: View {
 
     private var efficiencySlidePopup: some View {
         HStack(spacing: 8) {
-            efficiencySlideOption(title: "Efficient", vote: .thumbsUp, tint: .green)
-            efficiencySlideOption(title: "Non-efficient", vote: .thumbsDown, tint: .red)
+            efficiencySlideOption(title: "Effective", vote: .thumbsUp, tint: .green)
+            efficiencySlideOption(title: "Non effective", vote: .thumbsDown, tint: .red)
         }
         .padding(10)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -1722,8 +1759,34 @@ struct LiveStatsView: View {
             )
     }
 
+    private var contestedSlidePopup: some View {
+        HStack(spacing: 8) {
+            contestedSlideOption(title: "Contested", vote: .contested, tint: .orange)
+            contestedSlideOption(title: "Uncontested", vote: .uncontested, tint: .blue)
+        }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.28), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 3)
+    }
+
+    private func contestedSlideOption(title: String, vote: ContestedPossessionVote, tint: Color) -> some View {
+        let isSelected = activeContestedHoverVote == vote
+        return Text(title)
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .frame(width: 102, height: 64)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? tint : Color.white.opacity(0.2))
+            )
+    }
+
     private func supportsEfficiencyLongPress(for normalizedName: String, isOpposition: Bool) -> Bool {
-        guard trackDisposalEfficiency else { return false }
+        guard trackDisposalEfficiency || trackContestedPossessions else { return false }
         guard !isOpposition else { return false }
         return normalizedName == "kick" || normalizedName == "handball" || normalizedName == "mark"
     }
@@ -1733,26 +1796,33 @@ struct LiveStatsView: View {
         isOpposition: Bool,
         scoreKind: String?,
         isOptionalUsStat: Bool,
-        efficiencyVote: EfficiencyVote?
+        efficiencyVote: EfficiencyVote?,
+        contestedVote: ContestedPossessionVote? = nil
     ) {
         let requiresSelectedPlayer = !isOpposition && trackIndividualTracking && !isOptionalUsStat
         if isOpposition {
-            addTeamEvent(statTypeId: statTypeId, isOpposition: true, scoreKind: scoreKind, efficiencyVote: efficiencyVote)
+            addTeamEvent(
+                statTypeId: statTypeId,
+                isOpposition: true,
+                scoreKind: scoreKind,
+                efficiencyVote: efficiencyVote,
+                contestedVote: contestedVote
+            )
             return
         }
 
         if !trackIndividualTracking {
-            addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote)
+            addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
         } else if isOptionalUsStat {
             if selectedPlayerId == nil {
-                addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote)
+                addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
             } else {
-                addManualEvent(statTypeId: statTypeId, transcript: scoreKind, efficiencyVote: efficiencyVote)
+                addManualEvent(statTypeId: statTypeId, transcript: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
             }
         } else if requiresSelectedPlayer {
-            addManualEvent(statTypeId: statTypeId, transcript: scoreKind, efficiencyVote: efficiencyVote)
+            addManualEvent(statTypeId: statTypeId, transcript: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
         } else {
-            addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote)
+            addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
         }
     }
 
@@ -2043,7 +2113,12 @@ struct LiveStatsView: View {
         allStatTypes.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
-    private func addManualEvent(statTypeId: UUID, transcript: String? = nil, efficiencyVote: EfficiencyVote? = nil) {
+    private func addManualEvent(
+        statTypeId: UUID,
+        transcript: String? = nil,
+        efficiencyVote: EfficiencyVote? = nil,
+        contestedVote: ContestedPossessionVote? = nil
+    ) {
         guard let currentSelectedPlayerId = selectedPlayerId else {
             lastMessage = "Select a player first"
             showStatusBanner(text: "ERROR • Select a player first", isSuccess: false)
@@ -2062,6 +2137,9 @@ struct LiveStatsView: View {
         if let efficiencyVote {
             event.efficiencyVoteRaw = efficiencyVote.rawValue
         }
+        if let contestedVote {
+            event.contestedVoteRaw = contestedVote.rawValue
+        }
         modelContext.insert(event)
         try? modelContext.save()
 
@@ -2079,7 +2157,8 @@ struct LiveStatsView: View {
         statTypeId: UUID,
         isOpposition: Bool,
         scoreKind: String? = nil,
-        efficiencyVote: EfficiencyVote? = nil
+        efficiencyVote: EfficiencyVote? = nil,
+        contestedVote: ContestedPossessionVote? = nil
     ) {
         let playerID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
         let event = StatEvent(
@@ -2092,6 +2171,9 @@ struct LiveStatsView: View {
         )
         if let efficiencyVote {
             event.efficiencyVoteRaw = efficiencyVote.rawValue
+        }
+        if let contestedVote {
+            event.contestedVoteRaw = contestedVote.rawValue
         }
         modelContext.insert(event)
         try? modelContext.save()
@@ -2278,17 +2360,8 @@ struct LiveStatsView: View {
                     .foregroundStyle(.white.opacity(0.88))
 
                 VStack(spacing: 10) {
-                    if trackContestedPossessions {
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                            efficiencyVoteButton(emoji: "👍", color: .red, vote: .thumbsUp)
-                            efficiencyVoteButton(emoji: "👍", color: .green, vote: .thumbsUp)
-                            efficiencyVoteButton(emoji: "👎", color: .red, vote: .thumbsDown)
-                            efficiencyVoteButton(emoji: "👎", color: .green, vote: .thumbsDown)
-                        }
-                    } else {
-                        efficiencyVoteButton(emoji: "👍", color: .green, vote: .thumbsUp)
-                        efficiencyVoteButton(emoji: "👎", color: .red, vote: .thumbsDown)
-                    }
+                    efficiencyVoteButton(emoji: "👍", color: .green, vote: .thumbsUp)
+                    efficiencyVoteButton(emoji: "👎", color: .red, vote: .thumbsDown)
 
                     Button("Skip") {
                         dismissEfficiencyVotePrompt()
