@@ -1652,10 +1652,8 @@ struct LiveStatsView: View {
                     ZStack {
                         contestedSlidePopup
                             .offset(y: 36)
-                        if activeContestedHoverVote != nil {
-                            efficiencySlidePopup
-                                .offset(x: efficiencyPopupHorizontalOffset, y: -36)
-                        }
+                        efficiencySlidePopup
+                            .offset(x: efficiencyPopupHorizontalOffset, y: -36)
                     }
                     .offset(y: -126)
                     .transition(.opacity.combined(with: .scale(scale: 0.94)))
