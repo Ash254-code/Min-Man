@@ -102,6 +102,37 @@ struct GameGoalKickerEntry: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var playerID: UUID?
     var goals: Int
+    var points: Int = 0
+
+    init(id: UUID = UUID(), playerID: UUID?, goals: Int, points: Int = 0) {
+        self.id = id
+        self.playerID = playerID
+        self.goals = goals
+        self.points = points
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case playerID
+        case goals
+        case points
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        playerID = try container.decodeIfPresent(UUID.self, forKey: .playerID)
+        goals = try container.decodeIfPresent(Int.self, forKey: .goals) ?? 0
+        points = try container.decodeIfPresent(Int.self, forKey: .points) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(playerID, forKey: .playerID)
+        try container.encode(goals, forKey: .goals)
+        try container.encode(points, forKey: .points)
+    }
 }
 
 struct GameGuestVoteEntry: Identifiable, Codable, Hashable {
