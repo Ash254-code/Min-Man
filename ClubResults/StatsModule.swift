@@ -1271,7 +1271,7 @@ struct LiveStatsView: View {
                     } label: {
                         Text(type.name)
                             .font(.headline.weight(.semibold))
-                            .foregroundStyle(selectedPlayerId == nil ? .secondary : .white)
+                            .foregroundStyle(selectedPlayerId == nil ? Color.secondary : Color.white)
                             .frame(maxWidth: .infinity, minHeight: 58)
                             .background(
                                 selectedPlayerId == nil ? Color.black.opacity(0.06) : Color.blue,
