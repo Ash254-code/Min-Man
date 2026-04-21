@@ -1025,7 +1025,8 @@ struct LiveStatsView: View {
     @State private var activeContestedHoverVote: ContestedPossessionVote?
     @State private var suppressTapForButtonKey: String?
     @State private var activePlayerQuickStatsPlayerID: UUID?
-    @State private var activePlayerQuickFanGlobalMidX: CGFloat = UIScreen.main.bounds.midX
+    @State private var activePlayerQuickFanGlobalMidX: CGFloat = 512
+    @State private var interfaceScreenWidth: CGFloat = 1024
     @State private var hoveredPlayerQuickStatName: String?
     @State private var hoveredPlayerQuickEfficiencyVote: EfficiencyVote?
     @State private var hoveredPlayerQuickContestedVote: ContestedPossessionVote?
@@ -1167,7 +1168,11 @@ struct LiveStatsView: View {
             }
             playerGridOrder = savedPlayerGridOrder
             showAllPlayers = false
+            interfaceScreenWidth = max(proxy.size.width, 1)
             configureQuarterTimer(reset: true)
+        }
+        .onChange(of: proxy.size.width) { _, newValue in
+            interfaceScreenWidth = max(newValue, 1)
         }
         .onChange(of: selectedQuarter) { _, _ in
             configureQuarterTimer(reset: true)
@@ -1556,8 +1561,8 @@ struct LiveStatsView: View {
                                         .onAppear {
                                             activePlayerQuickFanGlobalMidX = midX
                                         }
-                                        .onChange(of: midX) { _, newValue in
-                                            activePlayerQuickFanGlobalMidX = newValue
+                                        .task(id: midX) {
+                                            activePlayerQuickFanGlobalMidX = midX
                                         }
                                         .transition(.opacity.combined(with: .scale(scale: 0.94)))
                                         .zIndex(3000)
@@ -1846,7 +1851,7 @@ struct LiveStatsView: View {
     }
 
     private func popupHorizontalShift(for buttonMidX: CGFloat) -> CGFloat {
-        let screenWidth = UIScreen.main.bounds.width
+        let screenWidth = interfaceScreenWidth
         let edgePadding: CGFloat = 12
         let halfWidth: CGFloat = (trackDisposalEfficiency && trackContestedPossessions) ? 170 : 112
         let leftOverflow = max(0, (edgePadding + halfWidth) - buttonMidX)
@@ -2315,7 +2320,7 @@ struct LiveStatsView: View {
                 x: anchor.x + cos(radians) * radius,
                 y: anchor.y + sin(radians) * radius
             )
-            CGRect(
+            return CGRect(
                 x: center.x - (buttonWidth / 2),
                 y: center.y - (buttonHeight / 2),
                 width: buttonWidth,
@@ -2325,7 +2330,7 @@ struct LiveStatsView: View {
     }
 
     private func fanAngles(globalMidX: CGFloat) -> [CGFloat] {
-        let screenWidth = UIScreen.main.bounds.width
+        let screenWidth = interfaceScreenWidth
         if globalMidX < 210 {
             // Clockwise around right side when near left edge.
             return [-120, -88, -56, -24, 8, 40]
