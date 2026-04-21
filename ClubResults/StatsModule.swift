@@ -1600,7 +1600,7 @@ struct LiveStatsView: View {
         style: ClubStyle.Style,
         isOpposition: Bool,
         fallbackName: String? = nil
-    ) -> some View {
+    ) -> AnyView {
         let statType = statType(
             named: name,
             fallbackName: fallbackName,
@@ -1614,7 +1614,7 @@ struct LiveStatsView: View {
             || normalizedName == "inside 50s"
         let buttonKey = "\(normalizedName)-\(isOpposition ? "opp" : "our")"
         let supportsEfficiencyLongPress = supportsEfficiencyLongPress(for: normalizedName, isOpposition: isOpposition)
-        return Button {
+        let baseButton = Button {
             if suppressTapForButtonKey == buttonKey {
                 suppressTapForButtonKey = nil
                 return
@@ -1646,8 +1646,9 @@ struct LiveStatsView: View {
         }
         .buttonStyle(.plain)
         .disabled(statType == nil)
-        .highPriorityGesture(
-            supportsEfficiencyLongPress ? AnyGesture(
+
+        if supportsEfficiencyLongPress {
+            return AnyView(baseButton.highPriorityGesture(
                 LongPressGesture(minimumDuration: 0.28)
                     .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                     .onChanged { value in
@@ -1689,8 +1690,10 @@ struct LiveStatsView: View {
                         activeEfficiencyButtonKey = nil
                         activeEfficiencyHoverVote = nil
                     }
-            ) : AnyGesture(EmptyGesture())
-        )
+            ))
+        } else {
+            return AnyView(baseButton)
+        }
     }
 
     private var efficiencySlidePopup: some View {
