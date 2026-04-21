@@ -1864,8 +1864,9 @@ struct LiveStatsView: View {
 
             let leftMargin: CGFloat = 24
             let numberColumnWidth: CGFloat = 42
-            let playerColumnWidth: CGFloat = 146
+            let playerColumnWidth: CGFloat = 108
             let statColumnWidth: CGFloat = 19
+            let efficiencyColumnWidth: CGFloat = 42
             let headerRowHeight: CGFloat = 20
             let maxPlayersPerPage: CGFloat = 26
             let footerReservedHeight: CGFloat = 18
@@ -1884,6 +1885,8 @@ struct LiveStatsView: View {
                 x += blockWidth
             }
             drawCell("Totals", x: x, y: y, width: blockWidth, height: headerRowHeight, bold: true)
+            x += blockWidth
+            drawCell("Eff %", x: x, y: y, width: efficiencyColumnWidth, height: headerRowHeight, bold: true)
             y += headerRowHeight
 
             drawCell("", x: leftMargin, y: y, width: numberColumnWidth, height: headerRowHeight, bold: true)
@@ -1899,6 +1902,7 @@ struct LiveStatsView: View {
                 drawCell(stat.label, x: x, y: y, width: statColumnWidth, height: headerRowHeight, bold: true)
                 x += statColumnWidth
             }
+            drawCell("", x: x, y: y, width: efficiencyColumnWidth, height: headerRowHeight, bold: true)
             y += headerRowHeight
 
             for player in players {
@@ -1936,6 +1940,31 @@ struct LiveStatsView: View {
                     drawCell("\(total)", x: x, y: y, width: statColumnWidth, height: dataRowHeight, bold: true)
                     x += statColumnWidth
                 }
+                let goals = quarterOrder.reduce(0) { partialResult, quarter in
+                    partialResult + statCount(
+                        for: player.id,
+                        quarter: quarter,
+                        aliases: ["goal", "goals"],
+                        lookup: byPlayerQuarterAndStat
+                    )
+                }
+                let behinds = quarterOrder.reduce(0) { partialResult, quarter in
+                    partialResult + statCount(
+                        for: player.id,
+                        quarter: quarter,
+                        aliases: ["behind", "behinds"],
+                        lookup: byPlayerQuarterAndStat
+                    )
+                }
+                let totalShots = goals + behinds
+                let efficiencyText: String
+                if totalShots > 0 {
+                    let efficiency = Int(round((Double(goals) / Double(totalShots)) * 100))
+                    efficiencyText = "\(efficiency)%"
+                } else {
+                    efficiencyText = "-"
+                }
+                drawCell(efficiencyText, x: x, y: y, width: efficiencyColumnWidth, height: dataRowHeight, bold: true)
                 y += dataRowHeight
             }
 
