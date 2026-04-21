@@ -1017,12 +1017,20 @@ struct LiveStatsView: View {
         ClubStyle.style(for: session.opposition, configuration: ClubConfigurationStore.load())
     }
 
-    private var scoreSummary: (goals: Int, behinds: Int, points: Int) {
+    private func scoreSummary(includeEvent: (StatEvent) -> Bool) -> (goals: Int, behinds: Int, points: Int) {
         let goalTypeIDs = Set(enabledStatTypes.filter { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "goal" }.map(\.id))
         let behindTypeIDs = Set(enabledStatTypes.filter { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "behind" }.map(\.id))
-        let goals = sessionEvents.filter { goalTypeIDs.contains($0.statTypeId) }.count
-        let behinds = sessionEvents.filter { behindTypeIDs.contains($0.statTypeId) }.count
+        let goals = sessionEvents.filter { includeEvent($0) && goalTypeIDs.contains($0.statTypeId) }.count
+        let behinds = sessionEvents.filter { includeEvent($0) && behindTypeIDs.contains($0.statTypeId) }.count
         return (goals, behinds, goals * 6 + behinds)
+    }
+
+    private var ourScoreSummary: (goals: Int, behinds: Int, points: Int) {
+        scoreSummary { $0.playerId != oppositionTeamStatPlayerID }
+    }
+
+    private var oppositionScoreSummary: (goals: Int, behinds: Int, points: Int) {
+        scoreSummary { $0.playerId == oppositionTeamStatPlayerID }
     }
 
     private var ourTeamName: String {
@@ -1046,13 +1054,13 @@ struct LiveStatsView: View {
         HStack(spacing: 8) {
             combinedTeamPanel(
                 teamName: ourTeamName,
-                scoreText: "\(scoreSummary.goals).\(scoreSummary.behinds) (\(scoreSummary.points))",
+                scoreText: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))",
                 style: ourStyle,
                 isOpposition: false
             )
             combinedTeamPanel(
                 teamName: session.opposition,
-                scoreText: "0.0 (0)",
+                scoreText: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))",
                 style: oppositionStyle,
                 isOpposition: true
             )
