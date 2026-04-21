@@ -960,6 +960,7 @@ struct LiveStatsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
+    @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
 
     let session: StatsSession
 
@@ -1001,7 +1002,8 @@ struct LiveStatsView: View {
         GeometryReader { proxy in
             let _: CGFloat = 8
             let availableWidth = max(proxy.size.width - 24, 640)
-            let leftPanelWidth = min(max(availableWidth * 0.62, 420), availableWidth - 300)
+            let leftWidthRatio: CGFloat = oppositionTrackPossessions ? 0.72 : 0.62
+            let leftPanelWidth = min(max(availableWidth * leftWidthRatio, 420), availableWidth - 300)
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 12, 290)
             VStack(spacing: 12) {
                 headerBannerArea
@@ -1016,8 +1018,10 @@ struct LiveStatsView: View {
                     .frame(width: leftPanelWidth)
 
                     VStack(spacing: 12) {
-                        statButtonsPanel
-                            .frame(height: rightStatActionsHeight)
+                        if !oppositionTrackPossessions {
+                            statButtonsPanel
+                                .frame(height: rightStatActionsHeight)
+                        }
                         recentEventsPanel
                     }
                     .frame(width: rightPanelWidth)
@@ -1223,7 +1227,7 @@ struct LiveStatsView: View {
     }
 
     private var topPanelHeight: CGFloat {
-        168
+        oppositionTrackPossessions ? 310 : 168
     }
 
     private var rightStatActionsHeight: CGFloat {
@@ -1282,7 +1286,7 @@ struct LiveStatsView: View {
                 isOpposition: true
             )
         }
-        .frame(maxWidth: .infinity, minHeight: 168, maxHeight: 168)
+        .frame(maxWidth: .infinity, minHeight: topPanelHeight, maxHeight: topPanelHeight)
     }
 
     private var ourTeamEfficiencyText: String {
@@ -1318,11 +1322,15 @@ struct LiveStatsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            HStack(spacing: 8) {
-                teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
-                teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOpposition)
-                teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOpposition, fallbackName: "Clearances")
-                teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOpposition, fallbackName: "Inside 50s")
+            if oppositionTrackPossessions {
+                teamStatsExpandedGrid(style: style, isOpposition: isOpposition)
+            } else {
+                HStack(spacing: 8) {
+                    teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
+                    teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOpposition)
+                    teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOpposition, fallbackName: "Clearances")
+                    teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOpposition, fallbackName: "Inside 50s")
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -1341,6 +1349,37 @@ struct LiveStatsView: View {
                 }
                 .padding(.top, 8)
                 .padding(.trailing, 10)
+            }
+        }
+    }
+
+    private func teamStatsExpandedGrid(style: ClubStyle.Style, isOpposition: Bool) -> some View {
+        let fixedRows: [[(title: String, name: String, fallback: String?)]] = [
+            [("Goal", "Goal", nil), ("Behind", "Behind", nil), ("Clearance", "Clearance", "Clearances"), ("Inside 50", "Inside 50", "Inside 50s")],
+            [("Kick", "Kick", nil), ("Handball", "Handball", nil), ("Mark", "Mark", nil), ("Tackle", "Tackle", nil)]
+        ]
+        let fixedNames = Set(fixedRows.flatMap { $0.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() } })
+        let thirdRowStats = enabledStatTypes
+            .filter { !fixedNames.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
+            .prefix(4)
+
+        return VStack(spacing: 8) {
+            ForEach(0..<fixedRows.count, id: \.self) { rowIndex in
+                HStack(spacing: 8) {
+                    ForEach(0..<fixedRows[rowIndex].count, id: \.self) { columnIndex in
+                        let entry = fixedRows[rowIndex][columnIndex]
+                        teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                ForEach(Array(thirdRowStats), id: \.id) { statType in
+                    teamStatButton(statType.name, name: statType.name, style: style, isOpposition: isOpposition)
+                }
+                ForEach(Array(thirdRowStats).count..<4, id: \.self) { _ in
+                    Color.clear
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
             }
         }
     }
