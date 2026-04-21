@@ -1551,7 +1551,7 @@ struct LiveStatsView: View {
                         .overlay(alignment: .top) {
                             if activePlayerQuickStatsPlayerID == player.id {
                                 playerQuickStatsFan(for: player)
-                                    .offset(y: -84)
+                                    .offset(y: -28)
                                     .transition(.opacity.combined(with: .scale(scale: 0.94)))
                                     .zIndex(3000)
                             }
@@ -2181,38 +2181,43 @@ struct LiveStatsView: View {
     }
 
     private func playerQuickStatsFan(for player: Player) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
-                let angle = Angle(degrees: Double(index - 2) * 7.0)
                 Button {
                     handlePlayerQuickStatTap(playerID: player.id, option: option)
                 } label: {
                     Text(option.title)
-                        .font(.caption.weight(.bold))
+                        .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 7)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                        .frame(minWidth: 82, minHeight: 46)
                         .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(option.statType == nil ? Color.gray.opacity(0.6) : Color.blue)
                         )
                 }
                 .buttonStyle(.plain)
                 .disabled(option.statType == nil)
-                .rotationEffect(angle)
+                .offset(y: CGFloat(abs(index - 2)) * 4)
                 .overlay(alignment: .top) {
                     if pendingPlayerQuickStatName == option.id,
                        pendingPlayerQuickStatPlayerID == player.id,
                        needsQuickStatVotes(for: option.id) {
                         playerQuickVotePopup
-                            .offset(y: -96)
+                            .offset(y: -122)
                     }
                 }
             }
         }
-        .padding(8)
-        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 2)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
     }
 
     private var playerQuickVotePopup: some View {
