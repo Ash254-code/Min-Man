@@ -1352,6 +1352,11 @@ struct LiveStatsView: View {
         return normalized == "goal" || normalized == "behind"
     }
 
+    private func efficiencyEmojiForRecentEvent(_ event: StatEvent) -> String? {
+        guard let vote = event.efficiencyVoteRaw else { return nil }
+        return vote == EfficiencyVote.thumbsUp.rawValue ? "👍" : "👎"
+    }
+
     private var recentEventsPanel: some View {
         let recent = Array(sessionEvents.prefix(5))
         return VStack(alignment: .leading, spacing: 8) {
@@ -1373,6 +1378,11 @@ struct LiveStatsView: View {
                             Text(statName(for: event.statTypeId))
                                 .font(.title3.weight(.bold))
                                 .lineLimit(1)
+                            if let efficiencyEmoji = efficiencyEmojiForRecentEvent(event) {
+                                Text(efficiencyEmoji)
+                                    .font(.title3)
+                                    .lineLimit(1)
+                            }
                             Text("-")
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
