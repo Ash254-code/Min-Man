@@ -1673,12 +1673,6 @@ struct LiveStatsView: View {
                             activeEfficiencyButtonKey = buttonKey
                             activeEfficiencyHoverVote = nil
                             activeContestedHoverVote = nil
-                            if trackDisposalEfficiency {
-                                activeEfficiencyHoverVote = .thumbsUp
-                            }
-                            if trackContestedPossessions {
-                                activeContestedHoverVote = .contested
-                            }
                         case .second(true, let drag?):
                             if trackDisposalEfficiency && trackContestedPossessions {
                                 if drag.location.y < -76 {
@@ -1705,18 +1699,22 @@ struct LiveStatsView: View {
                         var didCommit = false
                         switch value {
                         case .second(true, _):
-                            let vote = trackDisposalEfficiency ? (activeEfficiencyHoverVote ?? .thumbsUp) : nil
-                            let contestedVote = trackContestedPossessions ? (activeContestedHoverVote ?? .contested) : nil
-                            suppressTapForButtonKey = buttonKey
-                            handleTeamStatAction(
-                                statTypeId: statType.id,
-                                isOpposition: isOpposition,
-                                scoreKind: scoreKind,
-                                isOptionalUsStat: isOptionalUsStat,
-                                efficiencyVote: vote,
-                                contestedVote: contestedVote
-                            )
-                            didCommit = true
+                            let vote = activeEfficiencyHoverVote
+                            let contestedVote = activeContestedHoverVote
+                            let hasRequiredEfficiency = !trackDisposalEfficiency || vote != nil
+                            let hasRequiredContested = !trackContestedPossessions || contestedVote != nil
+                            if hasRequiredEfficiency && hasRequiredContested {
+                                suppressTapForButtonKey = buttonKey
+                                handleTeamStatAction(
+                                    statTypeId: statType.id,
+                                    isOpposition: isOpposition,
+                                    scoreKind: scoreKind,
+                                    isOptionalUsStat: isOptionalUsStat,
+                                    efficiencyVote: vote,
+                                    contestedVote: contestedVote
+                                )
+                                didCommit = true
+                            }
                         default:
                             break
                         }
@@ -1751,11 +1749,11 @@ struct LiveStatsView: View {
         let isSelected = activeEfficiencyHoverVote == vote
         return Text(title)
             .font(.headline.weight(.semibold))
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .foregroundStyle(isSelected ? Color.white : Color.secondary)
             .frame(width: 102, height: 64)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? tint : Color.white.opacity(0.2))
+                    .fill(isSelected ? tint : Color.gray.opacity(0.35))
             )
     }
 
@@ -1777,11 +1775,11 @@ struct LiveStatsView: View {
         let isSelected = activeContestedHoverVote == vote
         return Text(title)
             .font(.headline.weight(.semibold))
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .foregroundStyle(isSelected ? Color.white : Color.secondary)
             .frame(width: 102, height: 64)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? tint : Color.white.opacity(0.2))
+                    .fill(isSelected ? tint : Color.gray.opacity(0.35))
             )
     }
 
