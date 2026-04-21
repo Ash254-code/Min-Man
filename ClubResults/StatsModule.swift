@@ -1648,20 +1648,34 @@ struct LiveStatsView: View {
         }
         .overlay(alignment: .top) {
             if activeEfficiencyButtonKey == buttonKey {
-                VStack(spacing: 8) {
-                    if trackDisposalEfficiency {
-                        efficiencySlidePopup
-                    }
-                    if trackContestedPossessions {
+                if trackDisposalEfficiency && trackContestedPossessions {
+                    ZStack {
                         contestedSlidePopup
+                            .offset(y: 36)
+                        if activeContestedHoverVote != nil {
+                            efficiencySlidePopup
+                                .offset(x: efficiencyPopupHorizontalOffset, y: -36)
+                        }
                     }
+                    .offset(y: -126)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                } else {
+                    VStack(spacing: 8) {
+                        if trackDisposalEfficiency {
+                            efficiencySlidePopup
+                        }
+                        if trackContestedPossessions {
+                            contestedSlidePopup
+                        }
+                    }
+                    .offset(y: -88)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
                 }
-                .offset(y: trackDisposalEfficiency && trackContestedPossessions ? -160 : -88)
-                .transition(.opacity.combined(with: .scale(scale: 0.94)))
             }
         }
         .buttonStyle(.plain)
         .disabled(statType == nil)
+        .zIndex(activeEfficiencyButtonKey == buttonKey ? 2000 : 0)
 
         if supportsEfficiencyLongPress {
             return AnyView(baseButton.highPriorityGesture(
@@ -1769,6 +1783,17 @@ struct LiveStatsView: View {
                 .stroke(Color.white.opacity(0.28), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 3)
+    }
+
+    private var efficiencyPopupHorizontalOffset: CGFloat {
+        switch activeContestedHoverVote {
+        case .contested:
+            return -55
+        case .uncontested:
+            return 55
+        default:
+            return 0
+        }
     }
 
     private func contestedSlideOption(title: String, vote: ContestedPossessionVote, tint: Color) -> some View {
