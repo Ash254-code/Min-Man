@@ -2581,21 +2581,6 @@ private struct StatsTotalsView: View {
                         )
                     }
 
-                    HStack(alignment: .top, spacing: 12) {
-                        teamStatsPool(
-                            teamName: ourTeamName,
-                            style: ourStyle,
-                            inside50s: ourInside50s,
-                            clearances: ourClearances
-                        )
-                        teamStatsPool(
-                            teamName: oppositionName,
-                            style: oppositionStyle,
-                            inside50s: theirInside50s,
-                            clearances: theirClearances
-                        )
-                    }
-
                     HStack(spacing: 12) {
                         teamStatPool(title: "Inside 50s", value: ourInside50s, style: ourStyle)
                         teamStatPool(title: "Clearances", value: ourClearances, style: ourStyle)
