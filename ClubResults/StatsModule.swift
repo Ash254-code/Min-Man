@@ -2518,7 +2518,7 @@ private struct StatsTotalsView: View {
 
     private var topGoalKickers: [TotalsSummaryRow] {
         summaryRows
-            .filter { $0.goals > 0 }
+            .filter { $0.goals > 0 || $0.behinds > 0 }
             .sorted { lhs, rhs in
                 if lhs.goals != rhs.goals { return lhs.goals > rhs.goals }
                 if lhs.behinds != rhs.behinds { return lhs.behinds > rhs.behinds }
@@ -2618,7 +2618,7 @@ private struct StatsTotalsView: View {
                         leaderboardPool(
                             title: "Top 5 Goal Kickers",
                             entries: topGoalKickers.map {
-                                ("\($0.playerLabel)", "\($0.goals)", "Goals \($0.goals) • Behinds \($0.behinds)")
+                                ("\($0.playerLabel)", "\($0.goals).\($0.behinds)", "Goals \($0.goals) • Points \($0.behinds)")
                             }
                         )
                     }
