@@ -1064,7 +1064,7 @@ struct LiveStatsView: View {
     }
 
     private var rightStatActionsHeight: CGFloat {
-        224
+        270
     }
 
     private var headerBannerArea: some View {
@@ -1315,10 +1315,10 @@ struct LiveStatsView: View {
                     } label: {
                         Text(type.name)
                             .font(.headline.weight(.semibold))
-                            .foregroundStyle(selectedPlayerId == nil ? Color.secondary : Color.white)
+                            .foregroundStyle(selectedPlayerId == nil ? Color.accentColor : Color.white)
                             .frame(maxWidth: .infinity, minHeight: 58)
                             .background(
-                                selectedPlayerId == nil ? Color.black.opacity(0.06) : Color.blue,
+                                selectedPlayerId == nil ? Color.accentColor.opacity(0.16) : Color.blue,
                                 in: RoundedRectangle(cornerRadius: 10)
                             )
                     }
@@ -1328,7 +1328,7 @@ struct LiveStatsView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 176, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -1425,10 +1425,19 @@ struct LiveStatsView: View {
     private var bottomControlBar: some View {
         HStack(alignment: .center, spacing: 12) {
             HStack(spacing: 10) {
-                Button("View Totals") {
+                Button {
                     showTotals = true
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 92, height: 92)
+                        Text("Stats")
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
 
                 Button("Generate Report") {
                     generateReport()
