@@ -1064,7 +1064,7 @@ struct LiveStatsView: View {
     }
 
     private var rightStatActionsHeight: CGFloat {
-        270
+        220
     }
 
     private var headerBannerArea: some View {
@@ -1372,7 +1372,7 @@ struct LiveStatsView: View {
     private var recentEventsPanel: some View {
         let recent = Array(sessionEvents.prefix(5))
         return VStack(alignment: .leading, spacing: 8) {
-            Text("Recent Events")
+            Text("Recent Stats")
                 .font(.title3.bold())
 
             LazyVStack(spacing: 6) {
