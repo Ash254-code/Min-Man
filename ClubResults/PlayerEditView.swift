@@ -28,7 +28,7 @@ struct PlayerEditView: View {
         self.onRequestDelete = onRequestDelete
 
         _draftName = State(initialValue: player.name)
-        _draftNumberText = State(initialValue: player.number.map(String.init) ?? "")
+        _draftNumberText = State(initialValue: player.number.map { String($0) } ?? "")
         _draftIsActive = State(initialValue: player.isActive)
     }
 

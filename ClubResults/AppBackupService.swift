@@ -420,7 +420,7 @@ struct GameRecord: Codable {
         ourBehinds = game.ourBehinds
         theirGoals = game.theirGoals
         theirBehinds = game.theirBehinds
-        goalKickers = game.goalKickers.map(GameGoalKickerRecord.init)
+        goalKickers = game.goalKickers.map { GameGoalKickerRecord($0) }
         bestPlayersRanked = game.bestPlayersRanked
         guestVotesRanked = game.guestVotesRanked
         headCoachName = game.headCoachName

@@ -92,10 +92,10 @@ struct CSVHeaderMap {
     var hasAnyRecognizedColumn: Bool { firstNameIndex != nil || lastNameIndex != nil || legacyNameIndex != nil }
 
     init(header: [String]) {
-        let normalizedHeader = header.map(Self.normalizeHeader)
+        let normalizedHeader = header.map { Self.normalizeHeader($0) }
 
         func find(_ candidates: [String]) -> Int? {
-            for c in candidates.map(Self.normalizeHeader) {
+            for c in candidates.map({ Self.normalizeHeader($0) }) {
                 if let idx = normalizedHeader.firstIndex(of: c) { return idx }
             }
             return nil

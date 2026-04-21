@@ -1495,7 +1495,7 @@ struct LiveStatsView: View {
                 Circle()
                     .strokeBorder(ringColors.stroke, lineWidth: 2)
                     .frame(width: 38, height: 38)
-                Text(player.number.map(String.init) ?? "—")
+                Text(player.number.map { String($0) } ?? "—")
                     .font(.headline.weight(.black))
                     .foregroundStyle(ringColors.text)
             }
@@ -2886,7 +2886,7 @@ struct LiveStatsView: View {
                 }
 
                 let playerLabel = player.lastName.uppercased()
-                drawCell(player.number.map(String.init) ?? "", x: leftMargin, y: y, width: numberColumnWidth, height: dataRowHeight)
+                drawCell(player.number.map { String($0) } ?? "", x: leftMargin, y: y, width: numberColumnWidth, height: dataRowHeight)
                 drawCell(playerLabel, x: leftMargin + numberColumnWidth, y: y, width: playerColumnWidth, height: dataRowHeight)
 
                 x = leftMargin + numberColumnWidth + playerColumnWidth
@@ -3311,7 +3311,7 @@ private struct PlayerSelectionSheet: View {
             $0.name.lowercased().contains(key)
             || $0.firstName.lowercased().contains(key)
             || $0.lastName.lowercased().contains(key)
-            || ($0.number.map(String.init)?.contains(key) ?? false)
+            || ($0.number.map { String($0) }?.contains(key) ?? false)
         }
     }
 }
