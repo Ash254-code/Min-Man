@@ -179,6 +179,8 @@ struct StatsTypesSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StatType.sortOrder) private var statTypes: [StatType]
     @State private var newName = ""
+    @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
+    @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
 
     var body: some View {
         List {
@@ -188,6 +190,11 @@ struct StatsTypesSettingsView: View {
                     addStatType()
                 }
                 .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            Section("Tracking") {
+                Toggle("Track Disposal Efficiency", isOn: $trackDisposalEfficiency)
+                Toggle("Track Contested Possessions", isOn: $trackContestedPossessions)
             }
 
             Section("Stat Types") {
