@@ -112,7 +112,7 @@ private struct StatRecordBanner: Equatable {
 }
 
 private enum StatsDefaults {
-    static let statNames = ["Kick", "Handball", "Mark", "Tackle", "Scores"]
+    static let statNames = ["Kick", "Handball", "Mark", "Tackle", "Scores", "Inside 50", "Clearances"]
 }
 
 struct StatsRootView: View {
@@ -189,8 +189,7 @@ struct StatsTypesSettingsView: View {
     @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
     @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
-    @AppStorage("oppTrackIndividualTracking") private var oppositionTrackIndividualTracking = true
-    @AppStorage("oppEnabledStatTypes") private var oppositionEnabledStatTypesData = ""
+    @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
 
     var body: some View {
         GeometryReader { geometry in
@@ -213,6 +212,7 @@ struct StatsTypesSettingsView: View {
         .task {
             normalizeGoalAndBehindToScoresIfNeeded()
             seedDefaultStatTypesIfNeeded()
+            ensureAlwaysOnStatTypesIfNeeded()
         }
     }
 
@@ -227,7 +227,11 @@ struct StatsTypesSettingsView: View {
                 Section("Tracking") {
                     Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
                     Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
-                    Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
+                    if side == .ourClub {
+                        Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
+                    } else {
+                        Toggle("Track Possesions", isOn: trackingBinding(for: side, type: .oppositionPossessions))
+                    }
                 }
 
                 Section("Add Stat Type") {
@@ -238,38 +242,34 @@ struct StatsTypesSettingsView: View {
                     .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
 
-                Section("Stat Types") {
-                    ForEach(Array(statTypes.enumerated()), id: \.element.id) { index, type in
-                        HStack {
-                            TextField("Name", text: Binding(
-                                get: { type.name },
-                                set: {
-                                    type.name = $0
-                                    save()
-                                }
-                            ))
+                if side == .ourClub {
+                    Section("Stat Types") {
+                        ForEach(configurableStatTypes(), id: \.id) { type in
+                            HStack {
+                                TextField("Name", text: Binding(
+                                    get: { type.name },
+                                    set: {
+                                        type.name = $0
+                                        save()
+                                    }
+                                ))
 
-                            Toggle("Enabled", isOn: statTypeEnabledBinding(for: type, side: side))
-                            .labelsHidden()
-                        }
-                        .swipeActions {
-                            Button(role: .destructive) {
-                                modelContext.delete(type)
-                                resequence()
-                                save()
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+                                Toggle("Enabled", isOn: statTypeEnabledBinding(for: type, side: side))
+                                    .labelsHidden()
                             }
-                        }
-                        .moveDisabled(false)
-                        .onAppear {
-                            if type.sortOrder != index {
-                                type.sortOrder = index
-                                save()
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    modelContext.delete(type)
+                                    resequence()
+                                    save()
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
+                            .moveDisabled(false)
                         }
+                        .onMove(perform: moveConfigurable)
                     }
-                    .onMove(perform: move)
                 }
 
                 Section("Speech") {
@@ -327,6 +327,7 @@ struct StatsTypesSettingsView: View {
         case disposalEfficiency
         case contestedPossessions
         case individualTracking
+        case oppositionPossessions
     }
 
     private func trackingBinding(for side: StatsSide, type: TrackingType) -> Binding<Bool> {
@@ -336,9 +337,11 @@ struct StatsTypesSettingsView: View {
                 case (.ourClub, .disposalEfficiency): return trackDisposalEfficiency
                 case (.ourClub, .contestedPossessions): return trackContestedPossessions
                 case (.ourClub, .individualTracking): return trackIndividualTracking
+                case (.ourClub, .oppositionPossessions): return trackContestedPossessions
                 case (.opposition, .disposalEfficiency): return oppositionTrackDisposalEfficiency
                 case (.opposition, .contestedPossessions): return oppositionTrackContestedPossessions
-                case (.opposition, .individualTracking): return oppositionTrackIndividualTracking
+                case (.opposition, .individualTracking): return oppositionTrackPossessions
+                case (.opposition, .oppositionPossessions): return oppositionTrackPossessions
                 }
             },
             set: { newValue in
@@ -346,9 +349,11 @@ struct StatsTypesSettingsView: View {
                 case (.ourClub, .disposalEfficiency): trackDisposalEfficiency = newValue
                 case (.ourClub, .contestedPossessions): trackContestedPossessions = newValue
                 case (.ourClub, .individualTracking): trackIndividualTracking = newValue
+                case (.ourClub, .oppositionPossessions): trackContestedPossessions = newValue
                 case (.opposition, .disposalEfficiency): oppositionTrackDisposalEfficiency = newValue
                 case (.opposition, .contestedPossessions): oppositionTrackContestedPossessions = newValue
-                case (.opposition, .individualTracking): oppositionTrackIndividualTracking = newValue
+                case (.opposition, .individualTracking): oppositionTrackPossessions = newValue
+                case (.opposition, .oppositionPossessions): oppositionTrackPossessions = newValue
                 }
             }
         )
@@ -357,41 +362,16 @@ struct StatsTypesSettingsView: View {
     private func statTypeEnabledBinding(for type: StatType, side: StatsSide) -> Binding<Bool> {
         Binding(
             get: {
-                switch side {
-                case .ourClub:
-                    return type.isEnabled
-                case .opposition:
-                    return oppositionEnabledStatTypesMap()[type.id.uuidString, default: true]
-                }
+                if side == .ourClub { return type.isEnabled }
+                return true
             },
             set: { newValue in
-                switch side {
-                case .ourClub:
+                if side == .ourClub {
                     type.isEnabled = newValue
                     save()
-                case .opposition:
-                    var map = oppositionEnabledStatTypesMap()
-                    map[type.id.uuidString] = newValue
-                    saveOppositionEnabledStatTypesMap(map)
                 }
             }
         )
-    }
-
-    private func oppositionEnabledStatTypesMap() -> [String: Bool] {
-        guard let data = oppositionEnabledStatTypesData.data(using: .utf8),
-              let map = try? JSONDecoder().decode([String: Bool].self, from: data) else {
-            return [:]
-        }
-        return map
-    }
-
-    private func saveOppositionEnabledStatTypesMap(_ map: [String: Bool]) {
-        guard let data = try? JSONEncoder().encode(map),
-              let encoded = String(data: data, encoding: .utf8) else {
-            return
-        }
-        oppositionEnabledStatTypesData = encoded
     }
 
     private func normalizeGoalAndBehindToScoresIfNeeded() {
@@ -421,6 +401,47 @@ struct StatsTypesSettingsView: View {
             type.sortOrder = index
         }
         save()
+    }
+
+    private func configurableStatTypes() -> [StatType] {
+        statTypes
+            .sorted(by: { $0.sortOrder < $1.sortOrder })
+            .filter { !isAlwaysOnHiddenStatType($0.name) }
+    }
+
+    private func moveConfigurable(from source: IndexSet, to destination: Int) {
+        var configurable = configurableStatTypes()
+        configurable.move(fromOffsets: source, toOffset: destination)
+
+        let alwaysOn = statTypes
+            .sorted(by: { $0.sortOrder < $1.sortOrder })
+            .filter { isAlwaysOnHiddenStatType($0.name) }
+
+        let reordered = configurable + alwaysOn
+        for (index, type) in reordered.enumerated() {
+            type.sortOrder = index
+        }
+        save()
+    }
+
+    private func ensureAlwaysOnStatTypesIfNeeded() {
+        var existing = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
+        let alwaysOnNames = ["Scores", "Inside 50", "Clearances"]
+
+        for name in alwaysOnNames {
+            if let match = existing.first(where: { $0.name.compare(name, options: .caseInsensitive) == .orderedSame }) {
+                match.isEnabled = true
+            } else {
+                let type = StatType(name: name, isEnabled: true, sortOrder: existing.count)
+                modelContext.insert(type)
+                existing.append(type)
+            }
+        }
+        save()
+    }
+
+    private func isAlwaysOnHiddenStatType(_ name: String) -> Bool {
+        ["scores", "inside 50", "clearances"].contains(name.lowercased())
     }
 }
 
