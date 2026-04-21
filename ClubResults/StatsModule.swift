@@ -1647,29 +1647,33 @@ struct LiveStatsView: View {
                 )
         }
         .overlay(alignment: .top) {
-            if activeEfficiencyButtonKey == buttonKey {
-                if trackDisposalEfficiency && trackContestedPossessions {
-                    ZStack {
-                        contestedSlidePopup
-                            .offset(y: 36)
-                        efficiencySlidePopup
-                            .offset(x: efficiencyPopupHorizontalOffset, y: -36)
-                    }
-                    .offset(y: -126)
-                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                } else {
-                    VStack(spacing: 8) {
-                        if trackDisposalEfficiency {
-                            efficiencySlidePopup
-                        }
-                        if trackContestedPossessions {
+            GeometryReader { proxy in
+                if activeEfficiencyButtonKey == buttonKey {
+                    let popupShift = popupHorizontalShift(for: proxy.frame(in: .global).midX)
+                    if trackDisposalEfficiency && trackContestedPossessions {
+                        ZStack {
                             contestedSlidePopup
+                                .offset(y: 46)
+                            efficiencySlidePopup
+                                .offset(x: efficiencyPopupHorizontalOffset, y: -46)
                         }
+                        .offset(x: popupShift, y: -132)
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                    } else {
+                        VStack(spacing: 8) {
+                            if trackDisposalEfficiency {
+                                efficiencySlidePopup
+                            }
+                            if trackContestedPossessions {
+                                contestedSlidePopup
+                            }
+                        }
+                        .offset(x: popupShift, y: -88)
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
                     }
-                    .offset(y: -88)
-                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
                 }
             }
+            .allowsHitTesting(false)
         }
         .buttonStyle(.plain)
         .disabled(statType == nil)
@@ -1792,6 +1796,15 @@ struct LiveStatsView: View {
         default:
             return 0
         }
+    }
+
+    private func popupHorizontalShift(for buttonMidX: CGFloat) -> CGFloat {
+        let screenWidth = UIScreen.main.bounds.width
+        let edgePadding: CGFloat = 12
+        let halfWidth: CGFloat = (trackDisposalEfficiency && trackContestedPossessions) ? 170 : 112
+        let leftOverflow = max(0, (edgePadding + halfWidth) - buttonMidX)
+        let rightOverflow = max(0, buttonMidX + halfWidth - (screenWidth - edgePadding))
+        return leftOverflow - rightOverflow
     }
 
     private func contestedSlideOption(title: String, vote: ContestedPossessionVote, tint: Color) -> some View {
