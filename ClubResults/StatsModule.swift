@@ -50,6 +50,11 @@ private enum SpeechDetectedWordsStore {
         return map[key] ?? []
     }
 
+    static func words(forSectionKey sectionKey: String) -> [String] {
+        let map = load()
+        return map[sectionKey] ?? []
+    }
+
     static func mergedAliases(canonical: String, builtIn: [String], detected: [String]) -> [String] {
         let canonicalTrimmed = canonical.trimmingCharacters(in: .whitespacesAndNewlines)
         let combined = [canonicalTrimmed] + builtIn + detected
@@ -84,6 +89,20 @@ private enum SpeechDetectedWordsStore {
             .filter { !$0.isEmpty }
         }
     }
+}
+
+private enum SpeechVoteSection {
+    static let contestedKey = "meta::contested"
+    static let uncontestedKey = "meta::uncontested"
+    static let effectiveKey = "meta::effective"
+    static let ineffectiveKey = "meta::ineffective"
+
+    static let all: [(key: String, name: String, defaultAliases: [String])] = [
+        (contestedKey, "Contested", ["contested"]),
+        (uncontestedKey, "Uncontested", ["uncontested"]),
+        (effectiveKey, "Effective", ["effective", "efficient", "effecient"]),
+        (ineffectiveKey, "Ineffective", ["ineffective", "inefficient", "ineffecient", "non effective", "noneffective"])
+    ]
 }
 
 @Model
@@ -607,7 +626,7 @@ struct SpeechSetupView: View {
                     .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
                         if isPressing {
                             activeSectionID = section.storageKey
-                            speechService.startListening(vocabulary: sectionVocabulary(for: section.name))
+                            speechService.startListening(vocabulary: sectionVocabulary(for: section))
                         } else if activeSectionID == section.storageKey {
                             speechService.stopListening { transcript in
                                 appendDetectedWords(transcript, to: section.storageKey)
@@ -657,13 +676,17 @@ struct SpeechSetupView: View {
     private var allSections: [SpeechSection] {
         let builtIn = allStatTypes
             .sorted(by: { $0.sortOrder < $1.sortOrder })
-            .map { SpeechSection(storageKey: "builtin::\($0.id.uuidString)", name: $0.name) }
+            .map { SpeechSection(storageKey: "builtin::\($0.id.uuidString)", name: $0.name, defaultVocabulary: []) }
 
-        let custom = customSections.map {
-            SpeechSection(storageKey: "custom::\($0.id.uuidString)", name: $0.name)
+        let voteSections = SpeechVoteSection.all.map {
+            SpeechSection(storageKey: $0.key, name: $0.name, defaultVocabulary: $0.defaultAliases)
         }
 
-        return builtIn + custom
+        let custom = customSections.map {
+            SpeechSection(storageKey: "custom::\($0.id.uuidString)", name: $0.name, defaultVocabulary: [])
+        }
+
+        return builtIn + voteSections + custom
     }
 
     private var allDetectedWords: [String] {
@@ -671,8 +694,8 @@ struct SpeechSetupView: View {
             .sorted()
     }
 
-    private func sectionVocabulary(for sectionName: String) -> [String] {
-        Array(Set([sectionName] + allDetectedWords))
+    private func sectionVocabulary(for section: SpeechSection) -> [String] {
+        Array(Set([section.name] + section.defaultVocabulary + allDetectedWords))
     }
 
     private func appendDetectedWords(_ transcript: String, to storageKey: String) {
@@ -756,6 +779,7 @@ struct SpeechSetupView: View {
 private struct SpeechSection: Identifiable {
     let storageKey: String
     let name: String
+    let defaultVocabulary: [String]
 
     var id: String { storageKey }
 }
@@ -2656,6 +2680,9 @@ struct LiveStatsView: View {
 
     private var speechVocabulary: [String] {
         let statPhrases = enabledStatTypes.flatMap { $0.voiceAliases }
+        let votePhrases = SpeechVoteSection.all.flatMap { section in
+            section.defaultAliases + SpeechDetectedWordsStore.words(forSectionKey: section.key)
+        }
         let rosterPhrases = playersForGrade.flatMap { player -> [String] in
             var values = [player.name, player.firstName, player.lastName]
             if let number = player.number {
@@ -2665,7 +2692,7 @@ struct LiveStatsView: View {
             }
             return values
         }
-        return Array(Set(statPhrases + rosterPhrases)).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return Array(Set(statPhrases + votePhrases + rosterPhrases)).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     private var totalsRows: [TotalsRow] {
@@ -3442,9 +3469,22 @@ struct LiveStatsView: View {
             normalizedTranscript: result.normalizedTranscript,
             confidence: result.confidence
         )
+        let supportsVoiceVotes = statSupportsVoiceVotes(statTypeId)
+        let efficiencyVote = supportsVoiceVotes && trackDisposalEfficiency
+            ? voiceEfficiencyVote(in: result.normalizedTranscript)
+            : nil
+        let contestedVote = supportsVoiceVotes && trackContestedPossessions
+            ? voiceContestedVote(in: result.normalizedTranscript)
+            : nil
+        if let efficiencyVote {
+            event.efficiencyVoteRaw = efficiencyVote.rawValue
+        }
+        if let contestedVote {
+            event.contestedVoteRaw = contestedVote.rawValue
+        }
         modelContext.insert(event)
         try? modelContext.save()
-        let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event)
+        let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event, preselectedVote: efficiencyVote)
         selectedPlayerId = nil
 
         let playerText = playerLabel(for: playerId)
@@ -3673,6 +3713,61 @@ struct LiveStatsView: View {
         case .success:
             return ""
         }
+    }
+
+    private func statSupportsVoiceVotes(_ statTypeId: UUID) -> Bool {
+        let normalized = normalizedStatName(statName(for: statTypeId))
+        return normalized == "kick" || normalized == "handball" || normalized == "mark"
+    }
+
+    private func voiceContestedVote(in normalizedTranscript: String) -> ContestedPossessionVote? {
+        let words = Set(normalizedTranscript.split(separator: " ").map(String.init))
+        let contestedAliases = voteAliases(
+            defaultAliases: SpeechVoteSection.all.first(where: { $0.key == SpeechVoteSection.contestedKey })?.defaultAliases ?? [],
+            sectionKey: SpeechVoteSection.contestedKey
+        )
+        let uncontestedAliases = voteAliases(
+            defaultAliases: SpeechVoteSection.all.first(where: { $0.key == SpeechVoteSection.uncontestedKey })?.defaultAliases ?? [],
+            sectionKey: SpeechVoteSection.uncontestedKey
+        )
+        if uncontestedAliases.contains(where: { containsVoiceAlias($0, in: normalizedTranscript, words: words) }) {
+            return .uncontested
+        }
+        if contestedAliases.contains(where: { containsVoiceAlias($0, in: normalizedTranscript, words: words) }) {
+            return .contested
+        }
+        return nil
+    }
+
+    private func voiceEfficiencyVote(in normalizedTranscript: String) -> EfficiencyVote? {
+        let words = Set(normalizedTranscript.split(separator: " ").map(String.init))
+        let effectiveAliases = voteAliases(
+            defaultAliases: SpeechVoteSection.all.first(where: { $0.key == SpeechVoteSection.effectiveKey })?.defaultAliases ?? [],
+            sectionKey: SpeechVoteSection.effectiveKey
+        )
+        let ineffectiveAliases = voteAliases(
+            defaultAliases: SpeechVoteSection.all.first(where: { $0.key == SpeechVoteSection.ineffectiveKey })?.defaultAliases ?? [],
+            sectionKey: SpeechVoteSection.ineffectiveKey
+        )
+        if ineffectiveAliases.contains(where: { containsVoiceAlias($0, in: normalizedTranscript, words: words) }) {
+            return .thumbsDown
+        }
+        if effectiveAliases.contains(where: { containsVoiceAlias($0, in: normalizedTranscript, words: words) }) {
+            return .thumbsUp
+        }
+        return nil
+    }
+
+    private func voteAliases(defaultAliases: [String], sectionKey: String) -> [String] {
+        let detected = SpeechDetectedWordsStore.words(forSectionKey: sectionKey)
+        return Array(Set(defaultAliases + detected)).map { $0.lowercased() }
+    }
+
+    private func containsVoiceAlias(_ alias: String, in transcript: String, words: Set<String>) -> Bool {
+        if alias.contains(" ") {
+            return transcript.contains(alias)
+        }
+        return words.contains(alias)
     }
 
     private func voiceScoreKind(in normalizedTranscript: String) -> String? {
