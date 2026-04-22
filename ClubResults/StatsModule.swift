@@ -2085,6 +2085,8 @@ struct LiveStatsView: View {
     }
 
     private var sideSpeakButtonSize: CGFloat { 138 }
+    private var edgePlayerTopBlankHeight: CGFloat { 176 }
+    private var edgeSpeakBottomSpacing: CGFloat { 176 }
 
     private func edgePlayerColumn(players: [Player], isTrailingSide: Bool) -> some View {
         GeometryReader { panelProxy in
@@ -2102,8 +2104,13 @@ struct LiveStatsView: View {
                 }
 
                 Group {
-                    ScrollView {
-                        edgePlayerColumnList(players: players, panelProxy: panelProxy)
+                    VStack(spacing: 0) {
+                        Color.clear
+                            .frame(height: edgePlayerTopBlankHeight)
+
+                        ScrollView {
+                            edgePlayerColumnList(players: players, panelProxy: panelProxy)
+                        }
                     }
                 }
                 .simultaneousGesture(
@@ -2136,6 +2143,8 @@ struct LiveStatsView: View {
 
                 speakButton(isOpposition: isTrailingSide)
                     .padding(.top, 4)
+
+                Spacer(minLength: edgeSpeakBottomSpacing)
             }
             .padding(12)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -2145,8 +2154,6 @@ struct LiveStatsView: View {
 
     private func edgePlayerColumnList(players: [Player], panelProxy: GeometryProxy) -> some View {
         return VStack(spacing: 8) {
-            Color.clear
-                .frame(height: 176)
             ForEach(Array(players.enumerated()), id: \.element.id) { _, player in
                 edgePlayerCard(player: player, panelProxy: panelProxy)
             }
