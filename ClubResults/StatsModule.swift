@@ -1064,8 +1064,7 @@ struct LiveStatsView: View {
     @State private var activeContestedHoverVote: ContestedPossessionVote?
     @State private var suppressTapForButtonKey: String?
     @State private var activePlayerQuickStatsPlayerID: UUID?
-    @State private var activePlayerQuickCardSize: CGSize = .zero
-    @State private var activePlayerQuickFanGlobalMidX: CGFloat = 512
+    @State private var activePlayerQuickCardFrameGlobal: CGRect = .zero
     @State private var interfaceScreenWidth: CGFloat = 1024
     @State private var hoveredPlayerQuickStatName: String?
     @State private var hoveredPlayerQuickEfficiencyVote: EfficiencyVote?
@@ -1592,21 +1591,16 @@ struct LiveStatsView: View {
                                 .frame(maxWidth: .infinity, minHeight: cellHeight)
                                 .background(selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
-                        .overlay(alignment: .top) {
-                            GeometryReader { overlayProxy in
+                        .background {
+                            GeometryReader { cardProxy in
                                 if activePlayerQuickStatsPlayerID == player.id {
-                                    let midX = overlayProxy.frame(in: .global).midX
-                                    playerQuickStatsFan(cardSize: overlayProxy.size, globalMidX: midX)
+                                    Color.clear
                                         .onAppear {
-                                            activePlayerQuickCardSize = overlayProxy.size
-                                            activePlayerQuickFanGlobalMidX = midX
+                                            activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
                                         }
-                                        .task(id: midX) {
-                                            activePlayerQuickCardSize = overlayProxy.size
-                                            activePlayerQuickFanGlobalMidX = midX
+                                        .task(id: cardProxy.frame(in: .global)) {
+                                            activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
                                         }
-                                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                                        .zIndex(3000)
                                 }
                             }
                         }
@@ -1619,13 +1613,14 @@ struct LiveStatsView: View {
                                     case .first(true):
                                         selectedPlayerId = player.id
                                         activePlayerQuickStatsPlayerID = player.id
+                                        activePlayerQuickCardFrameGlobal = .zero
                                         clearPendingPlayerQuickStat()
                                     case .second(true, let drag?):
                                         selectedPlayerId = player.id
                                         activePlayerQuickStatsPlayerID = player.id
-                                        let cardSize = activePlayerQuickCardSize == .zero
+                                        let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
                                             ? CGSize(width: panelProxy.size.width / CGFloat(columnsCount), height: cellHeight)
-                                            : activePlayerQuickCardSize
+                                            : activePlayerQuickCardFrameGlobal.size
                                         updateQuickStatHover(location: drag.location, cardSize: cardSize)
                                     default:
                                         break
@@ -1635,7 +1630,7 @@ struct LiveStatsView: View {
                                     commitPendingPlayerQuickStatIfValid(playerID: player.id)
                                     clearPendingPlayerQuickStat()
                                     activePlayerQuickStatsPlayerID = nil
-                                    activePlayerQuickCardSize = .zero
+                                    activePlayerQuickCardFrameGlobal = .zero
                                 }
                         )
                     }
@@ -1655,6 +1650,22 @@ struct LiveStatsView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                .overlay {
+                    if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
+                        let panelFrame = panelProxy.frame(in: .global)
+                        let cardFrame = activePlayerQuickCardFrameGlobal
+                        playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
+                            .frame(width: cardFrame.width, height: cardFrame.height)
+                            .position(
+                                x: cardFrame.midX - panelFrame.minX,
+                                y: cardFrame.midY - panelFrame.minY
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                            .zIndex(6000)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .zIndex(6000)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
         }
@@ -2255,9 +2266,14 @@ struct LiveStatsView: View {
 
     private func playerQuickStatsFan(cardSize: CGSize, globalMidX: CGFloat) -> some View {
         let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: globalMidX)
-        let selectedAngle = selectedQuickStatMidAngle(layout: layout)
-        let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 1)
-        let efficiencyLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 2)
+        let selectedFirstTierAngle = selectedQuickStatMidAngle(layout: layout)
+        let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedFirstTierAngle, tier: 1)
+        let selectedSecondTierAngle = selectedVoteMidAngle(
+            layout: contestedLayout,
+            leftSelected: hoveredPlayerQuickContestedVote == .contested,
+            rightSelected: hoveredPlayerQuickContestedVote == .uncontested
+        )
+        let efficiencyLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedSecondTierAngle, tier: 2)
         return ZStack {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
                 let isHovered = hoveredPlayerQuickStatName == option.id
@@ -2272,7 +2288,7 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isHovered ? 0.8 : 0.45), lineWidth: isHovered ? 2.5 : 1.2)
                     }
                     .overlay {
-                        sliceLabel(option.title, center: layout.center, radius: labelRadius, angle: midAngle, width: 90, font: .headline.weight(.semibold))
+                        sliceLabel(option.title, center: layout.center, radius: labelRadius, angle: midAngle, width: 96, font: .headline.weight(.semibold))
                     }
             }
 
@@ -2318,7 +2334,7 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isActive ? 0.8 : 0.45), lineWidth: isActive ? 2.3 : 1.1)
                     }
                     .overlay {
-                        sliceLabel(title, center: layout.center, radius: layout.outerRadius - 14, angle: midAngle, width: 86, font: .subheadline.weight(.bold))
+                        sliceLabel(title, center: layout.center, radius: layout.outerRadius - 12, angle: midAngle, width: 94, font: .subheadline.weight(.bold))
                     }
             }
         }
@@ -2380,13 +2396,6 @@ struct LiveStatsView: View {
         return CGPoint(x: center.x + cos(radians) * radius, y: center.y + sin(radians) * radius)
     }
 
-    private func quickStatLabelRotation(for angleDegrees: CGFloat) -> CGFloat {
-        var tangent = angleDegrees + 90
-        if tangent > 90 { tangent -= 180 }
-        if tangent < -90 { tangent += 180 }
-        return tangent
-    }
-
     private func sliceLabel(
         _ text: String,
         center: CGPoint,
@@ -2399,10 +2408,10 @@ struct LiveStatsView: View {
         return Text(text)
             .font(font)
             .foregroundStyle(.white)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.75)
             .frame(width: width)
-            .rotationEffect(.degrees(quickStatLabelRotation(for: angle)))
             .position(x: point.x, y: point.y)
     }
 
@@ -2410,6 +2419,22 @@ struct LiveStatsView: View {
         guard let idx = hoveredQuickStatIndex else { return (layout.startAngle + layout.endAngle) / 2 }
         let segment = quickStatSegmentAngles(index: idx, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
         return (segment.start + segment.end) / 2
+    }
+
+    private func selectedVoteMidAngle(
+        layout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat),
+        leftSelected: Bool,
+        rightSelected: Bool
+    ) -> CGFloat {
+        if leftSelected {
+            let segment = quickStatSegmentAngles(index: 0, total: 2, spanStart: layout.startAngle, spanEnd: layout.endAngle)
+            return (segment.start + segment.end) / 2
+        }
+        if rightSelected {
+            let segment = quickStatSegmentAngles(index: 1, total: 2, spanStart: layout.startAngle, spanEnd: layout.endAngle)
+            return (segment.start + segment.end) / 2
+        }
+        return (layout.startAngle + layout.endAngle) / 2
     }
 
     private func unitDirection(angleDegrees: CGFloat) -> CGVector {
@@ -2451,7 +2476,8 @@ struct LiveStatsView: View {
     }
 
     private func updateQuickStatHover(location: CGPoint, cardSize: CGSize) {
-        let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: activePlayerQuickFanGlobalMidX)
+        let globalMidX = activePlayerQuickCardFrameGlobal == .zero ? (interfaceScreenWidth / 2) : activePlayerQuickCardFrameGlobal.midX
+        let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: globalMidX)
         let distance = hypot(location.x - layout.center.x, location.y - layout.center.y)
         let angle = atan2(location.y - layout.center.y, location.x - layout.center.x) * 180 / .pi
         let inPieBand = distance >= layout.innerRadius && distance <= layout.outerRadius
@@ -2469,8 +2495,8 @@ struct LiveStatsView: View {
 
         guard let statID = hoveredPlayerQuickStatName, needsQuickStatVotes(for: statID) else { return }
 
-        let selectedAngle = selectedQuickStatMidAngle(layout: layout)
-        let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 1)
+        let selectedFirstTierAngle = selectedQuickStatMidAngle(layout: layout)
+        let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedFirstTierAngle, tier: 1)
         if trackContestedPossessions {
             let selection = votePopupSelectionIndex(location: location, layout: contestedLayout)
             if selection == 0 {
@@ -2483,7 +2509,12 @@ struct LiveStatsView: View {
         if !trackDisposalEfficiency { return }
         if trackContestedPossessions && hoveredPlayerQuickContestedVote == nil { return }
 
-        let efficiencyLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 2)
+        let selectedSecondTierAngle = selectedVoteMidAngle(
+            layout: contestedLayout,
+            leftSelected: hoveredPlayerQuickContestedVote == .contested,
+            rightSelected: hoveredPlayerQuickContestedVote == .uncontested
+        )
+        let efficiencyLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedSecondTierAngle, tier: 2)
         let efficiencySelection = votePopupSelectionIndex(location: location, layout: efficiencyLayout)
         if efficiencySelection == 0 {
             hoveredPlayerQuickEfficiencyVote = .thumbsUp
