@@ -1692,7 +1692,7 @@ struct LiveStatsView: View {
     }
 
     private func edgeLayoutContent(proxy: GeometryProxy) -> some View {
-        let sideWidth = min(max(proxy.size.width * 0.23, 150), 260)
+        let sideWidth = min(max(proxy.size.width * 0.16, 128), 180)
         let centerWidth = max(proxy.size.width - (sideWidth * 2) - 48, 320)
         let splitIndex = Int(ceil(Double(gridPlayers.count) / 2.0))
         let leftPlayers = Array(gridPlayers.prefix(splitIndex))
