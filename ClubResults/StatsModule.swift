@@ -556,141 +556,152 @@ struct SpeechSetupView: View {
     @AppStorage("speech_setup_recent_results") private var recentResultsData = ""
 
     var body: some View {
-        List {
-            Section("Introduction") {
-                Text("Test what speech recognition hears for stats entry. This checks stat words, player names, and simple commands. It helps setup testing, but does not permanently train your voice.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Setup Grade") {
-                Picker("Grade", selection: $selectedGradeId) {
-                    Text("Select Grade").tag(Optional<UUID>.none)
-                    ForEach(grades.filter { $0.isActive }) { grade in
-                        Text(grade.name).tag(Optional(grade.id))
-                    }
-                }
-                if sessions.isEmpty {
-                    Text("No active stats session found. Select a grade to load player names and numbers for speech testing.")
-                        .font(.caption)
+        ZStack {
+            List {
+                Section("Introduction") {
+                    Text("Test what speech recognition hears for stats entry. This checks stat words, player names, and simple commands. It helps setup testing, but does not permanently train your voice.")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-            }
 
-            Section("Vocabulary Preview") {
-                ForEach(vocabularyPreview, id: \.self) { token in
-                    Text(token)
+                Section("Setup Grade") {
+                    Picker("Grade", selection: $selectedGradeId) {
+                        Text("Select Grade").tag(Optional<UUID>.none)
+                        ForEach(grades.filter { $0.isActive }) { grade in
+                            Text(grade.name).tag(Optional(grade.id))
+                        }
+                    }
+                    if sessions.isEmpty {
+                        Text("No active stats session found. Select a grade to load player names and numbers for speech testing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Vocabulary Preview") {
+                    ForEach(vocabularyPreview, id: \.self) { token in
+                        Text(token)
+                            .font(.body.monospaced())
+                    }
+                    if vocabularyPreview.isEmpty {
+                        Text("No vocabulary available for this grade.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Guided Practice") {
+                    ForEach(SpeechPracticePrompt.Group.allCases, id: \.rawValue) { group in
+                        let prompts = promptsForGroup(group)
+                        if !prompts.isEmpty {
+                            Text(group.rawValue)
+                                .font(.headline)
+                                .padding(.top, 6)
+
+                            ForEach(prompts) { prompt in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(prompt.expected)
+                                        .font(.title3.weight(.semibold))
+
+                                    Button {
+                                        // press-and-hold only
+                                    } label: {
+                                        Label("Speak", systemImage: "mic.fill")
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(activePromptId == prompt.id ? .red : .blue)
+                                    .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
+                                        if isPressing {
+                                            activePromptId = prompt.id
+                                            speechService.startListening(vocabulary: speechVocabulary)
+                                        } else if activePromptId == prompt.id {
+                                            speechService.stopListening { transcript in
+                                                applyPromptResult(prompt: prompt, transcript: transcript)
+                                            }
+                                        }
+                                    }, perform: {})
+
+                                    Text("Expected: \(prompt.expected)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("Heard: \(heardByPrompt[prompt.id] ?? "—")")
+                                        .font(.caption)
+                                    if let passed = passByPrompt[prompt.id] {
+                                        Text(passed ? "Result: Pass" : "Result: Mismatch")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(passed ? .green : .red)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                }
+
+                Section("Free Speech Test") {
+                    Button {
+                        // press-and-hold only
+                    } label: {
+                        Label("Speak", systemImage: "mic.circle.fill")
+                            .font(.title3.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(freeTestActive ? .red : .blue)
+                    .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
+                        if isPressing {
+                            freeTestActive = true
+                            speechService.startListening(vocabulary: speechVocabulary)
+                        } else if freeTestActive {
+                            speechService.stopListening { transcript in
+                                freeTestActive = false
+                                freeTestHeard = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                            }
+                        }
+                    }, perform: {})
+
+                    Text("Heard: \(freeTestHeard.isEmpty ? "—" : freeTestHeard)")
                         .font(.body.monospaced())
                 }
-                if vocabularyPreview.isEmpty {
-                    Text("No vocabulary available for this grade.")
-                        .foregroundStyle(.secondary)
+
+                Section("Recognition Summary") {
+                    Text("\(matchedCount) / \(attemptedCount) prompts matched")
+                        .font(.headline)
+
+                    if problemItems.isEmpty {
+                        Text("Problem items: None")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Problem items:")
+                            .font(.subheadline.weight(.semibold))
+                        ForEach(problemItems, id: \.self) { item in
+                            Text(item)
+                                .foregroundStyle(.red)
+                        }
+                    }
                 }
-            }
 
-            Section("Guided Practice") {
-                ForEach(SpeechPracticePrompt.Group.allCases, id: \.rawValue) { group in
-                    let prompts = promptsForGroup(group)
-                    if !prompts.isEmpty {
-                        Text(group.rawValue)
-                            .font(.headline)
-                            .padding(.top, 6)
-
-                        ForEach(prompts) { prompt in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(prompt.expected)
-                                    .font(.title3.weight(.semibold))
-
-                                Button {
-                                    // press-and-hold only
-                                } label: {
-                                    Label("Speak", systemImage: "mic.fill")
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(activePromptId == prompt.id ? .red : .blue)
-                                .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
-                                    if isPressing {
-                                        activePromptId = prompt.id
-                                        speechService.startListening(vocabulary: speechVocabulary)
-                                    } else if activePromptId == prompt.id {
-                                        speechService.stopListening { transcript in
-                                            applyPromptResult(prompt: prompt, transcript: transcript)
-                                        }
-                                    }
-                                }, perform: {})
-
-                                Text("Expected: \(prompt.expected)")
-                                    .font(.caption)
+                if !recentResults.isEmpty {
+                    Section("Recent Tests") {
+                        ForEach(recentResults) { result in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Expected: \(result.expected)")
+                                Text("Heard: \(result.heard)")
                                     .foregroundStyle(.secondary)
-                                Text("Heard: \(heardByPrompt[prompt.id] ?? "—")")
-                                    .font(.caption)
-                                if let passed = passByPrompt[prompt.id] {
-                                    Text(passed ? "Result: Pass" : "Result: Mismatch")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(passed ? .green : .red)
-                                }
+                                Text(result.passed ? "Pass" : "Mismatch")
+                                    .foregroundStyle(result.passed ? .green : .red)
+                                    .font(.caption.weight(.semibold))
                             }
-                            .padding(.vertical, 4)
                         }
                     }
                 }
             }
 
-            Section("Free Speech Test") {
-                Button {
-                    // press-and-hold only
-                } label: {
-                    Label("Speak", systemImage: "mic.circle.fill")
-                        .font(.title3.weight(.semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(freeTestActive ? .red : .blue)
-                .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
-                    if isPressing {
-                        freeTestActive = true
-                        speechService.startListening(vocabulary: speechVocabulary)
-                    } else if freeTestActive {
-                        speechService.stopListening { transcript in
-                            freeTestActive = false
-                            freeTestHeard = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    }
-                }, perform: {})
-
-                Text("Heard: \(freeTestHeard.isEmpty ? "—" : freeTestHeard)")
-                    .font(.body.monospaced())
-            }
-
-            Section("Recognition Summary") {
-                Text("\(matchedCount) / \(attemptedCount) prompts matched")
-                    .font(.headline)
-
-                if problemItems.isEmpty {
-                    Text("Problem items: None")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Problem items:")
-                        .font(.subheadline.weight(.semibold))
-                    ForEach(problemItems, id: \.self) { item in
-                        Text(item)
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-
-            if !recentResults.isEmpty {
-                Section("Recent Tests") {
-                    ForEach(recentResults) { result in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Expected: \(result.expected)")
-                            Text("Heard: \(result.heard)")
-                                .foregroundStyle(.secondary)
-                            Text(result.passed ? "Pass" : "Mismatch")
-                                .foregroundStyle(result.passed ? .green : .red)
-                                .font(.caption.weight(.semibold))
-                        }
-                    }
-                }
+            if activePromptId != nil || freeTestActive {
+                Image(systemName: "mic.circle.fill")
+                    .font(.system(size: 180, weight: .bold))
+                    .foregroundStyle(.red)
+                    .shadow(color: .red.opacity(0.4), radius: 12)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
         }
         .navigationTitle("Speech Setup")
