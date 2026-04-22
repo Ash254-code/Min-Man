@@ -119,6 +119,25 @@ private struct StatRecordBanner: Equatable {
     let isSuccess: Bool
 }
 
+private struct QuickStatPieSlice: Shape {
+    let startAngle: CGFloat
+    let endAngle: CGFloat
+    let innerRadius: CGFloat
+    let outerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let start = Angle(degrees: startAngle)
+        let end = Angle(degrees: endAngle)
+
+        var path = Path()
+        path.addArc(center: center, radius: outerRadius, startAngle: start, endAngle: end, clockwise: false)
+        path.addArc(center: center, radius: innerRadius, startAngle: end, endAngle: start, clockwise: true)
+        path.closeSubpath()
+        return path
+    }
+}
+
 private enum StatsDefaults {
     static let statNames = ["Kick", "Handball", "Mark", "Tackle", "Scores", "Inside 50", "Clearances"]
 }
@@ -2208,30 +2227,34 @@ struct LiveStatsView: View {
     }
 
     private func playerQuickStatsFan(cardSize: CGSize, globalMidX: CGFloat) -> some View {
-        let statRects = quickStatRects(cardSize: cardSize, globalMidX: globalMidX)
-        let selectedRect: CGRect? = {
-            guard let idx = hoveredQuickStatIndex, statRects.indices.contains(idx) else { return nil }
-            return statRects[idx]
-        }()
-        let contestedPopupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
-        let efficiencyPopupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
+        let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: globalMidX)
+        let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
+        let selectedRect = CGRect(x: selectedAnchor.x - 52, y: selectedAnchor.y - 30, width: 104, height: 60)
+        let contestedPopupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
+        let efficiencyPopupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
         return ZStack {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
-                let rect = statRects[index]
                 let isHovered = hoveredPlayerQuickStatName == option.id
-                Text(option.title)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: rect.width, height: rect.height)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(isHovered ? Color.cyan : (option.statType == nil ? Color.gray.opacity(0.35) : Color.black.opacity(0.72)))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.35), lineWidth: isHovered ? 2 : 1)
-                    )
-                    .position(x: rect.midX, y: rect.midY)
+                let segment = quickStatSegmentAngles(index: index, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
+                let midAngle = (segment.start + segment.end) / 2
+                let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
+                let labelPoint = polarPoint(center: layout.center, radius: labelRadius, angleDegrees: midAngle)
+
+                QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
+                    .fill(isHovered ? Color.cyan : (option.statType == nil ? Color.gray.opacity(0.35) : Color.black.opacity(0.72)))
+                    .overlay {
+                        QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
+                            .stroke(Color.white.opacity(isHovered ? 0.65 : 0.35), lineWidth: isHovered ? 2.5 : 1)
+                    }
+                    .overlay {
+                        Text(option.title)
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                            .frame(width: 86)
+                            .position(x: labelPoint.x, y: labelPoint.y)
+                    }
             }
 
             if shouldShowContestedPopup {
@@ -2243,7 +2266,7 @@ struct LiveStatsView: View {
                     rightActive: hoveredPlayerQuickContestedVote == .uncontested,
                     rightColor: .blue
                 )
-                .position(x: contestedPopupX, y: (selectedRect?.minY ?? -110) - 58)
+                .position(x: contestedPopupX, y: selectedRect.minY - 58)
             }
 
             if shouldShowEfficiencyPopup {
@@ -2255,7 +2278,7 @@ struct LiveStatsView: View {
                     rightActive: hoveredPlayerQuickEfficiencyVote == .thumbsDown,
                     rightColor: .red
                 )
-                .position(x: efficiencyPopupX, y: (selectedRect?.minY ?? -110) - 136)
+                .position(x: efficiencyPopupX, y: selectedRect.minY - 136)
             }
         }
     }
@@ -2307,39 +2330,45 @@ struct LiveStatsView: View {
         return true
     }
 
-    private func quickStatRects(cardSize: CGSize, globalMidX: CGFloat) -> [CGRect] {
-        let buttonWidth: CGFloat = 104
-        let buttonHeight: CGFloat = 58
-        let radius: CGFloat = 152
-        let anchor = CGPoint(x: cardSize.width / 2, y: 22)
-        let angles = fanAngles(globalMidX: globalMidX)
-        return Array(0..<6).map { index in
-            let radians = angles[index] * (.pi / 180)
-            let center = CGPoint(
-                x: anchor.x + cos(radians) * radius,
-                y: anchor.y + sin(radians) * radius
-            )
-            return CGRect(
-                x: center.x - (buttonWidth / 2),
-                y: center.y - (buttonHeight / 2),
-                width: buttonWidth,
-                height: buttonHeight
-            )
-        }
-    }
-
-    private func fanAngles(globalMidX: CGFloat) -> [CGFloat] {
+    private func quickStatPieLayout(cardSize: CGSize, globalMidX: CGFloat) -> (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) {
         let screenWidth = interfaceScreenWidth
+        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height * 0.78)
+        let innerRadius: CGFloat = 82
+        let outerRadius: CGFloat = 182
+
         if globalMidX < 210 {
-            // Clockwise around right side when near left edge.
-            return [-120, -88, -56, -24, 8, 40]
+            // Rotate right when near left edge to keep the fan on-screen.
+            return (center, innerRadius, outerRadius, -140, 40)
         }
         if globalMidX > screenWidth - 210 {
-            // Counterclockwise around left side when near right edge.
-            return [-220, -188, -156, -124, -92, -60]
+            // Rotate left when near right edge to keep the fan on-screen.
+            return (center, innerRadius, outerRadius, -220, -40)
         }
-        // Tight true semicircle over the player card.
-        return [-170, -138, -106, -74, -42, -10]
+        // A true top semicircle centered around the player card.
+        return (center, innerRadius, outerRadius, -180, 0)
+    }
+
+    private func quickStatSegmentAngles(index: Int, total: Int, spanStart: CGFloat, spanEnd: CGFloat) -> (start: CGFloat, end: CGFloat) {
+        let span = (spanEnd - spanStart) / CGFloat(max(total, 1))
+        let start = spanStart + (span * CGFloat(index))
+        return (start, start + span)
+    }
+
+    private func polarPoint(center: CGPoint, radius: CGFloat, angleDegrees: CGFloat) -> CGPoint {
+        let radians = angleDegrees * (.pi / 180)
+        return CGPoint(x: center.x + cos(radians) * radius, y: center.y + sin(radians) * radius)
+    }
+
+    private func hoveredQuickStatAnchor(layout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat)) -> CGPoint {
+        guard let idx = hoveredQuickStatIndex else {
+            return polarPoint(
+                center: layout.center,
+                radius: (layout.innerRadius + layout.outerRadius) / 2,
+                angleDegrees: (layout.startAngle + layout.endAngle) / 2
+            )
+        }
+        let segment = quickStatSegmentAngles(index: idx, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
+        return polarPoint(center: layout.center, radius: (layout.innerRadius + layout.outerRadius) / 2, angleDegrees: (segment.start + segment.end) / 2)
     }
 
     private var hoveredQuickStatIndex: Int? {
@@ -2353,8 +2382,16 @@ struct LiveStatsView: View {
     }
 
     private func updateQuickStatHover(location: CGPoint, cardSize: CGSize) {
-        let rects = quickStatRects(cardSize: cardSize, globalMidX: activePlayerQuickFanGlobalMidX)
-        if let statIndex = rects.firstIndex(where: { $0.contains(location) }) {
+        let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: activePlayerQuickFanGlobalMidX)
+        let distance = hypot(location.x - layout.center.x, location.y - layout.center.y)
+        let angle = atan2(location.y - layout.center.y, location.x - layout.center.x) * 180 / .pi
+        let inPieBand = distance >= layout.innerRadius && distance <= layout.outerRadius
+
+        if inPieBand,
+           let statIndex = (0..<playerQuickStatOptions.count).first(where: { idx in
+               let segment = quickStatSegmentAngles(index: idx, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
+               return angle >= min(segment.start, segment.end) && angle <= max(segment.start, segment.end)
+           }) {
             hoveredPlayerQuickStatName = playerQuickStatOptions[statIndex].id
             hoveredPlayerQuickContestedVote = nil
             hoveredPlayerQuickEfficiencyVote = nil
@@ -2363,13 +2400,11 @@ struct LiveStatsView: View {
 
         guard let statID = hoveredPlayerQuickStatName, needsQuickStatVotes(for: statID) else { return }
 
-        let selectedRect: CGRect? = {
-            guard let idx = hoveredQuickStatIndex, rects.indices.contains(idx) else { return nil }
-            return rects[idx]
-        }()
-        let popupX = clampedPopupX(targetX: selectedRect?.midX ?? (cardSize.width / 2), popupWidth: 382, containerWidth: cardSize.width)
-        let contestedRectLeft = CGRect(x: popupX - 184, y: (selectedRect?.minY ?? -110) - 92, width: 170, height: 70)
-        let contestedRectRight = CGRect(x: popupX + 14, y: (selectedRect?.minY ?? -110) - 92, width: 170, height: 70)
+        let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
+        let selectedRect = CGRect(x: selectedAnchor.x - 52, y: selectedAnchor.y - 30, width: 104, height: 60)
+        let popupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
+        let contestedRectLeft = CGRect(x: popupX - 184, y: selectedRect.minY - 92, width: 170, height: 70)
+        let contestedRectRight = CGRect(x: popupX + 14, y: selectedRect.minY - 92, width: 170, height: 70)
         if trackContestedPossessions {
             if contestedRectLeft.contains(location) {
                 hoveredPlayerQuickContestedVote = .contested
@@ -2381,8 +2416,8 @@ struct LiveStatsView: View {
         if !trackDisposalEfficiency { return }
         if trackContestedPossessions && hoveredPlayerQuickContestedVote == nil { return }
 
-        let efficiencyRectLeft = CGRect(x: popupX - 184, y: (selectedRect?.minY ?? -110) - 170, width: 170, height: 70)
-        let efficiencyRectRight = CGRect(x: popupX + 14, y: (selectedRect?.minY ?? -110) - 170, width: 170, height: 70)
+        let efficiencyRectLeft = CGRect(x: popupX - 184, y: selectedRect.minY - 170, width: 170, height: 70)
+        let efficiencyRectRight = CGRect(x: popupX + 14, y: selectedRect.minY - 170, width: 170, height: 70)
         if efficiencyRectLeft.contains(location) {
             hoveredPlayerQuickEfficiencyVote = .thumbsUp
         } else if efficiencyRectRight.contains(location) {
