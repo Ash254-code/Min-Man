@@ -2379,7 +2379,6 @@ struct LiveStatsView: View {
             } else if speechService.isRecording {
                 speechService.stopListening { transcript in
                     handleVoiceTranscript(transcript)
-                    }
                 }
             }
         }, perform: {})
