@@ -1358,7 +1358,7 @@ struct LiveStatsView: View {
     }
 
     private var topPanelHeight: CGFloat {
-        oppositionTrackPossessions ? 326 : 168
+        oppositionTrackPossessions ? 448 : 168
     }
 
     private var rightStatActionsHeight: CGFloat {
@@ -1378,6 +1378,7 @@ struct LiveStatsView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.thinMaterial)
             HStack(spacing: 10) {
+                Spacer(minLength: 0)
                 Text(gradeName)
                     .font(.title.weight(.black))
                     .lineLimit(1)
@@ -1411,19 +1412,25 @@ struct LiveStatsView: View {
     }
 
     private var combinedScoreAndActionsPanel: some View {
-        HStack(spacing: 8) {
-            combinedTeamPanel(
-                teamName: ourTeamName,
-                scoreText: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))",
-                style: ourStyle,
-                isOpposition: false
-            )
-            combinedTeamPanel(
-                teamName: session.opposition,
-                scoreText: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))",
-                style: oppositionStyle,
-                isOpposition: true
-            )
+        Group {
+            if oppositionTrackPossessions {
+                comparisonScoreCardPanel
+            } else {
+                HStack(spacing: 8) {
+                    combinedTeamPanel(
+                        teamName: ourTeamName,
+                        scoreText: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))",
+                        style: ourStyle,
+                        isOpposition: false
+                    )
+                    combinedTeamPanel(
+                        teamName: session.opposition,
+                        scoreText: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))",
+                        style: oppositionStyle,
+                        isOpposition: true
+                    )
+                }
+            }
         }
         .frame(maxWidth: .infinity, minHeight: topPanelHeight, maxHeight: topPanelHeight)
     }
@@ -1541,6 +1548,151 @@ struct LiveStatsView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var comparisonScoreCardPanel: some View {
+        let metrics = scoreComparisonMetrics
+        return VStack(spacing: 14) {
+            HStack(spacing: 12) {
+                ScorePill(ourTeamName, style: ourStyle)
+                    .font(.title2.weight(.black))
+                    .padding(.horizontal, 8)
+                Spacer(minLength: 0)
+                ScorePill(session.opposition, style: oppositionStyle)
+                    .font(.title2.weight(.black))
+                    .padding(.horizontal, 8)
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 8) {
+                ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
+                    comparisonMetricRow(metric)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var scoreComparisonMetrics: [(label: String, ourValue: String, oppositionValue: String)] {
+        [
+            (
+                label: "Score",
+                ourValue: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))",
+                oppositionValue: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))"
+            ),
+            (
+                label: "Efficiency",
+                ourValue: efficiencyComparisonText(isOpposition: false),
+                oppositionValue: efficiencyComparisonText(isOpposition: true)
+            ),
+            (
+                label: "Contested Possession",
+                ourValue: contestedComparisonText(isOpposition: false),
+                oppositionValue: contestedComparisonText(isOpposition: true)
+            ),
+            (
+                label: "Team Kicks",
+                ourValue: "\(teamTotal(aliases: ["kick"], isOpposition: false))",
+                oppositionValue: "\(teamTotal(aliases: ["kick"], isOpposition: true))"
+            ),
+            (
+                label: "Team Handball",
+                ourValue: "\(teamTotal(aliases: ["handball"], isOpposition: false))",
+                oppositionValue: "\(teamTotal(aliases: ["handball"], isOpposition: true))"
+            ),
+            (
+                label: "Marks",
+                ourValue: "\(teamTotal(aliases: ["mark"], isOpposition: false))",
+                oppositionValue: "\(teamTotal(aliases: ["mark"], isOpposition: true))"
+            ),
+            (
+                label: "Inside 50",
+                ourValue: "\(teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: false))",
+                oppositionValue: "\(teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: true))"
+            ),
+            (
+                label: "Clearance",
+                ourValue: "\(teamTotal(aliases: ["clearance", "clearances"], isOpposition: false))",
+                oppositionValue: "\(teamTotal(aliases: ["clearance", "clearances"], isOpposition: true))"
+            )
+        ]
+    }
+
+    private func comparisonMetricRow(_ metric: (label: String, ourValue: String, oppositionValue: String)) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Text(metric.label)
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(metric.ourValue)
+                    .font(.title3.weight(.black))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .foregroundStyle(ourStyle.text)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ourStyle.background.opacity(0.95), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(ourStyle.border.opacity(0.75), lineWidth: 1.5)
+            )
+
+            HStack(spacing: 6) {
+                Text(metric.oppositionValue)
+                    .font(.title3.weight(.black))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 8)
+                Text(metric.label)
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(oppositionStyle.text)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(oppositionStyle.background.opacity(0.95), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(oppositionStyle.border.opacity(0.75), lineWidth: 1.5)
+            )
+        }
+    }
+
+    private func efficiencyComparisonText(isOpposition: Bool) -> String {
+        let teamID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
+        let teamEvents = sessionEvents.filter { $0.playerId == teamID }
+        let efficient = teamEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsUp.rawValue }.count
+        let inefficient = teamEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsDown.rawValue }.count
+        let total = efficient + inefficient
+        guard total > 0 else { return "0% (0/0)" }
+        let percent = Int(round((Double(efficient) / Double(total)) * 100))
+        return "\(percent)% (\(efficient)/\(inefficient))"
+    }
+
+    private func contestedComparisonText(isOpposition: Bool) -> String {
+        let teamID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
+        let teamEvents = sessionEvents.filter { $0.playerId == teamID }
+        let contested = teamEvents.filter { $0.contestedVoteRaw == ContestedPossessionVote.contested.rawValue }.count
+        let uncontested = teamEvents.filter { $0.contestedVoteRaw == ContestedPossessionVote.uncontested.rawValue }.count
+        let total = contested + uncontested
+        guard total > 0 else { return "0% (0/0)" }
+        let percent = Int(round((Double(contested) / Double(total)) * 100))
+        return "\(percent)% (\(contested)/\(uncontested))"
+    }
+
+    private func teamTotal(aliases: [String], isOpposition: Bool) -> Int {
+        guard let type = statTypeMatching(aliases: aliases) else { return 0 }
+        let teamID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
+        return teamStatCount(statType: type, teamPlayerId: teamID)
     }
 
     private var quarterPicker: some View {
