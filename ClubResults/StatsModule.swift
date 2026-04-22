@@ -1033,6 +1033,8 @@ struct LiveStatsView: View {
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
     @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
+    @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
+    @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
 
     let session: StatsSession
@@ -1358,7 +1360,7 @@ struct LiveStatsView: View {
     }
 
     private var topPanelHeight: CGFloat {
-        oppositionTrackPossessions ? 432 : 168
+        oppositionTrackPossessions ? 472 : 168
     }
 
     private var rightStatActionsHeight: CGFloat {
@@ -1552,37 +1554,51 @@ struct LiveStatsView: View {
 
     private var comparisonScoreCardPanel: some View {
         let metrics = scoreComparisonMetrics
-        return VStack(spacing: 10) {
+        return VStack(spacing: 8) {
             HStack(spacing: 12) {
-                VStack {
+                VStack(spacing: 6) {
                     ScorePill(ourTeamName, style: ourStyle)
                         .font(.title2.weight(.black))
                         .padding(.horizontal, 8)
+                    Text("\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))")
+                        .font(.system(size: 58, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
 
-                VStack {
+                VStack(spacing: 6) {
                     ScorePill(session.opposition, style: oppositionStyle)
                         .font(.title2.weight(.black))
                         .padding(.horizontal, 8)
+                    Text("\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))")
+                        .font(.system(size: 58, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
 
             VStack(spacing: 8) {
                 ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
                     comparisonMetricRow(metric)
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private var scoreComparisonMetrics: [(label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double, isScore: Bool)] {
+    private var scoreComparisonMetrics: [(label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double)] {
         let ourEfficiency = efficiencyComparisonValues(isOpposition: false)
         let oppositionEfficiency = efficiencyComparisonValues(isOpposition: true)
         let ourContested = contestedComparisonValues(isOpposition: false)
@@ -1598,175 +1614,162 @@ struct LiveStatsView: View {
         let ourClearances = teamTotal(aliases: ["clearance", "clearances"], isOpposition: false)
         let oppositionClearances = teamTotal(aliases: ["clearance", "clearances"], isOpposition: true)
 
-        return [
-            (
-                label: "Score",
-                ourValue: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))",
-                oppositionValue: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))",
-                ourNumeric: Double(ourScoreSummary.points),
-                oppositionNumeric: Double(oppositionScoreSummary.points),
-                isScore: true
-            ),
-            (
+        var rows: [(label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double)] = []
+
+        if shouldShowEfficiencyMetric {
+            rows.append((
                 label: "Efficiency",
                 ourValue: ourEfficiency.text,
                 oppositionValue: oppositionEfficiency.text,
                 ourNumeric: ourEfficiency.percent,
-                oppositionNumeric: oppositionEfficiency.percent,
-                isScore: false
-            ),
-            (
+                oppositionNumeric: oppositionEfficiency.percent
+            ))
+        }
+
+        if shouldShowContestedMetric {
+            rows.append((
                 label: "Contested Possession",
                 ourValue: ourContested.text,
                 oppositionValue: oppositionContested.text,
                 ourNumeric: ourContested.percent,
-                oppositionNumeric: oppositionContested.percent,
-                isScore: false
-            ),
+                oppositionNumeric: oppositionContested.percent
+            ))
+        }
+
+        rows.append(contentsOf: [
             (
                 label: "Team Kicks",
                 ourValue: "\(ourKicks)",
                 oppositionValue: "\(oppositionKicks)",
                 ourNumeric: Double(ourKicks),
-                oppositionNumeric: Double(oppositionKicks),
-                isScore: false
+                oppositionNumeric: Double(oppositionKicks)
             ),
             (
                 label: "Team Handball",
                 ourValue: "\(ourHandballs)",
                 oppositionValue: "\(oppositionHandballs)",
                 ourNumeric: Double(ourHandballs),
-                oppositionNumeric: Double(oppositionHandballs),
-                isScore: false
+                oppositionNumeric: Double(oppositionHandballs)
             ),
             (
                 label: "Marks",
                 ourValue: "\(ourMarks)",
                 oppositionValue: "\(oppositionMarks)",
                 ourNumeric: Double(ourMarks),
-                oppositionNumeric: Double(oppositionMarks),
-                isScore: false
+                oppositionNumeric: Double(oppositionMarks)
             ),
             (
                 label: "Inside 50",
                 ourValue: "\(ourInside50)",
                 oppositionValue: "\(oppositionInside50)",
                 ourNumeric: Double(ourInside50),
-                oppositionNumeric: Double(oppositionInside50),
-                isScore: false
+                oppositionNumeric: Double(oppositionInside50)
             ),
             (
                 label: "Clearance",
                 ourValue: "\(ourClearances)",
                 oppositionValue: "\(oppositionClearances)",
                 ourNumeric: Double(ourClearances),
-                oppositionNumeric: Double(oppositionClearances),
-                isScore: false
+                oppositionNumeric: Double(oppositionClearances)
             )
-        ]
+        ])
+
+        return rows
     }
 
-    private func comparisonMetricRow(_ metric: (label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double, isScore: Bool)) -> some View {
-        if metric.isScore {
-            return AnyView(
-                HStack(spacing: 10) {
-                    Text(metric.ourValue)
-                        .font(.system(size: 48, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity, alignment: .center)
+    private var shouldShowEfficiencyMetric: Bool {
+        trackDisposalEfficiency && (!oppositionTrackPossessions || oppositionTrackDisposalEfficiency)
+    }
 
-                    Text(metric.oppositionValue)
-                        .font(.system(size: 48, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-            )
-        }
+    private var shouldShowContestedMetric: Bool {
+        trackContestedPossessions && (!oppositionTrackPossessions || oppositionTrackContestedPossessions)
+    }
 
+    private func comparisonMetricRow(_ metric: (label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double)) -> some View {
         let ourIsLeading = metric.ourNumeric > metric.oppositionNumeric
         let oppositionIsLeading = metric.oppositionNumeric > metric.ourNumeric
         let ourBackground = ourIsLeading ? Color.green.opacity(0.85) : (oppositionIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
         let oppositionBackground = oppositionIsLeading ? Color.green.opacity(0.85) : (ourIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
 
-        return AnyView(
-            HStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    Text(metric.label)
-                        .font(.headline.weight(.semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text(metric.ourValue)
-                        .font(.title3.weight(.black))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                }
-                .foregroundStyle(.white)
-                .padding(.vertical, 10)
-                .padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(ourBackground, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
-                )
-
-                HStack(spacing: 6) {
-                    Text(metric.oppositionValue)
-                        .font(.title3.weight(.black))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                    Spacer(minLength: 8)
-                    Text(metric.label)
-                        .font(.headline.weight(.semibold))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(.white)
-                .padding(.vertical, 10)
-                .padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(oppositionBackground, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
-                )
+        return HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Text(metric.label)
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(metric.ourValue)
+                    .font(.title3.weight(.black))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
-        )
+            .foregroundStyle(.white)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ourBackground, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+            )
+
+            HStack(spacing: 6) {
+                Text(metric.oppositionValue)
+                    .font(.title3.weight(.black))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 8)
+                Text(metric.label)
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(oppositionBackground, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+            )
+        }
     }
 
     private func efficiencyComparisonValues(isOpposition: Bool) -> (text: String, percent: Double) {
-        let teamID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
-        let teamEvents = sessionEvents.filter { $0.playerId == teamID }
-        let efficient = teamEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsUp.rawValue }.count
-        let inefficient = teamEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsDown.rawValue }.count
-        let total = efficient + inefficient
-        guard total > 0 else { return ("0% (0/0)", 0) }
-        let percent = (Double(efficient) / Double(total)) * 100
-        return ("\(Int(round(percent)))% (\(efficient)/\(inefficient))", percent)
+        let teamEvents = eventsForComparison(isOpposition: isOpposition)
+        let effective = teamEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsUp.rawValue }.count
+        let nonEffective = teamEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsDown.rawValue }.count
+        let total = effective + nonEffective
+        guard total > 0 else { return ("0%", 0) }
+        let percent = (Double(effective) / Double(total)) * 100
+        return ("\(Int(round(percent)))%", percent)
     }
 
     private func contestedComparisonValues(isOpposition: Bool) -> (text: String, percent: Double) {
-        let teamID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
-        let teamEvents = sessionEvents.filter { $0.playerId == teamID }
+        let teamEvents = eventsForComparison(isOpposition: isOpposition)
         let contested = teamEvents.filter { $0.contestedVoteRaw == ContestedPossessionVote.contested.rawValue }.count
         let uncontested = teamEvents.filter { $0.contestedVoteRaw == ContestedPossessionVote.uncontested.rawValue }.count
         let total = contested + uncontested
-        guard total > 0 else { return ("0% (0/0)", 0) }
+        guard total > 0 else { return ("0%", 0) }
         let percent = (Double(contested) / Double(total)) * 100
-        return ("\(Int(round(percent)))% (\(contested)/\(uncontested))", percent)
+        return ("\(Int(round(percent)))%", percent)
+    }
+
+    private func eventsForComparison(isOpposition: Bool) -> [StatEvent] {
+        sessionEvents.filter { event in
+            let isOppositionEvent = event.playerId == oppositionTeamStatPlayerID
+            return isOppositionEvent == isOpposition
+        }
     }
 
     private func teamTotal(aliases: [String], isOpposition: Bool) -> Int {
-        guard let type = statTypeMatching(aliases: aliases) else { return 0 }
-        let teamID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
-        return teamStatCount(statType: type, teamPlayerId: teamID)
+        let normalizedAliases = Set(aliases.map(normalizedStatName))
+        let matchingIDs = Set(enabledStatTypes.filter { normalizedAliases.contains(normalizedStatName($0.name)) }.map(\.id))
+        guard !matchingIDs.isEmpty else { return 0 }
+        return eventsForComparison(isOpposition: isOpposition)
+            .filter { matchingIDs.contains($0.statTypeId) }
+            .count
     }
 
     private var quarterPicker: some View {
