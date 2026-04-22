@@ -6,10 +6,10 @@ struct StatsVoiceParserTests {
 
     private var statTypes: [VoiceStatTypeDescriptor] {
         [
-            VoiceStatTypeDescriptor(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, canonicalName: "Kick", aliases: ["kick", "kicks"]),
+            VoiceStatTypeDescriptor(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, canonicalName: "Kick", aliases: ["kick", "kicks", "cake"]),
             VoiceStatTypeDescriptor(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, canonicalName: "Handball", aliases: ["handball", "hand ball", "handpass", "hand pass"]),
             VoiceStatTypeDescriptor(id: UUID(uuidString: "00000000-0000-0000-0000-000000000005")!, canonicalName: "Mark", aliases: ["mark", "marks"]),
-            VoiceStatTypeDescriptor(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, canonicalName: "Goal", aliases: ["goal", "goals"]),
+            VoiceStatTypeDescriptor(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, canonicalName: "Goal", aliases: ["goal", "goals", "go"]),
             VoiceStatTypeDescriptor(id: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!, canonicalName: "Tackle", aliases: ["tackle", "tackles"]),
             VoiceStatTypeDescriptor(id: UUID(uuidString: "00000000-0000-0000-0000-000000000006")!, canonicalName: "Behind", aliases: ["behind", "point", "rushed behind"])
         ]
@@ -30,11 +30,13 @@ struct StatsVoiceParserTests {
         #expect(r1.parseStatus == .success)
 
         #expect(parser.parse(transcript: "kicks 7", statTypes: statTypes, roster: roster).parseStatus == .success)
+        #expect(parser.parse(transcript: "cake 7", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "handball 12", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "hand ball 7", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "handpass 12", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "mark smith", statTypes: statTypes, roster: roster).parseStatus == .ambiguousPlayer)
         #expect(parser.parse(transcript: "goal 4", statTypes: statTypes, roster: roster).parseStatus == .success)
+        #expect(parser.parse(transcript: "go 4", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "point 7", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "kick to 7", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "kick for 7", statTypes: statTypes, roster: roster).parseStatus == .success)
