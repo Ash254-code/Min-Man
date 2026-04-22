@@ -453,6 +453,7 @@ struct GamesView: View {
 
                     NewGameQuickStartSection(
                         grades: orderedGrades,
+                        availableWidth: geometry.size.width,
                         minHeight: geometry.size.height * 0.33,
                         statusForGrade: gradeStatus(for:),
                         onStartNewGame: startNewGame(for:)
@@ -591,15 +592,44 @@ private struct NewGameQuickStartSection: View {
     typealias GradeStatus = GamesView.QuickStartGradeStatus
 
     let grades: [Grade]
+    let availableWidth: CGFloat
     let minHeight: CGFloat
     let statusForGrade: (UUID) -> GradeStatus
     let onStartNewGame: (UUID) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
+    private var isNarrowRegularWidth: Bool {
+        horizontalSizeClass == .regular && availableWidth < 820
+    }
+
     private var columns: [GridItem] {
         let count = horizontalSizeClass == .compact ? 2 : 3
-        return Array(repeating: GridItem(.flexible(), spacing: 14), count: count)
+        let spacing: CGFloat = isNarrowRegularWidth ? 10 : 14
+        return Array(repeating: GridItem(.flexible(minimum: 0), spacing: spacing), count: count)
+    }
+
+    private var gridSpacing: CGFloat {
+        isNarrowRegularWidth ? 10 : 14
+    }
+
+    private var gradeFontSize: CGFloat {
+        if horizontalSizeClass == .compact { return 20 }
+        return isNarrowRegularWidth ? 30 : 34
+    }
+
+    private var cardHorizontalPadding: CGFloat {
+        if horizontalSizeClass == .compact { return 12 }
+        return isNarrowRegularWidth ? 10 : 16
+    }
+
+    private var cardMinHeight: CGFloat {
+        if horizontalSizeClass == .compact { return 84 }
+        return isNarrowRegularWidth ? 170 : 184
+    }
+
+    private var newGameFontSize: CGFloat {
+        isNarrowRegularWidth ? 20 : 22
     }
 
     var body: some View {
@@ -616,30 +646,30 @@ private struct NewGameQuickStartSection: View {
             if grades.isEmpty {
                 ContentUnavailableView("No grades configured", systemImage: "list.bullet.clipboard")
             } else {
-                LazyVGrid(columns: columns, spacing: 14) {
+                LazyVGrid(columns: columns, spacing: gridSpacing) {
                     ForEach(grades) { grade in
                         Button {
                             onStartNewGame(grade.id)
                         } label: {
                             VStack(spacing: 10) {
                                 Text(grade.name)
-                                    .font(.system(size: horizontalSizeClass == .compact ? 20 : 34, weight: .bold))
+                                    .font(.system(size: gradeFontSize, weight: .bold))
                                     .multilineTextAlignment(.center)
                                     .lineLimit(horizontalSizeClass == .compact ? 1 : nil)
                                     .minimumScaleFactor(horizontalSizeClass == .compact ? 0.8 : 0.7)
                                 if horizontalSizeClass != .compact {
                                     Text("🏉 New Game")
-                                        .font(.system(size: 22, weight: .semibold))
+                                        .font(.system(size: newGameFontSize, weight: .semibold))
                                 }
                                 if statusForGrade(grade.id) == .liveInProgress {
                                     Text("Game in progress - Tap to Continue")
                                         .font(.system(size: horizontalSizeClass == .compact ? 11 : 14, weight: .semibold))
                                         .foregroundStyle(.orange)
-                                        .multilineTextAlignment(.center)
+                                    .multilineTextAlignment(.center)
                                 }
                             }
-                            .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .compact ? 84 : 184)
-                            .padding(.horizontal, horizontalSizeClass == .compact ? 12 : 16)
+                            .frame(maxWidth: .infinity, minHeight: cardMinHeight)
+                            .padding(.horizontal, cardHorizontalPadding)
                             .background(
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                                     .fill(.regularMaterial)
