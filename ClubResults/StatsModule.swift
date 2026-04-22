@@ -2061,12 +2061,11 @@ struct LiveStatsView: View {
                     if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
                         let panelFrame = panelProxy.frame(in: .global)
                         let cardFrame = activePlayerQuickCardFrameGlobal
-                        let positionOffset = quickStatFanPositionOffset(globalMidX: cardFrame.midX)
                         playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
                             .frame(width: cardFrame.width, height: cardFrame.height)
                             .position(
-                                x: cardFrame.midX - panelFrame.minX + positionOffset.width,
-                                y: cardFrame.midY - panelFrame.minY + positionOffset.height
+                                x: cardFrame.midX - panelFrame.minX,
+                                y: cardFrame.midY - panelFrame.minY
                             )
                             .transition(.opacity.combined(with: .scale(scale: 0.94)))
                             .zIndex(6000)
@@ -2168,12 +2167,11 @@ struct LiveStatsView: View {
                     if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
                         let panelFrame = panelProxy.frame(in: .global)
                         let cardFrame = activePlayerQuickCardFrameGlobal
-                        let positionOffset = quickStatFanPositionOffset(globalMidX: cardFrame.midX)
                         playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
                             .frame(width: cardFrame.width, height: cardFrame.height)
                             .position(
-                                x: cardFrame.midX - panelFrame.minX + positionOffset.width,
-                                y: cardFrame.midY - panelFrame.minY + positionOffset.height
+                                x: cardFrame.midX - panelFrame.minX,
+                                y: cardFrame.midY - panelFrame.minY
                             )
                             .transition(.opacity.combined(with: .scale(scale: 0.94)))
                             .zIndex(6000)
@@ -2860,7 +2858,7 @@ struct LiveStatsView: View {
                 let labelWidth = quickStatLabelWidth(radius: labelRadius, startAngle: segment.start, endAngle: segment.end, minimum: 88, maximum: 126)
 
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
-                    .fill(isHovered ? Color.blue : (option.statType == nil ? Color(white: 0.28) : .black))
+                    .fill(isHovered ? Color.blue : (option.statType == nil ? Color.gray.opacity(0.32) : Color.gray.opacity(0.56)))
                     .overlay {
                         QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                             .stroke(Color.white.opacity(isHovered ? 0.8 : 0.45), lineWidth: isHovered ? 2.5 : 1.2)
@@ -2915,7 +2913,7 @@ struct LiveStatsView: View {
                 let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
                 let labelWidth = quickStatLabelWidth(radius: labelRadius, startAngle: segment.start, endAngle: segment.end, minimum: 88, maximum: 112)
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
-                    .fill(isActive ? Color.blue : Color.black)
+                    .fill(isActive ? Color.blue : Color.gray.opacity(0.56))
                     .overlay {
                         QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                             .stroke(Color.white.opacity(isActive ? 0.8 : 0.45), lineWidth: isActive ? 2.3 : 1.1)
@@ -2958,34 +2956,18 @@ struct LiveStatsView: View {
     }
 
     private func quickStatPieLayout(cardSize: CGSize, globalMidX: CGFloat) -> (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) {
-        let screenWidth = interfaceScreenWidth
         let innerRadius: CGFloat = 82
         let outerRadius: CGFloat = 182
 
+        // Anchor the pie to the pressed player button center.
+        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height / 2)
         if globalMidX < 210 {
-            // Left-side player columns: show the fan from 12 o'clock to 6 o'clock on the inside.
-            let center = CGPoint(x: -56, y: cardSize.height * 0.24)
-            return (center, innerRadius, outerRadius, -90, 90)
+            return (center, innerRadius, outerRadius, -95, 95)
         }
-        if globalMidX > screenWidth - 210 {
-            // Right-side player columns: mirror the fan from 12 o'clock to 6 o'clock on the inside.
-            let center = CGPoint(x: cardSize.width + 56, y: cardSize.height * 0.24)
-            return (center, innerRadius, outerRadius, 90, 270)
+        if globalMidX > interfaceScreenWidth - 210 {
+            return (center, innerRadius, outerRadius, 85, 275)
         }
-        // A true top semicircle centered around the player card.
-        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height * 0.28)
         return (center, innerRadius, outerRadius, -180, 0)
-    }
-
-    private func quickStatFanPositionOffset(globalMidX: CGFloat) -> CGSize {
-        let screenWidth = interfaceScreenWidth
-        if globalMidX < 210 {
-            return CGSize(width: -28, height: -26)
-        }
-        if globalMidX > screenWidth - 210 {
-            return CGSize(width: 28, height: -26)
-        }
-        return CGSize(width: 0, height: -20)
     }
 
     private func quickStatLabelWidth(radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
@@ -3035,7 +3017,15 @@ struct LiveStatsView: View {
             .lineLimit(2)
             .minimumScaleFactor(0.68)
             .frame(width: width)
+            .rotationEffect(labelRotation(for: angle))
             .position(x: point.x, y: point.y)
+    }
+
+    private func labelRotation(for angle: CGFloat) -> Angle {
+        let tangent = angle + 90
+        let normalized = normalizedAngle(tangent)
+        let upright = (normalized > 90 && normalized < 270) ? tangent + 180 : tangent
+        return .degrees(upright)
     }
 
     private func sliceLockedLabel(
