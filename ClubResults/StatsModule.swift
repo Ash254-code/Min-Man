@@ -2915,16 +2915,13 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isHovered ? 0.8 : 0.45), lineWidth: isHovered ? 2.5 : 1.2)
                     }
                     .overlay {
-                        sliceLockedLabel(
+                        sliceLabel(
                             option.title,
                             center: layout.center,
                             radius: labelRadius,
                             angle: midAngle,
                             width: labelWidth,
-                            font: .headline.weight(.semibold),
-                            segment: segment,
-                            innerRadius: layout.innerRadius,
-                            outerRadius: layout.outerRadius
+                            font: .headline.weight(.semibold)
                         )
                     }
             }
@@ -2973,16 +2970,13 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isActive ? 0.8 : 0.45), lineWidth: isActive ? 2.3 : 1.1)
                     }
                     .overlay {
-                        sliceLockedLabel(
+                        sliceLabel(
                             title,
                             center: layout.center,
                             radius: labelRadius,
                             angle: midAngle,
                             width: labelWidth,
-                            font: .subheadline.weight(.bold),
-                            segment: segment,
-                            innerRadius: layout.innerRadius,
-                            outerRadius: layout.outerRadius
+                            font: .subheadline.weight(.bold)
                         )
                     }
             }
@@ -3019,16 +3013,16 @@ struct LiveStatsView: View {
 
         if globalMidX < 210 {
             // Left-side player columns: show the fan from 12 o'clock to 6 o'clock on the inside.
-            let center = CGPoint(x: -24, y: cardSize.height * 0.42)
+            let center = CGPoint(x: -56, y: cardSize.height * 0.24)
             return (center, innerRadius, outerRadius, -90, 90)
         }
         if globalMidX > screenWidth - 210 {
             // Right-side player columns: mirror the fan from 12 o'clock to 6 o'clock on the inside.
-            let center = CGPoint(x: cardSize.width + 24, y: cardSize.height * 0.42)
+            let center = CGPoint(x: cardSize.width + 56, y: cardSize.height * 0.24)
             return (center, innerRadius, outerRadius, 90, 270)
         }
         // A true top semicircle centered around the player card.
-        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height * 0.44)
+        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height * 0.28)
         return (center, innerRadius, outerRadius, -180, 0)
     }
 
