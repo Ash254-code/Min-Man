@@ -2915,7 +2915,17 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isHovered ? 0.8 : 0.45), lineWidth: isHovered ? 2.5 : 1.2)
                     }
                     .overlay {
-                        sliceLabel(option.title, center: layout.center, radius: labelRadius, angle: midAngle, width: labelWidth, font: .headline.weight(.semibold))
+                        sliceLockedLabel(
+                            option.title,
+                            center: layout.center,
+                            radius: labelRadius,
+                            angle: midAngle,
+                            width: labelWidth,
+                            font: .headline.weight(.semibold),
+                            segment: segment,
+                            innerRadius: layout.innerRadius,
+                            outerRadius: layout.outerRadius
+                        )
                     }
             }
 
@@ -2963,7 +2973,17 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isActive ? 0.8 : 0.45), lineWidth: isActive ? 2.3 : 1.1)
                     }
                     .overlay {
-                        sliceLabel(title, center: layout.center, radius: labelRadius, angle: midAngle, width: labelWidth, font: .subheadline.weight(.bold))
+                        sliceLockedLabel(
+                            title,
+                            center: layout.center,
+                            radius: labelRadius,
+                            angle: midAngle,
+                            width: labelWidth,
+                            font: .subheadline.weight(.bold),
+                            segment: segment,
+                            innerRadius: layout.innerRadius,
+                            outerRadius: layout.outerRadius
+                        )
                     }
             }
         }
@@ -3015,12 +3035,12 @@ struct LiveStatsView: View {
     private func quickStatFanPositionOffset(globalMidX: CGFloat) -> CGSize {
         let screenWidth = interfaceScreenWidth
         if globalMidX < 210 {
-            return CGSize(width: -26, height: -14)
+            return CGSize(width: -28, height: -26)
         }
         if globalMidX > screenWidth - 210 {
-            return CGSize(width: 26, height: -14)
+            return CGSize(width: 28, height: -26)
         }
-        return CGSize(width: 0, height: -10)
+        return CGSize(width: 0, height: -20)
     }
 
     private func quickStatLabelWidth(radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
@@ -3071,6 +3091,28 @@ struct LiveStatsView: View {
             .minimumScaleFactor(0.68)
             .frame(width: width)
             .position(x: point.x, y: point.y)
+    }
+
+    private func sliceLockedLabel(
+        _ text: String,
+        center: CGPoint,
+        radius: CGFloat,
+        angle: CGFloat,
+        width: CGFloat,
+        font: Font,
+        segment: (start: CGFloat, end: CGFloat),
+        innerRadius: CGFloat,
+        outerRadius: CGFloat
+    ) -> some View {
+        sliceLabel(text, center: center, radius: radius, angle: angle, width: width, font: font)
+            .clipShape(
+                QuickStatPieSlice(
+                    startAngle: segment.start,
+                    endAngle: segment.end,
+                    innerRadius: innerRadius,
+                    outerRadius: outerRadius
+                )
+            )
     }
 
     private func selectedQuickStatMidAngle(layout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat)) -> CGFloat {
