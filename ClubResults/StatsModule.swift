@@ -1021,12 +1021,19 @@ private struct ReportPreviewDocument: Identifiable {
 }
 
 struct LiveStatsView: View {
+    private enum StatsLayoutOption: String {
+        case standard = "Standard"
+        case edge = "Edge"
+        case centre = "Centre"
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
     @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
+    @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
 
     let session: StatsSession
 
@@ -1081,33 +1088,39 @@ struct LiveStatsView: View {
             let leftWidthRatio: CGFloat = oppositionTrackPossessions ? 0.72 : 0.62
             let leftPanelWidth = min(max(availableWidth * leftWidthRatio, 420), availableWidth - 300)
             let rightPanelWidth = max(availableWidth - leftPanelWidth - 12, 290)
-            VStack(spacing: 12) {
-                headerBannerArea
-                    .frame(height: 76)
-                combinedScoreAndActionsPanel
-                    .frame(height: topPanelHeight)
-
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(spacing: 10) {
-                        playerSelectionPanel
-                    }
-                    .frame(width: leftPanelWidth)
-
+            Group {
+                if isEdgeLayoutActive {
+                    edgeLayoutContent(proxy: proxy)
+                } else {
                     VStack(spacing: 12) {
-                        if !oppositionTrackPossessions {
-                            statButtonsPanel
-                                .frame(height: rightStatActionsHeight)
-                        }
-                        recentEventsPanel
-                    }
-                    .frame(width: rightPanelWidth)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        headerBannerArea
+                            .frame(height: 76)
+                        combinedScoreAndActionsPanel
+                            .frame(height: topPanelHeight)
 
-                bottomControlBar
-                    .frame(height: max(proxy.size.height * 0.11, 90))
-                    .padding(.top, 2)
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(spacing: 10) {
+                                playerSelectionPanel
+                            }
+                            .frame(width: leftPanelWidth)
+
+                            VStack(spacing: 12) {
+                                if !oppositionTrackPossessions {
+                                    statButtonsPanel
+                                        .frame(height: rightStatActionsHeight)
+                                }
+                                recentEventsPanel
+                            }
+                            .frame(width: rightPanelWidth)
+                            .frame(maxHeight: .infinity, alignment: .top)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                        bottomControlBar
+                            .frame(height: max(proxy.size.height * 0.11, 90))
+                            .padding(.top, 2)
+                    }
+                }
             }
             .task(id: proxy.size.width) {
                 interfaceScreenWidth = max(proxy.size.width, 1)
@@ -1334,6 +1347,10 @@ struct LiveStatsView: View {
 
     private var formattedQuarterTime: String {
         String(format: "%02d:%02d", remainingQuarterSeconds / 60, remainingQuarterSeconds % 60)
+    }
+
+    private var isEdgeLayoutActive: Bool {
+        statsLayout == StatsLayoutOption.edge.rawValue
     }
 
     private var topPanelHeight: CGFloat {
@@ -1672,6 +1689,146 @@ struct LiveStatsView: View {
         .padding(12)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func edgeLayoutContent(proxy: GeometryProxy) -> some View {
+        let sideWidth = min(max(proxy.size.width * 0.23, 150), 260)
+        let centerWidth = max(proxy.size.width - (sideWidth * 2) - 48, 320)
+        let splitIndex = Int(ceil(Double(gridPlayers.count) / 2.0))
+        let leftPlayers = Array(gridPlayers.prefix(splitIndex))
+        let rightPlayers = Array(gridPlayers.dropFirst(splitIndex))
+
+        return VStack(spacing: 12) {
+            headerBannerArea
+                .frame(height: 76)
+
+            HStack(alignment: .top, spacing: 12) {
+                edgePlayerColumn(players: leftPlayers, isTrailingSide: false)
+                    .frame(width: sideWidth)
+
+                VStack(spacing: 10) {
+                    combinedScoreAndActionsPanel
+                        .frame(height: topPanelHeight)
+
+                    if !oppositionTrackPossessions {
+                        statButtonsPanel
+                            .frame(height: rightStatActionsHeight)
+                    }
+
+                    recentEventsPanel
+                }
+                .frame(width: centerWidth)
+                .frame(maxHeight: .infinity, alignment: .top)
+
+                edgePlayerColumn(players: rightPlayers, isTrailingSide: true)
+                    .frame(width: sideWidth)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            bottomControlBar
+                .frame(height: max(proxy.size.height * 0.11, 90))
+                .padding(.top, 2)
+        }
+    }
+
+    private func edgePlayerColumn(players: [Player], isTrailingSide: Bool) -> some View {
+        GeometryReader { panelProxy in
+            VStack(spacing: 10) {
+                HStack {
+                    if !isTrailingSide { Spacer() }
+                    Button {
+                        showPlayerVisibilityEditor = true
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                    }
+                    .buttonStyle(.plain)
+                    if isTrailingSide { Spacer() }
+                }
+
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(players) { player in
+                            Button {
+                                if activePlayerQuickStatsPlayerID == player.id {
+                                    activePlayerQuickStatsPlayerID = nil
+                                }
+                                selectPlayer(player.id)
+                            } label: {
+                                playerCardContent(player: player)
+                                    .frame(maxWidth: .infinity, minHeight: 96)
+                                    .background(
+                                        selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
+                                        in: RoundedRectangle(cornerRadius: 10)
+                                    )
+                            }
+                            .background {
+                                GeometryReader { cardProxy in
+                                    if activePlayerQuickStatsPlayerID == player.id {
+                                        Color.clear
+                                            .onAppear {
+                                                activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
+                                            }
+                                            .task(id: cardProxy.frame(in: .global)) {
+                                                activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
+                                            }
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .highPriorityGesture(
+                                LongPressGesture(minimumDuration: 0.25)
+                                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                                    .onChanged { value in
+                                        switch value {
+                                        case .first(true):
+                                            selectedPlayerId = player.id
+                                            activePlayerQuickStatsPlayerID = player.id
+                                            activePlayerQuickCardFrameGlobal = .zero
+                                            clearPendingPlayerQuickStat()
+                                        case .second(true, let drag?):
+                                            selectedPlayerId = player.id
+                                            activePlayerQuickStatsPlayerID = player.id
+                                            let fallbackWidth = max(panelProxy.size.width - 8, 120)
+                                            let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
+                                                ? CGSize(width: fallbackWidth, height: 96)
+                                                : activePlayerQuickCardFrameGlobal.size
+                                            updateQuickStatHover(location: drag.location, cardSize: cardSize)
+                                        default:
+                                            break
+                                        }
+                                    }
+                                    .onEnded { _ in
+                                        commitPendingPlayerQuickStatIfValid(playerID: player.id)
+                                        clearPendingPlayerQuickStat()
+                                        activePlayerQuickStatsPlayerID = nil
+                                        activePlayerQuickCardFrameGlobal = .zero
+                                    }
+                            )
+                        }
+                    }
+                }
+                .overlay {
+                    if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
+                        let panelFrame = panelProxy.frame(in: .global)
+                        let cardFrame = activePlayerQuickCardFrameGlobal
+                        playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
+                            .frame(width: cardFrame.width, height: cardFrame.height)
+                            .position(
+                                x: cardFrame.midX - panelFrame.minX,
+                                y: cardFrame.midY - panelFrame.minY
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                            .zIndex(6000)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .zIndex(6000)
+            }
+            .padding(12)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
     }
 
     private var statButtonsPanel: some View {
