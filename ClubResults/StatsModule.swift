@@ -2128,6 +2128,8 @@ struct LiveStatsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    private var sideSpeakButtonSize: CGFloat { 138 }
+
     private func edgePlayerColumn(players: [Player], isTrailingSide: Bool) -> some View {
         GeometryReader { panelProxy in
             VStack(spacing: 10) {
@@ -2178,9 +2180,6 @@ struct LiveStatsView: View {
                 .zIndex(6000)
 
                 Spacer(minLength: 8)
-
-                edgeSpeakButton(isTrailingSide: isTrailingSide)
-                    .padding(.bottom, 2)
             }
             .padding(12)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -2252,6 +2251,7 @@ struct LiveStatsView: View {
                 )
             }
         }
+        .padding(.bottom, sideSpeakButtonSize + 18)
     }
 
     private var statButtonsPanel: some View {
@@ -2617,11 +2617,11 @@ struct LiveStatsView: View {
             // press-and-hold driven
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill((isOpposition ? oppositionStyle.background : ourStyle.background).opacity(speechService.isRecording ? 0.72 : 0.94))
-                    .frame(width: 110, height: 92)
+                    .frame(width: sideSpeakButtonSize, height: sideSpeakButtonSize)
                 Text("Speak")
-                    .font(.title3.bold())
+                    .font(.title2.bold())
                     .foregroundStyle(isOpposition ? oppositionStyle.text : ourStyle.text)
             }
         }
@@ -2632,33 +2632,6 @@ struct LiveStatsView: View {
             } else if speechService.isRecording {
                 speechService.stopListening { transcript in
                     handleVoiceTranscript(transcript)
-                }
-            }
-        }, perform: {})
-        .buttonStyle(.plain)
-    }
-
-    private func edgeSpeakButton(isTrailingSide: Bool) -> some View {
-        let fillColor: Color = isTrailingSide ? .red : Color(uiColor: .systemBlue)
-        return Button {
-            // press-and-hold driven
-        } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(speechService.isRecording ? Color.red : fillColor.opacity(0.95))
-                    .frame(width: 138, height: 138)
-                Text("Speak")
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
-            }
-        }
-        .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
-            if isPressing {
-                triggerStrongHaptic()
-                speechService.startListening(vocabulary: speechVocabulary)
-            } else if speechService.isRecording {
-                speechService.stopListening { transcript in
-                    handleTeamVoiceTranscript(transcript, isOpposition: isTrailingSide)
                 }
             }
         }, perform: {})
@@ -3644,7 +3617,7 @@ struct LiveStatsView: View {
             speakButton(isOpposition: true)
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, max(interfaceScreenHeight * 0.33, 180))
+        .padding(.bottom, 12)
         .allowsHitTesting(true)
     }
 
