@@ -2088,7 +2088,7 @@ struct LiveStatsView: View {
         let splitIndex = Int(ceil(Double(gridPlayers.count) / 2.0))
         let leftPlayers = Array(gridPlayers.prefix(splitIndex))
         let rightPlayers = Array(gridPlayers.dropFirst(splitIndex))
-        let recentAreaHeight = max(300, min(proxy.size.height * 0.34, 380))
+        let recentAreaHeight = max(280, min(proxy.size.height * 0.33, 360))
 
         return VStack(spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
@@ -2105,11 +2105,14 @@ struct LiveStatsView: View {
                     VStack(spacing: 8) {
                         combinedScoreAndActionsPanel
                             .frame(maxHeight: 472, alignment: .top)
+                            .padding(.top, 6)
 
                         if !oppositionTrackPossessions {
                             statButtonsPanel
                                 .frame(height: rightStatActionsHeight)
                         }
+
+                        Spacer(minLength: 6)
 
                         recentEventsPanel
                             .frame(height: recentAreaHeight)
@@ -2147,7 +2150,7 @@ struct LiveStatsView: View {
 
                 Group {
                     ScrollView {
-                        edgePlayerColumnList(players: players, panelProxy: panelProxy)
+                        edgePlayerColumnList(players: players, panelProxy: panelProxy, isTrailingSide: isTrailingSide)
                     }
                 }
                 .simultaneousGesture(
@@ -2187,71 +2190,81 @@ struct LiveStatsView: View {
         }
     }
 
-    private func edgePlayerColumnList(players: [Player], panelProxy: GeometryProxy) -> some View {
+    private func edgePlayerColumnList(players: [Player], panelProxy: GeometryProxy, isTrailingSide: Bool) -> some View {
+        let insertionIndex = isTrailingSide ? max(players.count - 1, 0) : max(players.count - 2, 0)
+
         VStack(spacing: 8) {
-            ForEach(players) { player in
-                Button {
-                    guard !suppressPlayerTapSelection else { return }
-                    if activePlayerQuickStatsPlayerID == player.id {
-                        activePlayerQuickStatsPlayerID = nil
-                    }
-                    selectPlayer(player.id)
-                } label: {
-                    playerCardContent(player: player)
-                        .frame(maxWidth: .infinity, minHeight: 82)
-                        .background(
-                            selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: 10)
-                        )
+            ForEach(Array(players.enumerated()), id: \.element.id) { index, player in
+                if index == insertionIndex {
+                    speakButton(isOpposition: isTrailingSide)
+                        .padding(.vertical, 4)
                 }
-                .background {
-                    GeometryReader { cardProxy in
-                        if activePlayerQuickStatsPlayerID == player.id {
-                            Color.clear
-                                .onAppear {
-                                    activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
-                                }
-                                .task(id: cardProxy.frame(in: .global)) {
-                                    activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
-                                }
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .highPriorityGesture(
-                    LongPressGesture(minimumDuration: 0.25)
-                        .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-                        .onChanged { value in
-                            switch value {
-                            case .first(true):
-                                suppressPlayerTapSelection = false
-                                selectedPlayerId = player.id
-                                activePlayerQuickStatsPlayerID = player.id
-                                activePlayerQuickCardFrameGlobal = .zero
-                                clearPendingPlayerQuickStat()
-                                triggerStrongHaptic()
-                            case .second(true, let drag?):
-                                selectedPlayerId = player.id
-                                activePlayerQuickStatsPlayerID = player.id
-                                let fallbackWidth = max(panelProxy.size.width - 8, 120)
-                                let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
-                                    ? CGSize(width: fallbackWidth, height: 82)
-                                    : activePlayerQuickCardFrameGlobal.size
-                                updateQuickStatHover(location: drag.location, cardSize: cardSize)
-                            default:
-                                break
-                            }
-                        }
-                        .onEnded { _ in
-                            commitPendingPlayerQuickStatIfValid(playerID: player.id)
-                            clearPendingPlayerQuickStat()
-                            activePlayerQuickStatsPlayerID = nil
-                            activePlayerQuickCardFrameGlobal = .zero
-                        }
-                )
+
+                edgePlayerCard(player: player, panelProxy: panelProxy)
             }
         }
-        .padding(.bottom, sideSpeakButtonSize + 18)
+    }
+
+    private func edgePlayerCard(player: Player, panelProxy: GeometryProxy) -> some View {
+        Button {
+            guard !suppressPlayerTapSelection else { return }
+            if activePlayerQuickStatsPlayerID == player.id {
+                activePlayerQuickStatsPlayerID = nil
+            }
+            selectPlayer(player.id)
+        } label: {
+            playerCardContent(player: player)
+                .frame(maxWidth: .infinity, minHeight: 82)
+                .background(
+                    selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
+                    in: RoundedRectangle(cornerRadius: 10)
+                )
+        }
+        .background {
+            GeometryReader { cardProxy in
+                if activePlayerQuickStatsPlayerID == player.id {
+                    Color.clear
+                        .onAppear {
+                            activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
+                        }
+                        .task(id: cardProxy.frame(in: .global)) {
+                            activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
+                        }
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .highPriorityGesture(
+            LongPressGesture(minimumDuration: 0.25)
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                .onChanged { value in
+                    switch value {
+                    case .first(true):
+                        suppressPlayerTapSelection = false
+                        selectedPlayerId = player.id
+                        activePlayerQuickStatsPlayerID = player.id
+                        activePlayerQuickCardFrameGlobal = .zero
+                        clearPendingPlayerQuickStat()
+                        triggerStrongHaptic()
+                    case .second(true, let drag?):
+                        selectedPlayerId = player.id
+                        activePlayerQuickStatsPlayerID = player.id
+                        let fallbackWidth = max(panelProxy.size.width - 8, 120)
+                        let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
+                            ? CGSize(width: fallbackWidth, height: 82)
+                            : activePlayerQuickCardFrameGlobal.size
+                        updateQuickStatHover(location: drag.location, cardSize: cardSize)
+                    default:
+                        break
+                    }
+                }
+                .onEnded { _ in
+                    commitPendingPlayerQuickStatIfValid(playerID: player.id)
+                    clearPendingPlayerQuickStat()
+                    activePlayerQuickStatsPlayerID = nil
+                    activePlayerQuickCardFrameGlobal = .zero
+                }
+        )
     }
 
     private var statButtonsPanel: some View {
@@ -3611,14 +3624,20 @@ struct LiveStatsView: View {
     }
 
     private var sideSpeakButtonsOverlay: some View {
-        HStack {
-            speakButton(isOpposition: false)
-            Spacer()
-            speakButton(isOpposition: true)
+        Group {
+            if isEdgeLayoutActive {
+                EmptyView()
+            } else {
+                HStack {
+                    speakButton(isOpposition: false)
+                    Spacer()
+                    speakButton(isOpposition: true)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+                .allowsHitTesting(true)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-        .allowsHitTesting(true)
     }
 
     private var quarterReminderOverlay: some View {
