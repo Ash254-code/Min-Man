@@ -1980,11 +1980,12 @@ struct LiveStatsView: View {
                     if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
                         let panelFrame = panelProxy.frame(in: .global)
                         let cardFrame = activePlayerQuickCardFrameGlobal
+                        let positionOffset = quickStatFanPositionOffset(globalMidX: cardFrame.midX)
                         playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
                             .frame(width: cardFrame.width, height: cardFrame.height)
                             .position(
-                                x: cardFrame.midX - panelFrame.minX,
-                                y: cardFrame.midY - panelFrame.minY
+                                x: cardFrame.midX - panelFrame.minX + positionOffset.width,
+                                y: cardFrame.midY - panelFrame.minY + positionOffset.height
                             )
                             .transition(.opacity.combined(with: .scale(scale: 0.94)))
                             .zIndex(6000)
@@ -2088,11 +2089,12 @@ struct LiveStatsView: View {
                     if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
                         let panelFrame = panelProxy.frame(in: .global)
                         let cardFrame = activePlayerQuickCardFrameGlobal
+                        let positionOffset = quickStatFanPositionOffset(globalMidX: cardFrame.midX)
                         playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
                             .frame(width: cardFrame.width, height: cardFrame.height)
                             .position(
-                                x: cardFrame.midX - panelFrame.minX,
-                                y: cardFrame.midY - panelFrame.minY
+                                x: cardFrame.midX - panelFrame.minX + positionOffset.width,
+                                y: cardFrame.midY - panelFrame.minY + positionOffset.height
                             )
                             .transition(.opacity.combined(with: .scale(scale: 0.94)))
                             .zIndex(6000)
@@ -2904,7 +2906,7 @@ struct LiveStatsView: View {
                 let segment = quickStatSegmentAngles(index: index, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
                 let midAngle = (segment.start + segment.end) / 2
                 let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
-                let labelWidth = quickStatLabelWidth(radius: labelRadius, startAngle: segment.start, endAngle: segment.end, minimum: 70, maximum: 102)
+                let labelWidth = quickStatLabelWidth(radius: labelRadius, startAngle: segment.start, endAngle: segment.end, minimum: 88, maximum: 126)
 
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                     .fill(isHovered ? Color.blue : (option.statType == nil ? Color(white: 0.28) : .black))
@@ -2953,7 +2955,7 @@ struct LiveStatsView: View {
                 let title = idx == 0 ? leftTitle : rightTitle
                 let midAngle = (segment.start + segment.end) / 2
                 let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
-                let labelWidth = quickStatLabelWidth(radius: labelRadius, startAngle: segment.start, endAngle: segment.end, minimum: 74, maximum: 98)
+                let labelWidth = quickStatLabelWidth(radius: labelRadius, startAngle: segment.start, endAngle: segment.end, minimum: 88, maximum: 112)
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                     .fill(isActive ? Color.blue : Color.black)
                     .overlay {
@@ -2997,17 +2999,28 @@ struct LiveStatsView: View {
 
         if globalMidX < 210 {
             // Left-side player columns: show the fan from 12 o'clock to 6 o'clock on the inside.
-            let center = CGPoint(x: 0, y: cardSize.height / 2)
+            let center = CGPoint(x: -24, y: cardSize.height * 0.42)
             return (center, innerRadius, outerRadius, -90, 90)
         }
         if globalMidX > screenWidth - 210 {
             // Right-side player columns: mirror the fan from 12 o'clock to 6 o'clock on the inside.
-            let center = CGPoint(x: cardSize.width, y: cardSize.height / 2)
+            let center = CGPoint(x: cardSize.width + 24, y: cardSize.height * 0.42)
             return (center, innerRadius, outerRadius, 90, 270)
         }
         // A true top semicircle centered around the player card.
-        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height / 2)
+        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height * 0.44)
         return (center, innerRadius, outerRadius, -180, 0)
+    }
+
+    private func quickStatFanPositionOffset(globalMidX: CGFloat) -> CGSize {
+        let screenWidth = interfaceScreenWidth
+        if globalMidX < 210 {
+            return CGSize(width: -26, height: -14)
+        }
+        if globalMidX > screenWidth - 210 {
+            return CGSize(width: 26, height: -14)
+        }
+        return CGSize(width: 0, height: -10)
     }
 
     private func quickStatLabelWidth(radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
@@ -3053,8 +3066,9 @@ struct LiveStatsView: View {
             .font(font)
             .foregroundStyle(.white)
             .multilineTextAlignment(.center)
+            .allowsTightening(true)
             .lineLimit(2)
-            .minimumScaleFactor(0.75)
+            .minimumScaleFactor(0.68)
             .frame(width: width)
             .position(x: point.x, y: point.y)
     }
