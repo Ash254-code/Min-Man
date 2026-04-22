@@ -24,8 +24,8 @@ extension StatType {
         if canonical.isEmpty { return [] }
         let lowercase = canonical.lowercased()
         let builtIn: [String: [String]] = [
-            "kick": ["kick", "kicks", "cake"],
-            "handball": ["handball", "hand ball", "handpass", "hand pass", "hamble"],
+            "kick": ["kick", "kicks", "cake", "click"],
+            "handball": ["handball", "hand ball", "handpass", "hand pass", "hamble", "ambo", "ammo", "cambell"],
             "mark": ["mark", "marks"],
             "tackle": ["tackle", "tackles"],
             "goal": ["goal", "goals", "go", "no", "cow", "call"],
@@ -2666,7 +2666,11 @@ struct LiveStatsView: View {
                 speechService.startListening(vocabulary: speechVocabulary)
             } else if speechService.isRecording {
                 speechService.stopListening { transcript in
-                    handleVoiceTranscript(transcript)
+                    if isOpposition {
+                        handleTeamVoiceTranscript(transcript, isOpposition: true)
+                    } else {
+                        handleVoiceTranscript(transcript)
+                    }
                 }
             }
         }, perform: {})
