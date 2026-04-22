@@ -2116,7 +2116,7 @@ struct LiveStatsView: View {
                         recentEventsPanel
                             .frame(height: recentAreaHeight)
                     }
-                    .padding(.top, 12)
+                    .padding(.top, 24)
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .frame(width: centerWidth)
@@ -2575,10 +2575,6 @@ struct LiveStatsView: View {
     private var recentEventsPanel: some View {
         let recent = Array(sessionEvents.prefix(5))
         return VStack(alignment: .leading, spacing: 8) {
-            Text("Recent Stats")
-                .font(.title.bold())
-                .frame(maxWidth: .infinity, alignment: .center)
-
             LazyVStack(spacing: 6) {
                 ForEach(recent) { event in
                     Button {
@@ -2614,8 +2610,18 @@ struct LiveStatsView: View {
                         .background(.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)
+                    .transition(
+                        .asymmetric(
+                            insertion: .modifier(
+                                active: RollingInModifier(rotation: -18, xOffset: 56, yOffset: -10, opacity: 0),
+                                identity: RollingInModifier(rotation: 0, xOffset: 0, yOffset: 0, opacity: 1)
+                            ),
+                            removal: .opacity
+                        )
+                    )
                 }
             }
+            .animation(.spring(response: 0.45, dampingFraction: 0.86), value: recent.map(\.id))
 
             if sessionEvents.isEmpty {
                 Text("No events yet")
@@ -2625,6 +2631,20 @@ struct LiveStatsView: View {
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity, alignment: .top)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private struct RollingInModifier: ViewModifier {
+        let rotation: Double
+        let xOffset: CGFloat
+        let yOffset: CGFloat
+        let opacity: Double
+
+        func body(content: Content) -> some View {
+            content
+                .rotationEffect(.degrees(rotation))
+                .offset(x: xOffset, y: yOffset)
+                .opacity(opacity)
+        }
     }
 
     private func speakButton(isOpposition: Bool) -> some View {
