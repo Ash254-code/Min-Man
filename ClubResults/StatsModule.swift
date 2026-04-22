@@ -2103,7 +2103,7 @@ struct LiveStatsView: View {
 
                 Group {
                     ScrollView {
-                        edgePlayerColumnList(players: players, panelProxy: panelProxy, isTrailingSide: isTrailingSide)
+                        edgePlayerColumnList(players: players, panelProxy: panelProxy)
                     }
                 }
                 .simultaneousGesture(
@@ -2134,7 +2134,8 @@ struct LiveStatsView: View {
                 }
                 .zIndex(6000)
 
-                Spacer(minLength: 8)
+                speakButton(isOpposition: isTrailingSide)
+                    .padding(.top, 4)
             }
             .padding(12)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -2142,36 +2143,23 @@ struct LiveStatsView: View {
         }
     }
 
-    private func edgePlayerColumnList(players: [Player], panelProxy: GeometryProxy, isTrailingSide: Bool) -> some View {
-        let insertionIndex = isTrailingSide ? max(players.count - 1, 0) : max(players.count - 2, 0)
-
+    private func edgePlayerColumnList(players: [Player], panelProxy: GeometryProxy) -> some View {
         return VStack(spacing: 8) {
-            ForEach(Array(players.enumerated()), id: \.element.id) { index, player in
-                if index == insertionIndex {
-                    speakButton(isOpposition: isTrailingSide)
-                        .padding(.vertical, 4)
-                }
-
+            Color.clear
+                .frame(height: 176)
+            ForEach(Array(players.enumerated()), id: \.element.id) { _, player in
                 edgePlayerCard(player: player, panelProxy: panelProxy)
             }
         }
     }
 
     private func edgePlayerCard(player: Player, panelProxy: GeometryProxy) -> some View {
-        Button {
-            guard !suppressPlayerTapSelection else { return }
-            if activePlayerQuickStatsPlayerID == player.id {
-                activePlayerQuickStatsPlayerID = nil
-            }
-            selectPlayer(player.id)
-        } label: {
-            playerCardContent(player: player)
-                .frame(maxWidth: .infinity, minHeight: 82)
-                .background(
-                    selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
-                    in: RoundedRectangle(cornerRadius: 10)
-                )
-        }
+        playerCardContent(player: player)
+            .frame(maxWidth: .infinity, minHeight: 82)
+            .background(
+                selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: 10)
+            )
         .background {
             GeometryReader { cardProxy in
                 if activePlayerQuickStatsPlayerID == player.id {
@@ -2185,8 +2173,7 @@ struct LiveStatsView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
-        .highPriorityGesture(
+        .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.25)
                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                 .onChanged { value in
