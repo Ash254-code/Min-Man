@@ -2255,7 +2255,6 @@ struct LiveStatsView: View {
 
     private func playerQuickStatsFan(cardSize: CGSize, globalMidX: CGFloat) -> some View {
         let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: globalMidX)
-        let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
         let selectedAngle = selectedQuickStatMidAngle(layout: layout)
         let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 1)
         let efficiencyLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 2)
@@ -2306,7 +2305,6 @@ struct LiveStatsView: View {
         rightActive: Bool,
         layout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat)
     ) -> some View {
-        let layout = votePopupPieLayout(center: center, angle: angle)
         return ZStack {
             ForEach(0..<2, id: \.self) { idx in
                 let segment = quickStatSegmentAngles(index: idx, total: 2, spanStart: layout.startAngle, spanEnd: layout.endAngle)
@@ -2471,7 +2469,6 @@ struct LiveStatsView: View {
 
         guard let statID = hoveredPlayerQuickStatName, needsQuickStatVotes(for: statID) else { return }
 
-        let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
         let selectedAngle = selectedQuickStatMidAngle(layout: layout)
         let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 1)
         if trackContestedPossessions {
