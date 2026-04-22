@@ -1461,6 +1461,19 @@ struct LiveStatsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
+            if isEdgeLayoutActive, !isOpposition {
+                HStack(spacing: 8) {
+                    Text("Team Efficiency")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Text(ourTeamEfficiencyText)
+                        .font(.title3.weight(.black))
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 4)
+            }
+
             if oppositionTrackPossessions {
                 teamStatsExpandedGrid(style: style, isOpposition: isOpposition)
             } else {
@@ -1477,7 +1490,7 @@ struct LiveStatsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay(alignment: .topTrailing) {
-            if !isOpposition {
+            if !isEdgeLayoutActive, !isOpposition {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("Team Eff.")
                         .font(.caption2.weight(.semibold))
@@ -1709,9 +1722,8 @@ struct LiveStatsView: View {
         let splitIndex = Int(ceil(Double(gridPlayers.count) / 2.0))
         let leftPlayers = Array(gridPlayers.prefix(splitIndex))
         let rightPlayers = Array(gridPlayers.dropFirst(splitIndex))
-        let middleAreaHeight = max(proxy.size.height - 76 - max(proxy.size.height * 0.095, 76) - 24, 320)
-        let scoreAreaHeight = max(middleAreaHeight * 0.66, topPanelHeight)
-        let recentAreaHeight = max(middleAreaHeight * 0.34, 180)
+        let bottomBarHeight = max(proxy.size.height * 0.14, 132)
+        let recentAreaHeight = max(300, min(proxy.size.height * 0.34, 380))
 
         return HStack(alignment: .top, spacing: 12) {
             edgePlayerColumn(players: leftPlayers, isTrailingSide: false)
@@ -1724,7 +1736,7 @@ struct LiveStatsView: View {
 
                 VStack(spacing: 10) {
                     combinedScoreAndActionsPanel
-                        .frame(height: scoreAreaHeight)
+                        .frame(maxHeight: .infinity)
 
                     if !oppositionTrackPossessions {
                         statButtonsPanel
@@ -1737,7 +1749,7 @@ struct LiveStatsView: View {
                 .frame(maxHeight: .infinity, alignment: .top)
 
                 bottomControlBar
-                    .frame(height: max(proxy.size.height * 0.095, 76))
+                    .frame(height: bottomBarHeight)
                     .padding(.top, 2)
             }
             .frame(width: centerWidth)
@@ -2202,98 +2214,176 @@ struct LiveStatsView: View {
     }
 
     private var bottomControlBar: some View {
-        HStack(alignment: .center, spacing: 12) {
-            HStack(spacing: 10) {
-                Button {
-                    showTotals = true
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 92, height: 92)
-                        Text("Stats")
-                            .font(.title3.bold())
-                            .foregroundStyle(.white)
-                    }
-                }
-                .buttonStyle(.plain)
+        Group {
+            if isEdgeLayoutActive {
+                VStack(spacing: 10) {
+                    quarterPicker
+                        .frame(maxWidth: .infinity)
 
-                Button("Generate Report") {
-                    generateReport()
-                }
-                .buttonStyle(.bordered)
-            }
+                    HStack(alignment: .center, spacing: 12) {
+                        HStack(spacing: 10) {
+                            Button {
+                                showTotals = true
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.blue)
+                                        .frame(width: 76, height: 76)
+                                    Text("Stats")
+                                        .font(.title3.bold())
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .buttonStyle(.plain)
 
-            HStack(spacing: 12) {
-                Text(formattedQuarterTime)
-                    .font(.system(size: 42, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .frame(minWidth: 140, alignment: .trailing)
-
-                HStack(spacing: 8) {
-                    Button {
-                        if isQuarterTimerRunning {
-                            stopQuarterTimer()
-                        } else {
-                            startQuarterTimer()
+                            Button("Generate Report") {
+                                generateReport()
+                            }
+                            .buttonStyle(.bordered)
                         }
-                    } label: {
-                        Image(systemName: isQuarterTimerRunning ? "pause.fill" : "play.fill")
+
+                        HStack(spacing: 12) {
+                            Text(formattedQuarterTime)
+                                .font(.system(size: 42, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .frame(minWidth: 140, alignment: .trailing)
+
+                            HStack(spacing: 8) {
+                                Button {
+                                    if isQuarterTimerRunning {
+                                        stopQuarterTimer()
+                                    } else {
+                                        startQuarterTimer()
+                                    }
+                                } label: {
+                                    Image(systemName: isQuarterTimerRunning ? "pause.fill" : "play.fill")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+
+                                Button {
+                                    configureQuarterTimer(reset: true)
+                                } label: {
+                                    Image(systemName: "arrow.counterclockwise")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        .frame(minWidth: 330, alignment: .leading)
+
+                        Spacer()
+
+                        Button("Undo") {
+                            undoLastEvent()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(sessionEvents.isEmpty)
+
+                        speakButton
+                    }
+                }
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Button {
+                            showTotals = true
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 92, height: 92)
+                                Text("Stats")
+                                    .font(.title3.bold())
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        Button("Generate Report") {
+                            generateReport()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    HStack(spacing: 12) {
+                        Text(formattedQuarterTime)
+                            .font(.system(size: 42, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .frame(minWidth: 140, alignment: .trailing)
+
+                        HStack(spacing: 8) {
+                            Button {
+                                if isQuarterTimerRunning {
+                                    stopQuarterTimer()
+                                } else {
+                                    startQuarterTimer()
+                                }
+                            } label: {
+                                Image(systemName: isQuarterTimerRunning ? "pause.fill" : "play.fill")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button {
+                                configureQuarterTimer(reset: true)
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+
+                        Spacer()
+                            .frame(width: 28)
+
+                        quarterPicker
+                    }
+                    .frame(minWidth: 360, alignment: .leading)
+
+                    Spacer()
+
+                    Button("Undo") {
+                        undoLastEvent()
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .controlSize(.large)
+                    .disabled(sessionEvents.isEmpty)
 
-                    Button {
-                        configureQuarterTimer(reset: true)
-                    } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-
-                Spacer()
-                    .frame(width: 28)
-
-                quarterPicker
-            }
-            .frame(minWidth: 360, alignment: .leading)
-
-            Spacer()
-
-            Button("Undo") {
-                undoLastEvent()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .disabled(sessionEvents.isEmpty)
-
-            Button {
-                // press-and-hold driven
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(speechService.isRecording ? Color.red : Color.red.opacity(0.9))
-                        .frame(width: 92, height: 92)
-                    Text("Speak")
-                        .font(.title3.bold())
-                        .foregroundStyle(.white)
+                    speakButton
                 }
             }
-            .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
-                if isPressing {
-                    speechService.startListening(vocabulary: speechVocabulary)
-                } else if speechService.isRecording {
-                    speechService.stopListening { transcript in
-                        handleVoiceTranscript(transcript)
-                    }
-                }
-            }, perform: {})
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var speakButton: some View {
+        Button {
+            // press-and-hold driven
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(speechService.isRecording ? Color.red : Color.red.opacity(0.9))
+                    .frame(width: 92, height: 92)
+                Text("Speak")
+                    .font(.title3.bold())
+                    .foregroundStyle(.white)
+            }
+        }
+        .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
+            if isPressing {
+                speechService.startListening(vocabulary: speechVocabulary)
+            } else if speechService.isRecording {
+                speechService.stopListening { transcript in
+                    handleVoiceTranscript(transcript)
+                    }
+                }
+            }
+        }, perform: {})
+        .buttonStyle(.plain)
     }
 
     private var gradeName: String {
