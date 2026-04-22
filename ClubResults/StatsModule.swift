@@ -1740,7 +1740,8 @@ struct LiveStatsView: View {
                     .frame(height: max(proxy.size.height * 0.095, 76))
                     .padding(.top, 2)
             }
-            .frame(width: centerWidth, maxHeight: .infinity, alignment: .top)
+            .frame(width: centerWidth)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             edgePlayerColumn(players: rightPlayers, isTrailingSide: true)
                 .frame(width: sideWidth)
