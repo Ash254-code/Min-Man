@@ -2977,19 +2977,21 @@ struct LiveStatsView: View {
 
     private func quickStatPieLayout(cardSize: CGSize, globalMidX: CGFloat) -> (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) {
         let screenWidth = interfaceScreenWidth
-        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height * 0.78)
         let innerRadius: CGFloat = 82
         let outerRadius: CGFloat = 182
 
         if globalMidX < 210 {
-            // Rotate right when near left edge to keep the fan on-screen.
-            return (center, innerRadius, outerRadius, -140, 40)
+            // Left-side player columns: show the fan from 12 o'clock to 6 o'clock on the inside.
+            let center = CGPoint(x: 0, y: cardSize.height / 2)
+            return (center, innerRadius, outerRadius, -90, 90)
         }
         if globalMidX > screenWidth - 210 {
-            // Rotate left when near right edge to keep the fan on-screen.
-            return (center, innerRadius, outerRadius, -220, -40)
+            // Right-side player columns: mirror the fan from 12 o'clock to 6 o'clock on the inside.
+            let center = CGPoint(x: cardSize.width, y: cardSize.height / 2)
+            return (center, innerRadius, outerRadius, 90, 270)
         }
         // A true top semicircle centered around the player card.
+        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height * 0.78)
         return (center, innerRadius, outerRadius, -180, 0)
     }
 
