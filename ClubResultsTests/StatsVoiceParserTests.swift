@@ -90,6 +90,7 @@ struct StatsVoiceParserTests {
         let scoreAliases = StatType(name: "Scores").voiceAliases
         #expect(scoreAliases.contains("goal"))
         #expect(scoreAliases.contains("goals"))
+        #expect(scoreAliases.contains("go"))
         #expect(scoreAliases.contains("behind"))
         #expect(scoreAliases.contains("behinds"))
     }

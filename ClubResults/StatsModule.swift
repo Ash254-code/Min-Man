@@ -30,7 +30,7 @@ extension StatType {
             "tackle": ["tackle", "tackles"],
             "goal": ["goal", "goals", "go", "no", "cow", "call"],
             "behind": ["behind", "behinds", "point", "points", "rushed behind", "time", "holland"],
-            "scores": ["score", "scores", "goal", "goals", "behind", "behinds", "point", "points", "rushed behind"]
+            "scores": ["score", "scores", "goal", "goals", "go", "behind", "behinds", "point", "points", "rushed behind"]
         ]
         let aliases = builtIn[lowercase] ?? [canonical]
         return Array(Set(aliases + [canonical]))
@@ -3729,7 +3729,7 @@ struct LiveStatsView: View {
 
     private func voiceScoreKind(in normalizedTranscript: String) -> String? {
         let words = Set(normalizedTranscript.split(separator: " ").map(String.init))
-        if words.contains("goal") || words.contains("goals") {
+        if words.contains("goal") || words.contains("goals") || words.contains("go") {
             return "goal"
         }
         if words.contains("behind") || words.contains("behinds") || words.contains("point") || words.contains("points") {
