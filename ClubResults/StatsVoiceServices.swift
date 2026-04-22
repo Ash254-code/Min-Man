@@ -244,6 +244,14 @@ struct StatsVoiceParser {
         "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
         "eighty": 80, "ninety": 90
     ]
+    private let tensWords: [String: Int] = [
+        "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+        "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90
+    ]
+    private let onesWords: [String: Int] = [
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9
+    ]
     private let connectorWords: Set<String> = ["to", "for", "by", "on", "at", "with", "from"]
 
     private func parseSpokenNumber(tokens: [String]) -> (number: Int, consumed: Int)? {
@@ -251,11 +259,24 @@ struct StatsVoiceParser {
         if let direct = Int(first) {
             return (direct, 1)
         }
+        if let merged = parseCompoundNumberWord(first) {
+            return (merged, 1)
+        }
         guard let firstValue = wordToNumber[first] else { return nil }
         if firstValue >= 20, firstValue % 10 == 0, tokens.count > 1, let second = wordToNumber[tokens[1]], second < 10 {
             return (firstValue + second, 2)
         }
         return (firstValue, 1)
+    }
+
+    private func parseCompoundNumberWord(_ token: String) -> Int? {
+        for (tensWord, tensValue) in tensWords {
+            guard token.hasPrefix(tensWord) else { continue }
+            let onesWord = String(token.dropFirst(tensWord.count))
+            guard let onesValue = onesWords[onesWord] else { continue }
+            return tensValue + onesValue
+        }
+        return nil
     }
 
     private struct StatMatch {
