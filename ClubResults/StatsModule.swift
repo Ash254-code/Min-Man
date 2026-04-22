@@ -2193,7 +2193,7 @@ struct LiveStatsView: View {
     private func edgePlayerColumnList(players: [Player], panelProxy: GeometryProxy, isTrailingSide: Bool) -> some View {
         let insertionIndex = isTrailingSide ? max(players.count - 1, 0) : max(players.count - 2, 0)
 
-        VStack(spacing: 8) {
+        return VStack(spacing: 8) {
             ForEach(Array(players.enumerated()), id: \.element.id) { index, player in
                 if index == insertionIndex {
                     speakButton(isOpposition: isTrailingSide)
