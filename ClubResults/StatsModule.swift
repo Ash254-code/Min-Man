@@ -208,6 +208,14 @@ struct StatsTypesSettingsView: View {
         case opposition
     }
 
+    private enum StatsLayoutOption: String, CaseIterable, Identifiable {
+        case standard = "Standard"
+        case edge = "Edge"
+        case centre = "Centre"
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StatType.sortOrder) private var statTypes: [StatType]
     @State private var newName = ""
@@ -217,6 +225,7 @@ struct StatsTypesSettingsView: View {
     @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
+    @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
 
     var body: some View {
         GeometryReader { geometry in
@@ -252,6 +261,17 @@ struct StatsTypesSettingsView: View {
                 .padding(.horizontal, 8)
 
             List {
+                if side == .ourClub {
+                    Section("Layout") {
+                        Picker("Layout", selection: $statsLayout) {
+                            ForEach(StatsLayoutOption.allCases) { layout in
+                                Text(layout.rawValue).tag(layout.rawValue)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+
                 Section("Tracking") {
                     if side == .ourClub {
                         Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
