@@ -861,12 +861,24 @@ private struct GameCardRow: View {
 
 
 private enum RoundOutcomeLayout {
-    static let columnWidth: CGFloat = 94
-    static let columnSpacing: CGFloat = 20
+    static let defaultColumnWidth: CGFloat = 94
+    static let defaultColumnSpacing: CGFloat = 20
+    static let compactColumnWidth: CGFloat = 68
+    static let compactColumnSpacing: CGFloat = 10
     static let chevronReserveWidth: CGFloat = 34
 
-    static func contentWidth(for columnCount: Int) -> CGFloat {
+    static func columnWidth(forCompactLayout isCompact: Bool) -> CGFloat {
+        isCompact ? compactColumnWidth : defaultColumnWidth
+    }
+
+    static func columnSpacing(forCompactLayout isCompact: Bool) -> CGFloat {
+        isCompact ? compactColumnSpacing : defaultColumnSpacing
+    }
+
+    static func contentWidth(for columnCount: Int, compact: Bool) -> CGFloat {
         guard columnCount > 0 else { return 0 }
+        let columnWidth = columnWidth(forCompactLayout: compact)
+        let columnSpacing = columnSpacing(forCompactLayout: compact)
         return (CGFloat(columnCount) * columnWidth) + (CGFloat(columnCount - 1) * columnSpacing)
     }
 }
@@ -875,18 +887,26 @@ private struct RoundOutcomeColumnHeaders: View {
     let gradeNames: [String]
 
     var body: some View {
-        HStack(spacing: RoundOutcomeLayout.columnSpacing) {
-            ForEach(gradeNames, id: \.self) { gradeName in
-                Text(gradeName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(width: RoundOutcomeLayout.columnWidth, alignment: .center)
+        GeometryReader { proxy in
+            let useCompactLayout = proxy.size.width < 860
+            let columnWidth = RoundOutcomeLayout.columnWidth(forCompactLayout: useCompactLayout)
+            let columnSpacing = RoundOutcomeLayout.columnSpacing(forCompactLayout: useCompactLayout)
+
+            HStack(spacing: columnSpacing) {
+                ForEach(gradeNames, id: \.self) { gradeName in
+                    Text(gradeName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(width: columnWidth, alignment: .center)
+                }
             }
+            .frame(width: RoundOutcomeLayout.contentWidth(for: gradeNames.count, compact: useCompactLayout), alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, RoundOutcomeLayout.chevronReserveWidth)
         }
-        .frame(width: RoundOutcomeLayout.contentWidth(for: gradeNames.count), alignment: .center)
-        .padding(.trailing, RoundOutcomeLayout.chevronReserveWidth)
+        .frame(height: 24)
     }
 }
 
@@ -898,45 +918,50 @@ private struct RoundTitleLine: View {
     var showsChevron: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    private var roundDateColumnWidth: CGFloat {
-        horizontalSizeClass == .compact ? 210 : 320
-    }
-
     var body: some View {
-        HStack(spacing: 10) {
-            Text("ROUND \(roundNumber) - \(dateLabel)")
-                .font(.system(size: 22, weight: .bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(width: roundDateColumnWidth, alignment: .leading)
+        GeometryReader { proxy in
+            let useCompactLayout = horizontalSizeClass == .compact || proxy.size.width < 860
+            let roundDateColumnWidth: CGFloat = useCompactLayout ? 210 : 320
+            let columnWidth = RoundOutcomeLayout.columnWidth(forCompactLayout: useCompactLayout)
+            let columnSpacing = RoundOutcomeLayout.columnSpacing(forCompactLayout: useCompactLayout)
+            let pillSize: CGFloat = useCompactLayout ? 38 : 44
+
+            HStack(spacing: useCompactLayout ? 8 : 10) {
+                Text("ROUND \(roundNumber) - \(dateLabel)")
+                    .font(.system(size: useCompactLayout ? 19 : 22, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(width: roundDateColumnWidth, alignment: .leading)
+                    .layoutPriority(3)
+
+                Text("V")
+                    .font(.system(size: useCompactLayout ? 19 : 22, weight: .semibold))
+                    .lineLimit(1)
+
+                OpponentBadge(opponent: opponent)
+                    .layoutPriority(1)
+
+                Spacer(minLength: useCompactLayout ? 8 : 16)
+
+                HStack(spacing: columnSpacing) {
+                    ForEach(outcomePills) { item in
+                        CompactRoundOutcomePill(item: item, pillSize: pillSize)
+                            .frame(width: columnWidth)
+                    }
+                }
+                .frame(width: RoundOutcomeLayout.contentWidth(for: outcomePills.count, compact: useCompactLayout), alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .layoutPriority(3)
 
-            Text("V")
-                .font(.system(size: 22, weight: .semibold))
-                .lineLimit(1)
-
-            OpponentBadge(opponent: opponent)
-                .layoutPriority(1)
-
-            Spacer(minLength: 16)
-
-            HStack(spacing: RoundOutcomeLayout.columnSpacing) {
-                ForEach(outcomePills) { item in
-                    CompactRoundOutcomePill(item: item)
-                        .frame(width: RoundOutcomeLayout.columnWidth)
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: RoundOutcomeLayout.chevronReserveWidth, alignment: .trailing)
                 }
             }
-            .frame(width: RoundOutcomeLayout.contentWidth(for: outcomePills.count), alignment: .center)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .layoutPriority(3)
-
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: RoundOutcomeLayout.chevronReserveWidth, alignment: .trailing)
-            }
         }
+        .frame(height: 52)
     }
 }
 
@@ -998,7 +1023,7 @@ private struct RoundDetailHeaderCard: View {
 
 private struct CompactRoundOutcomePill: View {
     let item: GamesView.RoundOutcomePillItem
-    private let pillSize: CGFloat = 44
+    let pillSize: CGFloat
 
     private var foregroundColor: Color {
         guard let outcome = item.outcome else { return .secondary }
@@ -1011,7 +1036,7 @@ private struct CompactRoundOutcomePill: View {
 
     var body: some View {
         Text(item.outcome?.label ?? "-")
-            .font(.system(size: 16, weight: .bold))
+            .font(.system(size: pillSize * 0.36, weight: .bold))
             .frame(width: pillSize, height: pillSize)
             .background(
                 Circle()
