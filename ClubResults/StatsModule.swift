@@ -24,11 +24,11 @@ extension StatType {
         if canonical.isEmpty { return [] }
         let lowercase = canonical.lowercased()
         let builtIn: [String: [String]] = [
-            "kick": ["kick", "kicks"],
+            "kick": ["kick", "kicks", "cake"],
             "handball": ["handball", "hand ball", "handpass", "hand pass"],
             "mark": ["mark", "marks"],
             "tackle": ["tackle", "tackles"],
-            "goal": ["goal", "goals"],
+            "goal": ["goal", "goals", "go"],
             "behind": ["behind", "behinds", "point", "points", "rushed behind"]
         ]
         let aliases = builtIn[lowercase] ?? [canonical]
