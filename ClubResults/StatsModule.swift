@@ -1502,6 +1502,7 @@ struct LiveStatsView: View {
         style: ClubStyle.Style,
         isOpposition: Bool
     ) -> some View {
+        let isOppositionTeam = isOpposition
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 ScorePill(teamName, style: style)
@@ -1514,7 +1515,7 @@ struct LiveStatsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            if isEdgeLayoutActive && !isOpposition {
+            if isEdgeLayoutActive && !isOppositionTeam {
                 HStack(spacing: 8) {
                     Text("Team Efficiency")
                         .font(.subheadline.weight(.semibold))
@@ -1528,13 +1529,13 @@ struct LiveStatsView: View {
             }
 
             if oppositionTrackPossessions {
-                teamStatsExpandedGrid(style: style, isOpposition: isOpposition)
+                teamStatsExpandedGrid(style: style, isOpposition: isOppositionTeam)
             } else {
                 HStack(spacing: 8) {
-                    teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOpposition)
-                    teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOpposition)
-                    teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOpposition, fallbackName: "Clearances")
-                    teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOpposition, fallbackName: "Inside 50s")
+                    teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOppositionTeam)
+                    teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOppositionTeam)
+                    teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOppositionTeam, fallbackName: "Clearances")
+                    teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOppositionTeam, fallbackName: "Inside 50s")
                 }
             }
         }
@@ -1543,7 +1544,7 @@ struct LiveStatsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay(alignment: .topTrailing) {
-            if !isEdgeLayoutActive && !isOpposition {
+            if !isEdgeLayoutActive && !isOppositionTeam {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("Team Eff.")
                         .font(.caption2.weight(.semibold))
