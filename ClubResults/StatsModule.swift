@@ -1065,7 +1065,6 @@ struct LiveStatsView: View {
     @State private var lastHapticQuickStatName: String?
     @State private var lastHapticQuickContestedVote: ContestedPossessionVote?
     @State private var lastHapticQuickEfficiencyVote: EfficiencyVote?
-    @State private var suppressPlayerTapSelection = false
     @State private var quarterCountsUp = false
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
@@ -1966,16 +1965,10 @@ struct LiveStatsView: View {
 
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(visiblePlayers) { player in
-                        Button {
-                            if activePlayerQuickStatsPlayerID == player.id {
-                                activePlayerQuickStatsPlayerID = nil
-                            }
-                            selectPlayer(player.id)
-                        } label: {
-                            playerCardContent(player: player)
-                                .frame(maxWidth: .infinity, minHeight: cellHeight)
-                                .background(selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                        }
+                        playerCardContent(player: player)
+                            .frame(maxWidth: .infinity, minHeight: cellHeight)
+                            .background(selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                            .contentShape(RoundedRectangle(cornerRadius: 10))
                         .background {
                             GeometryReader { cardProxy in
                                 if activePlayerQuickStatsPlayerID == player.id {
@@ -1989,7 +1982,6 @@ struct LiveStatsView: View {
                                 }
                             }
                         }
-                        .buttonStyle(.plain)
                         .highPriorityGesture(
                             LongPressGesture(minimumDuration: 0.25)
                                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
@@ -2137,17 +2129,6 @@ struct LiveStatsView: View {
                         }
                     }
                 }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 10)
-                        .onChanged { _ in
-                            suppressPlayerTapSelection = true
-                        }
-                        .onEnded { _ in
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                                suppressPlayerTapSelection = false
-                            }
-                        }
-                )
                 .overlay {
                     if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
                         let panelFrame = panelProxy.frame(in: .global)
@@ -2210,7 +2191,6 @@ struct LiveStatsView: View {
                 .onChanged { value in
                     switch value {
                     case .first(true):
-                        suppressPlayerTapSelection = false
                         selectedPlayerId = player.id
                         activePlayerQuickStatsPlayerID = player.id
                         activePlayerQuickCardFrameGlobal = .zero
@@ -2758,12 +2738,6 @@ struct LiveStatsView: View {
             return "\(number) \(player.lastName)"
         }
         return player.lastName
-    }
-
-    private func selectPlayer(_ id: UUID) {
-        clearPendingPlayerQuickStat()
-        activePlayerQuickStatsPlayerID = nil
-        selectedPlayerId = id
     }
 
     private struct PlayerQuickStatOption: Identifiable {
