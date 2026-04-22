@@ -29,8 +29,7 @@ extension StatType {
             "mark": ["mark", "marks"],
             "tackle": ["tackle", "tackles"],
             "goal": ["goal", "goals", "go", "no", "cow", "call"],
-            "behind": ["behind", "behinds", "point", "points", "rushed behind", "time", "holland"],
-            "scores": ["score", "scores", "goal", "goals", "go", "behind", "behinds", "point", "points", "rushed behind"]
+            "behind": ["behind", "behinds", "point", "points", "rushed behind", "time", "holland"]
         ]
         let aliases = builtIn[lowercase] ?? [canonical]
         return Array(Set(aliases + [canonical]))
@@ -140,7 +139,7 @@ private struct QuickStatPieSlice: Shape {
 }
 
 private enum StatsDefaults {
-    static let statNames = ["Kick", "Handball", "Mark", "Tackle", "Scores", "Inside 50", "Clearances"]
+    static let statNames = ["Kick", "Handball", "Mark", "Tackle", "Goal", "Behind", "Inside 50"]
 }
 
 struct StatsRootView: View {
@@ -247,9 +246,10 @@ struct StatsTypesSettingsView: View {
             EditButton()
         }
         .task {
-            normalizeGoalAndBehindToScoresIfNeeded()
             seedDefaultStatTypesIfNeeded()
             ensureAlwaysOnStatTypesIfNeeded()
+            removeDeprecatedStatTypesIfNeeded()
+            ensureGoalAndBehindStatTypesIfNeeded()
             enforceOppositionTrackingDependency()
         }
     }
@@ -440,35 +440,6 @@ struct StatsTypesSettingsView: View {
         )
     }
 
-    private func normalizeGoalAndBehindToScoresIfNeeded() {
-        let fetched = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
-        guard !fetched.isEmpty else { return }
-
-        let goalTypes = fetched.filter { $0.name.compare("Goal", options: .caseInsensitive) == .orderedSame }
-        let behindTypes = fetched.filter { $0.name.compare("Behind", options: .caseInsensitive) == .orderedSame }
-        guard !goalTypes.isEmpty || !behindTypes.isEmpty else { return }
-
-        let scoresType = fetched.first { $0.name.compare("Scores", options: .caseInsensitive) == .orderedSame }
-        let replacementSortOrder = (goalTypes + behindTypes).map(\.sortOrder).min() ?? fetched.count
-
-        if let scoresType {
-            scoresType.isEnabled = true
-            scoresType.sortOrder = min(scoresType.sortOrder, replacementSortOrder)
-        } else {
-            modelContext.insert(StatType(name: "Scores", isEnabled: true, sortOrder: replacementSortOrder))
-        }
-
-        for type in goalTypes + behindTypes {
-            modelContext.delete(type)
-        }
-
-        let reordered = ((try? modelContext.fetch(FetchDescriptor<StatType>(sortBy: [SortDescriptor(\.sortOrder)]))) ?? [])
-        for (index, type) in reordered.enumerated() {
-            type.sortOrder = index
-        }
-        save()
-    }
-
     private func configurableStatTypes() -> [StatType] {
         statTypes
             .sorted(by: { $0.sortOrder < $1.sortOrder })
@@ -492,7 +463,7 @@ struct StatsTypesSettingsView: View {
 
     private func ensureAlwaysOnStatTypesIfNeeded() {
         var existing = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
-        let alwaysOnNames = ["Scores", "Inside 50", "Clearances"]
+        let alwaysOnNames = ["Inside 50"]
 
         for name in alwaysOnNames {
             if let match = existing.first(where: { $0.name.compare(name, options: .caseInsensitive) == .orderedSame }) {
@@ -507,7 +478,39 @@ struct StatsTypesSettingsView: View {
     }
 
     private func isAlwaysOnHiddenStatType(_ name: String) -> Bool {
-        ["scores", "inside 50", "clearances"].contains(name.lowercased())
+        ["inside 50"].contains(name.lowercased())
+    }
+
+    private func removeDeprecatedStatTypesIfNeeded() {
+        let deprecatedNames = Set(["scores", "clearance", "clearances"])
+        let existing = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
+        let deprecated = existing.filter { deprecatedNames.contains($0.name.lowercased()) }
+        guard !deprecated.isEmpty else { return }
+
+        deprecated.forEach { modelContext.delete($0) }
+        resequence()
+        save()
+    }
+
+    private func ensureGoalAndBehindStatTypesIfNeeded() {
+        var existing = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
+        let requiredNames = ["Goal", "Behind"]
+
+        var didChange = false
+        for name in requiredNames {
+            if existing.contains(where: { $0.name.compare(name, options: .caseInsensitive) == .orderedSame }) {
+                continue
+            }
+            let type = StatType(name: name, isEnabled: true, sortOrder: existing.count)
+            modelContext.insert(type)
+            existing.append(type)
+            didChange = true
+        }
+
+        if didChange {
+            resequence()
+            save()
+        }
     }
 }
 
@@ -521,7 +524,6 @@ struct SpeechSetupView: View {
 
     @StateObject private var speechService = PressHoldSpeechService()
     @State private var activeSectionID: String?
-    @State private var showClearConfirmation = false
     @State private var newSectionName = ""
 
     @AppStorage("speech_setup_custom_sections") private var customSectionsData = ""
@@ -565,49 +567,37 @@ struct SpeechSetupView: View {
                     }, perform: {})
 
                     let words = detectedWordsBySection[section.storageKey] ?? []
-                    if words.isEmpty {
-                        Text("No words detected yet.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(words, id: \.self) { word in
-                            Text(word)
-                                .font(.body.monospaced())
+                    ZStack(alignment: .trailing) {
+                        TextField(
+                            "No words detected yet.",
+                            text: .constant(words.joined(separator: ", "))
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(true)
+                        .padding(.trailing, 84)
+
+                        HStack(spacing: 6) {
+                            Button {
+                                copyWords(for: section.storageKey)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(words.isEmpty)
+
+                            Button {
+                                clearWords(for: section.storageKey)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(words.isEmpty)
                         }
                     }
                 }
             }
         }
         .navigationTitle("Speech Recognition")
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
-                    copyAllWords()
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .disabled(allDetectedWords.isEmpty)
-
-                Button(role: .destructive) {
-                    showClearConfirmation = true
-                } label: {
-                    Label("Clear", systemImage: "trash")
-                }
-                .disabled(allDetectedWords.isEmpty)
-            }
-        }
-        .confirmationDialog(
-            "Clear all detected words?",
-            isPresented: $showClearConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Clear All", role: .destructive) {
-                detectedWordsBySection = [:]
-                persistDetectedWords()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes every saved word from every stat type section.")
-        }
         .onAppear {
             loadCustomSections()
             loadDetectedWords()
@@ -650,11 +640,16 @@ struct SpeechSetupView: View {
         persistDetectedWords()
     }
 
-    private func copyAllWords() {
-        let text = allDetectedWords.joined(separator: "\n")
+    private func copyWords(for storageKey: String) {
+        let text = (detectedWordsBySection[storageKey] ?? []).joined(separator: "\n")
 #if canImport(UIKit)
         UIPasteboard.general.string = text
 #endif
+    }
+
+    private func clearWords(for storageKey: String) {
+        detectedWordsBySection[storageKey] = []
+        persistDetectedWords()
     }
 
     private func addCustomSection() {
