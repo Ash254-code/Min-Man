@@ -2236,17 +2236,16 @@ struct LiveStatsView: View {
     private func playerQuickStatsFan(cardSize: CGSize, globalMidX: CGFloat) -> some View {
         let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: globalMidX)
         let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
-        let selectedRect = CGRect(x: selectedAnchor.x - 52, y: selectedAnchor.y - 30, width: 104, height: 60)
-        let contestedPopupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
-        let efficiencyPopupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
-        let contestedCenter = CGPoint(x: contestedPopupX, y: selectedRect.minY - 8)
-        let efficiencyCenter = CGPoint(x: efficiencyPopupX, y: selectedRect.minY - 86)
+        let selectedAngle = selectedQuickStatMidAngle(layout: layout)
+        let branchDirection = unitDirection(angleDegrees: selectedAngle)
+        let contestedCenter = CGPoint(x: selectedAnchor.x + (branchDirection.dx * 86), y: selectedAnchor.y + (branchDirection.dy * 86))
+        let efficiencyCenter = CGPoint(x: selectedAnchor.x + (branchDirection.dx * 164), y: selectedAnchor.y + (branchDirection.dy * 164))
         return ZStack {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
                 let isHovered = hoveredPlayerQuickStatName == option.id
                 let segment = quickStatSegmentAngles(index: index, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
                 let midAngle = (segment.start + segment.end) / 2
-                let labelRadius = layout.outerRadius - 12
+                let labelRadius = layout.outerRadius - 16
 
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                     .fill(isHovered ? Color.blue : (option.statType == nil ? Color(white: 0.28) : .black))
@@ -2255,7 +2254,7 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isHovered ? 0.8 : 0.45), lineWidth: isHovered ? 2.5 : 1.2)
                     }
                     .overlay {
-                        curvedSliceLabel(option.title, center: layout.center, radius: labelRadius, startAngle: segment.start, endAngle: segment.end)
+                        sliceLabel(option.title, center: layout.center, radius: labelRadius, angle: midAngle, width: 90, font: .headline.weight(.semibold))
                     }
             }
 
@@ -2265,7 +2264,8 @@ struct LiveStatsView: View {
                     leftActive: hoveredPlayerQuickContestedVote == .contested,
                     rightTitle: "Uncontested",
                     rightActive: hoveredPlayerQuickContestedVote == .uncontested,
-                    center: contestedCenter
+                    center: contestedCenter,
+                    angle: selectedAngle
                 )
             }
 
@@ -2275,7 +2275,8 @@ struct LiveStatsView: View {
                     leftActive: hoveredPlayerQuickEfficiencyVote == .thumbsUp,
                     rightTitle: "Non Effective",
                     rightActive: hoveredPlayerQuickEfficiencyVote == .thumbsDown,
-                    center: efficiencyCenter
+                    center: efficiencyCenter,
+                    angle: selectedAngle
                 )
             }
         }
@@ -2286,14 +2287,16 @@ struct LiveStatsView: View {
         leftActive: Bool,
         rightTitle: String,
         rightActive: Bool,
-        center: CGPoint
+        center: CGPoint,
+        angle: CGFloat
     ) -> some View {
-        let layout = votePopupPieLayout(center: center)
+        let layout = votePopupPieLayout(center: center, angle: angle)
         return ZStack {
             ForEach(0..<2, id: \.self) { idx in
                 let segment = quickStatSegmentAngles(index: idx, total: 2, spanStart: layout.startAngle, spanEnd: layout.endAngle)
                 let isActive = idx == 0 ? leftActive : rightActive
                 let title = idx == 0 ? leftTitle : rightTitle
+                let midAngle = (segment.start + segment.end) / 2
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                     .fill(isActive ? Color.blue : Color.black)
                     .overlay {
@@ -2301,7 +2304,7 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isActive ? 0.8 : 0.45), lineWidth: isActive ? 2.3 : 1.1)
                     }
                     .overlay {
-                        curvedSliceLabel(title, center: layout.center, radius: layout.outerRadius - 10, startAngle: segment.start, endAngle: segment.end, font: .subheadline.weight(.bold))
+                        sliceLabel(title, center: layout.center, radius: layout.outerRadius - 14, angle: midAngle, width: 86, font: .subheadline.weight(.bold))
                     }
             }
         }
@@ -2345,8 +2348,9 @@ struct LiveStatsView: View {
         return (start, start + span)
     }
 
-    private func votePopupPieLayout(center: CGPoint) -> (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) {
-        (center: center, innerRadius: 34, outerRadius: 100, startAngle: -180, endAngle: 0)
+    private func votePopupPieLayout(center: CGPoint, angle: CGFloat) -> (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) {
+        let halfSpan: CGFloat = 50
+        return (center: center, innerRadius: 34, outerRadius: 96, startAngle: angle - halfSpan, endAngle: angle + halfSpan)
     }
 
     private func polarPoint(center: CGPoint, radius: CGFloat, angleDegrees: CGFloat) -> CGPoint {
@@ -2361,28 +2365,34 @@ struct LiveStatsView: View {
         return tangent
     }
 
-    @ViewBuilder
-    private func curvedSliceLabel(
+    private func sliceLabel(
         _ text: String,
         center: CGPoint,
         radius: CGFloat,
-        startAngle: CGFloat,
-        endAngle: CGFloat,
-        font: Font = .headline.weight(.bold)
+        angle: CGFloat,
+        width: CGFloat,
+        font: Font
     ) -> some View {
-        let glyphs = Array(text)
-        let padding: CGFloat = 8
-        let sweep = max(abs(endAngle - startAngle) - (padding * 2), 8)
-        ForEach(Array(glyphs.enumerated()), id: \.offset) { index, char in
-            let t = glyphs.count <= 1 ? 0.5 : CGFloat(index) / CGFloat(max(glyphs.count - 1, 1))
-            let arcAngle = startAngle + padding + (sweep * t * (endAngle >= startAngle ? 1 : -1))
-            let point = polarPoint(center: center, radius: radius, angleDegrees: arcAngle)
-            Text(String(char))
-                .font(font)
-                .foregroundStyle(.white)
-                .position(x: point.x, y: point.y)
-                .rotationEffect(.degrees(quickStatLabelRotation(for: arcAngle)))
-        }
+        let point = polarPoint(center: center, radius: radius, angleDegrees: angle)
+        return Text(text)
+            .font(font)
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(width: width)
+            .rotationEffect(.degrees(quickStatLabelRotation(for: angle)))
+            .position(x: point.x, y: point.y)
+    }
+
+    private func selectedQuickStatMidAngle(layout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat)) -> CGFloat {
+        guard let idx = hoveredQuickStatIndex else { return (layout.startAngle + layout.endAngle) / 2 }
+        let segment = quickStatSegmentAngles(index: idx, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
+        return (segment.start + segment.end) / 2
+    }
+
+    private func unitDirection(angleDegrees: CGFloat) -> CGVector {
+        let radians = angleDegrees * (.pi / 180)
+        return CGVector(dx: cos(radians), dy: sin(radians))
     }
 
     private func normalizedAngle(_ angle: CGFloat) -> CGFloat {
@@ -2418,11 +2428,6 @@ struct LiveStatsView: View {
         return playerQuickStatOptions.firstIndex(where: { $0.id == hoveredPlayerQuickStatName })
     }
 
-    private func clampedPopupX(targetX: CGFloat, popupWidth: CGFloat, containerWidth: CGFloat) -> CGFloat {
-        let half = popupWidth / 2
-        return min(max(targetX, half + 8), containerWidth - half - 8)
-    }
-
     private func updateQuickStatHover(location: CGPoint, cardSize: CGSize) {
         let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: activePlayerQuickFanGlobalMidX)
         let distance = hypot(location.x - layout.center.x, location.y - layout.center.y)
@@ -2443,14 +2448,15 @@ struct LiveStatsView: View {
         guard let statID = hoveredPlayerQuickStatName, needsQuickStatVotes(for: statID) else { return }
 
         let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
-        let selectedRect = CGRect(x: selectedAnchor.x - 52, y: selectedAnchor.y - 30, width: 104, height: 60)
-        let popupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
-        let contestedCenter = CGPoint(x: popupX, y: selectedRect.minY - 8)
+        let selectedAngle = selectedQuickStatMidAngle(layout: layout)
+        let branchDirection = unitDirection(angleDegrees: selectedAngle)
+        let contestedCenter = CGPoint(x: selectedAnchor.x + (branchDirection.dx * 86), y: selectedAnchor.y + (branchDirection.dy * 86))
         if trackContestedPossessions {
-            let contested = votePopupPieLayout(center: contestedCenter)
-            if votePopupSelectionIndex(location: location, layout: contested) == 0 {
+            let contested = votePopupPieLayout(center: contestedCenter, angle: selectedAngle)
+            let selection = votePopupSelectionIndex(location: location, layout: contested)
+            if selection == 0 {
                 hoveredPlayerQuickContestedVote = .contested
-            } else if votePopupSelectionIndex(location: location, layout: contested) == 1 {
+            } else if selection == 1 {
                 hoveredPlayerQuickContestedVote = .uncontested
             }
         }
@@ -2458,11 +2464,12 @@ struct LiveStatsView: View {
         if !trackDisposalEfficiency { return }
         if trackContestedPossessions && hoveredPlayerQuickContestedVote == nil { return }
 
-        let efficiencyCenter = CGPoint(x: popupX, y: selectedRect.minY - 86)
-        let efficiency = votePopupPieLayout(center: efficiencyCenter)
-        if votePopupSelectionIndex(location: location, layout: efficiency) == 0 {
+        let efficiencyCenter = CGPoint(x: selectedAnchor.x + (branchDirection.dx * 164), y: selectedAnchor.y + (branchDirection.dy * 164))
+        let efficiency = votePopupPieLayout(center: efficiencyCenter, angle: selectedAngle)
+        let efficiencySelection = votePopupSelectionIndex(location: location, layout: efficiency)
+        if efficiencySelection == 0 {
             hoveredPlayerQuickEfficiencyVote = .thumbsUp
-        } else if votePopupSelectionIndex(location: location, layout: efficiency) == 1 {
+        } else if efficiencySelection == 1 {
             hoveredPlayerQuickEfficiencyVote = .thumbsDown
         }
     }
