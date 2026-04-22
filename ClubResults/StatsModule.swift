@@ -1082,10 +1082,13 @@ struct LiveStatsView: View {
     @State private var lastHapticQuickStatName: String?
     @State private var lastHapticQuickContestedVote: ContestedPossessionVote?
     @State private var lastHapticQuickEfficiencyVote: EfficiencyVote?
+    @State private var suppressPlayerTapSelection = false
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
     private let oppositionTeamStatPlayerID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB") ?? UUID()
+    private let longPressHaptic = UIImpactFeedbackGenerator(style: .heavy)
+    private let stepHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
     var body: some View {
         GeometryReader { proxy in
@@ -2066,14 +2069,21 @@ struct LiveStatsView: View {
                 }
 
                 Group {
-                    if edgeIsPortrait {
+                    ScrollView {
                         edgePlayerColumnList(players: players, panelProxy: panelProxy)
-                    } else {
-                        ScrollView {
-                            edgePlayerColumnList(players: players, panelProxy: panelProxy)
-                        }
                     }
                 }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { _ in
+                            suppressPlayerTapSelection = true
+                        }
+                        .onEnded { _ in
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                suppressPlayerTapSelection = false
+                            }
+                        }
+                )
                 .overlay {
                     if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
                         let panelFrame = panelProxy.frame(in: .global)
@@ -2101,6 +2111,7 @@ struct LiveStatsView: View {
         VStack(spacing: 8) {
             ForEach(players) { player in
                 Button {
+                    guard !suppressPlayerTapSelection else { return }
                     if activePlayerQuickStatsPlayerID == player.id {
                         activePlayerQuickStatsPlayerID = nil
                     }
@@ -2133,6 +2144,7 @@ struct LiveStatsView: View {
                         .onChanged { value in
                             switch value {
                             case .first(true):
+                                suppressPlayerTapSelection = false
                                 selectedPlayerId = player.id
                                 activePlayerQuickStatsPlayerID = player.id
                                 activePlayerQuickCardFrameGlobal = .zero
@@ -2891,7 +2903,8 @@ struct LiveStatsView: View {
                 let isHovered = hoveredPlayerQuickStatName == option.id
                 let segment = quickStatSegmentAngles(index: index, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
                 let midAngle = (segment.start + segment.end) / 2
-                let labelRadius = layout.outerRadius - 16
+                let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
+                let labelWidth = quickStatLabelWidth(radius: labelRadius, startAngle: segment.start, endAngle: segment.end, minimum: 70, maximum: 102)
 
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                     .fill(isHovered ? Color.blue : (option.statType == nil ? Color(white: 0.28) : .black))
@@ -2900,7 +2913,7 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isHovered ? 0.8 : 0.45), lineWidth: isHovered ? 2.5 : 1.2)
                     }
                     .overlay {
-                        sliceLabel(option.title, center: layout.center, radius: labelRadius, angle: midAngle, width: 96, font: .headline.weight(.semibold))
+                        sliceLabel(option.title, center: layout.center, radius: labelRadius, angle: midAngle, width: labelWidth, font: .headline.weight(.semibold))
                     }
             }
 
@@ -2939,6 +2952,8 @@ struct LiveStatsView: View {
                 let isActive = idx == 0 ? leftActive : rightActive
                 let title = idx == 0 ? leftTitle : rightTitle
                 let midAngle = (segment.start + segment.end) / 2
+                let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
+                let labelWidth = quickStatLabelWidth(radius: labelRadius, startAngle: segment.start, endAngle: segment.end, minimum: 74, maximum: 98)
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                     .fill(isActive ? Color.blue : Color.black)
                     .overlay {
@@ -2946,7 +2961,7 @@ struct LiveStatsView: View {
                             .stroke(Color.white.opacity(isActive ? 0.8 : 0.45), lineWidth: isActive ? 2.3 : 1.1)
                     }
                     .overlay {
-                        sliceLabel(title, center: layout.center, radius: layout.outerRadius - 12, angle: midAngle, width: 94, font: .subheadline.weight(.bold))
+                        sliceLabel(title, center: layout.center, radius: labelRadius, angle: midAngle, width: labelWidth, font: .subheadline.weight(.bold))
                     }
             }
         }
@@ -2991,8 +3006,14 @@ struct LiveStatsView: View {
             return (center, innerRadius, outerRadius, 90, 270)
         }
         // A true top semicircle centered around the player card.
-        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height * 0.78)
+        let center = CGPoint(x: cardSize.width / 2, y: cardSize.height / 2)
         return (center, innerRadius, outerRadius, -180, 0)
+    }
+
+    private func quickStatLabelWidth(radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+        let spanRadians = abs(endAngle - startAngle) * (.pi / 180)
+        let arcLength = radius * spanRadians
+        return min(maximum, max(minimum, arcLength * 0.72))
     }
 
     private func quickStatSegmentAngles(index: Int, total: Int, spanStart: CGFloat, spanEnd: CGFloat) -> (start: CGFloat, end: CGFloat) {
@@ -3228,11 +3249,13 @@ struct LiveStatsView: View {
     }
 
     private func triggerStrongHaptic() {
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
+        longPressHaptic.prepare()
+        longPressHaptic.impactOccurred(intensity: 1.0)
     }
 
     private func triggerSelectionStepHaptic() {
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
+        stepHaptic.prepare()
+        stepHaptic.impactOccurred(intensity: 1.0)
     }
 
     private func triggerQuickSelectionHapticIfNeeded(
@@ -3254,7 +3277,7 @@ struct LiveStatsView: View {
         lastHapticQuickStatName = hoveredPlayerQuickStatName
         lastHapticQuickContestedVote = hoveredPlayerQuickContestedVote
         lastHapticQuickEfficiencyVote = hoveredPlayerQuickEfficiencyVote
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
+        triggerSelectionStepHaptic()
     }
 
     private func configureQuarterTimer(reset: Bool) {
