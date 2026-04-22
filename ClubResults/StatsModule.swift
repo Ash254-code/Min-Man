@@ -1073,6 +1073,7 @@ struct LiveStatsView: View {
     @State private var activePlayerQuickStatsPlayerID: UUID?
     @State private var activePlayerQuickCardFrameGlobal: CGRect = .zero
     @State private var interfaceScreenWidth: CGFloat = 1024
+    @State private var interfaceScreenHeight: CGFloat = 768
     @State private var hoveredPlayerQuickStatName: String?
     @State private var hoveredPlayerQuickEfficiencyVote: EfficiencyVote?
     @State private var hoveredPlayerQuickContestedVote: ContestedPossessionVote?
@@ -1124,6 +1125,9 @@ struct LiveStatsView: View {
             }
             .task(id: proxy.size.width) {
                 interfaceScreenWidth = max(proxy.size.width, 1)
+            }
+            .task(id: proxy.size.height) {
+                interfaceScreenHeight = max(proxy.size.height, 1)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -1361,6 +1365,14 @@ struct LiveStatsView: View {
         220
     }
 
+    private var edgeIsPortrait: Bool {
+        interfaceScreenHeight > interfaceScreenWidth
+    }
+
+    private var edgeTeamStatColumns: Int {
+        (isEdgeLayoutActive && edgeIsPortrait) ? 2 : 4
+    }
+
     private var headerBannerArea: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
@@ -1481,11 +1493,11 @@ struct LiveStatsView: View {
     }
 
     private func teamStatsExpandedGrid(style: ClubStyle.Style, isOpposition: Bool) -> some View {
-        let fixedRows: [[(title: String, name: String, fallback: String?)]] = [
-            [("Goal", "Goal", nil), ("Behind", "Behind", nil), ("Clearance", "Clearance", "Clearances"), ("Inside 50", "Inside 50", "Inside 50s")],
-            [("Kick", "Kick", nil), ("Handball", "Handball", nil), ("Mark", "Mark", nil), ("Tackle", "Tackle", nil)]
+        let fixedEntries: [(title: String, name: String, fallback: String?)] = [
+            ("Goal", "Goal", nil), ("Behind", "Behind", nil), ("Clearance", "Clearance", "Clearances"), ("Inside 50", "Inside 50", "Inside 50s"),
+            ("Kick", "Kick", nil), ("Handball", "Handball", nil), ("Mark", "Mark", nil), ("Tackle", "Tackle", nil)
         ]
-        let fixedNames = Set(fixedRows.flatMap { $0.map { normalizedStatName($0.name) } })
+        let fixedNames = Set(fixedEntries.map { normalizedStatName($0.name) })
         let excludedThirdRowNames: Set<String> = fixedNames.union([
             "scores",
             "score",
@@ -1495,21 +1507,21 @@ struct LiveStatsView: View {
         let thirdRowStats = enabledStatTypes
             .filter { !excludedThirdRowNames.contains(normalizedStatName($0.name)) }
             .prefix(4)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: edgeTeamStatColumns)
+        let remainingSlots = max(edgeTeamStatColumns - (Array(thirdRowStats).count % edgeTeamStatColumns), 0) % edgeTeamStatColumns
 
         return VStack(spacing: 6) {
-            ForEach(0..<fixedRows.count, id: \.self) { rowIndex in
-                HStack(spacing: 8) {
-                    ForEach(0..<fixedRows[rowIndex].count, id: \.self) { columnIndex in
-                        let entry = fixedRows[rowIndex][columnIndex]
-                        teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
-                    }
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(Array(fixedEntries.enumerated()), id: \.offset) { _, entry in
+                    teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
                 }
             }
-            HStack(spacing: 8) {
+
+            LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(Array(thirdRowStats), id: \.id) { statType in
                     teamStatButton(statType.name, name: statType.name, style: style, isOpposition: isOpposition)
                 }
-                ForEach(Array(thirdRowStats).count..<4, id: \.self) { _ in
+                ForEach(0..<remainingSlots, id: \.self) { _ in
                     Color.clear
                         .frame(maxWidth: .infinity, minHeight: 60)
                 }
@@ -1697,18 +1709,22 @@ struct LiveStatsView: View {
         let splitIndex = Int(ceil(Double(gridPlayers.count) / 2.0))
         let leftPlayers = Array(gridPlayers.prefix(splitIndex))
         let rightPlayers = Array(gridPlayers.dropFirst(splitIndex))
+        let middleAreaHeight = max(proxy.size.height - 76 - max(proxy.size.height * 0.095, 76) - 24, 320)
+        let scoreAreaHeight = max(middleAreaHeight * 0.66, topPanelHeight)
+        let recentAreaHeight = max(middleAreaHeight * 0.34, 180)
 
-        return VStack(spacing: 12) {
-            headerBannerArea
-                .frame(height: 76)
+        return HStack(alignment: .top, spacing: 12) {
+            edgePlayerColumn(players: leftPlayers, isTrailingSide: false)
+                .frame(width: sideWidth)
 
-            HStack(alignment: .top, spacing: 12) {
-                edgePlayerColumn(players: leftPlayers, isTrailingSide: false)
-                    .frame(width: sideWidth)
+            VStack(spacing: 10) {
+                headerBannerArea
+                    .frame(height: 76)
+                    .frame(maxWidth: centerWidth)
 
                 VStack(spacing: 10) {
                     combinedScoreAndActionsPanel
-                        .frame(height: topPanelHeight)
+                        .frame(height: scoreAreaHeight)
 
                     if !oppositionTrackPossessions {
                         statButtonsPanel
@@ -1716,19 +1732,20 @@ struct LiveStatsView: View {
                     }
 
                     recentEventsPanel
+                        .frame(height: recentAreaHeight)
                 }
-                .frame(width: centerWidth)
                 .frame(maxHeight: .infinity, alignment: .top)
 
-                edgePlayerColumn(players: rightPlayers, isTrailingSide: true)
-                    .frame(width: sideWidth)
+                bottomControlBar
+                    .frame(height: max(proxy.size.height * 0.095, 76))
+                    .padding(.top, 2)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(width: centerWidth, maxHeight: .infinity, alignment: .top)
 
-            bottomControlBar
-                .frame(height: max(proxy.size.height * 0.11, 90))
-                .padding(.top, 2)
+            edgePlayerColumn(players: rightPlayers, isTrailingSide: true)
+                .frame(width: sideWidth)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func edgePlayerColumn(players: [Player], isTrailingSide: Bool) -> some View {
