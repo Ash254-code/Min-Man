@@ -1358,7 +1358,7 @@ struct LiveStatsView: View {
     }
 
     private var topPanelHeight: CGFloat {
-        oppositionTrackPossessions ? 448 : 168
+        oppositionTrackPossessions ? 432 : 168
     }
 
     private var rightStatActionsHeight: CGFloat {
@@ -1552,15 +1552,21 @@ struct LiveStatsView: View {
 
     private var comparisonScoreCardPanel: some View {
         let metrics = scoreComparisonMetrics
-        return VStack(spacing: 14) {
+        return VStack(spacing: 10) {
             HStack(spacing: 12) {
-                ScorePill(ourTeamName, style: ourStyle)
-                    .font(.title2.weight(.black))
-                    .padding(.horizontal, 8)
-                Spacer(minLength: 0)
-                ScorePill(session.opposition, style: oppositionStyle)
-                    .font(.title2.weight(.black))
-                    .padding(.horizontal, 8)
+                VStack {
+                    ScorePill(ourTeamName, style: ourStyle)
+                        .font(.title2.weight(.black))
+                        .padding(.horizontal, 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+
+                VStack {
+                    ScorePill(session.opposition, style: oppositionStyle)
+                        .font(.title2.weight(.black))
+                        .padding(.horizontal, 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
             }
             .frame(maxWidth: .infinity)
 
@@ -1571,122 +1577,190 @@ struct LiveStatsView: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 16)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private var scoreComparisonMetrics: [(label: String, ourValue: String, oppositionValue: String)] {
-        [
+    private var scoreComparisonMetrics: [(label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double, isScore: Bool)] {
+        let ourEfficiency = efficiencyComparisonValues(isOpposition: false)
+        let oppositionEfficiency = efficiencyComparisonValues(isOpposition: true)
+        let ourContested = contestedComparisonValues(isOpposition: false)
+        let oppositionContested = contestedComparisonValues(isOpposition: true)
+        let ourKicks = teamTotal(aliases: ["kick"], isOpposition: false)
+        let oppositionKicks = teamTotal(aliases: ["kick"], isOpposition: true)
+        let ourHandballs = teamTotal(aliases: ["handball"], isOpposition: false)
+        let oppositionHandballs = teamTotal(aliases: ["handball"], isOpposition: true)
+        let ourMarks = teamTotal(aliases: ["mark"], isOpposition: false)
+        let oppositionMarks = teamTotal(aliases: ["mark"], isOpposition: true)
+        let ourInside50 = teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: false)
+        let oppositionInside50 = teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: true)
+        let ourClearances = teamTotal(aliases: ["clearance", "clearances"], isOpposition: false)
+        let oppositionClearances = teamTotal(aliases: ["clearance", "clearances"], isOpposition: true)
+
+        return [
             (
                 label: "Score",
                 ourValue: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))",
-                oppositionValue: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))"
+                oppositionValue: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))",
+                ourNumeric: Double(ourScoreSummary.points),
+                oppositionNumeric: Double(oppositionScoreSummary.points),
+                isScore: true
             ),
             (
                 label: "Efficiency",
-                ourValue: efficiencyComparisonText(isOpposition: false),
-                oppositionValue: efficiencyComparisonText(isOpposition: true)
+                ourValue: ourEfficiency.text,
+                oppositionValue: oppositionEfficiency.text,
+                ourNumeric: ourEfficiency.percent,
+                oppositionNumeric: oppositionEfficiency.percent,
+                isScore: false
             ),
             (
                 label: "Contested Possession",
-                ourValue: contestedComparisonText(isOpposition: false),
-                oppositionValue: contestedComparisonText(isOpposition: true)
+                ourValue: ourContested.text,
+                oppositionValue: oppositionContested.text,
+                ourNumeric: ourContested.percent,
+                oppositionNumeric: oppositionContested.percent,
+                isScore: false
             ),
             (
                 label: "Team Kicks",
-                ourValue: "\(teamTotal(aliases: ["kick"], isOpposition: false))",
-                oppositionValue: "\(teamTotal(aliases: ["kick"], isOpposition: true))"
+                ourValue: "\(ourKicks)",
+                oppositionValue: "\(oppositionKicks)",
+                ourNumeric: Double(ourKicks),
+                oppositionNumeric: Double(oppositionKicks),
+                isScore: false
             ),
             (
                 label: "Team Handball",
-                ourValue: "\(teamTotal(aliases: ["handball"], isOpposition: false))",
-                oppositionValue: "\(teamTotal(aliases: ["handball"], isOpposition: true))"
+                ourValue: "\(ourHandballs)",
+                oppositionValue: "\(oppositionHandballs)",
+                ourNumeric: Double(ourHandballs),
+                oppositionNumeric: Double(oppositionHandballs),
+                isScore: false
             ),
             (
                 label: "Marks",
-                ourValue: "\(teamTotal(aliases: ["mark"], isOpposition: false))",
-                oppositionValue: "\(teamTotal(aliases: ["mark"], isOpposition: true))"
+                ourValue: "\(ourMarks)",
+                oppositionValue: "\(oppositionMarks)",
+                ourNumeric: Double(ourMarks),
+                oppositionNumeric: Double(oppositionMarks),
+                isScore: false
             ),
             (
                 label: "Inside 50",
-                ourValue: "\(teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: false))",
-                oppositionValue: "\(teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: true))"
+                ourValue: "\(ourInside50)",
+                oppositionValue: "\(oppositionInside50)",
+                ourNumeric: Double(ourInside50),
+                oppositionNumeric: Double(oppositionInside50),
+                isScore: false
             ),
             (
                 label: "Clearance",
-                ourValue: "\(teamTotal(aliases: ["clearance", "clearances"], isOpposition: false))",
-                oppositionValue: "\(teamTotal(aliases: ["clearance", "clearances"], isOpposition: true))"
+                ourValue: "\(ourClearances)",
+                oppositionValue: "\(oppositionClearances)",
+                ourNumeric: Double(ourClearances),
+                oppositionNumeric: Double(oppositionClearances),
+                isScore: false
             )
         ]
     }
 
-    private func comparisonMetricRow(_ metric: (label: String, ourValue: String, oppositionValue: String)) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Text(metric.label)
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text(metric.ourValue)
-                    .font(.title3.weight(.black))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-            .foregroundStyle(ourStyle.text)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ourStyle.background.opacity(0.95), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(ourStyle.border.opacity(0.75), lineWidth: 1.5)
-            )
+    private func comparisonMetricRow(_ metric: (label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double, isScore: Bool)) -> some View {
+        if metric.isScore {
+            return AnyView(
+                HStack(spacing: 10) {
+                    Text(metric.ourValue)
+                        .font(.system(size: 48, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity, alignment: .center)
 
-            HStack(spacing: 6) {
-                Text(metric.oppositionValue)
-                    .font(.title3.weight(.black))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                Spacer(minLength: 8)
-                Text(metric.label)
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(oppositionStyle.text)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(oppositionStyle.background.opacity(0.95), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(oppositionStyle.border.opacity(0.75), lineWidth: 1.5)
+                    Text(metric.oppositionValue)
+                        .font(.system(size: 48, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             )
         }
+
+        let ourIsLeading = metric.ourNumeric > metric.oppositionNumeric
+        let oppositionIsLeading = metric.oppositionNumeric > metric.ourNumeric
+        let ourBackground = ourIsLeading ? Color.green.opacity(0.85) : (oppositionIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
+        let oppositionBackground = oppositionIsLeading ? Color.green.opacity(0.85) : (ourIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
+
+        return AnyView(
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Text(metric.label)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(metric.ourValue)
+                        .font(.title3.weight(.black))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+                .foregroundStyle(.white)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ourBackground, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+                )
+
+                HStack(spacing: 6) {
+                    Text(metric.oppositionValue)
+                        .font(.title3.weight(.black))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Spacer(minLength: 8)
+                    Text(metric.label)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.white)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(oppositionBackground, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+                )
+            }
+        )
     }
 
-    private func efficiencyComparisonText(isOpposition: Bool) -> String {
+    private func efficiencyComparisonValues(isOpposition: Bool) -> (text: String, percent: Double) {
         let teamID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
         let teamEvents = sessionEvents.filter { $0.playerId == teamID }
         let efficient = teamEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsUp.rawValue }.count
         let inefficient = teamEvents.filter { $0.efficiencyVoteRaw == EfficiencyVote.thumbsDown.rawValue }.count
         let total = efficient + inefficient
-        guard total > 0 else { return "0% (0/0)" }
-        let percent = Int(round((Double(efficient) / Double(total)) * 100))
-        return "\(percent)% (\(efficient)/\(inefficient))"
+        guard total > 0 else { return ("0% (0/0)", 0) }
+        let percent = (Double(efficient) / Double(total)) * 100
+        return ("\(Int(round(percent)))% (\(efficient)/\(inefficient))", percent)
     }
 
-    private func contestedComparisonText(isOpposition: Bool) -> String {
+    private func contestedComparisonValues(isOpposition: Bool) -> (text: String, percent: Double) {
         let teamID = isOpposition ? oppositionTeamStatPlayerID : ourTeamStatPlayerID
         let teamEvents = sessionEvents.filter { $0.playerId == teamID }
         let contested = teamEvents.filter { $0.contestedVoteRaw == ContestedPossessionVote.contested.rawValue }.count
         let uncontested = teamEvents.filter { $0.contestedVoteRaw == ContestedPossessionVote.uncontested.rawValue }.count
         let total = contested + uncontested
-        guard total > 0 else { return "0% (0/0)" }
-        let percent = Int(round((Double(contested) / Double(total)) * 100))
-        return "\(percent)% (\(contested)/\(uncontested))"
+        guard total > 0 else { return ("0% (0/0)", 0) }
+        let percent = (Double(contested) / Double(total)) * 100
+        return ("\(Int(round(percent)))% (\(contested)/\(uncontested))", percent)
     }
 
     private func teamTotal(aliases: [String], isOpposition: Bool) -> Int {
@@ -1877,38 +1951,46 @@ struct LiveStatsView: View {
         let bottomBarHeight = max(proxy.size.height * 0.14, 132)
         let recentAreaHeight = max(300, min(proxy.size.height * 0.34, 380))
 
-        return HStack(alignment: .top, spacing: 12) {
-            edgePlayerColumn(players: leftPlayers, isTrailingSide: false)
+        return VStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(spacing: 10) {
+                    rushedBehindButton
+                    edgePlayerColumn(players: leftPlayers, isTrailingSide: false)
+                }
                 .frame(width: sideWidth)
 
-            VStack(spacing: 10) {
-                headerBannerArea
-                    .frame(height: 76)
-                    .frame(maxWidth: centerWidth)
+                VStack(spacing: 8) {
+                    headerBannerArea
+                        .frame(height: 76)
+                        .frame(maxWidth: centerWidth)
 
-                VStack(spacing: 10) {
-                    combinedScoreAndActionsPanel
-                        .frame(maxHeight: .infinity)
+                    VStack(spacing: 8) {
+                        combinedScoreAndActionsPanel
+                            .frame(maxHeight: .infinity)
 
-                    if !oppositionTrackPossessions {
-                        statButtonsPanel
-                            .frame(height: rightStatActionsHeight)
+                        if !oppositionTrackPossessions {
+                            statButtonsPanel
+                                .frame(height: rightStatActionsHeight)
+                        }
+
+                        recentEventsPanel
+                            .frame(height: recentAreaHeight)
                     }
-
-                    recentEventsPanel
-                        .frame(height: recentAreaHeight)
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
+                .frame(width: centerWidth)
                 .frame(maxHeight: .infinity, alignment: .top)
 
-                bottomControlBar
-                    .frame(height: bottomBarHeight)
-                    .padding(.top, 2)
-            }
-            .frame(width: centerWidth)
-            .frame(maxHeight: .infinity, alignment: .top)
-
-            edgePlayerColumn(players: rightPlayers, isTrailingSide: true)
+                VStack(spacing: 10) {
+                    oppositionStatsButton
+                    edgePlayerColumn(players: rightPlayers, isTrailingSide: true)
+                }
                 .frame(width: sideWidth)
+            }
+
+            bottomControlBar
+                .frame(height: bottomBarHeight)
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -2316,7 +2398,7 @@ struct LiveStatsView: View {
         let recent = Array(sessionEvents.prefix(5))
         return VStack(alignment: .leading, spacing: 8) {
             Text("Recent Stats")
-                .font(.title3.bold())
+                .font(.title2.bold())
 
             LazyVStack(spacing: 6) {
                 ForEach(recent) { event in
@@ -2325,24 +2407,24 @@ struct LiveStatsView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Text(playerNameForRecentEvent(for: event.playerId))
-                                .font(.title3)
+                                .font(.title2.weight(.medium))
                                 .lineLimit(1)
                             Text("-")
-                                .font(.title3)
+                                .font(.title2)
                                 .foregroundStyle(.secondary)
                             Text(statName(for: event.statTypeId))
-                                .font(.title3.weight(.bold))
+                                .font(.title2.weight(.black))
                                 .lineLimit(1)
                             if let efficiencyEmoji = efficiencyEmojiForRecentEvent(event) {
                                 Text(efficiencyEmoji)
-                                    .font(.title3)
+                                    .font(.title2)
                                     .lineLimit(1)
                             }
                             Text("-")
-                                .font(.title3)
+                                .font(.title2)
                                 .foregroundStyle(.secondary)
                             Text(event.timestamp.formatted(date: .omitted, time: .shortened))
-                                .font(.title3)
+                                .font(.title2)
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
                             Spacer(minLength: 0)
@@ -2366,150 +2448,129 @@ struct LiveStatsView: View {
     }
 
     private var bottomControlBar: some View {
-        Group {
-            if isEdgeLayoutActive {
-                VStack(spacing: 10) {
-                    quarterPicker
-                        .frame(maxWidth: .infinity)
-
-                    HStack(alignment: .center, spacing: 12) {
-                        HStack(spacing: 10) {
-                            Button {
-                                showTotals = true
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.blue)
-                                        .frame(width: 76, height: 76)
-                                    Text("Stats")
-                                        .font(.title3.bold())
-                                        .foregroundStyle(.white)
-                                }
-                            }
-                            .buttonStyle(.plain)
-
-                            Button("Generate Report") {
-                                generateReport()
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        HStack(spacing: 12) {
-                            Text(formattedQuarterTime)
-                                .font(.system(size: 42, weight: .bold, design: .rounded))
-                                .monospacedDigit()
-                                .frame(minWidth: 140, alignment: .trailing)
-
-                            HStack(spacing: 8) {
-                                Button {
-                                    if isQuarterTimerRunning {
-                                        stopQuarterTimer()
-                                    } else {
-                                        startQuarterTimer()
-                                    }
-                                } label: {
-                                    Image(systemName: isQuarterTimerRunning ? "pause.fill" : "play.fill")
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-
-                                Button {
-                                    configureQuarterTimer(reset: true)
-                                } label: {
-                                    Image(systemName: "arrow.counterclockwise")
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                        }
-                        .frame(minWidth: 330, alignment: .leading)
-
-                        Spacer()
-
-                        Button("Undo") {
-                            undoLastEvent()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .disabled(sessionEvents.isEmpty)
-
-                        speakButton
+        HStack(alignment: .center, spacing: 12) {
+            HStack(spacing: 10) {
+                Button {
+                    showTotals = true
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 92, height: 92)
+                        Text("Stats")
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
                     }
                 }
-            } else {
-                HStack(alignment: .center, spacing: 12) {
-                    HStack(spacing: 10) {
-                        Button {
-                            showTotals = true
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.blue)
-                                    .frame(width: 92, height: 92)
-                                Text("Stats")
-                                    .font(.title3.bold())
-                                    .foregroundStyle(.white)
-                            }
+                .buttonStyle(.plain)
+
+                Button("Generate Report") {
+                    generateReport()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            HStack(spacing: 12) {
+                Text(formattedQuarterTime)
+                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .frame(minWidth: 140, alignment: .trailing)
+
+                HStack(spacing: 8) {
+                    Button {
+                        if isQuarterTimerRunning {
+                            stopQuarterTimer()
+                        } else {
+                            startQuarterTimer()
                         }
-                        .buttonStyle(.plain)
-
-                        Button("Generate Report") {
-                            generateReport()
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    HStack(spacing: 12) {
-                        Text(formattedQuarterTime)
-                            .font(.system(size: 42, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .frame(minWidth: 140, alignment: .trailing)
-
-                        HStack(spacing: 8) {
-                            Button {
-                                if isQuarterTimerRunning {
-                                    stopQuarterTimer()
-                                } else {
-                                    startQuarterTimer()
-                                }
-                            } label: {
-                                Image(systemName: isQuarterTimerRunning ? "pause.fill" : "play.fill")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            Button {
-                                configureQuarterTimer(reset: true)
-                            } label: {
-                                Image(systemName: "arrow.counterclockwise")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-
-                        Spacer()
-                            .frame(width: 28)
-
-                        quarterPicker
-                    }
-                    .frame(minWidth: 360, alignment: .leading)
-
-                    Spacer()
-
-                    Button("Undo") {
-                        undoLastEvent()
+                    } label: {
+                        Image(systemName: isQuarterTimerRunning ? "pause.fill" : "play.fill")
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(sessionEvents.isEmpty)
+                    .controlSize(.small)
 
-                    speakButton
+                    Button {
+                        configureQuarterTimer(reset: true)
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
+
+                Spacer()
+                    .frame(width: 28)
+
+                quarterPicker
             }
+            .frame(minWidth: 360, alignment: .leading)
+
+            Spacer()
+
+            Button("Undo") {
+                undoLastEvent()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(sessionEvents.isEmpty)
+
+            speakButton
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var oppositionStatsButton: some View {
+        Button {
+            showTotals = true
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(oppositionStyle.background)
+                    .frame(width: 92, height: 92)
+                Text(oppositionShortLabel)
+                    .font(.title3.weight(.black))
+                    .foregroundStyle(oppositionStyle.text)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.6)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var rushedBehindButton: some View {
+        Button {
+            addRushedBehindForOurTeam()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(ourStyle.background)
+                    .frame(width: 92, height: 92)
+                Text("Rushed")
+                    .font(.title3.weight(.black))
+                    .foregroundStyle(ourStyle.text)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var oppositionShortLabel: String {
+        let words = session.opposition
+            .split(whereSeparator: { $0.isWhitespace || $0 == "-" })
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        if words.count >= 2 {
+            return words.prefix(2).compactMap { $0.first.map { String($0).uppercased() } }.joined()
+        }
+        if let first = words.first, first.count > 3 {
+            return String(first.prefix(3)).uppercased()
+        }
+        return words.first?.uppercased() ?? "OPP"
     }
 
     private var speakButton: some View {
@@ -2535,6 +2596,18 @@ struct LiveStatsView: View {
             }
         }, perform: {})
         .buttonStyle(.plain)
+    }
+
+    private func addRushedBehindForOurTeam() {
+        guard let behindType = statType(named: "Behind", fallbackName: "Scores", extraFallbackNames: ["Goal"]) else {
+            showStatusBanner(text: "ERROR • Behind stat unavailable", isSuccess: false)
+            return
+        }
+        addTeamEvent(
+            statTypeId: behindType.id,
+            isOpposition: false,
+            scoreKind: "rushed behind"
+        )
     }
 
     private var gradeName: String {
