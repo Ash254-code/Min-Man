@@ -25,11 +25,11 @@ extension StatType {
         let lowercase = canonical.lowercased()
         let builtIn: [String: [String]] = [
             "kick": ["kick", "kicks", "cake"],
-            "handball": ["handball", "hand ball", "handpass", "hand pass"],
+            "handball": ["handball", "hand ball", "handpass", "hand pass", "hamble"],
             "mark": ["mark", "marks"],
             "tackle": ["tackle", "tackles"],
-            "goal": ["goal", "goals", "go"],
-            "behind": ["behind", "behinds", "point", "points", "rushed behind"]
+            "goal": ["goal", "goals", "go", "no", "cow", "call"],
+            "behind": ["behind", "behinds", "point", "points", "rushed behind", "time", "holland"]
         ]
         let aliases = builtIn[lowercase] ?? [canonical]
         return Array(Set(aliases + [canonical]))

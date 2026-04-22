@@ -606,7 +606,7 @@ final class PressHoldSpeechService: ObservableObject {
         request.shouldReportPartialResults = false
         request.taskHint = .dictation
         request.requiresOnDeviceRecognition = false
-        let seedVocabulary = ["kick", "handball", "mark", "tackle", "goal", "behind"]
+        let seedVocabulary = ["kick", "cake", "handball", "hamble", "mark", "tackle", "goal", "cow", "call", "no", "behind", "point", "time", "holland"]
         let expandedContext = Array(Set(seedVocabulary + vocabulary + vocabulary.flatMap { $0.split(separator: " ").map(String.init) }))
         request.contextualStrings = Array(expandedContext.prefix(400))
 
