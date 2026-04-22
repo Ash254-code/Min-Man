@@ -2105,7 +2105,6 @@ struct LiveStatsView: View {
                     VStack(spacing: 8) {
                         combinedScoreAndActionsPanel
                             .frame(maxHeight: 472, alignment: .top)
-                            .padding(.top, 6)
 
                         if !oppositionTrackPossessions {
                             statButtonsPanel
@@ -2117,6 +2116,7 @@ struct LiveStatsView: View {
                         recentEventsPanel
                             .frame(height: recentAreaHeight)
                     }
+                    .padding(.top, 12)
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .frame(width: centerWidth)
@@ -2576,7 +2576,8 @@ struct LiveStatsView: View {
         let recent = Array(sessionEvents.prefix(5))
         return VStack(alignment: .leading, spacing: 8) {
             Text("Recent Stats")
-                .font(.title2.bold())
+                .font(.title.bold())
+                .frame(maxWidth: .infinity, alignment: .center)
 
             LazyVStack(spacing: 6) {
                 ForEach(recent) { event in
@@ -2584,25 +2585,26 @@ struct LiveStatsView: View {
                         showEditEvent = event
                     } label: {
                         HStack(spacing: 6) {
+                            Spacer(minLength: 0)
                             Text(playerNameForRecentEvent(for: event.playerId))
-                                .font(.title2.weight(.medium))
+                                .font(.title.weight(.medium))
                                 .lineLimit(1)
                             Text("-")
-                                .font(.title2)
+                                .font(.title)
                                 .foregroundStyle(.secondary)
                             Text(recentEventStatLabel(event))
-                                .font(.title2.weight(.black))
+                                .font(.title.weight(.black))
                                 .lineLimit(1)
                             if let efficiencyEmoji = efficiencyEmojiForRecentEvent(event) {
                                 Text(efficiencyEmoji)
-                                    .font(.title2)
+                                    .font(.title)
                                     .lineLimit(1)
                             }
                             Text("-")
-                                .font(.title2)
+                                .font(.title)
                                 .foregroundStyle(.secondary)
                             Text(event.timestamp.formatted(date: .omitted, time: .shortened))
-                                .font(.title2)
+                                .font(.title)
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
                             Spacer(minLength: 0)
