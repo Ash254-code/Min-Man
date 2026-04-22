@@ -2658,7 +2658,7 @@ struct LiveStatsView: View {
                 speechService.startListening(vocabulary: speechVocabulary)
             } else if speechService.isRecording {
                 speechService.stopListening { transcript in
-                    handleTeamVoiceTranscript(transcript, isOpposition: isOpposition)
+                    handleTeamVoiceTranscript(transcript, isOpposition: isTrailingSide)
                 }
             }
         }, perform: {})
