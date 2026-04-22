@@ -13,19 +13,19 @@ struct TabsView: View {
             TabView(selection: selectionBinding) {
                 GamesView()
                     .tag(AppTab.games)
-                    .tabItem { Label(tabTitle(for: .games, isPortrait: isPortrait), systemImage: "list.bullet") }
+                    .tabItem { tabItemLabel(for: .games, isPortrait: isPortrait) }
 
                 TotalsView()
                     .tag(AppTab.totals)
-                    .tabItem { Label(tabTitle(for: .totals, isPortrait: isPortrait), systemImage: "chart.bar") }
+                    .tabItem { tabItemLabel(for: .totals, isPortrait: isPortrait) }
 
                 StatsRootView()
                     .tag(AppTab.stats)
-                    .tabItem { Label(tabTitle(for: .stats, isPortrait: isPortrait), systemImage: "waveform.circle") }
+                    .tabItem { tabItemLabel(for: .stats, isPortrait: isPortrait) }
 
                 PresView()
                     .tag(AppTab.pres)
-                    .tabItem { Label(tabTitle(for: .pres, isPortrait: isPortrait), systemImage: "rectangle.stack") }
+                    .tabItem { tabItemLabel(for: .pres, isPortrait: isPortrait) }
 
                 ReportsSettingsView {
                     UserDefaults.standard.set(true, forKey: "settings.open.contacts")
@@ -33,11 +33,11 @@ struct TabsView: View {
                     selectedTab = .settings
                 }
                 .tag(AppTab.reports)
-                .tabItem { Label(tabTitle(for: .reports, isPortrait: isPortrait), systemImage: "doc.text") }
+                .tabItem { tabItemLabel(for: .reports, isPortrait: isPortrait) }
 
                 SettingsView(resetToken: settingsResetToken)
                     .tag(AppTab.settings)
-                    .tabItem { Label(tabTitle(for: .settings, isPortrait: isPortrait), systemImage: "gearshape") }
+                    .tabItem { tabItemLabel(for: .settings, isPortrait: isPortrait) }
             }
             .task {
                 seedInitialGradesIfNeeded()
@@ -45,25 +45,13 @@ struct TabsView: View {
         }
     }
 
-    private func tabTitle(for tab: AppTab, isPortrait: Bool) -> String {
-        guard isPortrait else {
-            switch tab {
-            case .games: return "Games"
-            case .totals: return "Totals"
-            case .stats: return "Stats"
-            case .pres: return "Pres"
-            case .reports: return "Reports"
-            case .settings: return "Settings"
-            }
-        }
-
-        switch tab {
-        case .games: return "Games"
-        case .totals: return "Tot"
-        case .stats: return "Stats"
-        case .pres: return "Pres"
-        case .reports: return "Reps"
-        case .settings: return "Set"
+    @ViewBuilder
+    private func tabItemLabel(for tab: AppTab, isPortrait: Bool) -> some View {
+        if isPortrait {
+            Image(systemName: tab.systemImage)
+                .accessibilityLabel(tab.title)
+        } else {
+            Label(tab.title, systemImage: tab.systemImage)
         }
     }
 
@@ -99,4 +87,26 @@ private enum AppTab: Hashable {
     case pres
     case reports
     case settings
+
+    var title: String {
+        switch self {
+        case .games: return "Games"
+        case .totals: return "Totals"
+        case .stats: return "Stats"
+        case .pres: return "Pres"
+        case .reports: return "Reports"
+        case .settings: return "Settings"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .games: return "list.bullet"
+        case .totals: return "chart.bar"
+        case .stats: return "waveform.circle"
+        case .pres: return "rectangle.stack"
+        case .reports: return "doc.text"
+        case .settings: return "gearshape"
+        }
+    }
 }
