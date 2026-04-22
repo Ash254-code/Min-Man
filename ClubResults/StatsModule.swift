@@ -2116,7 +2116,7 @@ struct LiveStatsView: View {
                         recentEventsPanel
                             .frame(height: recentAreaHeight)
                     }
-                    .padding(.top, 24)
+                    .padding(.top, 40)
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .frame(width: centerWidth)
@@ -2573,7 +2573,7 @@ struct LiveStatsView: View {
     }
 
     private var recentEventsPanel: some View {
-        let recent = Array(sessionEvents.prefix(5))
+        let recent = Array(sessionEvents.prefix(6))
         return VStack(alignment: .leading, spacing: 8) {
             LazyVStack(spacing: 6) {
                 ForEach(recent) { event in
