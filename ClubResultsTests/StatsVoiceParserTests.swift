@@ -85,4 +85,12 @@ struct StatsVoiceParserTests {
         let result = parser.parse(transcript: "Um, please... hand ball no twelve!", statTypes: statTypes, roster: roster)
         #expect(result.parseStatus == .success)
     }
+
+    @Test func scoresStatIncludesGoalAndBehindAliases() {
+        let scoreAliases = StatType(name: "Scores").voiceAliases
+        #expect(scoreAliases.contains("goal"))
+        #expect(scoreAliases.contains("goals"))
+        #expect(scoreAliases.contains("behind"))
+        #expect(scoreAliases.contains("behinds"))
+    }
 }

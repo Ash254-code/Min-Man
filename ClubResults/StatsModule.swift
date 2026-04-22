@@ -29,7 +29,8 @@ extension StatType {
             "mark": ["mark", "marks"],
             "tackle": ["tackle", "tackles"],
             "goal": ["goal", "goals", "go", "no", "cow", "call"],
-            "behind": ["behind", "behinds", "point", "points", "rushed behind", "time", "holland"]
+            "behind": ["behind", "behinds", "point", "points", "rushed behind", "time", "holland"],
+            "scores": ["score", "scores", "goal", "goals", "behind", "behinds", "point", "points", "rushed behind"]
         ]
         let aliases = builtIn[lowercase] ?? [canonical]
         return Array(Set(aliases + [canonical]))
@@ -3500,12 +3501,16 @@ struct LiveStatsView: View {
             return
         }
 
+        let scoreKind = normalizedStatName(statName(for: statTypeId)) == "scores"
+            ? voiceScoreKind(in: result.normalizedTranscript)
+            : nil
+
         let event = StatsEventCreationService.makeVoiceEvent(
             sessionId: session.sessionId,
             playerId: playerId,
             statTypeId: statTypeId,
             quarter: selectedQuarter,
-            transcript: result.rawTranscript,
+            transcript: scoreKind ?? result.rawTranscript,
             normalizedTranscript: result.normalizedTranscript,
             confidence: result.confidence
         )
@@ -3693,6 +3698,20 @@ struct LiveStatsView: View {
         case .success:
             return ""
         }
+    }
+
+    private func voiceScoreKind(in normalizedTranscript: String) -> String? {
+        let words = Set(normalizedTranscript.split(separator: " ").map(String.init))
+        if words.contains("goal") || words.contains("goals") {
+            return "goal"
+        }
+        if words.contains("behind") || words.contains("behinds") || words.contains("point") || words.contains("points") {
+            return "behind"
+        }
+        if normalizedTranscript.contains("rushed behind") {
+            return "behind"
+        }
+        return nil
     }
 
     private func generateReport() {
