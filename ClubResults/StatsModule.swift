@@ -2257,9 +2257,8 @@ struct LiveStatsView: View {
         let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: globalMidX)
         let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
         let selectedAngle = selectedQuickStatMidAngle(layout: layout)
-        let branchDirection = unitDirection(angleDegrees: selectedAngle)
-        let contestedCenter = CGPoint(x: selectedAnchor.x + (branchDirection.dx * 86), y: selectedAnchor.y + (branchDirection.dy * 86))
-        let efficiencyCenter = CGPoint(x: selectedAnchor.x + (branchDirection.dx * 164), y: selectedAnchor.y + (branchDirection.dy * 164))
+        let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 1)
+        let efficiencyLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 2)
         return ZStack {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
                 let isHovered = hoveredPlayerQuickStatName == option.id
@@ -2284,8 +2283,7 @@ struct LiveStatsView: View {
                     leftActive: hoveredPlayerQuickContestedVote == .contested,
                     rightTitle: "Uncontested",
                     rightActive: hoveredPlayerQuickContestedVote == .uncontested,
-                    center: contestedCenter,
-                    angle: selectedAngle
+                    layout: contestedLayout
                 )
             }
 
@@ -2295,8 +2293,7 @@ struct LiveStatsView: View {
                     leftActive: hoveredPlayerQuickEfficiencyVote == .thumbsUp,
                     rightTitle: "Non Effective",
                     rightActive: hoveredPlayerQuickEfficiencyVote == .thumbsDown,
-                    center: efficiencyCenter,
-                    angle: selectedAngle
+                    layout: efficiencyLayout
                 )
             }
         }
@@ -2307,8 +2304,7 @@ struct LiveStatsView: View {
         leftActive: Bool,
         rightTitle: String,
         rightActive: Bool,
-        center: CGPoint,
-        angle: CGFloat
+        layout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat)
     ) -> some View {
         let layout = votePopupPieLayout(center: center, angle: angle)
         return ZStack {
@@ -2368,9 +2364,17 @@ struct LiveStatsView: View {
         return (start, start + span)
     }
 
-    private func votePopupPieLayout(center: CGPoint, angle: CGFloat) -> (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) {
-        let halfSpan: CGFloat = 50
-        return (center: center, innerRadius: 34, outerRadius: 96, startAngle: angle - halfSpan, endAngle: angle + halfSpan)
+    private func votePopupPieLayout(
+        primaryLayout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat),
+        selectedAngle: CGFloat,
+        tier: Int
+    ) -> (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) {
+        let ringThickness: CGFloat = 78
+        let ringSpacing: CGFloat = 2
+        let inner = primaryLayout.outerRadius + ringSpacing + (CGFloat(max(tier - 1, 0)) * (ringThickness + ringSpacing))
+        let outer = inner + ringThickness
+        let halfSpan: CGFloat = 34
+        return (center: primaryLayout.center, innerRadius: inner, outerRadius: outer, startAngle: selectedAngle - halfSpan, endAngle: selectedAngle + halfSpan)
     }
 
     private func polarPoint(center: CGPoint, radius: CGFloat, angleDegrees: CGFloat) -> CGPoint {
@@ -2469,11 +2473,9 @@ struct LiveStatsView: View {
 
         let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
         let selectedAngle = selectedQuickStatMidAngle(layout: layout)
-        let branchDirection = unitDirection(angleDegrees: selectedAngle)
-        let contestedCenter = CGPoint(x: selectedAnchor.x + (branchDirection.dx * 86), y: selectedAnchor.y + (branchDirection.dy * 86))
+        let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 1)
         if trackContestedPossessions {
-            let contested = votePopupPieLayout(center: contestedCenter, angle: selectedAngle)
-            let selection = votePopupSelectionIndex(location: location, layout: contested)
+            let selection = votePopupSelectionIndex(location: location, layout: contestedLayout)
             if selection == 0 {
                 hoveredPlayerQuickContestedVote = .contested
             } else if selection == 1 {
@@ -2484,9 +2486,8 @@ struct LiveStatsView: View {
         if !trackDisposalEfficiency { return }
         if trackContestedPossessions && hoveredPlayerQuickContestedVote == nil { return }
 
-        let efficiencyCenter = CGPoint(x: selectedAnchor.x + (branchDirection.dx * 164), y: selectedAnchor.y + (branchDirection.dy * 164))
-        let efficiency = votePopupPieLayout(center: efficiencyCenter, angle: selectedAngle)
-        let efficiencySelection = votePopupSelectionIndex(location: location, layout: efficiency)
+        let efficiencyLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedAngle, tier: 2)
+        let efficiencySelection = votePopupSelectionIndex(location: location, layout: efficiencyLayout)
         if efficiencySelection == 0 {
             hoveredPlayerQuickEfficiencyVote = .thumbsUp
         } else if efficiencySelection == 1 {
