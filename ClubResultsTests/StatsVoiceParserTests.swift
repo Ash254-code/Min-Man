@@ -47,6 +47,8 @@ struct StatsVoiceParserTests {
         #expect(parser.parse(transcript: "kick no 7", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "kick number seven", statTypes: statTypes, roster: roster).parseStatus == .success)
         #expect(parser.parse(transcript: "kick twenty", statTypes: statTypes, roster: roster).parseStatus == .success)
+        #expect(parser.parse(transcript: "kick twenty-one", statTypes: statTypes, roster: roster).parseStatus == .success)
+        #expect(parser.parse(transcript: "kick twentyone", statTypes: statTypes, roster: roster).parseStatus == .success)
     }
 
     @Test func parsesFullNameSurnameFirstNameAndPlayerFirstStatLast() {
