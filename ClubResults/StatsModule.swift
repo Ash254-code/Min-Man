@@ -1514,7 +1514,7 @@ struct LiveStatsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            if isEdgeLayoutActive, !isOpposition {
+            if isEdgeLayoutActive && !isOpposition {
                 HStack(spacing: 8) {
                     Text("Team Efficiency")
                         .font(.subheadline.weight(.semibold))
@@ -1543,7 +1543,7 @@ struct LiveStatsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay(alignment: .topTrailing) {
-            if !isEdgeLayoutActive, !isOpposition {
+            if !isEdgeLayoutActive && !isOpposition {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("Team Eff.")
                         .font(.caption2.weight(.semibold))
