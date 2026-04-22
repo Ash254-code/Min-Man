@@ -1044,6 +1044,7 @@ struct LiveStatsView: View {
     @State private var activeContestedHoverVote: ContestedPossessionVote?
     @State private var suppressTapForButtonKey: String?
     @State private var activePlayerQuickStatsPlayerID: UUID?
+    @State private var activePlayerQuickCardSize: CGSize = .zero
     @State private var activePlayerQuickFanGlobalMidX: CGFloat = 512
     @State private var interfaceScreenWidth: CGFloat = 1024
     @State private var hoveredPlayerQuickStatName: String?
@@ -1577,9 +1578,11 @@ struct LiveStatsView: View {
                                     let midX = overlayProxy.frame(in: .global).midX
                                     playerQuickStatsFan(cardSize: overlayProxy.size, globalMidX: midX)
                                         .onAppear {
+                                            activePlayerQuickCardSize = overlayProxy.size
                                             activePlayerQuickFanGlobalMidX = midX
                                         }
                                         .task(id: midX) {
+                                            activePlayerQuickCardSize = overlayProxy.size
                                             activePlayerQuickFanGlobalMidX = midX
                                         }
                                         .transition(.opacity.combined(with: .scale(scale: 0.94)))
@@ -1600,7 +1603,10 @@ struct LiveStatsView: View {
                                     case .second(true, let drag?):
                                         selectedPlayerId = player.id
                                         activePlayerQuickStatsPlayerID = player.id
-                                        updateQuickStatHover(location: drag.location, cardSize: CGSize(width: panelProxy.size.width / CGFloat(columnsCount), height: cellHeight))
+                                        let cardSize = activePlayerQuickCardSize == .zero
+                                            ? CGSize(width: panelProxy.size.width / CGFloat(columnsCount), height: cellHeight)
+                                            : activePlayerQuickCardSize
+                                        updateQuickStatHover(location: drag.location, cardSize: cardSize)
                                     default:
                                         break
                                     }
@@ -1609,6 +1615,7 @@ struct LiveStatsView: View {
                                     commitPendingPlayerQuickStatIfValid(playerID: player.id)
                                     clearPendingPlayerQuickStat()
                                     activePlayerQuickStatsPlayerID = nil
+                                    activePlayerQuickCardSize = .zero
                                 }
                         )
                     }
@@ -2237,11 +2244,12 @@ struct LiveStatsView: View {
                 let isHovered = hoveredPlayerQuickStatName == option.id
                 let segment = quickStatSegmentAngles(index: index, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
                 let midAngle = (segment.start + segment.end) / 2
-                let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
+                let labelRadius = layout.outerRadius - 24
                 let labelPoint = polarPoint(center: layout.center, radius: labelRadius, angleDegrees: midAngle)
+                let labelRotation = quickStatLabelRotation(for: midAngle)
 
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
-                    .fill(isHovered ? Color.cyan : (option.statType == nil ? Color.gray.opacity(0.35) : Color.black.opacity(0.72)))
+                    .fill(isHovered ? Color.blue : (option.statType == nil ? Color.gray.opacity(0.35) : Color.black.opacity(0.72)))
                     .overlay {
                         QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
                             .stroke(Color.white.opacity(isHovered ? 0.65 : 0.35), lineWidth: isHovered ? 2.5 : 1)
@@ -2253,6 +2261,7 @@ struct LiveStatsView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
                             .frame(width: 86)
+                            .rotationEffect(.degrees(labelRotation))
                             .position(x: labelPoint.x, y: labelPoint.y)
                     }
             }
@@ -2359,6 +2368,29 @@ struct LiveStatsView: View {
         return CGPoint(x: center.x + cos(radians) * radius, y: center.y + sin(radians) * radius)
     }
 
+    private func quickStatLabelRotation(for angleDegrees: CGFloat) -> CGFloat {
+        var tangent = angleDegrees + 90
+        if tangent > 90 { tangent -= 180 }
+        if tangent < -90 { tangent += 180 }
+        return tangent
+    }
+
+    private func normalizedAngle(_ angle: CGFloat) -> CGFloat {
+        var normalized = angle.truncatingRemainder(dividingBy: 360)
+        if normalized < 0 { normalized += 360 }
+        return normalized
+    }
+
+    private func angleIsWithinSpan(_ angle: CGFloat, start: CGFloat, end: CGFloat) -> Bool {
+        let currentAngle = normalizedAngle(angle)
+        let normalizedStart = normalizedAngle(start)
+        let normalizedEnd = normalizedAngle(end)
+        if normalizedStart <= normalizedEnd {
+            return currentAngle >= normalizedStart && currentAngle <= normalizedEnd
+        }
+        return currentAngle >= normalizedStart || currentAngle <= normalizedEnd
+    }
+
     private func hoveredQuickStatAnchor(layout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat)) -> CGPoint {
         guard let idx = hoveredQuickStatIndex else {
             return polarPoint(
@@ -2390,7 +2422,7 @@ struct LiveStatsView: View {
         if inPieBand,
            let statIndex = (0..<playerQuickStatOptions.count).first(where: { idx in
                let segment = quickStatSegmentAngles(index: idx, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
-               return angle >= min(segment.start, segment.end) && angle <= max(segment.start, segment.end)
+               return angleIsWithinSpan(angle, start: segment.start, end: segment.end)
            }) {
             hoveredPlayerQuickStatName = playerQuickStatOptions[statIndex].id
             hoveredPlayerQuickContestedVote = nil
