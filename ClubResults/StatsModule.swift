@@ -1562,7 +1562,7 @@ struct LiveStatsView: View {
                         .padding(.horizontal, 8)
                     Text("\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))")
                         .font(.system(size: 58, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -1575,7 +1575,7 @@ struct LiveStatsView: View {
                         .padding(.horizontal, 8)
                     Text("\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))")
                         .font(.system(size: 58, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -1609,6 +1609,8 @@ struct LiveStatsView: View {
         let oppositionHandballs = teamTotal(aliases: ["handball"], isOpposition: true)
         let ourMarks = teamTotal(aliases: ["mark"], isOpposition: false)
         let oppositionMarks = teamTotal(aliases: ["mark"], isOpposition: true)
+        let ourTackles = teamTotal(aliases: ["tackle"], isOpposition: false)
+        let oppositionTackles = teamTotal(aliases: ["tackle"], isOpposition: true)
         let ourInside50 = teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: false)
         let oppositionInside50 = teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: true)
         let ourClearances = teamTotal(aliases: ["clearance", "clearances"], isOpposition: false)
@@ -1659,6 +1661,13 @@ struct LiveStatsView: View {
                 oppositionNumeric: Double(oppositionMarks)
             ),
             (
+                label: "Tackles",
+                ourValue: "\(ourTackles)",
+                oppositionValue: "\(oppositionTackles)",
+                ourNumeric: Double(ourTackles),
+                oppositionNumeric: Double(oppositionTackles)
+            ),
+            (
                 label: "Inside 50",
                 ourValue: "\(ourInside50)",
                 oppositionValue: "\(oppositionInside50)",
@@ -1690,50 +1699,94 @@ struct LiveStatsView: View {
         let oppositionIsLeading = metric.oppositionNumeric > metric.ourNumeric
         let ourBackground = ourIsLeading ? Color.green.opacity(0.85) : (oppositionIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
         let oppositionBackground = oppositionIsLeading ? Color.green.opacity(0.85) : (ourIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
+        let isTappableMetric = metric.label == "Inside 50" || metric.label == "Clearance"
 
         return HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Text(metric.label)
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text(metric.ourValue)
-                    .font(.title3.weight(.black))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-            .foregroundStyle(.white)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ourBackground, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+            comparisonMetricSide(
+                label: metric.label,
+                value: metric.ourValue,
+                isOpposition: false,
+                background: ourBackground,
+                mirrored: false,
+                isTappableMetric: isTappableMetric
             )
 
-            HStack(spacing: 6) {
-                Text(metric.oppositionValue)
+            comparisonMetricSide(
+                label: metric.label,
+                value: metric.oppositionValue,
+                isOpposition: true,
+                background: oppositionBackground,
+                mirrored: true,
+                isTappableMetric: isTappableMetric
+            )
+        }
+    }
+
+    private func comparisonMetricSide(
+        label: String,
+        value: String,
+        isOpposition: Bool,
+        background: Color,
+        mirrored: Bool,
+        isTappableMetric: Bool
+    ) -> some View {
+        let content = HStack(spacing: 6) {
+            if mirrored {
+                Text(value)
                     .font(.title3.weight(.black))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                 Spacer(minLength: 8)
-                Text(metric.label)
+                Text(label)
                     .font(.headline.weight(.semibold))
                     .lineLimit(1)
+            } else {
+                Text(label)
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(value)
+                    .font(.title3.weight(.black))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
-            .foregroundStyle(.white)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(oppositionBackground, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
-            )
         }
+        .foregroundStyle(.white)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(background, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+        )
+
+        return Group {
+            if isTappableMetric {
+                Button {
+                    addTeamComparisonMetric(label: label, isOpposition: isOpposition)
+                } label: { content }
+                .buttonStyle(.plain)
+            } else {
+                content
+            }
+        }
+    }
+
+    private func addTeamComparisonMetric(label: String, isOpposition: Bool) {
+        let aliases: [String]
+        switch label {
+        case "Inside 50":
+            aliases = ["inside 50", "inside50", "inside 50s"]
+        case "Clearance":
+            aliases = ["clearance", "clearances"]
+        default:
+            return
+        }
+        guard let type = statTypeMatching(aliases: aliases) else { return }
+        addTeamEvent(statTypeId: type.id, isOpposition: isOpposition)
     }
 
     private func efficiencyComparisonValues(isOpposition: Bool) -> (text: String, percent: Double) {
@@ -2013,65 +2066,12 @@ struct LiveStatsView: View {
                     if isTrailingSide { Spacer() }
                 }
 
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(players) { player in
-                            Button {
-                                if activePlayerQuickStatsPlayerID == player.id {
-                                    activePlayerQuickStatsPlayerID = nil
-                                }
-                                selectPlayer(player.id)
-                            } label: {
-                                playerCardContent(player: player)
-                                    .frame(maxWidth: .infinity, minHeight: 96)
-                                    .background(
-                                        selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
-                                        in: RoundedRectangle(cornerRadius: 10)
-                                    )
-                            }
-                            .background {
-                                GeometryReader { cardProxy in
-                                    if activePlayerQuickStatsPlayerID == player.id {
-                                        Color.clear
-                                            .onAppear {
-                                                activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
-                                            }
-                                            .task(id: cardProxy.frame(in: .global)) {
-                                                activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
-                                            }
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .highPriorityGesture(
-                                LongPressGesture(minimumDuration: 0.25)
-                                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-                                    .onChanged { value in
-                                        switch value {
-                                        case .first(true):
-                                            selectedPlayerId = player.id
-                                            activePlayerQuickStatsPlayerID = player.id
-                                            activePlayerQuickCardFrameGlobal = .zero
-                                            clearPendingPlayerQuickStat()
-                                        case .second(true, let drag?):
-                                            selectedPlayerId = player.id
-                                            activePlayerQuickStatsPlayerID = player.id
-                                            let fallbackWidth = max(panelProxy.size.width - 8, 120)
-                                            let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
-                                                ? CGSize(width: fallbackWidth, height: 96)
-                                                : activePlayerQuickCardFrameGlobal.size
-                                            updateQuickStatHover(location: drag.location, cardSize: cardSize)
-                                        default:
-                                            break
-                                        }
-                                    }
-                                    .onEnded { _ in
-                                        commitPendingPlayerQuickStatIfValid(playerID: player.id)
-                                        clearPendingPlayerQuickStat()
-                                        activePlayerQuickStatsPlayerID = nil
-                                        activePlayerQuickCardFrameGlobal = .zero
-                                    }
-                            )
+                Group {
+                    if edgeIsPortrait {
+                        edgePlayerColumnList(players: players, panelProxy: panelProxy)
+                    } else {
+                        ScrollView {
+                            edgePlayerColumnList(players: players, panelProxy: panelProxy)
                         }
                     }
                 }
@@ -2095,6 +2095,69 @@ struct LiveStatsView: View {
             .padding(12)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private func edgePlayerColumnList(players: [Player], panelProxy: GeometryProxy) -> some View {
+        VStack(spacing: 8) {
+            ForEach(players) { player in
+                Button {
+                    if activePlayerQuickStatsPlayerID == player.id {
+                        activePlayerQuickStatsPlayerID = nil
+                    }
+                    selectPlayer(player.id)
+                } label: {
+                    playerCardContent(player: player)
+                        .frame(maxWidth: .infinity, minHeight: 82)
+                        .background(
+                            selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: 10)
+                        )
+                }
+                .background {
+                    GeometryReader { cardProxy in
+                        if activePlayerQuickStatsPlayerID == player.id {
+                            Color.clear
+                                .onAppear {
+                                    activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
+                                }
+                                .task(id: cardProxy.frame(in: .global)) {
+                                    activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
+                                }
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .highPriorityGesture(
+                    LongPressGesture(minimumDuration: 0.25)
+                        .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                        .onChanged { value in
+                            switch value {
+                            case .first(true):
+                                selectedPlayerId = player.id
+                                activePlayerQuickStatsPlayerID = player.id
+                                activePlayerQuickCardFrameGlobal = .zero
+                                clearPendingPlayerQuickStat()
+                            case .second(true, let drag?):
+                                selectedPlayerId = player.id
+                                activePlayerQuickStatsPlayerID = player.id
+                                let fallbackWidth = max(panelProxy.size.width - 8, 120)
+                                let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
+                                    ? CGSize(width: fallbackWidth, height: 82)
+                                    : activePlayerQuickCardFrameGlobal.size
+                                updateQuickStatHover(location: drag.location, cardSize: cardSize)
+                            default:
+                                break
+                            }
+                        }
+                        .onEnded { _ in
+                            commitPendingPlayerQuickStatIfValid(playerID: player.id)
+                            clearPendingPlayerQuickStat()
+                            activePlayerQuickStatsPlayerID = nil
+                            activePlayerQuickCardFrameGlobal = .zero
+                        }
+                )
+            }
         }
     }
 
@@ -2525,7 +2588,7 @@ struct LiveStatsView: View {
     }
 
     private var oppositionStatsButton: some View {
-        Button {
+        let button = Button {
             showTotals = true
         } label: {
             ZStack {
@@ -2541,7 +2604,57 @@ struct LiveStatsView: View {
                     .padding(.horizontal, 8)
             }
         }
+        .background {
+            GeometryReader { proxy in
+                if activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID {
+                    Color.clear
+                        .onAppear {
+                            activePlayerQuickCardFrameGlobal = proxy.frame(in: .global)
+                        }
+                        .task(id: proxy.frame(in: .global)) {
+                            activePlayerQuickCardFrameGlobal = proxy.frame(in: .global)
+                        }
+                }
+            }
+        }
+        .overlay {
+            if activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID, activePlayerQuickCardFrameGlobal != .zero {
+                playerQuickStatsFan(cardSize: CGSize(width: 92, height: 92), globalMidX: activePlayerQuickCardFrameGlobal.midX)
+                    .frame(width: 92, height: 92)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                    .allowsHitTesting(false)
+                    .zIndex(7000)
+            }
+        }
+        .highPriorityGesture(
+            LongPressGesture(minimumDuration: 0.25)
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                .onChanged { value in
+                    switch value {
+                    case .first(true):
+                        activePlayerQuickStatsPlayerID = oppositionTeamStatPlayerID
+                        activePlayerQuickCardFrameGlobal = .zero
+                        clearPendingPlayerQuickStat()
+                    case .second(true, let drag?):
+                        activePlayerQuickStatsPlayerID = oppositionTeamStatPlayerID
+                        let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
+                            ? CGSize(width: 92, height: 92)
+                            : activePlayerQuickCardFrameGlobal.size
+                        updateQuickStatHover(location: drag.location, cardSize: cardSize)
+                    default:
+                        break
+                    }
+                }
+                .onEnded { _ in
+                    commitPendingPlayerQuickStatIfValid(playerID: oppositionTeamStatPlayerID)
+                    clearPendingPlayerQuickStat()
+                    activePlayerQuickStatsPlayerID = nil
+                    activePlayerQuickCardFrameGlobal = .zero
+                }
+        )
         .buttonStyle(.plain)
+
+        return button
     }
 
     private var rushedBehindButton: some View {
@@ -2749,7 +2862,7 @@ struct LiveStatsView: View {
             ),
             PlayerQuickStatOption(
                 id: "behind",
-                title: "Behind",
+                title: "Point",
                 transcript: "behind",
                 statType: statType(named: "Behind", fallbackName: "Scores", extraFallbackNames: ["Goal"])
             )
@@ -2834,13 +2947,22 @@ struct LiveStatsView: View {
 
     private var shouldShowContestedPopup: Bool {
         guard let statID = hoveredPlayerQuickStatName else { return false }
-        return needsQuickStatVotes(for: statID) && trackContestedPossessions
+        let contestedEnabled = activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID
+            ? oppositionTrackContestedPossessions
+            : trackContestedPossessions
+        return needsQuickStatVotes(for: statID) && contestedEnabled
     }
 
     private var shouldShowEfficiencyPopup: Bool {
         guard let statID = hoveredPlayerQuickStatName else { return false }
-        guard needsQuickStatVotes(for: statID), trackDisposalEfficiency else { return false }
-        if trackContestedPossessions {
+        let efficiencyEnabled = activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID
+            ? oppositionTrackDisposalEfficiency
+            : trackDisposalEfficiency
+        let contestedEnabled = activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID
+            ? oppositionTrackContestedPossessions
+            : trackContestedPossessions
+        guard needsQuickStatVotes(for: statID), efficiencyEnabled else { return false }
+        if contestedEnabled {
             return hoveredPlayerQuickContestedVote != nil
         }
         return true
@@ -2968,6 +3090,9 @@ struct LiveStatsView: View {
     }
 
     private func updateQuickStatHover(location: CGPoint, cardSize: CGSize) {
+        let isOppositionQuick = activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID
+        let contestedEnabled = isOppositionQuick ? oppositionTrackContestedPossessions : trackContestedPossessions
+        let efficiencyEnabled = isOppositionQuick ? oppositionTrackDisposalEfficiency : trackDisposalEfficiency
         let globalMidX = activePlayerQuickCardFrameGlobal == .zero ? (interfaceScreenWidth / 2) : activePlayerQuickCardFrameGlobal.midX
         let layout = quickStatPieLayout(cardSize: cardSize, globalMidX: globalMidX)
         let distance = hypot(location.x - layout.center.x, location.y - layout.center.y)
@@ -2989,7 +3114,7 @@ struct LiveStatsView: View {
 
         let selectedFirstTierAngle = selectedQuickStatMidAngle(layout: layout)
         let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedFirstTierAngle, tier: 1)
-        if trackContestedPossessions {
+        if contestedEnabled {
             let selection = votePopupSelectionIndex(location: location, layout: contestedLayout)
             if selection == 0 {
                 hoveredPlayerQuickContestedVote = .contested
@@ -2998,8 +3123,8 @@ struct LiveStatsView: View {
             }
         }
 
-        if !trackDisposalEfficiency { return }
-        if trackContestedPossessions && hoveredPlayerQuickContestedVote == nil { return }
+        if !efficiencyEnabled { return }
+        if contestedEnabled && hoveredPlayerQuickContestedVote == nil { return }
 
         let selectedSecondTierAngle = selectedVoteMidAngle(
             layout: contestedLayout,
@@ -3043,17 +3168,30 @@ struct LiveStatsView: View {
             return
         }
 
-        let hasRequiredEfficiency = !trackDisposalEfficiency || !needsQuickStatVotes(for: statID) || hoveredPlayerQuickEfficiencyVote != nil
-        let hasRequiredContested = !trackContestedPossessions || !needsQuickStatVotes(for: statID) || hoveredPlayerQuickContestedVote != nil
+        let isOppositionQuick = playerID == oppositionTeamStatPlayerID
+        let efficiencyEnabled = isOppositionQuick ? oppositionTrackDisposalEfficiency : trackDisposalEfficiency
+        let contestedEnabled = isOppositionQuick ? oppositionTrackContestedPossessions : trackContestedPossessions
+        let hasRequiredEfficiency = !efficiencyEnabled || !needsQuickStatVotes(for: statID) || hoveredPlayerQuickEfficiencyVote != nil
+        let hasRequiredContested = !contestedEnabled || !needsQuickStatVotes(for: statID) || hoveredPlayerQuickContestedVote != nil
         guard hasRequiredEfficiency && hasRequiredContested else { return }
 
-        selectedPlayerId = playerID
-        addManualEvent(
-            statTypeId: statType.id,
-            transcript: option.transcript,
-            efficiencyVote: hoveredPlayerQuickEfficiencyVote,
-            contestedVote: hoveredPlayerQuickContestedVote
-        )
+        if playerID == oppositionTeamStatPlayerID {
+            addTeamEvent(
+                statTypeId: statType.id,
+                isOpposition: true,
+                scoreKind: option.transcript,
+                efficiencyVote: hoveredPlayerQuickEfficiencyVote,
+                contestedVote: hoveredPlayerQuickContestedVote
+            )
+        } else {
+            selectedPlayerId = playerID
+            addManualEvent(
+                statTypeId: statType.id,
+                transcript: option.transcript,
+                efficiencyVote: hoveredPlayerQuickEfficiencyVote,
+                contestedVote: hoveredPlayerQuickContestedVote
+            )
+        }
         clearPendingPlayerQuickStat()
         activePlayerQuickStatsPlayerID = nil
     }
