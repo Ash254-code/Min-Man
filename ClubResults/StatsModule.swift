@@ -1069,6 +1069,7 @@ struct LiveStatsView: View {
     @State private var statusBanner: StatRecordBanner?
     @State private var statusBannerTask: Task<Void, Never>?
     @State private var showStatsSettings = false
+    @State private var showQuarterPickerDialog = false
     @State private var activeEfficiencyButtonKey: String?
     @State private var activeEfficiencyHoverVote: EfficiencyVote?
     @State private var activeContestedHoverVote: ContestedPossessionVote?
@@ -1359,7 +1360,13 @@ struct LiveStatsView: View {
     }
 
     private var formattedQuarterTime: String {
-        String(format: "%02d:%02d", remainingQuarterSeconds / 60, remainingQuarterSeconds % 60)
+        let absoluteSeconds = abs(remainingQuarterSeconds)
+        let timeText = String(format: "%02d:%02d", absoluteSeconds / 60, absoluteSeconds % 60)
+        return remainingQuarterSeconds < 0 ? "-\(timeText)" : timeText
+    }
+
+    private var timerBackgroundColor: Color {
+        remainingQuarterSeconds < 0 ? .red : Color(uiColor: .systemBlue)
     }
 
     private var isEdgeLayoutActive: Bool {
@@ -1386,7 +1393,9 @@ struct LiveStatsView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.thinMaterial)
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
+                countdownBadge
+
                 Spacer(minLength: 0)
                 Text(gradeName)
                     .font(.title.weight(.black))
@@ -1399,6 +1408,8 @@ struct LiveStatsView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
+
+                quarterBadge
             }
             .padding(.horizontal, 18)
 
@@ -1418,6 +1429,49 @@ struct LiveStatsView: View {
         }
         .frame(maxWidth: .infinity)
         .animation(.spring(response: 0.4, dampingFraction: 0.86), value: statusBanner)
+        .confirmationDialog("Select Quarter", isPresented: $showQuarterPickerDialog, titleVisibility: .visible) {
+            ForEach(["Q1", "Q2", "Q3", "Q4"], id: \.self) { quarter in
+                Button(quarter) {
+                    selectedQuarter = quarter
+                }
+            }
+        }
+    }
+
+    private var countdownBadge: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(formattedQuarterTime)
+                .font(.system(size: 36, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+            Text(remainingQuarterSeconds < 0 ? "Overtime" : "Count down")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.9))
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .background(timerBackgroundColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var quarterBadge: some View {
+        Button {
+            showQuarterPickerDialog = true
+        } label: {
+            Text(selectedQuarter)
+                .font(.title2.weight(.black))
+                .foregroundStyle(.white)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 20)
+                .background(Color(uiColor: .systemBlue), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .highPriorityGesture(
+            LongPressGesture(minimumDuration: 0.35)
+                .onEnded { _ in
+                    triggerStrongHaptic()
+                    showQuarterPickerDialog = true
+                }
+        )
+        .buttonStyle(.plain)
     }
 
     private var combinedScoreAndActionsPanel: some View {
@@ -2026,7 +2080,7 @@ struct LiveStatsView: View {
 
                     VStack(spacing: 8) {
                         combinedScoreAndActionsPanel
-                            .frame(maxHeight: .infinity)
+                            .frame(maxHeight: 472, alignment: .top)
 
                         if !oppositionTrackPossessions {
                             statButtonsPanel
@@ -2103,6 +2157,11 @@ struct LiveStatsView: View {
                     }
                 }
                 .zIndex(6000)
+
+                Spacer(minLength: 8)
+
+                edgeSpeakButton(isTrailingSide: isTrailingSide)
+                    .padding(.bottom, 2)
             }
             .padding(12)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -2726,6 +2785,34 @@ struct LiveStatsView: View {
         }
         .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
             if isPressing {
+                triggerStrongHaptic()
+                speechService.startListening(vocabulary: speechVocabulary)
+            } else if speechService.isRecording {
+                speechService.stopListening { transcript in
+                    handleVoiceTranscript(transcript)
+                }
+            }
+        }, perform: {})
+        .buttonStyle(.plain)
+    }
+
+    private func edgeSpeakButton(isTrailingSide: Bool) -> some View {
+        let fillColor: Color = isTrailingSide ? .red : Color(uiColor: .systemBlue)
+        return Button {
+            // press-and-hold driven
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(speechService.isRecording ? Color.red : fillColor.opacity(0.95))
+                    .frame(width: 138, height: 138)
+                Text("Speak")
+                    .font(.title2.bold())
+                    .foregroundStyle(.white)
+            }
+        }
+        .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
+            if isPressing {
+                triggerStrongHaptic()
                 speechService.startListening(vocabulary: speechVocabulary)
             } else if speechService.isRecording {
                 speechService.stopListening { transcript in
@@ -3352,11 +3439,7 @@ struct LiveStatsView: View {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 await MainActor.run {
                     guard isQuarterTimerRunning else { return }
-                    if remainingQuarterSeconds > 0 {
-                        remainingQuarterSeconds -= 1
-                    } else {
-                        stopQuarterTimer()
-                    }
+                    remainingQuarterSeconds -= 1
                 }
             }
         }
@@ -3680,7 +3763,8 @@ struct LiveStatsView: View {
         case .emptyTranscript:
             return "No speech detected"
         case .noStatFound:
-            return withHeard("Stat type not recognised")
+            let cleaned = heardTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+            return cleaned.isEmpty ? "Nothing heard" : "Heard: \"\(cleaned)\""
         case .noPlayerFound:
             if let guessed = result.matchedPlayerName {
                 return withHeard("Player not found. Closest: \(guessed)")
