@@ -1070,6 +1070,7 @@ struct LiveStatsView: View {
     @State private var statusBannerTask: Task<Void, Never>?
     @State private var showStatsSettings = false
     @State private var showQuarterChangeReminder = false
+    @State private var showQuarterPickerDialog = false
     @State private var showTimerModeEditor = false
     @State private var customQuarterMinutes = 20
     @State private var activeEfficiencyButtonKey: String?
@@ -1376,6 +1377,13 @@ struct LiveStatsView: View {
         return sign + String(format: "%02d:%02d", absolute / 60, absolute % 60)
     }
 
+    private var timerBackgroundColor: Color {
+        if isQuarterTimerRunning {
+            return remainingQuarterSeconds < 0 ? .red : .green
+        }
+        return .gray
+    }
+
     private var isEdgeLayoutActive: Bool {
         statsLayout == StatsLayoutOption.edge.rawValue
     }
@@ -1447,42 +1455,6 @@ struct LiveStatsView: View {
                 }
             }
         }
-    }
-
-    private var countdownBadge: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(formattedQuarterTime)
-                .font(.system(size: 36, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-                .monospacedDigit()
-            Text(remainingQuarterSeconds < 0 ? "Overtime" : "Count down")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.9))
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 14)
-        .background(timerBackgroundColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private var quarterBadge: some View {
-        Button {
-            showQuarterPickerDialog = true
-        } label: {
-            Text(selectedQuarter)
-                .font(.title2.weight(.black))
-                .foregroundStyle(.white)
-                .padding(.vertical, 12)
-                .padding(.horizontal, 20)
-                .background(Color(uiColor: .systemBlue), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .highPriorityGesture(
-            LongPressGesture(minimumDuration: 0.35)
-                .onEnded { _ in
-                    triggerStrongHaptic()
-                    showQuarterPickerDialog = true
-                }
-        )
-        .buttonStyle(.plain)
     }
 
     private var combinedScoreAndActionsPanel: some View {
@@ -1905,7 +1877,7 @@ struct LiveStatsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(timerBackgroundColor.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .onTapGesture {
             if isQuarterTimerRunning {

@@ -597,8 +597,7 @@ final class PressHoldSpeechService: ObservableObject {
 #if targetEnvironment(simulator)
         lastErrorMessage = "Speech recognition testing must run on a real device"
         return
-#endif
-
+#else
         task?.cancel()
         task = nil
 
@@ -659,6 +658,7 @@ final class PressHoldSpeechService: ObservableObject {
             lastErrorMessage = "Could not start microphone"
             stopListeningInternal()
         }
+#endif
     }
 
     private func ensureSpeechAuthorization() async throws -> SFSpeechRecognizerAuthorizationStatus {
