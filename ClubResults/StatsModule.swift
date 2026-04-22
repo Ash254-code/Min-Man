@@ -33,7 +33,57 @@ extension StatType {
             "scores": ["score", "scores", "goal", "goals", "go", "behind", "behinds", "point", "points", "rushed behind"]
         ]
         let aliases = builtIn[lowercase] ?? [canonical]
-        return Array(Set(aliases + [canonical]))
+        let detectedWords = SpeechDetectedWordsStore.words(for: id)
+        return SpeechDetectedWordsStore.mergedAliases(
+            canonical: canonical,
+            builtIn: aliases,
+            detected: detectedWords
+        )
+    }
+}
+
+private enum SpeechDetectedWordsStore {
+    static let storageKey = "speech_setup_detected_words"
+
+    static func words(for statTypeID: UUID) -> [String] {
+        let key = "builtin::\(statTypeID.uuidString)"
+        let map = load()
+        return map[key] ?? []
+    }
+
+    static func mergedAliases(canonical: String, builtIn: [String], detected: [String]) -> [String] {
+        let canonicalTrimmed = canonical.trimmingCharacters(in: .whitespacesAndNewlines)
+        let combined = [canonicalTrimmed] + builtIn + detected
+        var seen: Set<String> = []
+        var ordered: [String] = []
+
+        for alias in combined {
+            let normalized = alias
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            guard !normalized.isEmpty else { continue }
+            if seen.insert(normalized).inserted {
+                ordered.append(normalized)
+            }
+        }
+
+        return ordered
+    }
+
+    private static func load() -> [String: [String]] {
+        guard let json = UserDefaults.standard.string(forKey: storageKey),
+              let data = json.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String: [String]].self, from: data)
+        else {
+            return [:]
+        }
+
+        return decoded.mapValues { values in
+            values.map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }
+            .filter { !$0.isEmpty }
+        }
     }
 }
 

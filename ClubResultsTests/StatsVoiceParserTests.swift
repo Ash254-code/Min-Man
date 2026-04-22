@@ -98,4 +98,21 @@ struct StatsVoiceParserTests {
         #expect(scoreAliases.contains("behind"))
         #expect(scoreAliases.contains("behinds"))
     }
+
+    @Test func statTypeVoiceAliasesIncludeDetectedWordsForMatchingSection() {
+        let statID = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let storage: [String: [String]] = [
+            "builtin::\(statID.uuidString)": ["boot", "toe poke"],
+            "builtin::00000000-0000-0000-0000-0000000000BB": ["other"]
+        ]
+        let json = try! String(data: JSONEncoder().encode(storage), encoding: .utf8)!
+        UserDefaults.standard.set(json, forKey: "speech_setup_detected_words")
+        defer { UserDefaults.standard.removeObject(forKey: "speech_setup_detected_words") }
+
+        let aliases = StatType(id: statID, name: "Kick").voiceAliases
+        #expect(aliases.contains("kick"))
+        #expect(aliases.contains("boot"))
+        #expect(aliases.contains("toe poke"))
+        #expect(!aliases.contains("other"))
+    }
 }
