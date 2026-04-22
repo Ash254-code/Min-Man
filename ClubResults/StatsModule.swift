@@ -3661,25 +3661,35 @@ struct LiveStatsView: View {
     }
 
     private func parseFailureMessage(_ result: VoiceParseResult) -> String {
+        let heardTranscript = result.normalizedTranscript.isEmpty
+            ? result.rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+            : result.normalizedTranscript
+
+        func withHeard(_ message: String) -> String {
+            let cleaned = heardTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty else { return message }
+            return "\(message). Heard: \"\(cleaned)\""
+        }
+
         switch result.parseStatus {
         case .emptyTranscript:
             return "No speech detected"
         case .noStatFound:
-            return "Stat type not recognised"
+            return withHeard("Stat type not recognised")
         case .noPlayerFound:
             if let guessed = result.matchedPlayerName {
-                return "Player not found. Closest: \(guessed)"
+                return withHeard("Player not found. Closest: \(guessed)")
             }
-            return "Player not found"
+            return withHeard("Player not found")
         case .ambiguousPlayer:
             if let first = result.candidatePlayerIds.first {
-                return "Multiple players match '\(playerLabel(for: first))'"
+                return withHeard("Multiple players match '\(playerLabel(for: first))'")
             }
-            return "Multiple players match"
+            return withHeard("Multiple players match")
         case .ambiguousStat:
-            return "Multiple stat types matched"
+            return withHeard("Multiple stat types matched")
         case .lowConfidence:
-            return "Could not confidently interpret command"
+            return withHeard("Could not confidently interpret command")
         case .success:
             return ""
         }
