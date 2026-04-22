@@ -511,310 +511,208 @@ struct StatsTypesSettingsView: View {
     }
 }
 
-private struct SpeechPromptResult: Identifiable, Codable {
+private struct CustomSpeechStatSection: Identifiable, Codable, Hashable {
     let id: UUID
-    let expected: String
-    let heard: String
-    let passed: Bool
-    let timestamp: Date
-}
-
-private struct SpeechPracticePrompt: Identifiable {
-    enum Group: String, CaseIterable {
-        case basicStats = "Basic Stat Words"
-        case playerNames = "Player Names"
-        case simpleCommands = "Simple Commands"
-    }
-
-    let id: String
-    let group: Group
-    let expected: String
-
-    init(group: Group, expected: String) {
-        self.group = group
-        self.expected = expected
-        self.id = "\(group.rawValue.lowercased())::\(expected.lowercased())"
-    }
+    var name: String
 }
 
 struct SpeechSetupView: View {
-    @Query(sort: \Grade.displayOrder) private var grades: [Grade]
-    @Query(sort: \Player.name) private var allPlayers: [Player]
     @Query(sort: \StatType.sortOrder) private var allStatTypes: [StatType]
-    @Query(sort: \StatsSession.createdAt, order: .reverse) private var sessions: [StatsSession]
 
     @StateObject private var speechService = PressHoldSpeechService()
-    private let parser = StatsVoiceParser()
+    @State private var activeSectionID: String?
+    @State private var showClearConfirmation = false
+    @State private var newSectionName = ""
 
-    @State private var selectedGradeId: UUID?
-    @State private var activePromptId: String?
-    @State private var heardByPrompt: [String: String] = [:]
-    @State private var passByPrompt: [String: Bool] = [:]
-    @State private var freeTestHeard = ""
-    @State private var freeTestActive = false
-    @State private var recentResults: [SpeechPromptResult] = []
-    @AppStorage("speech_setup_recent_results") private var recentResultsData = ""
+    @AppStorage("speech_setup_custom_sections") private var customSectionsData = ""
+    @AppStorage("speech_setup_detected_words") private var detectedWordsData = ""
+
+    @State private var customSections: [CustomSpeechStatSection] = []
+    @State private var detectedWordsBySection: [String: [String]] = [:]
 
     var body: some View {
-        ZStack {
-            List {
-                Section("Introduction") {
-                    Text("Test what speech recognition hears for stats entry. This checks stat words, player names, and simple commands. It helps setup testing, but does not permanently train your voice.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        List {
+            Section("Add Custom Stat Type") {
+                TextField("New stat type", text: $newSectionName)
+                Button {
+                    addCustomSection()
+                } label: {
+                    Label("Add Section", systemImage: "plus.circle.fill")
                 }
+                .disabled(newSectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
 
-                Section("Setup Grade") {
-                    Picker("Grade", selection: $selectedGradeId) {
-                        Text("Select Grade").tag(Optional<UUID>.none)
-                        ForEach(grades.filter { $0.isActive }) { grade in
-                            Text(grade.name).tag(Optional(grade.id))
-                        }
-                    }
-                    if sessions.isEmpty {
-                        Text("No active stats session found. Select a grade to load player names and numbers for speech testing.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Vocabulary Preview") {
-                    ForEach(vocabularyPreview, id: \.self) { token in
-                        Text(token)
-                            .font(.body.monospaced())
-                    }
-                    if vocabularyPreview.isEmpty {
-                        Text("No vocabulary available for this grade.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Guided Practice") {
-                    ForEach(SpeechPracticePrompt.Group.allCases, id: \.rawValue) { group in
-                        let prompts = promptsForGroup(group)
-                        if !prompts.isEmpty {
-                            Text(group.rawValue)
-                                .font(.headline)
-                                .padding(.top, 6)
-
-                            ForEach(prompts) { prompt in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(prompt.expected)
-                                        .font(.title3.weight(.semibold))
-
-                                    Button {
-                                        // press-and-hold only
-                                    } label: {
-                                        Label("Speak", systemImage: "mic.fill")
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(activePromptId == prompt.id ? .red : .blue)
-                                    .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
-                                        if isPressing {
-                                            activePromptId = prompt.id
-                                            speechService.startListening(vocabulary: speechVocabulary)
-                                        } else if activePromptId == prompt.id {
-                                            speechService.stopListening { transcript in
-                                                applyPromptResult(prompt: prompt, transcript: transcript)
-                                            }
-                                        }
-                                    }, perform: {})
-
-                                    Text("Expected: \(prompt.expected)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text("Heard: \(heardByPrompt[prompt.id] ?? "—")")
-                                        .font(.caption)
-                                    if let passed = passByPrompt[prompt.id] {
-                                        Text(passed ? "Result: Pass" : "Result: Mismatch")
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(passed ? .green : .red)
-                                    }
-                                }
-                                .padding(.vertical, 4)
-                            }
-                        }
-                    }
-                }
-
-                Section("Free Speech Test") {
+            ForEach(allSections) { section in
+                Section(section.name) {
                     Button {
                         // press-and-hold only
                     } label: {
-                        Label("Speak", systemImage: "mic.circle.fill")
-                            .font(.title3.weight(.semibold))
+                        Label(activeSectionID == section.storageKey ? "Recording…" : "Hold to Speak", systemImage: "mic.fill")
+                            .font(.headline)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(freeTestActive ? .red : .blue)
+                    .tint(activeSectionID == section.storageKey ? .red : .blue)
                     .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
                         if isPressing {
-                            freeTestActive = true
-                            speechService.startListening(vocabulary: speechVocabulary)
-                        } else if freeTestActive {
+                            activeSectionID = section.storageKey
+                            speechService.startListening(vocabulary: sectionVocabulary(for: section.name))
+                        } else if activeSectionID == section.storageKey {
                             speechService.stopListening { transcript in
-                                freeTestActive = false
-                                freeTestHeard = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                                appendDetectedWords(transcript, to: section.storageKey)
+                                activeSectionID = nil
                             }
                         }
                     }, perform: {})
 
-                    Text("Heard: \(freeTestHeard.isEmpty ? "—" : freeTestHeard)")
-                        .font(.body.monospaced())
-                }
-
-                Section("Recognition Summary") {
-                    Text("\(matchedCount) / \(attemptedCount) prompts matched")
-                        .font(.headline)
-
-                    if problemItems.isEmpty {
-                        Text("Problem items: None")
+                    let words = detectedWordsBySection[section.storageKey] ?? []
+                    if words.isEmpty {
+                        Text("No words detected yet.")
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("Problem items:")
-                            .font(.subheadline.weight(.semibold))
-                        ForEach(problemItems, id: \.self) { item in
-                            Text(item)
-                                .foregroundStyle(.red)
+                        ForEach(words, id: \.self) { word in
+                            Text(word)
+                                .font(.body.monospaced())
                         }
                     }
                 }
-
-                if !recentResults.isEmpty {
-                    Section("Recent Tests") {
-                        ForEach(recentResults) { result in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Expected: \(result.expected)")
-                                Text("Heard: \(result.heard)")
-                                    .foregroundStyle(.secondary)
-                                Text(result.passed ? "Pass" : "Mismatch")
-                                    .foregroundStyle(result.passed ? .green : .red)
-                                    .font(.caption.weight(.semibold))
-                            }
-                        }
-                    }
-                }
-            }
-
-            if activePromptId != nil || freeTestActive {
-                Image(systemName: "mic.circle.fill")
-                    .font(.system(size: 180, weight: .bold))
-                    .foregroundStyle(.red)
-                    .shadow(color: .red.opacity(0.4), radius: 12)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
             }
         }
-        .navigationTitle("Speech Setup")
+        .navigationTitle("Speech Recognition")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    copyAllWords()
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .disabled(allDetectedWords.isEmpty)
+
+                Button(role: .destructive) {
+                    showClearConfirmation = true
+                } label: {
+                    Label("Clear", systemImage: "trash")
+                }
+                .disabled(allDetectedWords.isEmpty)
+            }
+        }
+        .confirmationDialog(
+            "Clear all detected words?",
+            isPresented: $showClearConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear All", role: .destructive) {
+                detectedWordsBySection = [:]
+                persistDetectedWords()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes every saved word from every stat type section.")
+        }
         .onAppear {
-            if selectedGradeId == nil {
-                selectedGradeId = sessions.first?.gradeId ?? grades.first(where: { $0.isActive })?.id
-            }
-            loadRecentResults()
+            loadCustomSections()
+            loadDetectedWords()
         }
     }
 
-    private var selectedPlayers: [Player] {
-        guard let selectedGradeId else { return [] }
-        return allPlayers.filter { $0.isActive && $0.gradeIDs.contains(selectedGradeId) }
-    }
+    private var allSections: [SpeechSection] {
+        let builtIn = allStatTypes
+            .sorted(by: { $0.sortOrder < $1.sortOrder })
+            .map { SpeechSection(storageKey: "builtin::\($0.id.uuidString)", name: $0.name) }
 
-    private var enabledStatTypes: [StatType] {
-        allStatTypes.filter { $0.isEnabled }.sorted(by: { $0.sortOrder < $1.sortOrder })
-    }
-
-    private var speechVocabulary: [String] {
-        let statPhrases = enabledStatTypes.flatMap { $0.voiceAliases }
-        let rosterPhrases = selectedPlayers.flatMap { player -> [String] in
-            var values = [player.name, player.lastName]
-            if let number = player.number {
-                values.append(String(number))
-                values.append("number \(number)")
-            }
-            return values
-        }
-        return Array(Set(statPhrases + rosterPhrases)).filter { !$0.isEmpty }
-    }
-
-    private var vocabularyPreview: [String] {
-        speechVocabulary.sorted()
-    }
-
-    private var prompts: [SpeechPracticePrompt] {
-        var values: [SpeechPracticePrompt] = enabledStatTypes.prefix(6).map {
-            SpeechPracticePrompt(group: .basicStats, expected: $0.name)
+        let custom = customSections.map {
+            SpeechSection(storageKey: "custom::\($0.id.uuidString)", name: $0.name)
         }
 
-        for player in selectedPlayers.prefix(4) {
-            values.append(SpeechPracticePrompt(group: .playerNames, expected: player.name))
-            values.append(SpeechPracticePrompt(group: .playerNames, expected: player.lastName))
-            if let number = player.number {
-                values.append(SpeechPracticePrompt(group: .playerNames, expected: String(number)))
-            }
-        }
-
-        if let playerWithNumber = selectedPlayers.first(where: { $0.number != nil }), let number = playerWithNumber.number {
-            values.append(SpeechPracticePrompt(group: .simpleCommands, expected: "kick \(number)"))
-            values.append(SpeechPracticePrompt(group: .simpleCommands, expected: "kick \(playerWithNumber.lastName)"))
-        }
-        if let player2 = selectedPlayers.dropFirst().first(where: { $0.number != nil }), let number2 = player2.number {
-            values.append(SpeechPracticePrompt(group: .simpleCommands, expected: "handball \(number2)"))
-            values.append(SpeechPracticePrompt(group: .simpleCommands, expected: "mark \(player2.lastName)"))
-        }
-        return values
+        return builtIn + custom
     }
 
-    private func promptsForGroup(_ group: SpeechPracticePrompt.Group) -> [SpeechPracticePrompt] {
-        prompts.filter { $0.group == group }
+    private var allDetectedWords: [String] {
+        Array(Set(detectedWordsBySection.values.flatMap { $0 }))
+            .sorted()
     }
 
-    private var attemptedCount: Int {
-        passByPrompt.count
+    private func sectionVocabulary(for sectionName: String) -> [String] {
+        Array(Set([sectionName] + allDetectedWords))
     }
 
-    private var matchedCount: Int {
-        passByPrompt.values.filter { $0 }.count
+    private func appendDetectedWords(_ transcript: String, to storageKey: String) {
+        let tokens = transcript
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !tokens.isEmpty else { return }
+
+        let existing = detectedWordsBySection[storageKey] ?? []
+        let combined = Array(Set(existing + tokens)).sorted()
+        detectedWordsBySection[storageKey] = combined
+        persistDetectedWords()
     }
 
-    private var problemItems: [String] {
-        prompts.compactMap { prompt in
-            guard let pass = passByPrompt[prompt.id], pass == false else { return nil }
-            return prompt.expected
-        }
+    private func copyAllWords() {
+        let text = allDetectedWords.joined(separator: "\n")
+#if canImport(UIKit)
+        UIPasteboard.general.string = text
+#endif
     }
 
-    private func applyPromptResult(prompt: SpeechPracticePrompt, transcript: String) {
-        activePromptId = nil
-        let heard = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        heardByPrompt[prompt.id] = heard
-        let passed = parser.normalize(heard) == parser.normalize(prompt.expected)
-        passByPrompt[prompt.id] = passed
+    private func addCustomSection() {
+        let trimmed = newSectionName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
 
-        let result = SpeechPromptResult(
-            id: UUID(),
-            expected: prompt.expected,
-            heard: heard,
-            passed: passed,
-            timestamp: Date()
-        )
-        recentResults.insert(result, at: 0)
-        recentResults = Array(recentResults.prefix(20))
-        saveRecentResults()
+        customSections.append(CustomSpeechStatSection(id: UUID(), name: trimmed))
+        customSections.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        newSectionName = ""
+        persistCustomSections()
     }
 
-    private func loadRecentResults() {
-        guard let data = recentResultsData.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode([SpeechPromptResult].self, from: data) else {
-            recentResults = []
+    private func loadCustomSections() {
+        guard !customSectionsData.isEmpty,
+              let data = customSectionsData.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([CustomSpeechStatSection].self, from: data)
+        else {
+            customSections = []
             return
         }
-        recentResults = decoded
+        customSections = decoded
     }
 
-    private func saveRecentResults() {
-        guard let data = try? JSONEncoder().encode(recentResults),
-              let value = String(data: data, encoding: .utf8) else { return }
-        recentResultsData = value
+    private func persistCustomSections() {
+        guard let data = try? JSONEncoder().encode(customSections),
+              let json = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+        customSectionsData = json
     }
+
+    private func loadDetectedWords() {
+        guard !detectedWordsData.isEmpty,
+              let data = detectedWordsData.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String: [String]].self, from: data)
+        else {
+            detectedWordsBySection = [:]
+            return
+        }
+        detectedWordsBySection = decoded
+    }
+
+    private func persistDetectedWords() {
+        guard let data = try? JSONEncoder().encode(detectedWordsBySection),
+              let json = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+        detectedWordsData = json
+    }
+}
+
+private struct SpeechSection: Identifiable {
+    let storageKey: String
+    let name: String
+
+    var id: String { storageKey }
 }
 
 struct StatsSessionSetupView: View {
