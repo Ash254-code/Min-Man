@@ -1503,7 +1503,7 @@ struct LiveStatsView: View {
         isOpposition: Bool
     ) -> some View {
         let isOppositionTeam = isOpposition
-        VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 ScorePill(teamName, style: style)
                     .font(.title3.weight(.bold))
