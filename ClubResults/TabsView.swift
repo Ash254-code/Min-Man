@@ -2,42 +2,68 @@ import SwiftUI
 import SwiftData
 
 struct TabsView: View {
-    @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+    @Environment(\.modelContext) private var dataContext: ModelContext
     @State private var selectedTab: AppTab = .games
     @State private var settingsResetToken = UUID()
 
     var body: some View {
-        TabView(selection: selectionBinding) {
-            GamesView()
-                .tag(AppTab.games)
-                .tabItem { Label("Games", systemImage: "list.bullet") }
+        GeometryReader { proxy in
+            let isPortrait = proxy.size.height > proxy.size.width
 
-            TotalsView()
-                .tag(AppTab.totals)
-                .tabItem { Label("Totals", systemImage: "chart.bar") }
+            TabView(selection: selectionBinding) {
+                GamesView()
+                    .tag(AppTab.games)
+                    .tabItem { Label(tabTitle(for: .games, isPortrait: isPortrait), systemImage: "list.bullet") }
 
-            StatsRootView()
-                .tag(AppTab.stats)
-                .tabItem { Label("Stats", systemImage: "waveform.circle") }
+                TotalsView()
+                    .tag(AppTab.totals)
+                    .tabItem { Label(tabTitle(for: .totals, isPortrait: isPortrait), systemImage: "chart.bar") }
 
-            PresView()
-                .tag(AppTab.pres)
-                .tabItem { Label("Pres", systemImage: "rectangle.stack") }
+                StatsRootView()
+                    .tag(AppTab.stats)
+                    .tabItem { Label(tabTitle(for: .stats, isPortrait: isPortrait), systemImage: "waveform.circle") }
 
-            ReportsSettingsView {
-                UserDefaults.standard.set(true, forKey: "settings.open.contacts")
-                settingsResetToken = UUID()
-                selectedTab = .settings
-            }
+                PresView()
+                    .tag(AppTab.pres)
+                    .tabItem { Label(tabTitle(for: .pres, isPortrait: isPortrait), systemImage: "rectangle.stack") }
+
+                ReportsSettingsView {
+                    UserDefaults.standard.set(true, forKey: "settings.open.contacts")
+                    settingsResetToken = UUID()
+                    selectedTab = .settings
+                }
                 .tag(AppTab.reports)
-                .tabItem { Label("Reports", systemImage: "doc.text") }
+                .tabItem { Label(tabTitle(for: .reports, isPortrait: isPortrait), systemImage: "doc.text") }
 
-            SettingsView(resetToken: settingsResetToken)
-                .tag(AppTab.settings)
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+                SettingsView(resetToken: settingsResetToken)
+                    .tag(AppTab.settings)
+                    .tabItem { Label(tabTitle(for: .settings, isPortrait: isPortrait), systemImage: "gearshape") }
+            }
+            .task {
+                seedInitialGradesIfNeeded()
+            }
         }
-        .task {
-            seedInitialGradesIfNeeded()
+    }
+
+    private func tabTitle(for tab: AppTab, isPortrait: Bool) -> String {
+        guard isPortrait else {
+            switch tab {
+            case .games: return "Games"
+            case .totals: return "Totals"
+            case .stats: return "Stats"
+            case .pres: return "Pres"
+            case .reports: return "Reports"
+            case .settings: return "Settings"
+            }
+        }
+
+        switch tab {
+        case .games: return "Games"
+        case .totals: return "Tot"
+        case .stats: return "Stats"
+        case .pres: return "Pres"
+        case .reports: return "Reps"
+        case .settings: return "Set"
         }
     }
 
