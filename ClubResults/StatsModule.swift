@@ -1079,6 +1079,9 @@ struct LiveStatsView: View {
     @State private var hoveredPlayerQuickStatName: String?
     @State private var hoveredPlayerQuickEfficiencyVote: EfficiencyVote?
     @State private var hoveredPlayerQuickContestedVote: ContestedPossessionVote?
+    @State private var lastHapticQuickStatName: String?
+    @State private var lastHapticQuickContestedVote: ContestedPossessionVote?
+    @State private var lastHapticQuickEfficiencyVote: EfficiencyVote?
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -1633,21 +1636,21 @@ struct LiveStatsView: View {
                 label: "Contested Possession",
                 ourValue: ourContested.text,
                 oppositionValue: oppositionContested.text,
-                ourNumeric: ourContested.percent,
-                oppositionNumeric: oppositionContested.percent
+                ourNumeric: ourContested.total,
+                oppositionNumeric: oppositionContested.total
             ))
         }
 
         rows.append(contentsOf: [
             (
-                label: "Team Kicks",
+                label: "Kicks",
                 ourValue: "\(ourKicks)",
                 oppositionValue: "\(oppositionKicks)",
                 ourNumeric: Double(ourKicks),
                 oppositionNumeric: Double(oppositionKicks)
             ),
             (
-                label: "Team Handball",
+                label: "Handball",
                 ourValue: "\(ourHandballs)",
                 oppositionValue: "\(oppositionHandballs)",
                 ourNumeric: Double(ourHandballs),
@@ -1799,14 +1802,10 @@ struct LiveStatsView: View {
         return ("\(Int(round(percent)))%", percent)
     }
 
-    private func contestedComparisonValues(isOpposition: Bool) -> (text: String, percent: Double) {
+    private func contestedComparisonValues(isOpposition: Bool) -> (text: String, total: Double) {
         let teamEvents = eventsForComparison(isOpposition: isOpposition)
         let contested = teamEvents.filter { $0.contestedVoteRaw == ContestedPossessionVote.contested.rawValue }.count
-        let uncontested = teamEvents.filter { $0.contestedVoteRaw == ContestedPossessionVote.uncontested.rawValue }.count
-        let total = contested + uncontested
-        guard total > 0 else { return ("0%", 0) }
-        let percent = (Double(contested) / Double(total)) * 100
-        return ("\(Int(round(percent)))%", percent)
+        return ("\(contested)", Double(contested))
     }
 
     private func eventsForComparison(isOpposition: Bool) -> [StatEvent] {
@@ -2138,6 +2137,7 @@ struct LiveStatsView: View {
                                 activePlayerQuickStatsPlayerID = player.id
                                 activePlayerQuickCardFrameGlobal = .zero
                                 clearPendingPlayerQuickStat()
+                                triggerStrongHaptic()
                             case .second(true, let drag?):
                                 selectedPlayerId = player.id
                                 activePlayerQuickStatsPlayerID = player.id
@@ -2284,7 +2284,10 @@ struct LiveStatsView: View {
                             activeEfficiencyButtonKey = buttonKey
                             activeEfficiencyHoverVote = nil
                             activeContestedHoverVote = nil
+                            triggerStrongHaptic()
                         case .second(true, let drag?):
+                            let previousEfficiencyVote = activeEfficiencyHoverVote
+                            let previousContestedVote = activeContestedHoverVote
                             if trackDisposalEfficiency && trackContestedPossessions {
                                 if drag.location.y < -76 {
                                     activeEfficiencyHoverVote = drag.location.x < 110 ? .thumbsUp : .thumbsDown
@@ -2295,6 +2298,9 @@ struct LiveStatsView: View {
                                 activeEfficiencyHoverVote = drag.location.x < 110 ? .thumbsUp : .thumbsDown
                             } else if trackContestedPossessions {
                                 activeContestedHoverVote = drag.location.x < 110 ? .contested : .uncontested
+                            }
+                            if previousEfficiencyVote != activeEfficiencyHoverVote || previousContestedVote != activeContestedHoverVote {
+                                triggerSelectionStepHaptic()
                             }
                         default:
                             break
@@ -2635,6 +2641,7 @@ struct LiveStatsView: View {
                         activePlayerQuickStatsPlayerID = oppositionTeamStatPlayerID
                         activePlayerQuickCardFrameGlobal = .zero
                         clearPendingPlayerQuickStat()
+                        triggerStrongHaptic()
                     case .second(true, let drag?):
                         activePlayerQuickStatsPlayerID = oppositionTeamStatPlayerID
                         let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
@@ -3090,6 +3097,9 @@ struct LiveStatsView: View {
     }
 
     private func updateQuickStatHover(location: CGPoint, cardSize: CGSize) {
+        let previousQuickStatName = hoveredPlayerQuickStatName
+        let previousContestedVote = hoveredPlayerQuickContestedVote
+        let previousEfficiencyVote = hoveredPlayerQuickEfficiencyVote
         let isOppositionQuick = activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID
         let contestedEnabled = isOppositionQuick ? oppositionTrackContestedPossessions : trackContestedPossessions
         let efficiencyEnabled = isOppositionQuick ? oppositionTrackDisposalEfficiency : trackDisposalEfficiency
@@ -3107,6 +3117,11 @@ struct LiveStatsView: View {
             hoveredPlayerQuickStatName = playerQuickStatOptions[statIndex].id
             hoveredPlayerQuickContestedVote = nil
             hoveredPlayerQuickEfficiencyVote = nil
+            triggerQuickSelectionHapticIfNeeded(
+                previousQuickStatName: previousQuickStatName,
+                previousContestedVote: previousContestedVote,
+                previousEfficiencyVote: previousEfficiencyVote
+            )
             return
         }
 
@@ -3138,6 +3153,11 @@ struct LiveStatsView: View {
         } else if efficiencySelection == 1 {
             hoveredPlayerQuickEfficiencyVote = .thumbsDown
         }
+        triggerQuickSelectionHapticIfNeeded(
+            previousQuickStatName: previousQuickStatName,
+            previousContestedVote: previousContestedVote,
+            previousEfficiencyVote: previousEfficiencyVote
+        )
     }
 
     private func votePopupSelectionIndex(
@@ -3200,6 +3220,39 @@ struct LiveStatsView: View {
         hoveredPlayerQuickStatName = nil
         hoveredPlayerQuickEfficiencyVote = nil
         hoveredPlayerQuickContestedVote = nil
+        lastHapticQuickStatName = nil
+        lastHapticQuickContestedVote = nil
+        lastHapticQuickEfficiencyVote = nil
+    }
+
+    private func triggerStrongHaptic() {
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
+    }
+
+    private func triggerSelectionStepHaptic() {
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
+    }
+
+    private func triggerQuickSelectionHapticIfNeeded(
+        previousQuickStatName: String?,
+        previousContestedVote: ContestedPossessionVote?,
+        previousEfficiencyVote: EfficiencyVote?
+    ) {
+        let didChangeQuickStat = hoveredPlayerQuickStatName != previousQuickStatName
+        let didChangeContested = hoveredPlayerQuickContestedVote != previousContestedVote
+        let didChangeEfficiency = hoveredPlayerQuickEfficiencyVote != previousEfficiencyVote
+        guard didChangeQuickStat || didChangeContested || didChangeEfficiency else { return }
+
+        let isSameAsLastHaptic =
+            lastHapticQuickStatName == hoveredPlayerQuickStatName &&
+            lastHapticQuickContestedVote == hoveredPlayerQuickContestedVote &&
+            lastHapticQuickEfficiencyVote == hoveredPlayerQuickEfficiencyVote
+        guard !isSameAsLastHaptic else { return }
+
+        lastHapticQuickStatName = hoveredPlayerQuickStatName
+        lastHapticQuickContestedVote = hoveredPlayerQuickContestedVote
+        lastHapticQuickEfficiencyVote = hoveredPlayerQuickEfficiencyVote
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
     }
 
     private func configureQuarterTimer(reset: Bool) {
