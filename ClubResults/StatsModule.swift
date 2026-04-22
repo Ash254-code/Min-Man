@@ -2239,90 +2239,72 @@ struct LiveStatsView: View {
         let selectedRect = CGRect(x: selectedAnchor.x - 52, y: selectedAnchor.y - 30, width: 104, height: 60)
         let contestedPopupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
         let efficiencyPopupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
+        let contestedCenter = CGPoint(x: contestedPopupX, y: selectedRect.minY - 8)
+        let efficiencyCenter = CGPoint(x: efficiencyPopupX, y: selectedRect.minY - 86)
         return ZStack {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
                 let isHovered = hoveredPlayerQuickStatName == option.id
                 let segment = quickStatSegmentAngles(index: index, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
                 let midAngle = (segment.start + segment.end) / 2
-                let labelRadius = layout.outerRadius - 24
-                let labelPoint = polarPoint(center: layout.center, radius: labelRadius, angleDegrees: midAngle)
-                let labelRotation = quickStatLabelRotation(for: midAngle)
+                let labelRadius = layout.outerRadius - 12
 
                 QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
-                    .fill(isHovered ? Color.blue : (option.statType == nil ? Color.gray.opacity(0.35) : Color.black.opacity(0.72)))
+                    .fill(isHovered ? Color.blue : (option.statType == nil ? Color(white: 0.28) : .black))
                     .overlay {
                         QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
-                            .stroke(Color.white.opacity(isHovered ? 0.65 : 0.35), lineWidth: isHovered ? 2.5 : 1)
+                            .stroke(Color.white.opacity(isHovered ? 0.8 : 0.45), lineWidth: isHovered ? 2.5 : 1.2)
                     }
                     .overlay {
-                        Text(option.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
-                            .frame(width: 86)
-                            .rotationEffect(.degrees(labelRotation))
-                            .position(x: labelPoint.x, y: labelPoint.y)
+                        curvedSliceLabel(option.title, center: layout.center, radius: labelRadius, startAngle: segment.start, endAngle: segment.end)
                     }
             }
 
             if shouldShowContestedPopup {
-                dualOptionPopup(
+                votePiePopup(
                     leftTitle: "Contested",
                     leftActive: hoveredPlayerQuickContestedVote == .contested,
-                    leftColor: .orange,
                     rightTitle: "Uncontested",
                     rightActive: hoveredPlayerQuickContestedVote == .uncontested,
-                    rightColor: .blue
+                    center: contestedCenter
                 )
-                .position(x: contestedPopupX, y: selectedRect.minY - 58)
             }
 
             if shouldShowEfficiencyPopup {
-                dualOptionPopup(
+                votePiePopup(
                     leftTitle: "Effective",
                     leftActive: hoveredPlayerQuickEfficiencyVote == .thumbsUp,
-                    leftColor: .green,
                     rightTitle: "Non Effective",
                     rightActive: hoveredPlayerQuickEfficiencyVote == .thumbsDown,
-                    rightColor: .red
+                    center: efficiencyCenter
                 )
-                .position(x: efficiencyPopupX, y: selectedRect.minY - 136)
             }
         }
     }
 
-    private func dualOptionPopup(
+    private func votePiePopup(
         leftTitle: String,
         leftActive: Bool,
-        leftColor: Color,
         rightTitle: String,
         rightActive: Bool,
-        rightColor: Color
+        center: CGPoint
     ) -> some View {
-        HStack(spacing: 14) {
-            popupOption(title: leftTitle, isActive: leftActive, tint: leftColor)
-            popupOption(title: rightTitle, isActive: rightActive, tint: rightColor)
+        let layout = votePopupPieLayout(center: center)
+        return ZStack {
+            ForEach(0..<2, id: \.self) { idx in
+                let segment = quickStatSegmentAngles(index: idx, total: 2, spanStart: layout.startAngle, spanEnd: layout.endAngle)
+                let isActive = idx == 0 ? leftActive : rightActive
+                let title = idx == 0 ? leftTitle : rightTitle
+                QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
+                    .fill(isActive ? Color.blue : Color.black)
+                    .overlay {
+                        QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
+                            .stroke(Color.white.opacity(isActive ? 0.8 : 0.45), lineWidth: isActive ? 2.3 : 1.1)
+                    }
+                    .overlay {
+                        curvedSliceLabel(title, center: layout.center, radius: layout.outerRadius - 10, startAngle: segment.start, endAngle: segment.end, font: .subheadline.weight(.bold))
+                    }
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.28), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 3)
-    }
-
-    private func popupOption(title: String, isActive: Bool, tint: Color) -> some View {
-        Text(title)
-            .font(.title3.weight(.bold))
-            .foregroundStyle(.white)
-            .frame(width: 170, height: 70)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isActive ? tint : Color.gray.opacity(0.45))
-            )
     }
 
     private var shouldShowContestedPopup: Bool {
@@ -2363,6 +2345,10 @@ struct LiveStatsView: View {
         return (start, start + span)
     }
 
+    private func votePopupPieLayout(center: CGPoint) -> (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) {
+        (center: center, innerRadius: 34, outerRadius: 100, startAngle: -180, endAngle: 0)
+    }
+
     private func polarPoint(center: CGPoint, radius: CGFloat, angleDegrees: CGFloat) -> CGPoint {
         let radians = angleDegrees * (.pi / 180)
         return CGPoint(x: center.x + cos(radians) * radius, y: center.y + sin(radians) * radius)
@@ -2373,6 +2359,30 @@ struct LiveStatsView: View {
         if tangent > 90 { tangent -= 180 }
         if tangent < -90 { tangent += 180 }
         return tangent
+    }
+
+    @ViewBuilder
+    private func curvedSliceLabel(
+        _ text: String,
+        center: CGPoint,
+        radius: CGFloat,
+        startAngle: CGFloat,
+        endAngle: CGFloat,
+        font: Font = .headline.weight(.bold)
+    ) -> some View {
+        let glyphs = Array(text)
+        let padding: CGFloat = 8
+        let sweep = max(abs(endAngle - startAngle) - (padding * 2), 8)
+        ForEach(Array(glyphs.enumerated()), id: \.offset) { index, char in
+            let t = glyphs.count <= 1 ? 0.5 : CGFloat(index) / CGFloat(max(glyphs.count - 1, 1))
+            let arcAngle = startAngle + padding + (sweep * t * (endAngle >= startAngle ? 1 : -1))
+            let point = polarPoint(center: center, radius: radius, angleDegrees: arcAngle)
+            Text(String(char))
+                .font(font)
+                .foregroundStyle(.white)
+                .position(x: point.x, y: point.y)
+                .rotationEffect(.degrees(quickStatLabelRotation(for: arcAngle)))
+        }
     }
 
     private func normalizedAngle(_ angle: CGFloat) -> CGFloat {
@@ -2435,12 +2445,12 @@ struct LiveStatsView: View {
         let selectedAnchor = hoveredQuickStatAnchor(layout: layout)
         let selectedRect = CGRect(x: selectedAnchor.x - 52, y: selectedAnchor.y - 30, width: 104, height: 60)
         let popupX = clampedPopupX(targetX: selectedAnchor.x, popupWidth: 382, containerWidth: cardSize.width)
-        let contestedRectLeft = CGRect(x: popupX - 184, y: selectedRect.minY - 92, width: 170, height: 70)
-        let contestedRectRight = CGRect(x: popupX + 14, y: selectedRect.minY - 92, width: 170, height: 70)
+        let contestedCenter = CGPoint(x: popupX, y: selectedRect.minY - 8)
         if trackContestedPossessions {
-            if contestedRectLeft.contains(location) {
+            let contested = votePopupPieLayout(center: contestedCenter)
+            if votePopupSelectionIndex(location: location, layout: contested) == 0 {
                 hoveredPlayerQuickContestedVote = .contested
-            } else if contestedRectRight.contains(location) {
+            } else if votePopupSelectionIndex(location: location, layout: contested) == 1 {
                 hoveredPlayerQuickContestedVote = .uncontested
             }
         }
@@ -2448,12 +2458,25 @@ struct LiveStatsView: View {
         if !trackDisposalEfficiency { return }
         if trackContestedPossessions && hoveredPlayerQuickContestedVote == nil { return }
 
-        let efficiencyRectLeft = CGRect(x: popupX - 184, y: selectedRect.minY - 170, width: 170, height: 70)
-        let efficiencyRectRight = CGRect(x: popupX + 14, y: selectedRect.minY - 170, width: 170, height: 70)
-        if efficiencyRectLeft.contains(location) {
+        let efficiencyCenter = CGPoint(x: popupX, y: selectedRect.minY - 86)
+        let efficiency = votePopupPieLayout(center: efficiencyCenter)
+        if votePopupSelectionIndex(location: location, layout: efficiency) == 0 {
             hoveredPlayerQuickEfficiencyVote = .thumbsUp
-        } else if efficiencyRectRight.contains(location) {
+        } else if votePopupSelectionIndex(location: location, layout: efficiency) == 1 {
             hoveredPlayerQuickEfficiencyVote = .thumbsDown
+        }
+    }
+
+    private func votePopupSelectionIndex(
+        location: CGPoint,
+        layout: (center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat, startAngle: CGFloat, endAngle: CGFloat)
+    ) -> Int? {
+        let distance = hypot(location.x - layout.center.x, location.y - layout.center.y)
+        guard distance >= layout.innerRadius && distance <= layout.outerRadius else { return nil }
+        let angle = atan2(location.y - layout.center.y, location.x - layout.center.x) * 180 / .pi
+        return (0..<2).first { idx in
+            let segment = quickStatSegmentAngles(index: idx, total: 2, spanStart: layout.startAngle, spanEnd: layout.endAngle)
+            return angleIsWithinSpan(angle, start: segment.start, end: segment.end)
         }
     }
 
