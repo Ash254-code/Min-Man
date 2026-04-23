@@ -2902,56 +2902,8 @@ struct ReportsSettingsView: View {
                 grades: grades,
                 contacts: contacts,
                 sectionMemberships: sectionMemberships
-            ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs, includedDataOrder in
-                let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
-                let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
-                let template = CustomReportTemplate(
-                    name: name,
-                    gradeIDs: selectedGradeIDs,
-                    includeScores: includeScores,
-                    includeBestPlayers: includeBestPlayers,
-                    bestPlayersLimit: bestPlayersLimit,
-                    includePlayerGrades: includeGuestVotes,
-                    guestVotesLimit: guestVotesLimit,
-                    includeGoalKickers: includeGoalKickers,
-                    goalKickersLimit: goalKickersLimit,
-                    includeGuernseyNumbers: false,
-                    includeBestAndFairestVotes: includeBestAndFairestVotes,
-                    bestAndFairestLimit: bestAndFairestLimit,
-                    includeStaffRoles: includeStaffRoles,
-                    includeOfficials: includeOfficials,
-                    includeUmpires: includeOfficials,
-                    includeTrainers: includeTrainers,
-                    includeMatchNotes: includeMatchNotes,
-                    includeSectionOrder: includedDataOrder,
-                    includeOnlyActiveGrades: includeOnlyActiveGrades,
-                    minimumGamesPlayed: minimumGamesPlayed,
-                    groupingModeRawValue: groupingModeRawValue,
-                    dateRangeQuickPickRawValue: selectedQuickPickRawValue,
-                    customDateRangeStart: normalizedStart,
-                    customDateRangeEnd: normalizedEnd
-                )
-                dataContext.insert(template)
-                selectedRecipientSectionKeys.forEach { sectionKey in
-                    dataContext.insert(CustomReportRecipientSection(templateID: template.id, sectionKey: sectionKey))
-                }
-                selectedRecipientContactIDs.forEach { contactID in
-                    dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
-                }
-                saveContext()
-                let selectedQuickPick = ReportRangeQuickPick(rawValue: selectedQuickPickRawValue) ?? .mostRecentGame
-                let selectedDateRange = buildDateRange(
-                    for: selectedQuickPick,
-                    template: template,
-                    games: games,
-                    customStartDate: normalizedStart,
-                    customEndDate: normalizedEnd
-                )
-                templatePreviewing = TemplateRunRequest(
-                    template: template,
-                    dateRange: selectedDateRange,
-                    emailRecipients: recipientEmails(for: template)
-                )
+            ) { draft in
+                handleCreateTemplateSave(draft)
             }
             .appPopupStyle()
         }
@@ -3003,50 +2955,8 @@ struct ReportsSettingsView: View {
                 onDelete: {
                     deleteTemplate(template)
                 }
-            ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs, includedDataOrder in
-                let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
-                let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
-                template.name = name
-                template.gradeIDs = selectedGradeIDs
-                template.includeScores = includeScores
-                template.includeBestPlayers = includeBestPlayers
-                template.bestPlayersLimit = bestPlayersLimit
-                template.includePlayerGrades = includeGuestVotes
-                template.guestVotesLimit = guestVotesLimit
-                template.includeGoalKickers = includeGoalKickers
-                template.goalKickersLimit = goalKickersLimit
-                template.includeGuernseyNumbers = false
-                template.includeBestAndFairestVotes = includeBestAndFairestVotes
-                template.bestAndFairestLimit = bestAndFairestLimit
-                template.includeStaffRoles = includeStaffRoles
-                template.includeOfficials = includeOfficials
-                template.includeUmpires = includeOfficials
-                template.includeTrainers = includeTrainers
-                template.includeMatchNotes = includeMatchNotes
-                template.includeSectionOrder = includedDataOrder
-                template.includeOnlyActiveGrades = includeOnlyActiveGrades
-                template.minimumGamesPlayed = minimumGamesPlayed
-                template.groupingModeRawValue = groupingModeRawValue
-                template.dateRangeQuickPickRawValue = selectedQuickPickRawValue
-                template.customDateRangeStart = normalizedStart
-                template.customDateRangeEnd = normalizedEnd
-
-                for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
-                    dataContext.delete(recipientSection)
-                }
-                for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
-                    dataContext.delete(recipientGroup)
-                }
-                for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
-                    dataContext.delete(recipientContact)
-                }
-                selectedRecipientSectionKeys.forEach { sectionKey in
-                    dataContext.insert(CustomReportRecipientSection(templateID: template.id, sectionKey: sectionKey))
-                }
-                selectedRecipientContactIDs.forEach { contactID in
-                    dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
-                }
-                saveContext()
+            ) { draft in
+                handleEditTemplateSave(draft, template: template)
             }
             .appPopupStyle()
         }
@@ -3082,6 +2992,106 @@ struct ReportsSettingsView: View {
                 deleteTemplate(template)
             }
         }
+    }
+
+    private func handleCreateTemplateSave(_ draft: CustomReportTemplateDraft) {
+        let normalizedStart = min(draft.customDateRangeStart, draft.customDateRangeEnd)
+        let normalizedEnd = max(draft.customDateRangeStart, draft.customDateRangeEnd)
+        let template = CustomReportTemplate(
+            name: draft.name,
+            gradeIDs: draft.selectedGradeIDs,
+            includeScores: draft.includeScores,
+            includeBestPlayers: draft.includeBestPlayers,
+            bestPlayersLimit: draft.bestPlayersLimit,
+            includePlayerGrades: draft.includeGuestVotes,
+            guestVotesLimit: draft.guestVotesLimit,
+            includeGoalKickers: draft.includeGoalKickers,
+            goalKickersLimit: draft.goalKickersLimit,
+            includeGuernseyNumbers: false,
+            includeBestAndFairestVotes: draft.includeBestAndFairestVotes,
+            bestAndFairestLimit: draft.bestAndFairestLimit,
+            includeStaffRoles: draft.includeStaffRoles,
+            includeOfficials: draft.includeOfficials,
+            includeUmpires: draft.includeOfficials,
+            includeTrainers: draft.includeTrainers,
+            includeMatchNotes: draft.includeMatchNotes,
+            includeSectionOrder: draft.includedDataOrder,
+            includeOnlyActiveGrades: draft.includeOnlyActiveGrades,
+            minimumGamesPlayed: draft.minimumGamesPlayed,
+            groupingModeRawValue: draft.groupingModeRawValue,
+            dateRangeQuickPickRawValue: draft.selectedQuickPickRawValue,
+            customDateRangeStart: normalizedStart,
+            customDateRangeEnd: normalizedEnd
+        )
+        dataContext.insert(template)
+        draft.selectedRecipientSectionKeys.forEach { sectionKey in
+            dataContext.insert(CustomReportRecipientSection(templateID: template.id, sectionKey: sectionKey))
+        }
+        draft.selectedRecipientContactIDs.forEach { contactID in
+            dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
+        }
+        saveContext()
+
+        let selectedQuickPick = ReportRangeQuickPick(rawValue: draft.selectedQuickPickRawValue) ?? .mostRecentGame
+        let selectedDateRange = buildDateRange(
+            for: selectedQuickPick,
+            template: template,
+            games: games,
+            customStartDate: normalizedStart,
+            customEndDate: normalizedEnd
+        )
+        templatePreviewing = TemplateRunRequest(
+            template: template,
+            dateRange: selectedDateRange,
+            emailRecipients: recipientEmails(for: template)
+        )
+    }
+
+    private func handleEditTemplateSave(_ draft: CustomReportTemplateDraft, template: CustomReportTemplate) {
+        let normalizedStart = min(draft.customDateRangeStart, draft.customDateRangeEnd)
+        let normalizedEnd = max(draft.customDateRangeStart, draft.customDateRangeEnd)
+
+        template.name = draft.name
+        template.gradeIDs = draft.selectedGradeIDs
+        template.includeScores = draft.includeScores
+        template.includeBestPlayers = draft.includeBestPlayers
+        template.bestPlayersLimit = draft.bestPlayersLimit
+        template.includePlayerGrades = draft.includeGuestVotes
+        template.guestVotesLimit = draft.guestVotesLimit
+        template.includeGoalKickers = draft.includeGoalKickers
+        template.goalKickersLimit = draft.goalKickersLimit
+        template.includeGuernseyNumbers = false
+        template.includeBestAndFairestVotes = draft.includeBestAndFairestVotes
+        template.bestAndFairestLimit = draft.bestAndFairestLimit
+        template.includeStaffRoles = draft.includeStaffRoles
+        template.includeOfficials = draft.includeOfficials
+        template.includeUmpires = draft.includeOfficials
+        template.includeTrainers = draft.includeTrainers
+        template.includeMatchNotes = draft.includeMatchNotes
+        template.includeSectionOrder = draft.includedDataOrder
+        template.includeOnlyActiveGrades = draft.includeOnlyActiveGrades
+        template.minimumGamesPlayed = draft.minimumGamesPlayed
+        template.groupingModeRawValue = draft.groupingModeRawValue
+        template.dateRangeQuickPickRawValue = draft.selectedQuickPickRawValue
+        template.customDateRangeStart = normalizedStart
+        template.customDateRangeEnd = normalizedEnd
+
+        for recipientSection in customReportRecipientSections where recipientSection.templateID == template.id {
+            dataContext.delete(recipientSection)
+        }
+        for recipientGroup in customReportRecipientGroups where recipientGroup.templateID == template.id {
+            dataContext.delete(recipientGroup)
+        }
+        for recipientContact in customReportRecipientContacts where recipientContact.templateID == template.id {
+            dataContext.delete(recipientContact)
+        }
+        draft.selectedRecipientSectionKeys.forEach { sectionKey in
+            dataContext.insert(CustomReportRecipientSection(templateID: template.id, sectionKey: sectionKey))
+        }
+        draft.selectedRecipientContactIDs.forEach { contactID in
+            dataContext.insert(CustomReportRecipientContact(templateID: template.id, contactID: contactID))
+        }
+        saveContext()
     }
 
     @ViewBuilder
@@ -4609,6 +4619,34 @@ private struct PDFPreviewView: UIViewRepresentable {
     }
 }
 
+private struct CustomReportTemplateDraft {
+    let name: String
+    let selectedGradeIDs: [UUID]
+    let includeScores: Bool
+    let includeBestPlayers: Bool
+    let bestPlayersLimit: Int
+    let includeGuestVotes: Bool
+    let guestVotesLimit: Int
+    let includeGoalKickers: Bool
+    let goalKickersLimit: Int
+    let includeBestAndFairestVotes: Bool
+    let bestAndFairestLimit: Int
+    let includeStaffRoles: Bool
+    let includeOfficials: Bool
+    let includeUmpires: Bool
+    let includeTrainers: Bool
+    let includeMatchNotes: Bool
+    let includeOnlyActiveGrades: Bool
+    let minimumGamesPlayed: Int
+    let groupingModeRawValue: Int
+    let selectedQuickPickRawValue: String
+    let customDateRangeStart: Date
+    let customDateRangeEnd: Date
+    let selectedRecipientSectionKeys: [String]
+    let selectedRecipientContactIDs: [UUID]
+    let includedDataOrder: [String]
+}
+
 private struct CustomReportEditView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -4616,7 +4654,7 @@ private struct CustomReportEditView: View {
     let contacts: [Contact]
     let sectionMemberships: [ContactSectionMembership]
     let onDelete: (() -> Void)?
-    let onSave: (String, [UUID], Bool, Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID], [String]) -> Void
+    let onSave: (CustomReportTemplateDraft) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
@@ -4676,7 +4714,7 @@ private struct CustomReportEditView: View {
         initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
         onDelete: (() -> Void)? = nil,
-        onSave: @escaping (String, [UUID], Bool, Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID], [String]) -> Void
+        onSave: @escaping (CustomReportTemplateDraft) -> Void
     ) {
         self.grades = grades
         self.contacts = contacts
@@ -4958,33 +4996,34 @@ private struct CustomReportEditView: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(
-                            name.trimmingCharacters(in: .whitespacesAndNewlines),
-                            Array(selectedGradeIDs),
-                            includeScores,
-                            includeBestPlayers,
-                            bestPlayersLimit,
-                            includeGuestVotes,
-                            guestVotesLimit,
-                            includeGoalKickers,
-                            goalKickersLimit,
-                            includeBestAndFairestVotes,
-                            bestAndFairestLimit,
-                            includeStaffRoles,
-                            includeOfficials,
-                            includeOfficials,
-                            includeTrainers,
-                            includeMatchNotes,
-                            includeOnlyActiveGrades,
-                            minimumGamesPlayed,
-                            groupingMode.rawValue,
-                            selectedDateRangeQuickPick.rawValue,
-                            customDateRangeStart,
-                            customDateRangeEnd,
-                            Array(selectedRecipientSectionKeys),
-                            Array(selectedRecipientContactIDs),
-                            includedDataOrder
+                        let draft = CustomReportTemplateDraft(
+                            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                            selectedGradeIDs: Array(selectedGradeIDs),
+                            includeScores: includeScores,
+                            includeBestPlayers: includeBestPlayers,
+                            bestPlayersLimit: bestPlayersLimit,
+                            includeGuestVotes: includeGuestVotes,
+                            guestVotesLimit: guestVotesLimit,
+                            includeGoalKickers: includeGoalKickers,
+                            goalKickersLimit: goalKickersLimit,
+                            includeBestAndFairestVotes: includeBestAndFairestVotes,
+                            bestAndFairestLimit: bestAndFairestLimit,
+                            includeStaffRoles: includeStaffRoles,
+                            includeOfficials: includeOfficials,
+                            includeUmpires: includeOfficials,
+                            includeTrainers: includeTrainers,
+                            includeMatchNotes: includeMatchNotes,
+                            includeOnlyActiveGrades: includeOnlyActiveGrades,
+                            minimumGamesPlayed: minimumGamesPlayed,
+                            groupingModeRawValue: groupingMode.rawValue,
+                            selectedQuickPickRawValue: selectedDateRangeQuickPick.rawValue,
+                            customDateRangeStart: customDateRangeStart,
+                            customDateRangeEnd: customDateRangeEnd,
+                            selectedRecipientSectionKeys: Array(selectedRecipientSectionKeys),
+                            selectedRecipientContactIDs: Array(selectedRecipientContactIDs),
+                            includedDataOrder: includedDataOrder
                         )
+                        onSave(draft)
                         dismiss()
                     }
                     .saveButtonBehavior(isEnabled: canSave)
