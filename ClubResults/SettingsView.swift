@@ -51,53 +51,33 @@ struct SettingsView: View {
 
     private var settingsSection: some View {
         Section("Settings") {
-            settingsLink("Club Grades", icon: "person.3.fill") {
-                ClubGradesSettingsView()
-            }
-            settingsLink("Players", icon: "person.3") {
-                PlayersView()
-            }
-            settingsLink("Stats", icon: "chart.xyaxis.line") {
-                StatsTypesSettingsView()
-            }
-            settingsLink("Umpires", icon: "flag.pattern.checkered") {
-                UmpiresSettingsView()
-            }
-            settingsLink("App Appearance", icon: "circle.lefthalf.filled") {
-                AppAppearanceSettingsView()
-            }
-            settingsLink("Teams & Venues", icon: "flag.2.crossed") {
-                TeamsAndVenuesSettingsView()
-            }
-            settingsLink("Contacts", icon: "person.crop.circle.badge.checkmark") {
-                ContactsSettingsView()
-            }
-            settingsLink("Groups", icon: "person.3.sequence") {
-                GroupsSettingsView()
-            }
+            settingsLink("Club Grades", icon: "person.3.fill", destination: AnyView(ClubGradesSettingsView()))
+            settingsLink("Players", icon: "person.3", destination: AnyView(PlayersView()))
+            settingsLink("Stats", icon: "chart.xyaxis.line", destination: AnyView(StatsTypesSettingsView()))
+            settingsLink("Umpires", icon: "flag.pattern.checkered", destination: AnyView(UmpiresSettingsView()))
+            settingsLink("App Appearance", icon: "circle.lefthalf.filled", destination: AnyView(AppAppearanceSettingsView()))
+            settingsLink("Teams & Venues", icon: "flag.2.crossed", destination: AnyView(TeamsAndVenuesSettingsView()))
+            settingsLink("Contacts", icon: "person.crop.circle.badge.checkmark", destination: AnyView(ContactsSettingsView()))
+            settingsLink("Groups", icon: "person.3.sequence", destination: AnyView(GroupsSettingsView()))
         }
     }
 
     private var adminSection: some View {
         Section("Admin") {
-            settingsLink("Clear Saved Picker Names", icon: "trash") {
-                AdminNameResetView()
-            }
-            settingsLink("Backup & Restore", icon: "externaldrive.badge.icloud") {
-                BackupAndRestoreSettingsView()
-            }
-            settingsLink("PIN Code", icon: "number.square") {
-                PinCodeSettingsView()
-            }
+            settingsLink("Clear Saved Picker Names", icon: "trash", destination: AnyView(AdminNameResetView()))
+            settingsLink("Backup & Restore", icon: "externaldrive.badge.icloud", destination: AnyView(BackupAndRestoreSettingsView()))
+            settingsLink("PIN Code", icon: "number.square", destination: AnyView(PinCodeSettingsView()))
         }
     }
 
-    private func settingsLink<Destination: View>(
+    private func settingsLink(
         _ title: String,
         icon: String,
-        @ViewBuilder destination: () -> Destination
+        destination: AnyView
     ) -> some View {
-        NavigationLink(destination: destination) {
+        NavigationLink {
+            destination
+        } label: {
             settingsRow(title: title, icon: icon)
         }
     }
@@ -167,6 +147,43 @@ private struct BackupAndRestoreSettingsView: View {
     @State private var importErrorMessage: String?
     @State private var isImporting = false
 
+    private var isShareSheetPresented: Binding<Bool> {
+        Binding(
+            get: { shareURL != nil },
+            set: { shouldPresent in
+                if !shouldPresent {
+                    shareURL = nil
+                }
+            }
+        )
+    }
+
+    private var isExportErrorPresented: Binding<Bool> {
+        Binding(
+            get: { exportErrorMessage != nil },
+            set: { if !$0 { exportErrorMessage = nil } }
+        )
+    }
+
+    private var isReplaceDataConfirmPresented: Binding<Bool> {
+        Binding(
+            get: { pendingImportEnvelope != nil && pendingImportURL != nil },
+            set: { shouldPresent in
+                if !shouldPresent {
+                    pendingImportEnvelope = nil
+                    pendingImportURL = nil
+                }
+            }
+        )
+    }
+
+    private var isImportErrorPresented: Binding<Bool> {
+        Binding(
+            get: { importErrorMessage != nil },
+            set: { if !$0 { importErrorMessage = nil } }
+        )
+    }
+
     var body: some View {
         Form {
             Section {
@@ -222,22 +239,14 @@ private struct BackupAndRestoreSettingsView: View {
         ) { result in
             handleImportSelection(result)
         }
-        .sheet(isPresented: Binding(
-            get: { shareURL != nil },
-            set: { shouldPresent in
-                if !shouldPresent { shareURL = nil }
-            }
-        )) {
+        .sheet(isPresented: isShareSheetPresented) {
             if let shareURL {
                 ShareSheet(items: [shareURL])
             }
         }
         .alert(
             "Export Failed",
-            isPresented: Binding(
-                get: { exportErrorMessage != nil },
-                set: { if !$0 { exportErrorMessage = nil } }
-            )
+            isPresented: isExportErrorPresented
         ) {
             Button("OK", role: .cancel) {
                 exportErrorMessage = nil
@@ -247,15 +256,7 @@ private struct BackupAndRestoreSettingsView: View {
         }
         .alert(
             "Replace Existing Data?",
-            isPresented: Binding(
-                get: { pendingImportEnvelope != nil && pendingImportURL != nil },
-                set: { shouldPresent in
-                    if !shouldPresent {
-                        pendingImportEnvelope = nil
-                        pendingImportURL = nil
-                    }
-                }
-            )
+            isPresented: isReplaceDataConfirmPresented
         ) {
             Button("Cancel", role: .cancel) {
                 pendingImportEnvelope = nil
@@ -280,10 +281,7 @@ private struct BackupAndRestoreSettingsView: View {
         }
         .alert(
             "Import Failed",
-            isPresented: Binding(
-                get: { importErrorMessage != nil },
-                set: { if !$0 { importErrorMessage = nil } }
-            )
+            isPresented: isImportErrorPresented
         ) {
             Button("OK", role: .cancel) {
                 importErrorMessage = nil
