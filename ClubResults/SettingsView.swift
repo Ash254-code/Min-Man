@@ -12,18 +12,11 @@ struct SettingsView: View {
     @State private var showContactsSettings = false
     var resetToken: UUID = UUID()
 
-    private var isSaveErrorPresented: Binding<Bool> {
-        Binding(
-            get: { saveErrorMessage != nil },
-            set: { if !$0 { saveErrorMessage = nil } }
-        )
-    }
-
     var body: some View {
         NavigationStack {
             List {
-                SettingsLinksSection()
-                AdminLinksSection()
+                settingsSection
+                adminSection
             }
             .navigationTitle("Settings")
             .navigationDestination(isPresented: $showContactsSettings) {
@@ -38,7 +31,13 @@ struct SettingsView: View {
                 shouldOpenContacts = false
                 showContactsSettings = true
             }
-            .alert("Save Error", isPresented: isSaveErrorPresented) {
+            .alert(
+                "Save Error",
+                isPresented: Binding(
+                    get: { saveErrorMessage != nil },
+                    set: { if !$0 { saveErrorMessage = nil } }
+                )
+            ) {
                 Button("OK", role: .cancel) {
                     saveErrorMessage = nil
                 }
@@ -49,6 +48,71 @@ struct SettingsView: View {
         .id(resetToken)
     }
 
+
+    private var settingsSection: some View {
+        Section("Settings") {
+            settingsLink("Club Grades", icon: "person.3.fill") {
+                ClubGradesSettingsView()
+            }
+            settingsLink("Players", icon: "person.3") {
+                PlayersView()
+            }
+            settingsLink("Stats", icon: "chart.xyaxis.line") {
+                StatsTypesSettingsView()
+            }
+            settingsLink("Umpires", icon: "flag.pattern.checkered") {
+                UmpiresSettingsView()
+            }
+            settingsLink("App Appearance", icon: "circle.lefthalf.filled") {
+                AppAppearanceSettingsView()
+            }
+            settingsLink("Teams & Venues", icon: "flag.2.crossed") {
+                TeamsAndVenuesSettingsView()
+            }
+            settingsLink("Contacts", icon: "person.crop.circle.badge.checkmark") {
+                ContactsSettingsView()
+            }
+            settingsLink("Groups", icon: "person.3.sequence") {
+                GroupsSettingsView()
+            }
+        }
+    }
+
+    private var adminSection: some View {
+        Section("Admin") {
+            settingsLink("Clear Saved Picker Names", icon: "trash") {
+                AdminNameResetView()
+            }
+            settingsLink("Backup & Restore", icon: "externaldrive.badge.icloud") {
+                BackupAndRestoreSettingsView()
+            }
+            settingsLink("PIN Code", icon: "number.square") {
+                PinCodeSettingsView()
+            }
+        }
+    }
+
+    private func settingsLink<Destination: View>(
+        _ title: String,
+        icon: String,
+        @ViewBuilder destination: () -> Destination
+    ) -> some View {
+        NavigationLink(destination: destination) {
+            settingsRow(title: title, icon: icon)
+        }
+    }
+
+    private let settingsIconColumnWidth: CGFloat = 40
+
+    @ViewBuilder
+    private func settingsRow(title: String, icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.tint)
+                .frame(width: settingsIconColumnWidth, alignment: .leading)
+            Text(title)
+        }
+    }
 
     private func seedInitialGradesIfNeeded() {
         let existing = (try? dataContext.fetch(FetchDescriptor<Grade>())) ?? []
@@ -89,73 +153,6 @@ struct SettingsView: View {
     }
 }
 
-
-private struct SettingsLinksSection: View {
-    var body: some View {
-        Section("Settings") {
-            SettingsLinkRow(title: "Club Grades", icon: "person.3.fill") {
-                ClubGradesSettingsView()
-            }
-            SettingsLinkRow(title: "Players", icon: "person.3") {
-                PlayersView()
-            }
-            SettingsLinkRow(title: "Stats", icon: "chart.xyaxis.line") {
-                StatsTypesSettingsView()
-            }
-            SettingsLinkRow(title: "Umpires", icon: "flag.pattern.checkered") {
-                UmpiresSettingsView()
-            }
-            SettingsLinkRow(title: "App Appearance", icon: "circle.lefthalf.filled") {
-                AppAppearanceSettingsView()
-            }
-            SettingsLinkRow(title: "Teams & Venues", icon: "flag.2.crossed") {
-                TeamsAndVenuesSettingsView()
-            }
-            SettingsLinkRow(title: "Contacts", icon: "person.crop.circle.badge.checkmark") {
-                ContactsSettingsView()
-            }
-            SettingsLinkRow(title: "Groups", icon: "person.3.sequence") {
-                GroupsSettingsView()
-            }
-        }
-    }
-}
-
-private struct AdminLinksSection: View {
-    var body: some View {
-        Section("Admin") {
-            SettingsLinkRow(title: "Clear Saved Picker Names", icon: "trash") {
-                AdminNameResetView()
-            }
-            SettingsLinkRow(title: "Backup & Restore", icon: "externaldrive.badge.icloud") {
-                BackupAndRestoreSettingsView()
-            }
-            SettingsLinkRow(title: "PIN Code", icon: "number.square") {
-                PinCodeSettingsView()
-            }
-        }
-    }
-}
-
-private struct SettingsLinkRow<Destination: View>: View {
-    let title: String
-    let icon: String
-    @ViewBuilder var destination: () -> Destination
-
-    private let iconColumnWidth: CGFloat = 40
-
-    var body: some View {
-        NavigationLink(destination: destination) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .foregroundStyle(.tint)
-                    .frame(width: iconColumnWidth, alignment: .leading)
-                Text(title)
-            }
-        }
-    }
-}
-
 private struct BackupAndRestoreSettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
@@ -169,41 +166,6 @@ private struct BackupAndRestoreSettingsView: View {
     @State private var importSuccessMessage: String?
     @State private var importErrorMessage: String?
     @State private var isImporting = false
-
-    private var isShareSheetPresented: Binding<Bool> {
-        Binding(
-            get: { shareURL != nil },
-            set: { shouldPresent in
-                if !shouldPresent { shareURL = nil }
-            }
-        )
-    }
-
-    private var isExportErrorPresented: Binding<Bool> {
-        Binding(
-            get: { exportErrorMessage != nil },
-            set: { if !$0 { exportErrorMessage = nil } }
-        )
-    }
-
-    private var isReplaceDataAlertPresented: Binding<Bool> {
-        Binding(
-            get: { pendingImportEnvelope != nil && pendingImportURL != nil },
-            set: { shouldPresent in
-                if !shouldPresent {
-                    pendingImportEnvelope = nil
-                    pendingImportURL = nil
-                }
-            }
-        )
-    }
-
-    private var isImportErrorPresented: Binding<Bool> {
-        Binding(
-            get: { importErrorMessage != nil },
-            set: { if !$0 { importErrorMessage = nil } }
-        )
-    }
 
     var body: some View {
         Form {
@@ -260,19 +222,41 @@ private struct BackupAndRestoreSettingsView: View {
         ) { result in
             handleImportSelection(result)
         }
-        .sheet(isPresented: isShareSheetPresented) {
+        .sheet(isPresented: Binding(
+            get: { shareURL != nil },
+            set: { shouldPresent in
+                if !shouldPresent { shareURL = nil }
+            }
+        )) {
             if let shareURL {
                 ShareSheet(items: [shareURL])
             }
         }
-        .alert("Export Failed", isPresented: isExportErrorPresented) {
+        .alert(
+            "Export Failed",
+            isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { if !$0 { exportErrorMessage = nil } }
+            )
+        ) {
             Button("OK", role: .cancel) {
                 exportErrorMessage = nil
             }
         } message: {
             Text(exportErrorMessage ?? "An unknown error occurred.")
         }
-        .alert("Replace Existing Data?", isPresented: isReplaceDataAlertPresented) {
+        .alert(
+            "Replace Existing Data?",
+            isPresented: Binding(
+                get: { pendingImportEnvelope != nil && pendingImportURL != nil },
+                set: { shouldPresent in
+                    if !shouldPresent {
+                        pendingImportEnvelope = nil
+                        pendingImportURL = nil
+                    }
+                }
+            )
+        ) {
             Button("Cancel", role: .cancel) {
                 pendingImportEnvelope = nil
                 pendingImportURL = nil
@@ -294,7 +278,13 @@ private struct BackupAndRestoreSettingsView: View {
                 )
             }
         }
-        .alert("Import Failed", isPresented: isImportErrorPresented) {
+        .alert(
+            "Import Failed",
+            isPresented: Binding(
+                get: { importErrorMessage != nil },
+                set: { if !$0 { importErrorMessage = nil } }
+            )
+        ) {
             Button("OK", role: .cancel) {
                 importErrorMessage = nil
             }
@@ -5140,6 +5130,13 @@ private struct ReportRecipientsSettingsView: View {
         orderedGradesForDisplay(grades, includeInactive: true)
     }
 
+    private var isSaveErrorPresented: Binding<Bool> {
+        Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )
+    }
+
     var body: some View {
         List {
             if configuredGrades.isEmpty {
@@ -5282,18 +5279,40 @@ private struct ReportRecipientsSettingsView: View {
             }
         }
         .navigationTitle("Report Recipients")
-        .alert(
-            "Save Error",
-            isPresented: Binding(
-                get: { saveErrorMessage != nil },
-                set: { if !$0 { saveErrorMessage = nil } }
-            )
-        ) {
+        .alert("Save Error", isPresented: isSaveErrorPresented) {
             Button("OK", role: .cancel) {
                 saveErrorMessage = nil
             }
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
+    }
+
+    private func sendEmailBinding(for recipient: ReportRecipient) -> Binding<Bool> {
+        Binding(
+            get: { recipient.sendEmail },
+            set: { newValue in
+                recipient.sendEmail = newValue
+                ensureAtLeastOneSendModeEnabled(for: recipient)
+                saveContext()
+            }
+        )
+    }
+
+    private func sendTextBinding(for recipient: ReportRecipient) -> Binding<Bool> {
+        Binding(
+            get: { recipient.sendText },
+            set: { newValue in
+                recipient.sendText = newValue
+                ensureAtLeastOneSendModeEnabled(for: recipient)
+                saveContext()
+            }
+        )
+    }
+
+    private func ensureAtLeastOneSendModeEnabled(for recipient: ReportRecipient) {
+        if !recipient.sendEmail && !recipient.sendText {
+            recipient.sendEmail = true
         }
     }
 
@@ -5345,34 +5364,6 @@ private struct ReportRecipientsSettingsView: View {
             Button(role: .destructive, action: onDelete) {
                 Label("Remove", systemImage: "trash")
             }
-        }
-    }
-
-    private func sendEmailBinding(for recipient: ReportRecipient) -> Binding<Bool> {
-        Binding(
-            get: { recipient.sendEmail },
-            set: { newValue in
-                recipient.sendEmail = newValue
-                ensureAtLeastOneSendModeEnabled(for: recipient)
-                saveContext()
-            }
-        )
-    }
-
-    private func sendTextBinding(for recipient: ReportRecipient) -> Binding<Bool> {
-        Binding(
-            get: { recipient.sendText },
-            set: { newValue in
-                recipient.sendText = newValue
-                ensureAtLeastOneSendModeEnabled(for: recipient)
-                saveContext()
-            }
-        )
-    }
-
-    private func ensureAtLeastOneSendModeEnabled(for recipient: ReportRecipient) {
-        if !recipient.sendEmail && !recipient.sendText {
-            recipient.sendEmail = true
         }
     }
 
