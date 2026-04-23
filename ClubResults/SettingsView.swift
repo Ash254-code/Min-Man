@@ -4679,7 +4679,7 @@ private struct CustomReportEditView: View {
         _includeUmpires = State(initialValue: initialIncludeUmpires)
         _includeTrainers = State(initialValue: initialIncludeTrainers)
         _includeMatchNotes = State(initialValue: initialIncludeMatchNotes)
-        _includedDataOrder = State(initialValue: normalizeIncludedDataOrder(initialIncludedDataOrder))
+        _includedDataOrder = State(initialValue: CustomReportEditView.normalizeIncludedDataOrder(initialIncludedDataOrder))
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
         _groupingMode = State(initialValue: ReportGroupingMode(rawValue: initialGroupingModeRawValue) ?? .combinedTotals)
