@@ -5217,133 +5217,7 @@ private struct ReportRecipientsSettingsView: View {
             }
 
             ForEach(configuredGrades) { grade in
-                let contactRecipients = recipientsForGrade(grade.id)
-                let groupRecipients = groupRecipientsForGrade(grade.id)
-                let activeGroupID = resolvedActiveGroupID(for: grade.id, groupRecipients: groupRecipients)
-                let individualsInActiveGroup = individualsForGroup(activeGroupID, within: contactRecipients)
-
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Recipient Groups")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        if groupRecipients.isEmpty {
-                            Text("No recipient groups added yet.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(groupRecipients) { recipient in
-                                if let group = groupLookup[recipient.groupID] {
-                                    let count = membershipCountByGroup[recipient.groupID, default: 0]
-                                    recipientRow(
-                                        title: "Group: \(group.name)",
-                                        subtitle: "\(count) contact(s)",
-                                        secondarySubtitle: "",
-                                        sendEmail: sendEmailBinding(for: recipient),
-                                        sendText: sendTextBinding(for: recipient),
-                                        footer: sendModeText(sendEmail: recipient.sendEmail, sendText: recipient.sendText)
-                                    ) {
-                                        dataContext.delete(recipient)
-                                        saveContext()
-                                    }
-                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                        Button {
-                                            activeGroupByGrade[grade.id] = recipient.groupID
-                                        } label: {
-                                            Label("Set Active", systemImage: "scope")
-                                        }
-                                        .tint(.blue)
-                                    }
-                                }
-                            }
-                        }
-
-                        Menu {
-                            let usedGroupIDs = Set(groupRecipients.map(\.groupID))
-                            let availableGroups = groups.filter { !usedGroupIDs.contains($0.id) }
-
-                            if availableGroups.isEmpty {
-                                Text("No available groups")
-                            } else {
-                                ForEach(availableGroups) { group in
-                                    Menu(group.name) {
-                                        ForEach(SendMode.allCases) { mode in
-                                            Button("Send via \(mode.title)") {
-                                                addGroup(group, toGrade: grade.id, sendMode: mode)
-                                                activeGroupByGrade[grade.id] = group.id
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } label: {
-                            Label("Add Recipient Group", systemImage: "plus")
-                        }
-
-                        Divider()
-
-                        Text("Individuals")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        if groupRecipients.isEmpty {
-                            Text("Add a recipient group first to view individuals.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            if let activeGroupID, let activeGroup = groupLookup[activeGroupID] {
-                                Text("Current group: \(activeGroup.name)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            if individualsInActiveGroup.isEmpty {
-                                Text("No individuals from the current group have been added yet.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(individualsInActiveGroup) { recipient in
-                                    if let contact = contactLookup[recipient.contactID] {
-                                        recipientRow(
-                                            title: contact.name,
-                                            subtitle: contact.email,
-                                            secondarySubtitle: contact.mobile,
-                                            sendEmail: sendEmailBinding(for: recipient),
-                                            sendText: sendTextBinding(for: recipient),
-                                            footer: sendModeText(sendEmail: recipient.sendEmail, sendText: recipient.sendText)
-                                        ) {
-                                            dataContext.delete(recipient)
-                                            saveContext()
-                                        }
-                                    }
-                                }
-                            }
-
-                            Menu {
-                                let availableContacts = availableIndividualsToAdd(
-                                    activeGroupID: activeGroupID,
-                                    existingRecipients: contactRecipients
-                                )
-
-                                if availableContacts.isEmpty {
-                                    Text("No available contacts")
-                                } else {
-                                    ForEach(availableContacts) { contact in
-                                        Menu(contact.name) {
-                                            ForEach(SendMode.allCases) { mode in
-                                                Button("Send via \(mode.title)") {
-                                                    addContact(contact, toGrade: grade.id, sendMode: mode)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Label("Add Individual", systemImage: "plus")
-                            }
-                        }
-                    }
-                } header: {
-                    Text(grade.name)
-                }
+                gradeSection(for: grade)
             }
         }
         .navigationTitle("Report Recipients")
@@ -5356,7 +5230,141 @@ private struct ReportRecipientsSettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func gradeSection(for grade: Grade) -> some View {
+        let contactRecipients = recipientsForGrade(grade.id)
+        let groupRecipients = groupRecipientsForGrade(grade.id)
+        let activeGroupID = resolvedActiveGroupID(for: grade.id, groupRecipients: groupRecipients)
+        let individualsInActiveGroup = individualsForGroup(activeGroupID, within: contactRecipients)
+
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                groupRecipientsContent(for: grade, groupRecipients: groupRecipients)
+
+                Divider()
+
+                individualsContent(
+                    for: grade,
+                    contactRecipients: contactRecipients,
+                    groupRecipients: groupRecipients,
+                    activeGroupID: activeGroupID,
+                    individualsInActiveGroup: individualsInActiveGroup
+                )
+            }
+        } header: {
+            Text(grade.name)
+        }
+    }
+
+    @ViewBuilder
+    private func groupRecipientsContent(
+        for grade: Grade,
+        groupRecipients: [ReportRecipientGroup]
+    ) -> some View {
+        Text("Recipient Groups")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+
+        if groupRecipients.isEmpty {
+            Text("No recipient groups added yet.")
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(groupRecipients) { recipient in
+                groupRecipientRow(recipient, gradeID: grade.id)
+            }
+        }
+
+        Menu {
+            let usedGroupIDs = Set(groupRecipients.map(\.groupID))
+            let availableGroups = groups.filter { !usedGroupIDs.contains($0.id) }
+
+            if availableGroups.isEmpty {
+                Text("No available groups")
+            } else {
+                ForEach(availableGroups) { group in
+                    Menu(group.name) {
+                        ForEach(SendMode.allCases) { mode in
+                            Button("Send via \(mode.title)") {
+                                addGroup(group, toGrade: grade.id, sendMode: mode)
+                                activeGroupByGrade[grade.id] = group.id
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label("Add Recipient Group", systemImage: "plus")
+        }
+    }
+
+    @ViewBuilder
+    private func individualsContent(
+        for grade: Grade,
+        contactRecipients: [ReportRecipient],
+        groupRecipients: [ReportRecipientGroup],
+        activeGroupID: UUID?,
+        individualsInActiveGroup: [ReportRecipient]
+    ) -> some View {
+        Text("Individuals")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+
+        if groupRecipients.isEmpty {
+            Text("Add a recipient group first to view individuals.")
+                .foregroundStyle(.secondary)
+        } else {
+            if let activeGroupID, let activeGroup = groupLookup[activeGroupID] {
+                Text("Current group: \(activeGroup.name)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if individualsInActiveGroup.isEmpty {
+                Text("No individuals from the current group have been added yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(individualsInActiveGroup) { recipient in
+                    individualRecipientRow(recipient)
+                }
+            }
+
+            Menu {
+                let availableContacts = availableIndividualsToAdd(
+                    activeGroupID: activeGroupID,
+                    existingRecipients: contactRecipients
+                )
+
+                if availableContacts.isEmpty {
+                    Text("No available contacts")
+                } else {
+                    ForEach(availableContacts) { contact in
+                        Menu(contact.name) {
+                            ForEach(SendMode.allCases) { mode in
+                                Button("Send via \(mode.title)") {
+                                    addContact(contact, toGrade: grade.id, sendMode: mode)
+                                }
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Add Individual", systemImage: "plus")
+            }
+        }
+    }
+
     private func sendEmailBinding(for recipient: ReportRecipient) -> Binding<Bool> {
+        Binding(
+            get: { recipient.sendEmail },
+            set: { newValue in
+                recipient.sendEmail = newValue
+                ensureAtLeastOneSendModeEnabled(for: recipient)
+                saveContext()
+            }
+        )
+    }
+
+    private func sendEmailBinding(for recipient: ReportRecipientGroup) -> Binding<Bool> {
         Binding(
             get: { recipient.sendEmail },
             set: { newValue in
@@ -5378,7 +5386,24 @@ private struct ReportRecipientsSettingsView: View {
         )
     }
 
+    private func sendTextBinding(for recipient: ReportRecipientGroup) -> Binding<Bool> {
+        Binding(
+            get: { recipient.sendText },
+            set: { newValue in
+                recipient.sendText = newValue
+                ensureAtLeastOneSendModeEnabled(for: recipient)
+                saveContext()
+            }
+        )
+    }
+
     private func ensureAtLeastOneSendModeEnabled(for recipient: ReportRecipient) {
+        if !recipient.sendEmail && !recipient.sendText {
+            recipient.sendEmail = true
+        }
+    }
+
+    private func ensureAtLeastOneSendModeEnabled(for recipient: ReportRecipientGroup) {
         if !recipient.sendEmail && !recipient.sendText {
             recipient.sendEmail = true
         }
@@ -5431,6 +5456,55 @@ private struct ReportRecipientsSettingsView: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive, action: onDelete) {
                 Label("Remove", systemImage: "trash")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func groupRecipientRow(_ recipient: ReportRecipientGroup, gradeID: UUID) -> some View {
+        if let group = groupLookup[recipient.groupID] {
+            let title = "Group: \(group.name)"
+            let count = membershipCountByGroup[recipient.groupID, default: 0]
+            let subtitle = "\(count) contact(s)"
+            let footer = sendModeText(sendEmail: recipient.sendEmail, sendText: recipient.sendText)
+
+            recipientRow(
+                title: title,
+                subtitle: subtitle,
+                secondarySubtitle: "",
+                sendEmail: sendEmailBinding(for: recipient),
+                sendText: sendTextBinding(for: recipient),
+                footer: footer
+            ) {
+                dataContext.delete(recipient)
+                saveContext()
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button {
+                    activeGroupByGrade[gradeID] = recipient.groupID
+                } label: {
+                    Label("Set Active", systemImage: "scope")
+                }
+                .tint(.blue)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func individualRecipientRow(_ recipient: ReportRecipient) -> some View {
+        if let contact = contactLookup[recipient.contactID] {
+            let footer = sendModeText(sendEmail: recipient.sendEmail, sendText: recipient.sendText)
+
+            recipientRow(
+                title: contact.name,
+                subtitle: contact.email,
+                secondarySubtitle: contact.mobile,
+                sendEmail: sendEmailBinding(for: recipient),
+                sendText: sendTextBinding(for: recipient),
+                footer: footer
+            ) {
+                dataContext.delete(recipient)
+                saveContext()
             }
         }
     }
