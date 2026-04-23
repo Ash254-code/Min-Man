@@ -1066,6 +1066,7 @@ struct LiveStatsView: View {
     @State private var lastHapticQuickContestedVote: ContestedPossessionVote?
     @State private var lastHapticQuickEfficiencyVote: EfficiencyVote?
     @State private var quarterCountsUp = false
+    @State private var activeSideSpeakPresses = 0
     @StateObject private var speechService = PressHoldSpeechService()
     private let parser = StatsVoiceParser()
     private let ourTeamStatPlayerID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA") ?? UUID()
@@ -1207,12 +1208,18 @@ struct LiveStatsView: View {
         .overlay(alignment: .bottom) {
             sideSpeakButtonsOverlay
         }
+        .overlay {
+            if shouldShowSideSpeakMicOverlay {
+                sideSpeakMicOverlay
+            }
+        }
         .fullScreenCover(isPresented: $showQuarterChangeReminder) {
             quarterReminderOverlay
         }
         .onDisappear {
             statusBannerTask?.cancel()
             stopQuarterTimer()
+            activeSideSpeakPresses = 0
             if speechService.isRecording {
                 speechService.stopListening()
             }
@@ -2612,9 +2619,11 @@ struct LiveStatsView: View {
         }
         .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
             if isPressing {
+                activeSideSpeakPresses += 1
                 triggerStrongHaptic()
                 speechService.startListening(vocabulary: speechVocabulary)
             } else if speechService.isRecording {
+                activeSideSpeakPresses = max(0, activeSideSpeakPresses - 1)
                 speechService.stopListening { transcript in
                     if isOpposition {
                         handleTeamVoiceTranscript(transcript, isOpposition: true)
@@ -2622,9 +2631,25 @@ struct LiveStatsView: View {
                         handleVoiceTranscript(transcript)
                     }
                 }
+            } else {
+                activeSideSpeakPresses = max(0, activeSideSpeakPresses - 1)
             }
         }, perform: {})
         .buttonStyle(.plain)
+    }
+
+    private var shouldShowSideSpeakMicOverlay: Bool {
+        activeSideSpeakPresses > 0
+    }
+
+    private var sideSpeakMicOverlay: some View {
+        Image(systemName: "mic.fill")
+            .font(.system(size: 150, weight: .black))
+            .foregroundStyle(.red)
+            .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 8)
+            .allowsHitTesting(false)
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            .animation(.easeInOut(duration: 0.12), value: shouldShowSideSpeakMicOverlay)
     }
 
     private func addRushedBehindForOurTeam() {
