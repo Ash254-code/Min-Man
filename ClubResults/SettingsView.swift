@@ -12,6 +12,13 @@ struct SettingsView: View {
     @State private var showContactsSettings = false
     var resetToken: UUID = UUID()
 
+    private var isSaveErrorPresented: Binding<Bool> {
+        Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -31,13 +38,7 @@ struct SettingsView: View {
                 shouldOpenContacts = false
                 showContactsSettings = true
             }
-            .alert(
-                "Save Error",
-                isPresented: Binding(
-                    get: { saveErrorMessage != nil },
-                    set: { if !$0 { saveErrorMessage = nil } }
-                )
-            ) {
+            .alert("Save Error", isPresented: isSaveErrorPresented) {
                 Button("OK", role: .cancel) {
                     saveErrorMessage = nil
                 }
@@ -167,6 +168,41 @@ private struct BackupAndRestoreSettingsView: View {
     @State private var importErrorMessage: String?
     @State private var isImporting = false
 
+    private var isShareSheetPresented: Binding<Bool> {
+        Binding(
+            get: { shareURL != nil },
+            set: { shouldPresent in
+                if !shouldPresent { shareURL = nil }
+            }
+        )
+    }
+
+    private var isExportErrorPresented: Binding<Bool> {
+        Binding(
+            get: { exportErrorMessage != nil },
+            set: { if !$0 { exportErrorMessage = nil } }
+        )
+    }
+
+    private var isReplaceDataAlertPresented: Binding<Bool> {
+        Binding(
+            get: { pendingImportEnvelope != nil && pendingImportURL != nil },
+            set: { shouldPresent in
+                if !shouldPresent {
+                    pendingImportEnvelope = nil
+                    pendingImportURL = nil
+                }
+            }
+        )
+    }
+
+    private var isImportErrorPresented: Binding<Bool> {
+        Binding(
+            get: { importErrorMessage != nil },
+            set: { if !$0 { importErrorMessage = nil } }
+        )
+    }
+
     var body: some View {
         Form {
             Section {
@@ -222,41 +258,19 @@ private struct BackupAndRestoreSettingsView: View {
         ) { result in
             handleImportSelection(result)
         }
-        .sheet(isPresented: Binding(
-            get: { shareURL != nil },
-            set: { shouldPresent in
-                if !shouldPresent { shareURL = nil }
-            }
-        )) {
+        .sheet(isPresented: isShareSheetPresented) {
             if let shareURL {
                 ShareSheet(items: [shareURL])
             }
         }
-        .alert(
-            "Export Failed",
-            isPresented: Binding(
-                get: { exportErrorMessage != nil },
-                set: { if !$0 { exportErrorMessage = nil } }
-            )
-        ) {
+        .alert("Export Failed", isPresented: isExportErrorPresented) {
             Button("OK", role: .cancel) {
                 exportErrorMessage = nil
             }
         } message: {
             Text(exportErrorMessage ?? "An unknown error occurred.")
         }
-        .alert(
-            "Replace Existing Data?",
-            isPresented: Binding(
-                get: { pendingImportEnvelope != nil && pendingImportURL != nil },
-                set: { shouldPresent in
-                    if !shouldPresent {
-                        pendingImportEnvelope = nil
-                        pendingImportURL = nil
-                    }
-                }
-            )
-        ) {
+        .alert("Replace Existing Data?", isPresented: isReplaceDataAlertPresented) {
             Button("Cancel", role: .cancel) {
                 pendingImportEnvelope = nil
                 pendingImportURL = nil
@@ -278,13 +292,7 @@ private struct BackupAndRestoreSettingsView: View {
                 )
             }
         }
-        .alert(
-            "Import Failed",
-            isPresented: Binding(
-                get: { importErrorMessage != nil },
-                set: { if !$0 { importErrorMessage = nil } }
-            )
-        ) {
+        .alert("Import Failed", isPresented: isImportErrorPresented) {
             Button("OK", role: .cancel) {
                 importErrorMessage = nil
             }
