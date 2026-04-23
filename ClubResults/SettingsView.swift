@@ -2840,24 +2840,7 @@ struct ReportsSettingsView: View {
                             }
                         }
 
-                        Group {
-                            if isMoveModeEnabled {
-                                LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
-                                    ForEach(displayedTemplates) { template in
-                                        reportTile(for: template, tileWidth: tileWidth)
-                                            .zIndex(draggingTemplateID == template.id ? 2 : 1)
-                                    }
-                                }
-                                .animation(.spring(response: 0.25, dampingFraction: 0.78), value: moveDraftOrder)
-                            }
-                            else {
-                                LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
-                                    ForEach(displayedTemplates) { template in
-                                        reportTile(for: template, tileWidth: tileWidth)
-                                    }
-                                }
-                            }
-                        }
+                        templateTilesGrid(tileWidth: tileWidth)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -3114,6 +3097,24 @@ struct ReportsSettingsView: View {
         } catch {
             saveErrorMessage = error.localizedDescription
         }
+    }
+
+    @ViewBuilder
+    private func templateTilesGrid(tileWidth: CGFloat) -> some View {
+        LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
+            ForEach(displayedTemplates) { template in
+                let tile = reportTile(for: template, tileWidth: tileWidth)
+                if isMoveModeEnabled {
+                    tile.zIndex(draggingTemplateID == template.id ? 2 : 1)
+                } else {
+                    tile
+                }
+            }
+        }
+        .animation(
+            isMoveModeEnabled ? .spring(response: 0.25, dampingFraction: 0.78) : nil,
+            value: moveDraftOrder
+        )
     }
 
     @ViewBuilder
