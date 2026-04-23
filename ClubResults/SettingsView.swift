@@ -22,8 +22,8 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                settingsSection
-                adminSection
+                SettingsLinksSection()
+                AdminLinksSection()
             }
             .navigationTitle("Settings")
             .navigationDestination(isPresented: $showContactsSettings) {
@@ -49,71 +49,6 @@ struct SettingsView: View {
         .id(resetToken)
     }
 
-
-    private var settingsSection: some View {
-        Section("Settings") {
-            settingsLink("Club Grades", icon: "person.3.fill") {
-                ClubGradesSettingsView()
-            }
-            settingsLink("Players", icon: "person.3") {
-                PlayersView()
-            }
-            settingsLink("Stats", icon: "chart.xyaxis.line") {
-                StatsTypesSettingsView()
-            }
-            settingsLink("Umpires", icon: "flag.pattern.checkered") {
-                UmpiresSettingsView()
-            }
-            settingsLink("App Appearance", icon: "circle.lefthalf.filled") {
-                AppAppearanceSettingsView()
-            }
-            settingsLink("Teams & Venues", icon: "flag.2.crossed") {
-                TeamsAndVenuesSettingsView()
-            }
-            settingsLink("Contacts", icon: "person.crop.circle.badge.checkmark") {
-                ContactsSettingsView()
-            }
-            settingsLink("Groups", icon: "person.3.sequence") {
-                GroupsSettingsView()
-            }
-        }
-    }
-
-    private var adminSection: some View {
-        Section("Admin") {
-            settingsLink("Clear Saved Picker Names", icon: "trash") {
-                AdminNameResetView()
-            }
-            settingsLink("Backup & Restore", icon: "externaldrive.badge.icloud") {
-                BackupAndRestoreSettingsView()
-            }
-            settingsLink("PIN Code", icon: "number.square") {
-                PinCodeSettingsView()
-            }
-        }
-    }
-
-    private func settingsLink<Destination: View>(
-        _ title: String,
-        icon: String,
-        @ViewBuilder destination: () -> Destination
-    ) -> some View {
-        NavigationLink(destination: destination) {
-            settingsRow(title: title, icon: icon)
-        }
-    }
-
-    private let settingsIconColumnWidth: CGFloat = 40
-
-    @ViewBuilder
-    private func settingsRow(title: String, icon: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(.tint)
-                .frame(width: settingsIconColumnWidth, alignment: .leading)
-            Text(title)
-        }
-    }
 
     private func seedInitialGradesIfNeeded() {
         let existing = (try? dataContext.fetch(FetchDescriptor<Grade>())) ?? []
@@ -150,6 +85,73 @@ struct SettingsView: View {
             try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+
+private struct SettingsLinksSection: View {
+    var body: some View {
+        Section("Settings") {
+            SettingsLinkRow(title: "Club Grades", icon: "person.3.fill") {
+                ClubGradesSettingsView()
+            }
+            SettingsLinkRow(title: "Players", icon: "person.3") {
+                PlayersView()
+            }
+            SettingsLinkRow(title: "Stats", icon: "chart.xyaxis.line") {
+                StatsTypesSettingsView()
+            }
+            SettingsLinkRow(title: "Umpires", icon: "flag.pattern.checkered") {
+                UmpiresSettingsView()
+            }
+            SettingsLinkRow(title: "App Appearance", icon: "circle.lefthalf.filled") {
+                AppAppearanceSettingsView()
+            }
+            SettingsLinkRow(title: "Teams & Venues", icon: "flag.2.crossed") {
+                TeamsAndVenuesSettingsView()
+            }
+            SettingsLinkRow(title: "Contacts", icon: "person.crop.circle.badge.checkmark") {
+                ContactsSettingsView()
+            }
+            SettingsLinkRow(title: "Groups", icon: "person.3.sequence") {
+                GroupsSettingsView()
+            }
+        }
+    }
+}
+
+private struct AdminLinksSection: View {
+    var body: some View {
+        Section("Admin") {
+            SettingsLinkRow(title: "Clear Saved Picker Names", icon: "trash") {
+                AdminNameResetView()
+            }
+            SettingsLinkRow(title: "Backup & Restore", icon: "externaldrive.badge.icloud") {
+                BackupAndRestoreSettingsView()
+            }
+            SettingsLinkRow(title: "PIN Code", icon: "number.square") {
+                PinCodeSettingsView()
+            }
+        }
+    }
+}
+
+private struct SettingsLinkRow<Destination: View>: View {
+    let title: String
+    let icon: String
+    @ViewBuilder var destination: () -> Destination
+
+    private let iconColumnWidth: CGFloat = 40
+
+    var body: some View {
+        NavigationLink(destination: destination) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .foregroundStyle(.tint)
+                    .frame(width: iconColumnWidth, alignment: .leading)
+                Text(title)
+            }
         }
     }
 }
