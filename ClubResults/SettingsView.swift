@@ -2814,6 +2814,28 @@ struct ReportsSettingsView: View {
         return rowCount * templateGridColumnCount
     }
 
+    private var isTemplateActionDialogPresented: Binding<Bool> {
+        Binding(
+            get: { templateActioning != nil },
+            set: { isPresented in
+                if !isPresented {
+                    templateActioning = nil
+                }
+            }
+        )
+    }
+
+    private var isSaveErrorAlertPresented: Binding<Bool> {
+        Binding(
+            get: { saveErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    saveErrorMessage = nil
+                }
+            }
+        )
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -2869,32 +2891,12 @@ struct ReportsSettingsView: View {
         .onChange(of: isMoveModeEnabled) { _, newValue in
             updateWobbleState(for: newValue)
         }
-        .confirmationDialog("Report actions", isPresented: Binding(
-            get: { templateActioning != nil },
-            set: { if !$0 { templateActioning = nil } }
-        ), titleVisibility: .visible) {
-            if let template = templateActioning {
-                Button("Edit") {
-                    templateEditing = template
-                }
-                Button("Duplicate") {
-                    duplicateTemplate(template)
-                }
-                Button("Preview") {
-                    templatePreviewing = TemplateRunRequest(
-                        template: template,
-                        dateRange: reportDateRange(for: template),
-                        emailRecipients: recipientEmails(for: template)
-                    )
-                }
-                Button("Move") {
-                    beginMoveMode()
-                }
-                Button("Delete Report", role: .destructive) {
-                    deleteTemplate(template)
-                }
-            }
-        }
+        .confirmationDialog(
+            "Report actions",
+            isPresented: isTemplateActionDialogPresented,
+            titleVisibility: .visible,
+            actions: templateActionDialogActions
+        )
         .sheet(isPresented: $isCreatingTemplate) {
             CustomReportEditView(
                 grades: grades,
@@ -3048,18 +3050,37 @@ struct ReportsSettingsView: View {
             }
             .appPopupStyle()
         }
-        .alert(
-            "Save Error",
-            isPresented: Binding(
-                get: { saveErrorMessage != nil },
-                set: { if !$0 { saveErrorMessage = nil } }
-            )
-        ) {
+        .alert("Save Error", isPresented: isSaveErrorAlertPresented) {
             Button("OK", role: .cancel) {
                 saveErrorMessage = nil
             }
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
+    }
+
+    @ViewBuilder
+    private func templateActionDialogActions() -> some View {
+        if let template = templateActioning {
+            Button("Edit") {
+                templateEditing = template
+            }
+            Button("Duplicate") {
+                duplicateTemplate(template)
+            }
+            Button("Preview") {
+                templatePreviewing = TemplateRunRequest(
+                    template: template,
+                    dateRange: reportDateRange(for: template),
+                    emailRecipients: recipientEmails(for: template)
+                )
+            }
+            Button("Move") {
+                beginMoveMode()
+            }
+            Button("Delete Report", role: .destructive) {
+                deleteTemplate(template)
+            }
         }
     }
 
