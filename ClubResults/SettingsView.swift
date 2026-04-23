@@ -5174,22 +5174,8 @@ private struct ReportRecipientsSettingsView: View {
                                         title: "Group: \(group.name)",
                                         subtitle: "\(count) contact(s)",
                                         secondarySubtitle: "",
-                                        sendEmail: Binding(
-                                            get: { recipient.sendEmail },
-                                            set: { newValue in
-                                                recipient.sendEmail = newValue
-                                                if !recipient.sendEmail && !recipient.sendText { recipient.sendText = true }
-                                                saveContext()
-                                            }
-                                        ),
-                                        sendText: Binding(
-                                            get: { recipient.sendText },
-                                            set: { newValue in
-                                                recipient.sendText = newValue
-                                                if !recipient.sendEmail && !recipient.sendText { recipient.sendEmail = true }
-                                                saveContext()
-                                            }
-                                        ),
+                                        sendEmail: sendEmailBinding(for: recipient),
+                                        sendText: sendTextBinding(for: recipient),
                                         footer: sendModeText(sendEmail: recipient.sendEmail, sendText: recipient.sendText)
                                     ) {
                                         dataContext.delete(recipient)
@@ -5255,22 +5241,8 @@ private struct ReportRecipientsSettingsView: View {
                                             title: contact.name,
                                             subtitle: contact.email,
                                             secondarySubtitle: contact.mobile,
-                                            sendEmail: Binding(
-                                                get: { recipient.sendEmail },
-                                                set: { newValue in
-                                                    recipient.sendEmail = newValue
-                                                    if !recipient.sendEmail && !recipient.sendText { recipient.sendText = true }
-                                                    saveContext()
-                                                }
-                                            ),
-                                            sendText: Binding(
-                                                get: { recipient.sendText },
-                                                set: { newValue in
-                                                    recipient.sendText = newValue
-                                                    if !recipient.sendEmail && !recipient.sendText { recipient.sendEmail = true }
-                                                    saveContext()
-                                                }
-                                            ),
+                                            sendEmail: sendEmailBinding(for: recipient),
+                                            sendText: sendTextBinding(for: recipient),
                                             footer: sendModeText(sendEmail: recipient.sendEmail, sendText: recipient.sendText)
                                         ) {
                                             dataContext.delete(recipient)
@@ -5373,6 +5345,34 @@ private struct ReportRecipientsSettingsView: View {
             Button(role: .destructive, action: onDelete) {
                 Label("Remove", systemImage: "trash")
             }
+        }
+    }
+
+    private func sendEmailBinding(for recipient: ReportRecipient) -> Binding<Bool> {
+        Binding(
+            get: { recipient.sendEmail },
+            set: { newValue in
+                recipient.sendEmail = newValue
+                ensureAtLeastOneSendModeEnabled(for: recipient)
+                saveContext()
+            }
+        )
+    }
+
+    private func sendTextBinding(for recipient: ReportRecipient) -> Binding<Bool> {
+        Binding(
+            get: { recipient.sendText },
+            set: { newValue in
+                recipient.sendText = newValue
+                ensureAtLeastOneSendModeEnabled(for: recipient)
+                saveContext()
+            }
+        )
+    }
+
+    private func ensureAtLeastOneSendModeEnabled(for recipient: ReportRecipient) {
+        if !recipient.sendEmail && !recipient.sendText {
+            recipient.sendEmail = true
         }
     }
 
