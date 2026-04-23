@@ -2925,6 +2925,7 @@ struct ReportsSettingsView: View {
                 sectionMemberships: sectionMemberships,
                 initialName: template.name,
                 initialSelectedGradeIDs: template.gradeIDs,
+                initialSendReportOnGameSave: template.sendReportOnGameSave,
                 initialIncludeScores: template.includeScores,
                 initialIncludeBestPlayers: template.includeBestPlayers,
                 initialBestPlayersLimit: template.bestPlayersLimit,
@@ -3000,6 +3001,7 @@ struct ReportsSettingsView: View {
         let template = CustomReportTemplate(
             name: draft.name,
             gradeIDs: draft.selectedGradeIDs,
+            sendReportOnGameSave: draft.sendReportOnGameSave,
             includeScores: draft.includeScores,
             includeBestPlayers: draft.includeBestPlayers,
             bestPlayersLimit: draft.bestPlayersLimit,
@@ -3053,6 +3055,7 @@ struct ReportsSettingsView: View {
 
         template.name = draft.name
         template.gradeIDs = draft.selectedGradeIDs
+        template.sendReportOnGameSave = draft.sendReportOnGameSave
         template.includeScores = draft.includeScores
         template.includeBestPlayers = draft.includeBestPlayers
         template.bestPlayersLimit = draft.bestPlayersLimit
@@ -3220,6 +3223,7 @@ struct ReportsSettingsView: View {
         let duplicatedTemplate = CustomReportTemplate(
             name: "\(template.name) Copy",
             gradeIDs: template.gradeIDs,
+            sendReportOnGameSave: template.sendReportOnGameSave,
             includeScores: template.includeScores,
             includeBestPlayers: template.includeBestPlayers,
             bestPlayersLimit: template.bestPlayersLimit,
@@ -4643,6 +4647,7 @@ private struct PDFPreviewView: UIViewRepresentable {
 private struct CustomReportTemplateDraft {
     let name: String
     let selectedGradeIDs: [UUID]
+    let sendReportOnGameSave: Bool
     let includeScores: Bool
     let includeBestPlayers: Bool
     let bestPlayersLimit: Int
@@ -4679,6 +4684,7 @@ private struct CustomReportEditView: View {
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
+    @State private var sendReportOnGameSave: Bool
     @State private var includeScores: Bool
     @State private var includeBestPlayers: Bool
     @State private var bestPlayersLimit: Int
@@ -4711,6 +4717,7 @@ private struct CustomReportEditView: View {
         sectionMemberships: [ContactSectionMembership],
         initialName: String = "",
         initialSelectedGradeIDs: [UUID] = [],
+        initialSendReportOnGameSave: Bool = false,
         initialIncludeScores: Bool = true,
         initialIncludeBestPlayers: Bool = false,
         initialBestPlayersLimit: Int = 0,
@@ -4744,6 +4751,7 @@ private struct CustomReportEditView: View {
         self.onSave = onSave
         _name = State(initialValue: initialName)
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
+        _sendReportOnGameSave = State(initialValue: initialSendReportOnGameSave)
         _includeScores = State(initialValue: initialIncludeScores)
         _includeBestPlayers = State(initialValue: initialIncludeBestPlayers)
         _bestPlayersLimit = State(initialValue: Self.clampedReportItemLimit(initialBestPlayersLimit, defaultValue: 0))
@@ -4877,6 +4885,12 @@ private struct CustomReportEditView: View {
                     }
 
                     Text("No grade selected means all grades.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Divider()
+                    Toggle("Send Report on Game Save", isOn: $sendReportOnGameSave)
+                    Text("When multiple grades are selected, the report sends after the last selected grade game is saved.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } header: {
@@ -5020,6 +5034,7 @@ private struct CustomReportEditView: View {
                         let draft = CustomReportTemplateDraft(
                             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                             selectedGradeIDs: Array(selectedGradeIDs),
+                            sendReportOnGameSave: sendReportOnGameSave,
                             includeScores: includeScores,
                             includeBestPlayers: includeBestPlayers,
                             bestPlayersLimit: bestPlayersLimit,

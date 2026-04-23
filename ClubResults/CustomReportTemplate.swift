@@ -40,6 +40,7 @@ final class CustomReportTemplate {
     var includeSectionOrderData: Data
 
     // Filters
+    var sendReportOnGameSave: Bool
     var includeOnlyActiveGrades: Bool
     var minimumGamesPlayed: Int
     var groupingModeRawValue: Int
@@ -67,6 +68,7 @@ final class CustomReportTemplate {
         includeTrainers: Bool = true,
         includeMatchNotes: Bool = false,
         includeSectionOrder: [String] = CustomReportTemplate.defaultIncludeSectionOrder,
+        sendReportOnGameSave: Bool = false,
         includeOnlyActiveGrades: Bool = true,
         minimumGamesPlayed: Int = 0,
         groupingModeRawValue: Int = 0,
@@ -93,6 +95,7 @@ final class CustomReportTemplate {
         self.includeTrainers = includeTrainers
         self.includeMatchNotes = includeMatchNotes
         self.includeSectionOrderData = (try? JSONEncoder().encode(includeSectionOrder)) ?? Data()
+        self.sendReportOnGameSave = sendReportOnGameSave
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
         self.minimumGamesPlayed = max(0, minimumGamesPlayed)
         self.groupingModeRawValue = groupingModeRawValue
