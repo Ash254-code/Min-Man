@@ -4158,7 +4158,7 @@ private func makeTemplatePreviewPDF(
         }
 
         func drawRow(playerName: String, guernsey: String, goals: String, bestPlayers: String, gamesPlayed: String, notes: String) {
-            let rowHeight: CGFloat = 22
+            let rowHeight: CGFloat = 24
             beginNewPageIfNeeded(requiredHeight: rowHeight)
             var x = contentRect.minX
             let values = [playerName, guernsey, goals, bestPlayers, gamesPlayed, notes]
@@ -4170,7 +4170,7 @@ private func makeTemplatePreviewPDF(
                 NSAttributedString(
                     string: value,
                     attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
-                ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                ).draw(in: rect.insetBy(dx: 4, dy: 4))
                 x += width
             }
             cursorY += rowHeight
@@ -4179,7 +4179,7 @@ private func makeTemplatePreviewPDF(
         func drawDetailTable(title: String, columns: [String], rows: [[String]]) {
             drawSectionHeader(title)
             let headerHeight: CGFloat = 24
-            let rowHeight: CGFloat = 22
+            let rowHeight: CGFloat = 24
             beginNewPageIfNeeded(requiredHeight: headerHeight)
 
             let weights: [CGFloat]
@@ -4226,7 +4226,7 @@ private func makeTemplatePreviewPDF(
                     NSAttributedString(
                         string: value,
                         attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
-                    ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                    ).draw(in: rect.insetBy(dx: 4, dy: 4))
                     x += width
                 }
                 cursorY += rowHeight
@@ -4248,8 +4248,8 @@ private func makeTemplatePreviewPDF(
                 attributes: [.font: sectionFont, .foregroundColor: UIColor.black]
             ).draw(in: sectionRect)
             var localY = cursorY + 22
-            let headerHeight: CGFloat = 22
-            let rowHeight: CGFloat = 20
+            let headerHeight: CGFloat = 24
+            let rowHeight: CGFloat = 24
             let colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
 
             var x = xOrigin
@@ -4262,7 +4262,7 @@ private func makeTemplatePreviewPDF(
                 NSAttributedString(
                     string: column,
                     attributes: [.font: headerFont, .foregroundColor: UIColor.black]
-                ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                ).draw(in: rect.insetBy(dx: 4, dy: 6))
                 x += colWidths[index]
             }
             localY += headerHeight
@@ -4278,7 +4278,7 @@ private func makeTemplatePreviewPDF(
                     NSAttributedString(
                         string: value,
                         attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
-                    ).draw(in: rect.insetBy(dx: 4, dy: 4))
+                    ).draw(in: rect.insetBy(dx: 4, dy: 5))
                     x += colWidth
                 }
                 localY += rowHeight
