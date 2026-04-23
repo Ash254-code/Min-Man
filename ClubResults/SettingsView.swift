@@ -15,79 +15,8 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    NavigationLink {
-                        ClubGradesSettingsView()
-                    } label: {
-                        settingsRow(title: "Club Grades", icon: "person.3.fill")
-                    }
-
-                    NavigationLink {
-                        PlayersView()
-                    } label: {
-                        settingsRow(title: "Players", icon: "person.3")
-                    }
-
-                    NavigationLink {
-                        StatsTypesSettingsView()
-                    } label: {
-                        settingsRow(title: "Stats", icon: "chart.xyaxis.line")
-                    }
-
-                    NavigationLink {
-                        UmpiresSettingsView()
-                    } label: {
-                        settingsRow(title: "Umpires", icon: "flag.pattern.checkered")
-                    }
-
-                    NavigationLink {
-                        AppAppearanceSettingsView()
-                    } label: {
-                        settingsRow(title: "App Appearance", icon: "circle.lefthalf.filled")
-                    }
-
-                    NavigationLink {
-                        TeamsAndVenuesSettingsView()
-                    } label: {
-                        settingsRow(title: "Teams & Venues", icon: "flag.2.crossed")
-                    }
-
-                    NavigationLink {
-                        ContactsSettingsView()
-                    } label: {
-                        settingsRow(title: "Contacts", icon: "person.crop.circle.badge.checkmark")
-                    }
-
-                    NavigationLink {
-                        GroupsSettingsView()
-                    } label: {
-                        settingsRow(title: "Groups", icon: "person.3.sequence")
-                    }
-                } header: {
-                    Text("Settings")
-                }
-
-                Section {
-                    NavigationLink {
-                        AdminNameResetView()
-                    } label: {
-                        settingsRow(title: "Clear Saved Picker Names", icon: "trash")
-                    }
-
-                    NavigationLink {
-                        BackupAndRestoreSettingsView()
-                    } label: {
-                        settingsRow(title: "Backup & Restore", icon: "externaldrive.badge.icloud")
-                    }
-
-                    NavigationLink {
-                        PinCodeSettingsView()
-                    } label: {
-                        settingsRow(title: "PIN Code", icon: "number.square")
-                    }
-                } header: {
-                    Text("Admin")
-                }
+                settingsSection
+                adminSection
             }
             .navigationTitle("Settings")
             .navigationDestination(isPresented: $showContactsSettings) {
@@ -117,6 +46,60 @@ struct SettingsView: View {
             }
         }
         .id(resetToken)
+    }
+
+
+    private var settingsSection: some View {
+        Section("Settings") {
+            settingsLink("Club Grades", icon: "person.3.fill") {
+                ClubGradesSettingsView()
+            }
+            settingsLink("Players", icon: "person.3") {
+                PlayersView()
+            }
+            settingsLink("Stats", icon: "chart.xyaxis.line") {
+                StatsTypesSettingsView()
+            }
+            settingsLink("Umpires", icon: "flag.pattern.checkered") {
+                UmpiresSettingsView()
+            }
+            settingsLink("App Appearance", icon: "circle.lefthalf.filled") {
+                AppAppearanceSettingsView()
+            }
+            settingsLink("Teams & Venues", icon: "flag.2.crossed") {
+                TeamsAndVenuesSettingsView()
+            }
+            settingsLink("Contacts", icon: "person.crop.circle.badge.checkmark") {
+                ContactsSettingsView()
+            }
+            settingsLink("Groups", icon: "person.3.sequence") {
+                GroupsSettingsView()
+            }
+        }
+    }
+
+    private var adminSection: some View {
+        Section("Admin") {
+            settingsLink("Clear Saved Picker Names", icon: "trash") {
+                AdminNameResetView()
+            }
+            settingsLink("Backup & Restore", icon: "externaldrive.badge.icloud") {
+                BackupAndRestoreSettingsView()
+            }
+            settingsLink("PIN Code", icon: "number.square") {
+                PinCodeSettingsView()
+            }
+        }
+    }
+
+    private func settingsLink<Destination: View>(
+        _ title: String,
+        icon: String,
+        @ViewBuilder destination: () -> Destination
+    ) -> some View {
+        NavigationLink(destination: destination) {
+            settingsRow(title: title, icon: icon)
+        }
     }
 
     private let settingsIconColumnWidth: CGFloat = 40
