@@ -3223,8 +3223,7 @@ struct ReportsSettingsView: View {
         let duplicatedTemplate = CustomReportTemplate(
             name: "\(template.name) Copy",
             gradeIDs: template.gradeIDs,
-            sendReportOnGameSave: template.sendReportOnGameSave,
-            includeScores: template.includeScores,
+            includeScores: template.includeScores, sendReportOnGameSave: template.sendReportOnGameSaveincludeScores: template.includeScores, sendReportOnGameSave: template.sendReportOnGameSave,
             includeBestPlayers: template.includeBestPlayers,
             bestPlayersLimit: template.bestPlayersLimit,
             includePlayerGrades: template.includePlayerGrades,
