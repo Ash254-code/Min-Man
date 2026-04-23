@@ -2936,7 +2936,7 @@ struct ReportsSettingsView: View {
                 grades: grades,
                 contacts: contacts,
                 sectionMemberships: sectionMemberships
-            ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs, includedDataOrder in
                 let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
                 let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
                 let template = CustomReportTemplate(
@@ -2954,9 +2954,10 @@ struct ReportsSettingsView: View {
                     bestAndFairestLimit: bestAndFairestLimit,
                     includeStaffRoles: includeStaffRoles,
                     includeOfficials: includeOfficials,
-                    includeUmpires: includeUmpires,
+                    includeUmpires: includeOfficials,
                     includeTrainers: includeTrainers,
                     includeMatchNotes: includeMatchNotes,
+                    includeSectionOrder: includedDataOrder,
                     includeOnlyActiveGrades: includeOnlyActiveGrades,
                     minimumGamesPlayed: minimumGamesPlayed,
                     groupingModeRawValue: groupingModeRawValue,
@@ -3020,6 +3021,7 @@ struct ReportsSettingsView: View {
                 initialIncludeUmpires: template.includeUmpires,
                 initialIncludeTrainers: template.includeTrainers,
                 initialIncludeMatchNotes: template.includeMatchNotes,
+                initialIncludedDataOrder: template.includeSectionOrder,
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
                 initialMinimumGamesPlayed: template.minimumGamesPlayed,
                 initialGroupingModeRawValue: template.groupingModeRawValue,
@@ -3035,7 +3037,7 @@ struct ReportsSettingsView: View {
                 onDelete: {
                     deleteTemplate(template)
                 }
-            ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs in
+            ) { name, selectedGradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includeGuestVotes, guestVotesLimit, includeGoalKickers, goalKickersLimit, includeBestAndFairestVotes, bestAndFairestLimit, includeStaffRoles, includeOfficials, includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades, minimumGamesPlayed, groupingModeRawValue, selectedQuickPickRawValue, customDateRangeStart, customDateRangeEnd, selectedRecipientSectionKeys, selectedRecipientContactIDs, includedDataOrder in
                 let normalizedStart = min(customDateRangeStart, customDateRangeEnd)
                 let normalizedEnd = max(customDateRangeStart, customDateRangeEnd)
                 template.name = name
@@ -3052,9 +3054,10 @@ struct ReportsSettingsView: View {
                 template.bestAndFairestLimit = bestAndFairestLimit
                 template.includeStaffRoles = includeStaffRoles
                 template.includeOfficials = includeOfficials
-                template.includeUmpires = includeUmpires
+                template.includeUmpires = includeOfficials
                 template.includeTrainers = includeTrainers
                 template.includeMatchNotes = includeMatchNotes
+                template.includeSectionOrder = includedDataOrder
                 template.includeOnlyActiveGrades = includeOnlyActiveGrades
                 template.minimumGamesPlayed = minimumGamesPlayed
                 template.groupingModeRawValue = groupingModeRawValue
@@ -3219,6 +3222,7 @@ struct ReportsSettingsView: View {
             includeUmpires: template.includeUmpires,
             includeTrainers: template.includeTrainers,
             includeMatchNotes: template.includeMatchNotes,
+            includeSectionOrder: template.includeSectionOrder,
             includeOnlyActiveGrades: template.includeOnlyActiveGrades,
             minimumGamesPlayed: template.minimumGamesPlayed,
             groupingModeRawValue: template.groupingModeRawValue,
@@ -3836,16 +3840,30 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
         .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
         .map(\.name)
 
-    var items: [String] = []
-    if template.includeScores { items.append("Scores") }
-    if template.includeBestPlayers { items.append("Best players") }
-    if template.includePlayerGrades { items.append("Guest Votes") }
-    if template.includeGoalKickers { items.append("Goal kickers") }
-    if template.includeBestAndFairestVotes { items.append("B&F votes") }
-    if template.includeStaffRoles { items.append("Coaching Staff") }
-    if template.includeOfficials || template.includeUmpires { items.append("Officials") }
-    if template.includeTrainers { items.append("Trainers") }
-    if template.includeMatchNotes { items.append("Match notes") }
+    let items: [String] = template.includeSectionOrder.compactMap { key in
+        switch key {
+        case "scores":
+            return template.includeScores ? "Scores" : nil
+        case "bestPlayers":
+            return template.includeBestPlayers ? "Best players" : nil
+        case "guestVotes":
+            return template.includePlayerGrades ? "Guest Votes" : nil
+        case "goalKickers":
+            return template.includeGoalKickers ? "Goal kickers" : nil
+        case "bestAndFairest":
+            return template.includeBestAndFairestVotes ? "B&F votes" : nil
+        case "coachingStaff":
+            return template.includeStaffRoles ? "Coaching Staff" : nil
+        case "officials":
+            return (template.includeOfficials || template.includeUmpires) ? "Officials" : nil
+        case "trainers":
+            return template.includeTrainers ? "Trainers" : nil
+        case "matchNotes":
+            return template.includeMatchNotes ? "Match notes" : nil
+        default:
+            return nil
+        }
+    }
 
     let gradesText: String = {
         if gradeNames.isEmpty { return "All grades" }
@@ -4374,21 +4392,55 @@ private func makeTemplatePreviewPDF(
             let rows: [[String]]
         }
 
-        func buildCompactTables(for rows: (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]])) -> [CompactReportTable] {
-            var compactTables: [CompactReportTable] = []
-            if template.includeBestPlayers {
-                compactTables.append(CompactReportTable(title: "Best Players", columns: ["Points", "Player"], rows: rows.bestPlayers))
+        func makeCountRows(_ countsByName: [String: Int]) -> [[String]] {
+            countsByName
+                .sorted { left, right in
+                    if left.value != right.value { return left.value > right.value }
+                    return left.key.localizedCaseInsensitiveCompare(right.key) == .orderedAscending
+                }
+                .map { [$0.key, String($0.value)] }
+        }
+
+        func buildStaffTables(for games: [Game]) -> [String: CompactReportTable] {
+            func normalizedName(_ value: String) -> String {
+                value.trimmingCharacters(in: .whitespacesAndNewlines)
             }
-            if template.includeGoalKickers {
-                compactTables.append(CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows.goalKickers))
+
+            var coachingCounts: [String: Int] = [:]
+            var officialCounts: [String: Int] = [:]
+            var trainerCounts: [String: Int] = [:]
+
+            func increment(_ dictionary: inout [String: Int], name: String) {
+                let trimmed = normalizedName(name)
+                guard !trimmed.isEmpty else { return }
+                dictionary[trimmed, default: 0] += 1
             }
-            if template.includePlayerGrades {
-                compactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes))
+
+            for game in games {
+                if template.includeStaffRoles {
+                    increment(&coachingCounts, name: game.headCoachName)
+                    increment(&coachingCounts, name: game.assistantCoachName)
+                    increment(&coachingCounts, name: game.teamManagerName)
+                    increment(&coachingCounts, name: game.runnerName)
+                }
+                if template.includeOfficials || template.includeUmpires {
+                    increment(&officialCounts, name: game.goalUmpireName)
+                    increment(&officialCounts, name: game.fieldUmpireName)
+                    increment(&officialCounts, name: game.boundaryUmpire1Name)
+                    increment(&officialCounts, name: game.boundaryUmpire2Name)
+                }
+                if template.includeTrainers {
+                    for trainer in game.trainers {
+                        increment(&trainerCounts, name: trainer)
+                    }
+                }
             }
-            if template.includeBestAndFairestVotes {
-                compactTables.append(CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest))
-            }
-            return compactTables
+
+            var tables: [String: CompactReportTable] = [:]
+            tables["coachingStaff"] = CompactReportTable(title: "Coaching Staff", columns: ["Name", "Appearances"], rows: makeCountRows(coachingCounts))
+            tables["officials"] = CompactReportTable(title: "Officials", columns: ["Name", "Appearances"], rows: makeCountRows(officialCounts))
+            tables["trainers"] = CompactReportTable(title: "Trainers", columns: ["Name", "Appearances"], rows: makeCountRows(trainerCounts))
+            return tables
         }
 
         func drawCompactTables(_ compactTables: [CompactReportTable]) {
@@ -4462,6 +4514,57 @@ private func makeTemplatePreviewPDF(
             return [RenderedSection(title: "Report", games: relevantGames)]
         }()
 
+        func drawOrderedSections(for games: [Game], scoreGame: Game?) {
+            let rows = reportRows(for: games)
+            let staffTables = buildStaffTables(for: games)
+            let metadataGame = games.first
+            var pendingCompactTables: [CompactReportTable] = []
+
+            func flushPending() {
+                drawCompactTables(pendingCompactTables)
+                pendingCompactTables = []
+            }
+
+            for key in template.includeSectionOrder {
+                switch key {
+                case "scores":
+                    flushPending()
+                    if template.includeScores, let scoreGame {
+                        drawScorePills(for: scoreGame, title: "Score")
+                    }
+                case "bestPlayers":
+                    if template.includeBestPlayers {
+                        pendingCompactTables.append(CompactReportTable(title: "Best Players", columns: ["Points", "Player"], rows: rows.bestPlayers))
+                    }
+                case "guestVotes":
+                    if template.includePlayerGrades {
+                        pendingCompactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes))
+                    }
+                case "goalKickers":
+                    if template.includeGoalKickers {
+                        pendingCompactTables.append(CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows.goalKickers))
+                    }
+                case "bestAndFairest":
+                    if template.includeBestAndFairestVotes {
+                        pendingCompactTables.append(CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest))
+                    }
+                case "coachingStaff", "officials", "trainers":
+                    if let table = staffTables[key], !table.rows.isEmpty {
+                        pendingCompactTables.append(table)
+                    }
+                case "matchNotes":
+                    flushPending()
+                    if template.includeMatchNotes {
+                        let notes = metadataGame?.notes.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        drawDetailTable(title: "Match Notes", columns: ["Notes"], rows: notes.isEmpty ? [] : [[notes]])
+                    }
+                default:
+                    continue
+                }
+            }
+            flushPending()
+        }
+
         if groupingMode.splitByGradeEnabled || groupingMode.splitByGameEnabled {
             for section in renderedSections {
                 guard let sectionGame = section.games.first else { continue }
@@ -4472,103 +4575,10 @@ private func makeTemplatePreviewPDF(
                 ].compactMap { $0 }
                 let sectionTitle = titleParts.isEmpty ? section.title : titleParts.joined(separator: " • ")
                 drawSectionHeader(sectionTitle)
-                if template.includeScores {
-                    drawScorePills(for: sectionGame, title: "Score")
-                }
-                let rows = reportRows(for: section.games)
-                drawCompactTables(buildCompactTables(for: rows))
+                drawOrderedSections(for: section.games, scoreGame: sectionGame)
             }
         } else {
-            if template.includeScores, let game = primaryGame {
-                drawScorePills(for: game, title: "Score")
-            }
-            let rows = reportRows(for: relevantGames)
-            drawCompactTables(buildCompactTables(for: rows))
-        }
-
-        let metadataGame = renderedSections.first?.games.first ?? primaryGame
-
-        func normalizedName(_ value: String) -> String {
-            value.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        var roleColumns: [String] = []
-        if template.includeStaffRoles {
-            roleColumns.append(contentsOf: ["Head Coach", "Assistant Coach", "Team Manager", "Runner"])
-        }
-        if template.includeOfficials {
-            roleColumns.append(contentsOf: ["Goal Umpire", "Field Umpire"])
-        }
-        if template.includeUmpires {
-            roleColumns.append("Boundary Umpire")
-        }
-        if template.includeTrainers {
-            roleColumns.append("Trainer")
-        }
-
-        if !roleColumns.isEmpty {
-            let selectedPlayers = players
-                .filter { player in
-                    selectedGradeIDs.isEmpty || !Set(player.gradeIDs).isDisjoint(with: selectedGradeIDs)
-                }
-                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-
-            var countsByName: [String: [String: Int]] = [:]
-
-            func increment(role: String, name: String) {
-                let trimmedName = normalizedName(name)
-                guard !trimmedName.isEmpty else { return }
-                countsByName[trimmedName, default: [:]][role, default: 0] += 1
-            }
-
-            for game in relevantGames {
-                if template.includeStaffRoles {
-                    increment(role: "Head Coach", name: game.headCoachName)
-                    increment(role: "Assistant Coach", name: game.assistantCoachName)
-                    increment(role: "Team Manager", name: game.teamManagerName)
-                    increment(role: "Runner", name: game.runnerName)
-                }
-                if template.includeOfficials {
-                    increment(role: "Goal Umpire", name: game.goalUmpireName)
-                    increment(role: "Field Umpire", name: game.fieldUmpireName)
-                }
-                if template.includeUmpires {
-                    increment(role: "Boundary Umpire", name: game.boundaryUmpire1Name)
-                    increment(role: "Boundary Umpire", name: game.boundaryUmpire2Name)
-                }
-                if template.includeTrainers {
-                    for trainer in game.trainers {
-                        increment(role: "Trainer", name: trainer)
-                    }
-                }
-            }
-
-            let playerNames = selectedPlayers.map(\.name).filter { !$0.isEmpty }
-            let nonPlayerNames = countsByName.keys
-                .filter { !playerNames.contains($0) }
-                .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-            let allNames = playerNames + nonPlayerNames
-
-            let rows: [[String]] = allNames.map { name in
-                var row = [name]
-                for role in roleColumns {
-                    row.append(String(countsByName[name]?[role] ?? 0))
-                }
-                return row
-            }
-
-            drawDetailTable(
-                title: "Role Counts by Player",
-                columns: ["Name"] + roleColumns,
-                rows: rows
-            )
-        }
-
-        if template.includeMatchNotes {
-            let rows = metadataGame.map { game in
-                [[game.notes.trimmingCharacters(in: .whitespacesAndNewlines)]]
-            } ?? []
-            drawDetailTable(title: "Match Notes", columns: ["Notes"], rows: rows)
+            drawOrderedSections(for: relevantGames, scoreGame: primaryGame)
         }
     }
 
@@ -4603,7 +4613,7 @@ private struct CustomReportEditView: View {
     let contacts: [Contact]
     let sectionMemberships: [ContactSectionMembership]
     let onDelete: (() -> Void)?
-    let onSave: (String, [UUID], Bool, Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
+    let onSave: (String, [UUID], Bool, Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID], [String]) -> Void
 
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
@@ -4621,6 +4631,7 @@ private struct CustomReportEditView: View {
     @State private var includeUmpires: Bool
     @State private var includeTrainers: Bool
     @State private var includeMatchNotes: Bool
+    @State private var includedDataOrder: [String]
     @State private var includeOnlyActiveGrades: Bool
     @State private var minimumGamesPlayed: Int
     @State private var groupingMode: ReportGroupingMode
@@ -4652,6 +4663,7 @@ private struct CustomReportEditView: View {
         initialIncludeUmpires: Bool = false,
         initialIncludeTrainers: Bool = false,
         initialIncludeMatchNotes: Bool = false,
+        initialIncludedDataOrder: [String] = CustomReportTemplate.defaultIncludeSectionOrder,
         initialIncludeOnlyActiveGrades: Bool = true,
         initialMinimumGamesPlayed: Int = 1,
         initialGroupingModeRawValue: Int = 1,
@@ -4661,7 +4673,7 @@ private struct CustomReportEditView: View {
         initialRecipientSectionKeys: [String] = [],
         initialRecipientContactIDs: [UUID] = [],
         onDelete: (() -> Void)? = nil,
-        onSave: @escaping (String, [UUID], Bool, Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID]) -> Void
+        onSave: @escaping (String, [UUID], Bool, Bool, Int, Bool, Int, Bool, Int, Bool, Int, Bool, Bool, Bool, Bool, Bool, Int, Int, String, Date, Date, [String], [UUID], [String]) -> Void
     ) {
         self.grades = grades
         self.contacts = contacts
@@ -4684,6 +4696,7 @@ private struct CustomReportEditView: View {
         _includeUmpires = State(initialValue: initialIncludeUmpires)
         _includeTrainers = State(initialValue: initialIncludeTrainers)
         _includeMatchNotes = State(initialValue: initialIncludeMatchNotes)
+        _includedDataOrder = State(initialValue: normalizeIncludedDataOrder(initialIncludedDataOrder))
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
         _groupingMode = State(initialValue: ReportGroupingMode(rawValue: initialGroupingModeRawValue) ?? .combinedTotals)
@@ -4714,6 +4727,43 @@ private struct CustomReportEditView: View {
                 groupingMode = ReportGroupingMode.from(splitByGame: groupingMode.splitByGameEnabled, splitByGrade: newValue)
             }
         )
+    }
+
+    private static func normalizeIncludedDataOrder(_ rawOrder: [String]) -> [String] {
+        var order: [String] = []
+        for key in rawOrder where CustomReportTemplate.defaultIncludeSectionOrder.contains(key) && !order.contains(key) {
+            order.append(key)
+        }
+        for key in CustomReportTemplate.defaultIncludeSectionOrder where !order.contains(key) {
+            order.append(key)
+        }
+        return order
+    }
+
+    @ViewBuilder
+    private func dataIncludedRow(for key: String) -> some View {
+        switch key {
+        case "scores":
+            Toggle("Scores", isOn: $includeScores)
+        case "bestPlayers":
+            toggleWithLimitPicker(title: "Best players", isOn: $includeBestPlayers, limit: $bestPlayersLimit, defaultLimitWhenEnabled: 0)
+        case "guestVotes":
+            toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit, defaultLimitWhenEnabled: 0)
+        case "goalKickers":
+            toggleWithLimitPicker(title: "Goal Kickers", isOn: $includeGoalKickers, limit: $goalKickersLimit, defaultLimitWhenEnabled: 0)
+        case "bestAndFairest":
+            toggleWithLimitPicker(title: "Best and Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit, defaultLimitWhenEnabled: 5)
+        case "coachingStaff":
+            Toggle("Coaching Staff", isOn: $includeStaffRoles)
+        case "officials":
+            Toggle("Officials", isOn: $includeOfficials)
+        case "trainers":
+            Toggle("Trainers", isOn: $includeTrainers)
+        case "matchNotes":
+            Toggle("Match notes", isOn: $includeMatchNotes)
+        default:
+            EmptyView()
+        }
     }
 
     var body: some View {
@@ -4772,18 +4822,16 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
-                    Toggle("Scores", isOn: $includeScores)
-                    toggleWithLimitPicker(title: "Best players", isOn: $includeBestPlayers, limit: $bestPlayersLimit, defaultLimitWhenEnabled: 0)
-                    toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit, defaultLimitWhenEnabled: 0)
-                    toggleWithLimitPicker(title: "Goal Kickers", isOn: $includeGoalKickers, limit: $goalKickersLimit, defaultLimitWhenEnabled: 0)
-                    toggleWithLimitPicker(title: "Best and Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit, defaultLimitWhenEnabled: 5)
-                    Toggle("Coaching Staff", isOn: $includeStaffRoles)
-                    Toggle("Officials", isOn: $includeOfficials)
-                    Toggle("Boundary Umpires", isOn: $includeUmpires)
-                    Toggle("Trainers", isOn: $includeTrainers)
-                    Toggle("Match notes", isOn: $includeMatchNotes)
+                    ForEach(includedDataOrder, id: \.self) { key in
+                        dataIncludedRow(for: key)
+                    }
+                    .onMove { source, destination in
+                        includedDataOrder.move(fromOffsets: source, toOffset: destination)
+                    }
                 } header: {
                     Text("Data Included")
+                } footer: {
+                    Text("Drag to reorder report sections.")
                 }
 
                 Section {
@@ -4894,6 +4942,12 @@ private struct CustomReportEditView: View {
                 }
             }
             .navigationTitle("Custom Report")
+            .onAppear {
+                includeUmpires = includeOfficials
+            }
+            .onChange(of: includeOfficials) { _, newValue in
+                includeUmpires = newValue
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -4915,7 +4969,7 @@ private struct CustomReportEditView: View {
                             bestAndFairestLimit,
                             includeStaffRoles,
                             includeOfficials,
-                            includeUmpires,
+                            includeOfficials,
                             includeTrainers,
                             includeMatchNotes,
                             includeOnlyActiveGrades,
@@ -4925,7 +4979,8 @@ private struct CustomReportEditView: View {
                             customDateRangeStart,
                             customDateRangeEnd,
                             Array(selectedRecipientSectionKeys),
-                            Array(selectedRecipientContactIDs)
+                            Array(selectedRecipientContactIDs),
+                            includedDataOrder
                         )
                         dismiss()
                     }

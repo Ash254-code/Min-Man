@@ -515,6 +515,7 @@ struct CustomReportTemplateRecord: Codable {
     let includeUmpires: Bool
     let includeTrainers: Bool
     let includeMatchNotes: Bool
+    let includeSectionOrder: [String]
     let includeOnlyActiveGrades: Bool
     let minimumGamesPlayed: Int
     let groupingModeRawValue: Int
@@ -538,6 +539,7 @@ struct CustomReportTemplateRecord: Codable {
         includeUmpires = template.includeUmpires
         includeTrainers = template.includeTrainers
         includeMatchNotes = template.includeMatchNotes
+        includeSectionOrder = template.includeSectionOrder
         includeOnlyActiveGrades = template.includeOnlyActiveGrades
         minimumGamesPlayed = template.minimumGamesPlayed
         groupingModeRawValue = template.groupingModeRawValue
@@ -547,7 +549,7 @@ struct CustomReportTemplateRecord: Codable {
         case id, name, gradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includePlayerGrades, guestVotesLimit
         case includeGoalKickers, goalKickersLimit, includeGuernseyNumbers, includeBestAndFairestVotes
         case bestAndFairestLimit, includeStaffRoles, includeOfficials
-        case includeUmpires, includeTrainers, includeMatchNotes, includeOnlyActiveGrades
+        case includeUmpires, includeTrainers, includeMatchNotes, includeSectionOrder, includeOnlyActiveGrades
         case minimumGamesPlayed, groupingModeRawValue
     }
 
@@ -571,6 +573,7 @@ struct CustomReportTemplateRecord: Codable {
         includeUmpires = try c.decodeIfPresent(Bool.self, forKey: .includeUmpires) ?? true
         includeTrainers = try c.decodeIfPresent(Bool.self, forKey: .includeTrainers) ?? true
         includeMatchNotes = try c.decodeIfPresent(Bool.self, forKey: .includeMatchNotes) ?? false
+        includeSectionOrder = try c.decodeIfPresent([String].self, forKey: .includeSectionOrder) ?? CustomReportTemplate.defaultIncludeSectionOrder
         includeOnlyActiveGrades = try c.decodeIfPresent(Bool.self, forKey: .includeOnlyActiveGrades) ?? true
         minimumGamesPlayed = try c.decodeIfPresent(Int.self, forKey: .minimumGamesPlayed) ?? 0
         groupingModeRawValue = try c.decodeIfPresent(Int.self, forKey: .groupingModeRawValue) ?? 0
@@ -1078,6 +1081,7 @@ enum AppBackupService {
                     includeUmpires: $0.includeUmpires,
                     includeTrainers: $0.includeTrainers,
                     includeMatchNotes: $0.includeMatchNotes,
+                    includeSectionOrder: $0.includeSectionOrder,
                     includeOnlyActiveGrades: $0.includeOnlyActiveGrades,
                     minimumGamesPlayed: $0.minimumGamesPlayed,
                     groupingModeRawValue: $0.groupingModeRawValue

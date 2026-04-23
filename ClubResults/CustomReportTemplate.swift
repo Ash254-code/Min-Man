@@ -3,6 +3,18 @@ import SwiftData
 
 @Model
 final class CustomReportTemplate {
+    static let defaultIncludeSectionOrder: [String] = [
+        "scores",
+        "bestPlayers",
+        "guestVotes",
+        "goalKickers",
+        "bestAndFairest",
+        "coachingStaff",
+        "officials",
+        "trainers",
+        "matchNotes"
+    ]
+
     @Attribute(.unique) var id: UUID
     var name: String
 
@@ -25,6 +37,7 @@ final class CustomReportTemplate {
     var includeUmpires: Bool
     var includeTrainers: Bool
     var includeMatchNotes: Bool
+    var includeSectionOrderData: Data
 
     // Filters
     var includeOnlyActiveGrades: Bool
@@ -53,6 +66,7 @@ final class CustomReportTemplate {
         includeUmpires: Bool = true,
         includeTrainers: Bool = true,
         includeMatchNotes: Bool = false,
+        includeSectionOrder: [String] = CustomReportTemplate.defaultIncludeSectionOrder,
         includeOnlyActiveGrades: Bool = true,
         minimumGamesPlayed: Int = 0,
         groupingModeRawValue: Int = 0,
@@ -78,6 +92,7 @@ final class CustomReportTemplate {
         self.includeUmpires = includeUmpires
         self.includeTrainers = includeTrainers
         self.includeMatchNotes = includeMatchNotes
+        self.includeSectionOrderData = (try? JSONEncoder().encode(includeSectionOrder)) ?? Data()
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
         self.minimumGamesPlayed = max(0, minimumGamesPlayed)
         self.groupingModeRawValue = groupingModeRawValue
@@ -92,6 +107,34 @@ final class CustomReportTemplate {
         }
         set {
             gradeIDsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+        }
+    }
+
+    var includeSectionOrder: [String] {
+        get {
+            let decoded = (try? JSONDecoder().decode([String].self, from: includeSectionOrderData)) ?? []
+            if decoded.isEmpty {
+                return Self.defaultIncludeSectionOrder
+            }
+
+            var normalized: [String] = []
+            for key in decoded where Self.defaultIncludeSectionOrder.contains(key) && !normalized.contains(key) {
+                normalized.append(key)
+            }
+            for key in Self.defaultIncludeSectionOrder where !normalized.contains(key) {
+                normalized.append(key)
+            }
+            return normalized
+        }
+        set {
+            var normalized: [String] = []
+            for key in newValue where Self.defaultIncludeSectionOrder.contains(key) && !normalized.contains(key) {
+                normalized.append(key)
+            }
+            for key in Self.defaultIncludeSectionOrder where !normalized.contains(key) {
+                normalized.append(key)
+            }
+            includeSectionOrderData = (try? JSONEncoder().encode(normalized)) ?? Data()
         }
     }
 }
