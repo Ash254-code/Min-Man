@@ -4250,7 +4250,15 @@ private func makeTemplatePreviewPDF(
             var localY = cursorY + 22
             let headerHeight: CGFloat = 24
             let rowHeight: CGFloat = 24
-            let colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
+            let colWidths: [CGFloat]
+            if columns.count == 3,
+               columns[0].lowercased() == "role",
+               columns[1].lowercased() == "name",
+               columns[2].lowercased() == "appearances" {
+                colWidths = [width * 0.36, width * 0.46, width * 0.18]
+            } else {
+                colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
+            }
 
             var x = xOrigin
             for (index, column) in columns.enumerated() {
@@ -4405,54 +4413,67 @@ private func makeTemplatePreviewPDF(
             let rows: [[String]]
         }
 
-        func makeCountRows(_ countsByName: [String: Int]) -> [[String]] {
-            countsByName
-                .sorted { left, right in
-                    if left.value != right.value { return left.value > right.value }
-                    return left.key.localizedCaseInsensitiveCompare(right.key) == .orderedAscending
-                }
-                .map { [$0.key, String($0.value)] }
-        }
-
         func buildStaffTables(for games: [Game]) -> [String: CompactReportTable] {
             func normalizedName(_ value: String) -> String {
                 value.trimmingCharacters(in: .whitespacesAndNewlines)
             }
 
-            var coachingCounts: [String: Int] = [:]
-            var officialCounts: [String: Int] = [:]
-            var trainerCounts: [String: Int] = [:]
+            typealias RoleNameKey = String
+            var coachingCounts: [RoleNameKey: Int] = [:]
+            var officialCounts: [RoleNameKey: Int] = [:]
+            var trainerCounts: [RoleNameKey: Int] = [:]
 
-            func increment(_ dictionary: inout [String: Int], name: String) {
+            func roleNameKey(role: String, name: String) -> RoleNameKey {
+                "\(role)||\(name)"
+            }
+
+            func increment(_ dictionary: inout [RoleNameKey: Int], role: String, name: String) {
                 let trimmed = normalizedName(name)
                 guard !trimmed.isEmpty else { return }
-                dictionary[trimmed, default: 0] += 1
+                dictionary[roleNameKey(role: role, name: trimmed), default: 0] += 1
+            }
+
+            func makeRoleCountRows(_ countsByRoleName: [RoleNameKey: Int]) -> [[String]] {
+                countsByRoleName
+                    .compactMap { key, value -> (role: String, name: String, count: Int)? in
+                        let parts = key.components(separatedBy: "||")
+                        guard parts.count == 2 else { return nil }
+                        return (role: parts[0], name: parts[1], count: value)
+                    }
+                    .sorted { left, right in
+                        if left.count != right.count { return left.count > right.count }
+                        if left.role.localizedCaseInsensitiveCompare(right.role) != .orderedSame {
+                            return left.role.localizedCaseInsensitiveCompare(right.role) == .orderedAscending
+                        }
+                        return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+                    }
+                    .map { [$0.role, $0.name, String($0.count)] }
             }
 
             for game in games {
                 if template.includeStaffRoles {
-                    increment(&coachingCounts, name: game.headCoachName)
-                    increment(&coachingCounts, name: game.assistantCoachName)
-                    increment(&coachingCounts, name: game.teamManagerName)
-                    increment(&coachingCounts, name: game.runnerName)
+                    increment(&coachingCounts, role: "Head Coach", name: game.headCoachName)
+                    increment(&coachingCounts, role: "Assistant Coach", name: game.assistantCoachName)
+                    increment(&coachingCounts, role: "Team Manager", name: game.teamManagerName)
+                    increment(&coachingCounts, role: "Runner", name: game.runnerName)
                 }
                 if template.includeOfficials || template.includeUmpires {
-                    increment(&officialCounts, name: game.goalUmpireName)
-                    increment(&officialCounts, name: game.fieldUmpireName)
-                    increment(&officialCounts, name: game.boundaryUmpire1Name)
-                    increment(&officialCounts, name: game.boundaryUmpire2Name)
+                    increment(&officialCounts, role: "Goal Umpire", name: game.goalUmpireName)
+                    increment(&officialCounts, role: "Field Umpire", name: game.fieldUmpireName)
+                    increment(&officialCounts, role: "Boundary Umpire 1", name: game.boundaryUmpire1Name)
+                    increment(&officialCounts, role: "Boundary Umpire 2", name: game.boundaryUmpire2Name)
                 }
                 if template.includeTrainers {
                     for trainer in game.trainers {
-                        increment(&trainerCounts, name: trainer)
+                        increment(&trainerCounts, role: "Trainer", name: trainer)
                     }
                 }
             }
 
             var tables: [String: CompactReportTable] = [:]
-            tables["coachingStaff"] = CompactReportTable(title: "Coaching Staff", columns: ["Name", "Appearances"], rows: makeCountRows(coachingCounts))
-            tables["officials"] = CompactReportTable(title: "Officials", columns: ["Name", "Appearances"], rows: makeCountRows(officialCounts))
-            tables["trainers"] = CompactReportTable(title: "Trainers", columns: ["Name", "Appearances"], rows: makeCountRows(trainerCounts))
+            tables["coachingStaff"] = CompactReportTable(title: "Coaching Staff", columns: ["Role", "Name", "Appearances"], rows: makeRoleCountRows(coachingCounts))
+            tables["officials"] = CompactReportTable(title: "Officials", columns: ["Role", "Name", "Appearances"], rows: makeRoleCountRows(officialCounts))
+            tables["trainers"] = CompactReportTable(title: "Trainers", columns: ["Role", "Name", "Appearances"], rows: makeRoleCountRows(trainerCounts))
             return tables
         }
 
