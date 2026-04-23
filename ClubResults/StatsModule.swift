@@ -2011,6 +2011,12 @@ struct LiveStatsView: View {
                                     }
                                 }
                                 .onEnded { _ in
+                                    guard activePlayerQuickStatsPlayerID == player.id else {
+                                        clearPendingPlayerQuickStat()
+                                        activePlayerQuickStatsPlayerID = nil
+                                        activePlayerQuickCardFrameGlobal = .zero
+                                        return
+                                    }
                                     commitPendingPlayerQuickStatIfValid(playerID: player.id)
                                     clearPendingPlayerQuickStat()
                                     activePlayerQuickStatsPlayerID = nil
@@ -2216,6 +2222,12 @@ struct LiveStatsView: View {
                     }
                 }
                 .onEnded { _ in
+                    guard activePlayerQuickStatsPlayerID == player.id else {
+                        clearPendingPlayerQuickStat()
+                        activePlayerQuickStatsPlayerID = nil
+                        activePlayerQuickCardFrameGlobal = .zero
+                        return
+                    }
                     commitPendingPlayerQuickStatIfValid(playerID: player.id)
                     clearPendingPlayerQuickStat()
                     activePlayerQuickStatsPlayerID = nil
