@@ -5188,6 +5188,20 @@ private struct ReportRecipientsSettingsView: View {
         orderedGradesForDisplay(grades, includeInactive: true)
     }
 
+    private var groupLookup: [UUID: ContactGroup] {
+        Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
+    }
+
+    private var contactLookup: [UUID: Contact] {
+        Dictionary(uniqueKeysWithValues: contacts.map { ($0.id, $0) })
+    }
+
+    private var membershipCountByGroup: [UUID: Int] {
+        memberships.reduce(into: [:]) { result, membership in
+            result[membership.groupID, default: 0] += 1
+        }
+    }
+
     private var isSaveErrorPresented: Binding<Bool> {
         Binding(
             get: { saveErrorMessage != nil },
@@ -5205,11 +5219,7 @@ private struct ReportRecipientsSettingsView: View {
             ForEach(configuredGrades) { grade in
                 let contactRecipients = recipientsForGrade(grade.id)
                 let groupRecipients = groupRecipientsForGrade(grade.id)
-                let groupIDs = Set(groupRecipients.map(\.groupID))
-                let activeGroupID = {
-                        if let saved = activeGroupByGrade[grade.id], groupIDs.contains(saved) { return saved }
-                    return groupRecipients.first!.groupID
-                    }()
+                let activeGroupID = resolvedActiveGroupID(for: grade.id, groupRecipients: groupRecipients)
                 let individualsInActiveGroup = individualsForGroup(activeGroupID, within: contactRecipients)
 
                 Section {
@@ -5223,8 +5233,8 @@ private struct ReportRecipientsSettingsView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(groupRecipients) { recipient in
-                                if let group = groups.first(where: { $0.id == recipient.groupID }) {
-                                    let count = memberships.filter { $0.groupID == group.id }.count
+                                if let group = groupLookup[recipient.groupID] {
+                                    let count = membershipCountByGroup[recipient.groupID, default: 0]
                                     recipientRow(
                                         title: "Group: \(group.name)",
                                         subtitle: "\(count) contact(s)",
@@ -5280,7 +5290,7 @@ private struct ReportRecipientsSettingsView: View {
                             Text("Add a recipient group first to view individuals.")
                                 .foregroundStyle(.secondary)
                         } else {
-                            if let activeGroup = groups.first(where: { $0.id == activeGroupID }) {
+                            if let activeGroupID, let activeGroup = groupLookup[activeGroupID] {
                                 Text("Current group: \(activeGroup.name)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -5291,7 +5301,7 @@ private struct ReportRecipientsSettingsView: View {
                                     .foregroundStyle(.secondary)
                             } else {
                                 ForEach(individualsInActiveGroup) { recipient in
-                                    if let contact = contacts.first(where: { $0.id == recipient.contactID }) {
+                                    if let contact = contactLookup[recipient.contactID] {
                                         recipientRow(
                                             title: contact.name,
                                             subtitle: contact.email,
@@ -5431,8 +5441,8 @@ private struct ReportRecipientsSettingsView: View {
         return recipients
             .filter { memberIDs.contains($0.contactID) }
             .sorted { a, b in
-                let aName = contacts.first(where: { $0.id == a.contactID })?.name ?? ""
-                let bName = contacts.first(where: { $0.id == b.contactID })?.name ?? ""
+                let aName = contactLookup[a.contactID]?.name ?? ""
+                let bName = contactLookup[b.contactID]?.name ?? ""
                 return aName.localizedCaseInsensitiveCompare(bName) == .orderedAscending
             }
     }
@@ -5462,8 +5472,8 @@ private struct ReportRecipientsSettingsView: View {
         reportRecipients
             .filter { $0.gradeID == gradeID }
             .sorted { a, b in
-                let aName = contacts.first(where: { $0.id == a.contactID })?.name ?? ""
-                let bName = contacts.first(where: { $0.id == b.contactID })?.name ?? ""
+                let aName = contactLookup[a.contactID]?.name ?? ""
+                let bName = contactLookup[b.contactID]?.name ?? ""
                 return aName.localizedCaseInsensitiveCompare(bName) == .orderedAscending
             }
     }
@@ -5472,10 +5482,18 @@ private struct ReportRecipientsSettingsView: View {
         reportRecipientGroups
             .filter { $0.gradeID == gradeID }
             .sorted { a, b in
-                let aName = groups.first(where: { $0.id == a.groupID })?.name ?? ""
-                let bName = groups.first(where: { $0.id == b.groupID })?.name ?? ""
+                let aName = groupLookup[a.groupID]?.name ?? ""
+                let bName = groupLookup[b.groupID]?.name ?? ""
                 return aName.localizedCaseInsensitiveCompare(bName) == .orderedAscending
             }
+    }
+
+    private func resolvedActiveGroupID(for gradeID: UUID, groupRecipients: [ReportRecipientGroup]) -> UUID? {
+        let groupIDs = Set(groupRecipients.map(\.groupID))
+        if let saved = activeGroupByGrade[gradeID], groupIDs.contains(saved) {
+            return saved
+        }
+        return groupRecipients.first?.groupID
     }
 
     private func addContact(_ contact: Contact, toGrade gradeID: UUID, sendMode: SendMode) {
