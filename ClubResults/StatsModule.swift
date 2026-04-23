@@ -1969,7 +1969,6 @@ struct LiveStatsView: View {
                             .frame(maxWidth: .infinity, minHeight: cellHeight)
                             .background(selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                             .contentShape(RoundedRectangle(cornerRadius: 10))
-                            .allowsHitTesting(false)
                         .background {
                             GeometryReader { cardProxy in
                                 if activePlayerQuickStatsPlayerID == player.id {
@@ -1984,7 +1983,7 @@ struct LiveStatsView: View {
                             }
                         }
                         .highPriorityGesture(
-                            LongPressGesture(minimumDuration: 0.25)
+                            LongPressGesture(minimumDuration: 1.0)
                                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                                 .onChanged { value in
                                     switch value {
@@ -2173,7 +2172,6 @@ struct LiveStatsView: View {
                 selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
                 in: RoundedRectangle(cornerRadius: 10)
             )
-        .allowsHitTesting(false)
         .background {
             GeometryReader { cardProxy in
                 if activePlayerQuickStatsPlayerID == player.id {
@@ -2188,7 +2186,7 @@ struct LiveStatsView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.25)
+            LongPressGesture(minimumDuration: 1.0)
                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                 .onChanged { value in
                     switch value {
