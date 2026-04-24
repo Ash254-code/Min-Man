@@ -207,7 +207,11 @@ struct NewGameWizardView: View {
     @Query private var reportRecipients: [ReportRecipient]
     @Query private var reportRecipientGroups: [ReportRecipientGroup]
     @Query private var contactGroupMemberships: [ContactGroupMembership]
-    @Query private var customReportTemplates: [CustomReportTemplate]
+    @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var customReportTemplates: [CustomReportTemplate]
+    @Query private var customReportRecipientSections: [CustomReportRecipientSection]
+    @Query private var customReportRecipientGroups: [CustomReportRecipientGroup]
+    @Query private var customReportRecipientContacts: [CustomReportRecipientContact]
+    @Query private var contactSectionMemberships: [ContactSectionMembership]
 
     // ✅ stored defaults per grade + role
     @Query private var staffDefaults: [StaffDefault]
@@ -1009,20 +1013,59 @@ struct NewGameWizardView: View {
         canProceed
     }
 
-    private var shouldSendReportOnSave: Bool {
-        guard let gid = gradeID else { return false }
-        return customReportTemplates.contains { template in
-            guard template.sendReportOnGameSave else { return false }
-            return template.gradeIDs.isEmpty || template.gradeIDs.contains(gid)
+    private var autoSendTemplateForSelectedGrade: CustomReportTemplate? {
+        guard let gid = gradeID else { return nil }
+        return customReportTemplates.first { template in
+            template.sendReportOnGameSave && (template.gradeIDs.isEmpty || template.gradeIDs.contains(gid))
         }
     }
 
     private func completeFinalSave() {
-        if shouldSendReportOnSave {
-            saveAndSendReport()
+        if let template = autoSendTemplateForSelectedGrade {
+            saveAndSendTemplateReport(template)
         } else {
             _ = saveGame(asDraft: false, dismissOnSuccess: true)
         }
+    }
+
+    private func recipientEmails(for template: CustomReportTemplate) -> [String] {
+        let sectionKeys = Set(
+            customReportRecipientSections
+                .filter { $0.templateID == template.id }
+                .map(\.sectionKey)
+        )
+        let sectionContactIDs = Set(
+            contactSectionMemberships
+                .filter { sectionKeys.contains($0.sectionKey) }
+                .map(\.contactID)
+        )
+
+        let groupIDs = Set(
+            customReportRecipientGroups
+                .filter { $0.templateID == template.id }
+                .map(\.groupID)
+        )
+        let groupContactIDs = Set(
+            contactGroupMemberships
+                .filter { groupIDs.contains($0.groupID) }
+                .map(\.contactID)
+        )
+
+        let individualContactIDs = Set(
+            customReportRecipientContacts
+                .filter { $0.templateID == template.id }
+                .map(\.contactID)
+        )
+
+        let contactIDs = sectionContactIDs
+            .union(groupContactIDs)
+            .union(individualContactIDs)
+
+        return contacts
+            .filter { contactIDs.contains($0.id) }
+            .map { $0.email.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     private func startLiveSessionIfNeeded() {
@@ -3037,6 +3080,46 @@ struct NewGameWizardView: View {
         }
 
         beginTextSendIfNeeded()
+    }
+
+    private func saveAndSendTemplateReport(_ template: CustomReportTemplate) {
+        guard saveGame(asDraft: false, dismissOnSuccess: false) != nil else { return }
+
+        let quickPick = ReportRangeQuickPick(rawValue: template.dateRangeQuickPickRawValue) ?? .mostRecentGame
+        let dateRange = buildDateRange(
+            for: quickPick,
+            template: template,
+            games: games,
+            customStartDate: template.customDateRangeStart,
+            customEndDate: template.customDateRangeEnd
+        )
+
+        do {
+            reportAttachmentURL = try makeTemplatePreviewPDF(
+                template: template,
+                grades: grades,
+                games: games,
+                players: players,
+                dateRange: dateRange
+            )
+        } catch {
+            sendStatusMessage = "Game saved, but failed to build the custom report PDF."
+            return
+        }
+
+        pendingEmailRecipients = recipientEmails(for: template)
+        pendingTextRecipients = []
+
+        if pendingEmailRecipients.isEmpty {
+            sendStatusMessage = "Game saved. No email recipients are configured for this custom report."
+            return
+        }
+
+        if MFMailComposeViewController.canSendMail() {
+            showMailComposer = true
+        } else {
+            sendStatusMessage = "Game saved. Mail is not configured on this device, so the PDF report could not be emailed."
+        }
     }
 
     private func beginTextSendIfNeeded() {

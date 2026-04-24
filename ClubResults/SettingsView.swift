@@ -3462,7 +3462,7 @@ private struct TemplateRunRequest: Identifiable {
     }
 }
 
-private struct ReportDateRange {
+struct ReportDateRange {
     let start: Date
     let end: Date
 
@@ -3471,7 +3471,7 @@ private struct ReportDateRange {
     }
 }
 
-private enum ReportRangeQuickPick: String, CaseIterable, Identifiable {
+enum ReportRangeQuickPick: String, CaseIterable, Identifiable {
     case mostRecentGame = "Most Recent Game"
     case previousWeek = "Previous Week"
     case previousMonth = "Previous Month"
@@ -3481,7 +3481,7 @@ private enum ReportRangeQuickPick: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private func buildDateRange(
+func buildDateRange(
     for quickPick: ReportRangeQuickPick,
     template: CustomReportTemplate,
     games: [Game],
@@ -3967,7 +3967,7 @@ private enum ReportGroupingMode: Int, CaseIterable, Identifiable {
     }
 }
 
-private func makeTemplatePreviewPDF(
+func makeTemplatePreviewPDF(
     template: CustomReportTemplate,
     grades: [Grade],
     games: [Game],
