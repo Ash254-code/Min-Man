@@ -867,6 +867,7 @@ private enum RoundOutcomeLayout {
     static let compactColumnSpacing: CGFloat = 10
     static let chevronReserveWidth: CGFloat = 34
     static let compactLayoutThreshold: CGFloat = 1100
+    static let headerAlignmentNudge: CGFloat = -10
 
     static func columnWidth(forCompactLayout isCompact: Bool) -> CGFloat {
         isCompact ? compactColumnWidth : defaultColumnWidth
@@ -910,6 +911,7 @@ private struct RoundOutcomeColumnHeaders: View {
             .frame(width: RoundOutcomeLayout.contentWidth(for: gradeNames.count, compact: useCompactLayout), alignment: .center)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.trailing, RoundOutcomeLayout.chevronReserveWidth)
+            .offset(x: RoundOutcomeLayout.headerAlignmentNudge)
         }
         .frame(height: 24)
     }
