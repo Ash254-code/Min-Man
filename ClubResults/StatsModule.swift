@@ -3679,12 +3679,28 @@ struct LiveStatsView: View {
 
     private func successBannerText(for event: StatEvent) -> String {
         let playerText = playerBannerLabel(for: event.playerId)
-        let statText = statName(for: event.statTypeId).uppercased()
-        if let vote = event.efficiencyVoteRaw {
-            let emoji = vote == EfficiencyVote.thumbsUp.rawValue ? "👍" : "👎"
-            return "\(playerText) • \(statText) • EFFICIENCY \(emoji)"
+        let statText = statName(for: event.statTypeId)
+        var segments = [playerText, statText]
+
+        if let contestedEmoji = contestedEmojiForBanner(event) {
+            segments.append(contestedEmoji)
         }
-        return "\(playerText) • \(statText)"
+
+        if let effectivenessEmoji = effectivenessEmojiForBanner(event) {
+            segments.append(effectivenessEmoji)
+        }
+
+        return segments.joined(separator: " - ")
+    }
+
+    private func contestedEmojiForBanner(_ event: StatEvent) -> String? {
+        guard let vote = event.contestedVoteRaw else { return nil }
+        return vote == ContestedPossessionVote.contested.rawValue ? "😣" : "🙂"
+    }
+
+    private func effectivenessEmojiForBanner(_ event: StatEvent) -> String? {
+        guard let vote = event.efficiencyVoteRaw else { return nil }
+        return vote == EfficiencyVote.thumbsUp.rawValue ? "✅" : "❌"
     }
 
     private func playerBannerLabel(for id: UUID) -> String {
