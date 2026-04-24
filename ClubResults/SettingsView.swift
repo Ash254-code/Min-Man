@@ -3,6 +3,7 @@ import SwiftData
 import PDFKit
 import MessageUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
