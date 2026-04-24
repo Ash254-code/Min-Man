@@ -3954,7 +3954,8 @@ private struct CustomReportShareView: View {
 }
 
 private func buildTemplateDetails(for template: CustomReportTemplate, grades: [Grade], dateRange: ReportDateRange) -> String {
-    let gradeNames = grades
+    let orderedGrades = orderedGradesForDisplay(grades, includeInactive: true)
+    let gradeNames = orderedGrades
         .filter { !template.includeOnlyActiveGrades || $0.isActive }
         .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
         .map(\.name)
@@ -4078,7 +4079,8 @@ func makeTemplatePreviewPDF(
 ) throws -> URL {
     let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
     let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
-    let selectedGrades = grades
+    let orderedGrades = orderedGradesForDisplay(grades, includeInactive: true)
+    let selectedGrades = orderedGrades
         .filter { !template.includeOnlyActiveGrades || $0.isActive }
         .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
     let selectedGradeIDs = Set(selectedGrades.map(\.id))
