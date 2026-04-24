@@ -4964,25 +4964,40 @@ private struct CustomReportEditView: View {
         nonScoreIncludedKeys.filter { includedDataColumns[$0, default: 0] == column }
     }
 
-    private func moveIncludedKey(_ draggedKey: String, before targetKey: String?, targetColumn: Int) {
+    private func moveIncludedKey(_ draggedKey: String, to targetIndex: Int, targetColumn: Int) {
         guard nonScoreIncludedKeys.contains(draggedKey) else { return }
-        includedDataColumns[draggedKey] = max(0, min(targetColumn, reportColumnCount - 1))
+        let clampedColumn = max(0, min(targetColumn, reportColumnCount - 1))
+        includedDataColumns[draggedKey] = clampedColumn
 
         var reordered = includedDataOrder.filter { $0 != draggedKey }
-        if let targetKey, let targetIndex = reordered.firstIndex(of: targetKey) {
-            reordered.insert(draggedKey, at: targetIndex)
+
+        let targetColumnKeys = reordered.filter { includedDataColumns[$0, default: 0] == clampedColumn }
+        let clampedTargetIndex = max(0, min(targetIndex, targetColumnKeys.count))
+
+        if clampedTargetIndex < targetColumnKeys.count {
+            let targetKey = targetColumnKeys[clampedTargetIndex]
+            if let insertionIndex = reordered.firstIndex(of: targetKey) {
+                reordered.insert(draggedKey, at: insertionIndex)
+            } else {
+                reordered.append(draggedKey)
+            }
+        } else if let lastColumnKey = targetColumnKeys.last,
+                  let insertionIndex = reordered.firstIndex(of: lastColumnKey) {
+            reordered.insert(draggedKey, at: insertionIndex + 1)
         } else {
             reordered.append(draggedKey)
         }
         includedDataOrder = reordered
     }
 
+    private let includedColumnPlaceholderCount = 10
+
     private func reportColumnTitle(for column: Int) -> String {
         "Column \(column + 1)"
     }
 
     private var maxIncludedRowsInAnyColumn: Int {
-        max(1, (0..<reportColumnCount).map { keys(in: $0).count }.max() ?? 1)
+        max(includedColumnPlaceholderCount, (0..<reportColumnCount).map { keys(in: $0).count }.max() ?? 1)
     }
 
     private var includedColumnBodyMinHeight: CGFloat {
@@ -5211,32 +5226,36 @@ private struct CustomReportEditView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
 
                                 VStack(spacing: 8) {
-                                    ForEach(keys(in: column), id: \.self) { key in
-                                        includedDataCard(for: key)
-                                            .contentShape(Rectangle())
-                                            .draggable(key) {
-                                                includedDataCard(for: key, showsDragHandle: false)
-                                                    .frame(maxWidth: 280)
-                                            }
-                                            .dropDestination(for: String.self) { items, _ in
-                                                guard let draggedKey = items.first else { return false }
-                                                moveIncludedKey(draggedKey, before: key, targetColumn: column)
-                                                return true
-                                            }
+                                    let columnKeys = keys(in: column)
+                                    ForEach(0..<max(includedColumnPlaceholderCount, columnKeys.count), id: \.self) { slotIndex in
+                                        if slotIndex < columnKeys.count {
+                                            let key = columnKeys[slotIndex]
+                                            includedDataCard(for: key)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .contentShape(Rectangle())
+                                                .draggable(key) {
+                                                    includedDataCard(for: key, showsDragHandle: false)
+                                                        .frame(maxWidth: 280)
+                                                }
+                                                .dropDestination(for: String.self) { items, _ in
+                                                    guard let draggedKey = items.first else { return false }
+                                                    moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
+                                                    return true
+                                                }
+                                        } else {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6]))
+                                                .foregroundStyle(.secondary.opacity(0.3))
+                                                .frame(height: 56)
+                                                .frame(maxWidth: .infinity)
+                                                .dropDestination(for: String.self) { items, _ in
+                                                    guard let draggedKey = items.first else { return false }
+                                                    moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
+                                                    return true
+                                                }
+                                        }
                                     }
 
-                                    if keys(in: column).isEmpty {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6]))
-                                            .foregroundStyle(.secondary.opacity(0.35))
-                                            .frame(maxWidth: .infinity)
-                                            .frame(minHeight: includedColumnBodyMinHeight)
-                                            .overlay(
-                                                Text("Drop section here")
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.secondary)
-                                            )
-                                    }
                                 }
                                 .frame(maxWidth: .infinity, minHeight: includedColumnBodyMinHeight, alignment: .top)
                             }
@@ -5249,7 +5268,7 @@ private struct CustomReportEditView: View {
                             .contentShape(Rectangle())
                             .dropDestination(for: String.self) { items, _ in
                                 guard let draggedKey = items.first else { return false }
-                                moveIncludedKey(draggedKey, before: nil, targetColumn: column)
+                                moveIncludedKey(draggedKey, to: keys(in: column).count, targetColumn: column)
                                 return true
                             }
                         }
