@@ -2109,7 +2109,7 @@ struct LiveStatsView: View {
                             }
                         }
                         .highPriorityGesture(
-                            LongPressGesture(minimumDuration: 1.0)
+                            LongPressGesture(minimumDuration: 2.0)
                                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                                 .onChanged { value in
                                     switch value {
@@ -2140,6 +2140,9 @@ struct LiveStatsView: View {
                                     activePlayerQuickCardFrameGlobal = .zero
                                 }
                         )
+                        .onTapGesture {
+                            // Intentionally no-op: quick stats should only respond to long press.
+                        }
                     }
 
                     if hasOverflow {
@@ -2320,7 +2323,7 @@ struct LiveStatsView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 1.0)
+            LongPressGesture(minimumDuration: 2.0)
                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                 .onChanged { value in
                     switch value {
@@ -2353,6 +2356,9 @@ struct LiveStatsView: View {
                     activePlayerQuickCardFrameGlobal = .zero
                 }
         )
+        .onTapGesture {
+            // Intentionally no-op: quick stats should only respond to long press.
+        }
     }
 
     private var statButtonsPanel: some View {
