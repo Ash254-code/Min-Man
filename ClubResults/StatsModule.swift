@@ -2093,7 +2093,7 @@ struct LiveStatsView: View {
                     ForEach(visiblePlayers) { player in
                         playerCardContent(player: player)
                             .frame(maxWidth: .infinity, minHeight: cellHeight)
-                            .background(selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                            .background(activePlayerQuickStatsPlayerID == player.id ? Color.blue : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                             .contentShape(RoundedRectangle(cornerRadius: 10))
                         .background {
                             GeometryReader { cardProxy in
@@ -2114,12 +2114,10 @@ struct LiveStatsView: View {
                                 .onChanged { value in
                                     switch value {
                                     case .first(true):
-                                        selectedPlayerId = player.id
                                         activePlayerQuickStatsPlayerID = player.id
                                         activePlayerQuickCardFrameGlobal = .zero
                                         clearPendingPlayerQuickStat()
                                     case .second(true, let drag?):
-                                        selectedPlayerId = player.id
                                         activePlayerQuickStatsPlayerID = player.id
                                         let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
                                             ? CGSize(width: panelProxy.size.width / CGFloat(columnsCount), height: cellHeight)
@@ -2305,7 +2303,7 @@ struct LiveStatsView: View {
         playerCardContent(player: player)
             .frame(maxWidth: .infinity, minHeight: 82)
             .background(
-                selectedPlayerId == player.id ? Color.blue : Color.black.opacity(0.06),
+                activePlayerQuickStatsPlayerID == player.id ? Color.blue : Color.black.opacity(0.06),
                 in: RoundedRectangle(cornerRadius: 10)
             )
         .background {
@@ -2327,13 +2325,11 @@ struct LiveStatsView: View {
                 .onChanged { value in
                     switch value {
                     case .first(true):
-                        selectedPlayerId = player.id
                         activePlayerQuickStatsPlayerID = player.id
                         activePlayerQuickCardFrameGlobal = .zero
                         clearPendingPlayerQuickStat()
                         triggerStrongHaptic()
                     case .second(true, let drag?):
-                        selectedPlayerId = player.id
                         activePlayerQuickStatsPlayerID = player.id
                         let fallbackWidth = max(panelProxy.size.width - 8, 120)
                         let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
