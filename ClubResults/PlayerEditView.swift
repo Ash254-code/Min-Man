@@ -7,29 +7,32 @@ struct PlayerEditView: View {
 
     @Bindable var player: Player
 
-    // These let PlayersView pass context, but they’re optional to use.
+    // These let PlayersView pass context.
     let orderedGrades: [Grade]
     let existingPlayers: [Player]
-    let onRequestDelete: (Player) -> Void
 
     @State private var draftName: String = ""
     @State private var draftNumberText: String = ""
     @State private var draftIsActive: Bool = true
+    @State private var draftGradeIDs: [UUID] = []
+    @State private var showDiscardWarning = false
+    @State private var showDeletePrompt = false
+    @State private var deleteCode = ""
+    @State private var showWrongDeleteCode = false
 
     init(
         player: Player,
         orderedGrades: [Grade],
-        existingPlayers: [Player],
-        onRequestDelete: @escaping (Player) -> Void
+        existingPlayers: [Player]
     ) {
         self.player = player
         self.orderedGrades = orderedGrades
         self.existingPlayers = existingPlayers
-        self.onRequestDelete = onRequestDelete
 
         _draftName = State(initialValue: player.name)
         _draftNumberText = State(initialValue: player.number.map { String($0) } ?? "")
         _draftIsActive = State(initialValue: player.isActive)
+        _draftGradeIDs = State(initialValue: player.gradeIDs)
     }
 
     private var nameTrimmed: String {
@@ -54,7 +57,8 @@ struct PlayerEditView: View {
     private var hasChanges: Bool {
         nameTrimmed != player.name.trimmingCharacters(in: .whitespacesAndNewlines) ||
         parsedNumber != player.number ||
-        draftIsActive != player.isActive
+        draftIsActive != player.isActive ||
+        Set(draftGradeIDs) != Set(player.gradeIDs)
     }
 
     var body: some View {
@@ -93,12 +97,12 @@ struct PlayerEditView: View {
                 } else {
                     ForEach(orderedGrades) { g in
                         Toggle(isOn: Binding(
-                            get: { player.gradeIDs.contains(g.id) },
+                            get: { draftGradeIDs.contains(g.id) },
                             set: { isOn in
                                 if isOn {
-                                    if !player.gradeIDs.contains(g.id) { player.gradeIDs.append(g.id) }
+                                    if !draftGradeIDs.contains(g.id) { draftGradeIDs.append(g.id) }
                                 } else {
-                                    player.gradeIDs.removeAll { $0 == g.id }
+                                    draftGradeIDs.removeAll { $0 == g.id }
                                 }
                             }
                         )) {
@@ -110,7 +114,8 @@ struct PlayerEditView: View {
 
             Section {
                 Button(role: .destructive) {
-                    onRequestDelete(player)
+                    deleteCode = ""
+                    showDeletePrompt = true
                 } label: {
                     Label("Delete player", systemImage: "trash")
                 }
@@ -127,6 +132,7 @@ struct PlayerEditView: View {
                     player.setName(firstName: split.first, lastName: split.last)
                     player.number = parsedNumber
                     player.isActive = draftIsActive
+                    player.gradeIDs = draftGradeIDs
                     try? dataContext.save()
                     dismiss()
                 }
@@ -134,8 +140,47 @@ struct PlayerEditView: View {
             }
 
             ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel") {
+                    if hasChanges {
+                        showDiscardWarning = true
+                    } else {
+                        dismiss()
+                    }
+                }
             }
         }
+        .alert("Discard changes?", isPresented: $showDiscardWarning) {
+            Button("Keep Editing", role: .cancel) { }
+            Button("Discard Changes", role: .destructive) { dismiss() }
+        } message: {
+            Text("You have unsaved changes.")
+        }
+        .alert("Enter delete code", isPresented: $showDeletePrompt) {
+            SecureField("Code", text: $deleteCode)
+            Button("Delete", role: .destructive) { confirmDelete() }
+            Button("Cancel", role: .cancel) {
+                deleteCode = ""
+            }
+        } message: {
+            Text("Deleting a player is permanent.")
+        }
+        .alert("Wrong code", isPresented: $showWrongDeleteCode) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Player was not deleted.")
+        }
+    }
+
+    private func confirmDelete() {
+        let trimmedCode = deleteCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard DeleteCodeStore.verify(trimmedCode) else {
+            showDeletePrompt = false
+            showWrongDeleteCode = true
+            return
+        }
+
+        dataContext.delete(player)
+        try? dataContext.save()
+        dismiss()
     }
 }

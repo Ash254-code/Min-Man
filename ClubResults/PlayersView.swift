@@ -210,8 +210,7 @@ struct PlayersView: View {
                     PlayerEditView(
                         player: player,
                         orderedGrades: orderedGrades,
-                        existingPlayers: playersForDisplay,
-                        onRequestDelete: { p in requestDelete(p) }
+                        existingPlayers: playersForDisplay
                     )
                 } label: {
                     PlayerRowAFL(
