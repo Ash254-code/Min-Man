@@ -14,6 +14,17 @@ final class CustomReportTemplate {
         "trainers",
         "matchNotes"
     ]
+    static let defaultIncludeSectionColumns: [String: Int] = [
+        "scores": 0,
+        "bestPlayers": 0,
+        "guestVotes": 0,
+        "goalKickers": 0,
+        "bestAndFairest": 0,
+        "coachingStaff": 1,
+        "officials": 1,
+        "trainers": 1,
+        "matchNotes": 0
+    ]
 
     @Attribute(.unique) var id: UUID
     var name: String
@@ -57,13 +68,13 @@ final class CustomReportTemplate {
         gradeIDs: [UUID] = [],
         includeScores: Bool = true,
         includeBestPlayers: Bool = true,
-        bestPlayersLimit: Int = 0,
+        bestPlayersLimit: Int = 6,
         includePlayerGrades: Bool = true,
         guestVotesLimit: Int = 0,
         includeGoalKickers: Bool = true,
         goalKickersLimit: Int = 0,
         includeGuernseyNumbers: Bool = true,
-        includeBestAndFairestVotes: Bool = true,
+        includeBestAndFairestVotes: Bool = false,
         bestAndFairestLimit: Int = 5,
         includeStaffRoles: Bool = true,
         includeOfficials: Bool = true,
@@ -72,7 +83,7 @@ final class CustomReportTemplate {
         includeMatchNotes: Bool = false,
         includeSectionOrder: [String] = CustomReportTemplate.defaultIncludeSectionOrder,
         reportColumnCount: Int = 2,
-        includeSectionColumnAssignments: [String: Int] = [:],
+        includeSectionColumnAssignments: [String: Int] = CustomReportTemplate.defaultIncludeSectionColumns,
         sendReportOnGameSave: Bool = false,
         includeOnlyActiveGrades: Bool = true,
         includePlayersOnly: Bool = false,
