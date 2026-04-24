@@ -5027,13 +5027,100 @@ private struct CustomReportEditView: View {
                     .foregroundStyle(.secondary)
                     .padding(.leading, 2)
             }
-            dataIncludedRow(for: key)
+            includedDataCardRow(for: key)
         }
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.secondary.opacity(0.12))
         )
+    }
+
+    @ViewBuilder
+    private func includedDataCardRow(for key: String) -> some View {
+        switch key {
+        case "bestPlayers":
+            includedDataCardToggleWithLimitPicker(
+                title: "Best players",
+                isOn: $includeBestPlayers,
+                limit: $bestPlayersLimit,
+                defaultLimitWhenEnabled: 0
+            )
+        case "guestVotes":
+            includedDataCardToggleWithLimitPicker(
+                title: "Guest Votes",
+                isOn: $includeGuestVotes,
+                limit: $guestVotesLimit,
+                defaultLimitWhenEnabled: 0
+            )
+        case "goalKickers":
+            includedDataCardToggleWithLimitPicker(
+                title: "Goal Kickers",
+                isOn: $includeGoalKickers,
+                limit: $goalKickersLimit,
+                defaultLimitWhenEnabled: 0
+            )
+        case "bestAndFairest":
+            includedDataCardToggleWithLimitPicker(
+                title: "Best and Fairest votes",
+                isOn: $includeBestAndFairestVotes,
+                limit: $bestAndFairestLimit,
+                defaultLimitWhenEnabled: 5
+            )
+        case "coachingStaff":
+            includedDataCardToggle(title: "Coaching Staff", isOn: $includeStaffRoles)
+        case "officials":
+            includedDataCardToggle(title: "Officials", isOn: $includeOfficials)
+        case "trainers":
+            includedDataCardToggle(title: "Trainers", isOn: $includeTrainers)
+        case "matchNotes":
+            includedDataCardToggle(title: "Match notes", isOn: $includeMatchNotes)
+        default:
+            EmptyView()
+        }
+    }
+
+    private func includedDataCardToggle(title: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+        }
+    }
+
+    private func includedDataCardToggleWithLimitPicker(
+        title: String,
+        isOn: Binding<Bool>,
+        limit: Binding<Int>,
+        defaultLimitWhenEnabled: Int
+    ) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if isOn.wrappedValue {
+                Picker(title, selection: limit) {
+                    Text("ALL").tag(0)
+                    ForEach(1...10, id: \.self) { value in
+                        Text("\(value)").tag(value)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(minWidth: 74, alignment: .trailing)
+            }
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+        }
+        .onChange(of: isOn.wrappedValue) { _, isEnabled in
+            guard isEnabled else { return }
+            let clampedDefault = Self.clampedReportItemLimit(defaultLimitWhenEnabled, defaultValue: 0)
+            if !(0...10).contains(limit.wrappedValue) {
+                limit.wrappedValue = clampedDefault
+            } else if title == "Best and Fairest votes", limit.wrappedValue == 0 {
+                limit.wrappedValue = clampedDefault
+            }
+        }
     }
 
     var body: some View {
