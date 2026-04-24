@@ -4788,6 +4788,83 @@ func makeTemplatePreviewPDF(
             flushPending()
         }
 
+        func compactTableHeight(for table: CompactReportTable) -> CGFloat {
+            let visibleRows = max(table.rows.count, 1)
+            return 46 + (CGFloat(visibleRows) * 24)
+        }
+
+        func estimatedCompactBlockHeight(_ compactTables: [(key: String, table: CompactReportTable)]) -> CGFloat {
+            guard !compactTables.isEmpty else { return 0 }
+            let columnCount = max(1, min(template.normalizedReportColumnCount, 3))
+            var columnHeights = Array(repeating: CGFloat(0), count: columnCount)
+
+            for item in compactTables {
+                let assignedColumn = max(0, min(template.includeSectionColumnAssignments[item.key] ?? 0, columnCount - 1))
+                let tableHeight = compactTableHeight(for: item.table)
+                let gapAfterTable: CGFloat = 8
+                columnHeights[assignedColumn] += tableHeight + gapAfterTable
+            }
+
+            return columnHeights.max() ?? 0
+        }
+
+        func estimatedOrderedSectionHeight(for games: [Game], scoreGame: Game?) -> CGFloat {
+            let rows = reportRows(for: games)
+            let staffTables = buildStaffTables(for: games)
+            var pendingCompactTables: [(key: String, table: CompactReportTable)] = []
+            var estimatedHeight: CGFloat = 0
+
+            func flushPendingEstimate() {
+                estimatedHeight += estimatedCompactBlockHeight(pendingCompactTables)
+                pendingCompactTables = []
+            }
+
+            for key in template.includeSectionOrder {
+                switch key {
+                case "scores":
+                    if template.includeScores, scoreGame != nil {
+                        flushPendingEstimate()
+                        estimatedHeight += 24 + 86 // drawSectionHeader + score pills block
+                    }
+                case "bestPlayers":
+                    if template.includeBestPlayers {
+                        let bestPlayersLabel = games.count == 1 ? "Rank" : "Points"
+                        pendingCompactTables.append((key: "bestPlayers", table: CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers)))
+                    }
+                case "guestVotes":
+                    if template.includePlayerGrades {
+                        pendingCompactTables.append((key: "guestVotes", table: CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes)))
+                    }
+                case "goalKickers":
+                    if template.includeGoalKickers {
+                        let goalKickerRows = rows.goalKickers.map { row -> [String] in
+                            guard row.count >= 2 else { return row }
+                            return [row[1], row[0]]
+                        }
+                        pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Goals", "Player"], rows: goalKickerRows)))
+                    }
+                case "bestAndFairest":
+                    if template.includeBestAndFairestVotes {
+                        pendingCompactTables.append((key: "bestAndFairest", table: CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest)))
+                    }
+                case "coachingStaff", "officials", "trainers":
+                    if let table = staffTables[key], !table.rows.isEmpty {
+                        pendingCompactTables.append((key: key, table: table))
+                    }
+                case "matchNotes":
+                    if template.includeMatchNotes {
+                        flushPendingEstimate()
+                        estimatedHeight += 24 + 24 + 24 + 10
+                    }
+                default:
+                    continue
+                }
+            }
+
+            flushPendingEstimate()
+            return estimatedHeight
+        }
+
         if groupingMode.splitByGradeEnabled || groupingMode.splitByGameEnabled {
             for section in renderedSections {
                 guard let sectionGame = section.games.first else { continue }
@@ -4797,6 +4874,17 @@ func makeTemplatePreviewPDF(
                     groupingMode.splitByGameEnabled ? "\(formattedDate(sectionGame.date)) vs \(sectionGame.opponent)" : nil
                 ].compactMap { $0 }
                 let sectionTitle = titleParts.isEmpty ? section.title : titleParts.joined(separator: " • ")
+
+                if groupingMode.splitByGradeEnabled {
+                    let sectionHeaderHeight: CGFloat = 24
+                    let estimatedSectionHeight = sectionHeaderHeight + estimatedOrderedSectionHeight(for: section.games, scoreGame: sectionGame)
+                    let pageContentHeight = bottomLimit - contentRect.minY
+                    if estimatedSectionHeight <= pageContentHeight,
+                       cursorY + estimatedSectionHeight > bottomLimit {
+                        beginNewPage()
+                    }
+                }
+
                 drawSectionHeader(sectionTitle)
                 drawOrderedSections(for: section.games, scoreGame: sectionGame)
             }
