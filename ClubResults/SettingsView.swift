@@ -5438,7 +5438,7 @@ private struct IncludedDataDropDelegate: DropDelegate {
 
         if itemProvider.canLoadObject(ofClass: NSString.self) {
             _ = itemProvider.loadObject(ofClass: NSString.self) { item, _ in
-                guard let key = (item as String?)?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
+                guard let key = (item as! String as String?)?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
                 DispatchQueue.main.async {
                     moveAction(key, targetKey, targetColumn)
                 }
