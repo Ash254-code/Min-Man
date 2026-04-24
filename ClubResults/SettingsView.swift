@@ -4832,6 +4832,7 @@ private struct CustomReportEditView: View {
     @State private var customDateRangeEnd: Date
     @State private var selectedRecipientSectionKeys: Set<String>
     @State private var selectedRecipientContactIDs: Set<UUID>
+    @State private var draggedIncludedKey: String?
     @State private var showDeleteConfirmation = false
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
 
@@ -4991,6 +4992,13 @@ private struct CustomReportEditView: View {
     }
 
     private let includedColumnPlaceholderCount = 10
+
+    private func handleIncludedDataDrop(to slotIndex: Int, column: Int) -> Bool {
+        guard let draggedIncludedKey else { return false }
+        moveIncludedKey(draggedIncludedKey, to: slotIndex, targetColumn: column)
+        self.draggedIncludedKey = nil
+        return true
+    }
 
     private func reportColumnTitle(for column: Int) -> String {
         "Column \(column + 1)"
@@ -5231,14 +5239,12 @@ private struct CustomReportEditView: View {
                                         includedDataCard(for: key)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .contentShape(Rectangle())
-                                            .draggable(key) {
-                                                includedDataCard(for: key, showsDragHandle: false)
-                                                    .frame(width: 280)
+                                            .onDrag {
+                                                draggedIncludedKey = key
+                                                return NSItemProvider(object: key as NSString)
                                             }
-                                            .dropDestination(for: String.self) { items, _ in
-                                                guard let draggedKey = items.first else { return false }
-                                                moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
-                                                return true
+                                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { _ in
+                                                handleIncludedDataDrop(to: slotIndex, column: column)
                                             }
                                     }
 
@@ -5249,10 +5255,8 @@ private struct CustomReportEditView: View {
                                             .foregroundStyle(.secondary.opacity(0.3))
                                             .frame(height: 56)
                                             .frame(maxWidth: .infinity)
-                                            .dropDestination(for: String.self) { items, _ in
-                                                guard let draggedKey = items.first else { return false }
-                                                moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
-                                                return true
+                                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { _ in
+                                                handleIncludedDataDrop(to: slotIndex, column: column)
                                             }
                                     }
 
@@ -5266,10 +5270,8 @@ private struct CustomReportEditView: View {
                             )
                             .frame(maxWidth: .infinity, alignment: .top)
                             .contentShape(Rectangle())
-                            .dropDestination(for: String.self) { items, _ in
-                                guard let draggedKey = items.first else { return false }
-                                moveIncludedKey(draggedKey, to: keys(in: column).count, targetColumn: column)
-                                return true
+                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { _ in
+                                handleIncludedDataDrop(to: keys(in: column).count, column: column)
                             }
                         }
                     }
