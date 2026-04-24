@@ -715,15 +715,7 @@ struct SpeechSetupView: View {
                 Button("Save") {
                     saveAllChanges()
                 }
-                .fontWeight(.semibold)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(hasUnsavedChanges ? Color.blue : Color.gray.opacity(0.35))
-                )
-                .foregroundStyle(.white)
-                .disabled(!hasUnsavedChanges)
+                .saveButtonBehavior(isEnabled: hasUnsavedChanges)
             }
         }
         .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
