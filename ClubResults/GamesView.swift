@@ -866,6 +866,7 @@ private enum RoundOutcomeLayout {
     static let compactColumnWidth: CGFloat = 68
     static let compactColumnSpacing: CGFloat = 10
     static let chevronReserveWidth: CGFloat = 34
+    static let compactLayoutThreshold: CGFloat = 1100
 
     static func columnWidth(forCompactLayout isCompact: Bool) -> CGFloat {
         isCompact ? compactColumnWidth : defaultColumnWidth
@@ -881,6 +882,10 @@ private enum RoundOutcomeLayout {
         let columnSpacing = columnSpacing(forCompactLayout: compact)
         return (CGFloat(columnCount) * columnWidth) + (CGFloat(columnCount - 1) * columnSpacing)
     }
+
+    static func useCompactLayout(for availableWidth: CGFloat) -> Bool {
+        availableWidth < compactLayoutThreshold
+    }
 }
 
 private struct RoundOutcomeColumnHeaders: View {
@@ -888,7 +893,7 @@ private struct RoundOutcomeColumnHeaders: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let useCompactLayout = proxy.size.width < 860
+            let useCompactLayout = RoundOutcomeLayout.useCompactLayout(for: proxy.size.width)
             let columnWidth = RoundOutcomeLayout.columnWidth(forCompactLayout: useCompactLayout)
             let columnSpacing = RoundOutcomeLayout.columnSpacing(forCompactLayout: useCompactLayout)
 
@@ -920,7 +925,7 @@ private struct RoundTitleLine: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let useCompactLayout = horizontalSizeClass == .compact || proxy.size.width < 860
+            let useCompactLayout = horizontalSizeClass == .compact || RoundOutcomeLayout.useCompactLayout(for: proxy.size.width)
             let roundDateColumnWidth: CGFloat = useCompactLayout ? 210 : 320
             let columnWidth = RoundOutcomeLayout.columnWidth(forCompactLayout: useCompactLayout)
             let columnSpacing = RoundOutcomeLayout.columnSpacing(forCompactLayout: useCompactLayout)
