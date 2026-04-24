@@ -5082,25 +5082,32 @@ private struct CustomReportEditView: View {
                         ForEach(0..<reportColumnCount, id: \.self) { column in
                             VStack(spacing: 8) {
                                 ForEach(keys(in: column), id: \.self) { key in
-                                    dataIncludedRow(for: key)
-                                        .padding(10)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .fill(Color.secondary.opacity(0.12))
-                                        )
-                                        .onDrag {
-                                            NSItemProvider(object: key as NSString)
-                                        }
-                                        .onDrop(of: [UTType.plainText], delegate: IncludedDataDropDelegate(
-                                            targetKey: key,
-                                            targetColumn: column,
-                                            moveAction: moveIncludedKey
-                                        ))
+                                    HStack(alignment: .center, spacing: 8) {
+                                        Image(systemName: "line.3.horizontal")
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.leading, 2)
+                                        dataIncludedRow(for: key)
+                                    }
+                                    .padding(10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color.secondary.opacity(0.12))
+                                    )
+                                    .contentShape(Rectangle())
+                                    .onDrag {
+                                        NSItemProvider(object: key as NSString)
+                                    }
+                                    .onDrop(of: [UTType.text, UTType.plainText], delegate: IncludedDataDropDelegate(
+                                        targetKey: key,
+                                        targetColumn: column,
+                                        moveAction: moveIncludedKey
+                                    ))
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .top)
                             .contentShape(Rectangle())
-                            .onDrop(of: [UTType.plainText], delegate: IncludedDataDropDelegate(
+                            .onDrop(of: [UTType.text, UTType.plainText], delegate: IncludedDataDropDelegate(
                                 targetKey: nil,
                                 targetColumn: column,
                                 moveAction: moveIncludedKey
@@ -5422,20 +5429,27 @@ private struct IncludedDataDropDelegate: DropDelegate {
     let targetColumn: Int
     let moveAction: (String, String?, Int) -> Void
 
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
     func performDrop(info: DropInfo) -> Bool {
-        guard let itemProvider = info.itemProviders(for: [UTType.plainText]).first else { return false }
-        itemProvider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
-            let droppedKey: String?
-            if let data = item as? Data {
-                droppedKey = String(data: data, encoding: .utf8)
-            } else if let text = item as? String {
-                droppedKey = text
-            } else if let text = item as? NSString {
-                droppedKey = text as String
-            } else {
-                droppedKey = nil
+        guard let itemProvider = info.itemProviders(for: [UTType.text, UTType.plainText]).first else { return false }
+
+        if itemProvider.canLoadObject(ofClass: NSString.self) {
+            _ = itemProvider.loadObject(ofClass: NSString.self) { item, _ in
+                guard let key = (item as String?)?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
+                DispatchQueue.main.async {
+                    moveAction(key, targetKey, targetColumn)
+                }
             }
-            guard let key = droppedKey?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
+            return true
+        }
+
+        itemProvider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
+            guard let data = item as? Data,
+                  let key = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !key.isEmpty else { return }
             DispatchQueue.main.async {
                 moveAction(key, targetKey, targetColumn)
             }
