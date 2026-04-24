@@ -274,6 +274,21 @@ private struct BackupAndRestoreSettingsView: View {
                     Players: \(envelope.itemCounts.players)
                     Games: \(envelope.itemCounts.games)
                     Grades: \(envelope.itemCounts.grades)
+                    Contacts: \(envelope.itemCounts.contacts)
+                    Contact Groups: \(envelope.itemCounts.contactGroups)
+                    Contact Group Links: \(envelope.itemCounts.contactGroupMemberships)
+                    Contact Sections: \(envelope.itemCounts.contactSectionMemberships)
+                    Report Recipients: \(envelope.itemCounts.reportRecipients)
+                    Report Recipient Groups: \(envelope.itemCounts.reportRecipientGroups)
+                    Custom Report Templates: \(envelope.itemCounts.customReportTemplates)
+                    Custom Report Sections: \(envelope.itemCounts.customReportRecipientSections)
+                    Custom Report Groups: \(envelope.itemCounts.customReportRecipientGroups)
+                    Custom Report Contacts: \(envelope.itemCounts.customReportRecipientContacts)
+                    Staff Members: \(envelope.itemCounts.staffMembers)
+                    Staff Defaults: \(envelope.itemCounts.staffDefaults)
+                    Opposition Clubs: \(envelope.itemCounts.oppositionClubs)
+                    NES Stats Sessions: \(envelope.itemCounts.statsSessions)
+                    NES Stat Events: \(envelope.itemCounts.statEvents)
                     Exported: \(envelope.exportedAt.formatted(date: .abbreviated, time: .shortened))
                     """
                 )
@@ -302,7 +317,9 @@ private struct BackupAndRestoreSettingsView: View {
             exportSuccessMessage = """
             Backup ready: \(result.fileURL.lastPathComponent)
             \(ByteCountFormatter.string(fromByteCount: Int64(result.fileSizeBytes), countStyle: .file)) • \
-            \(result.itemCounts.players) players • \(result.itemCounts.games) games • \(result.itemCounts.grades) grades
+            \(result.itemCounts.players) players • \(result.itemCounts.games) games • \(result.itemCounts.grades) grades • \
+            \(result.itemCounts.contacts) contacts • \(result.itemCounts.contactGroups) groups • \
+            \(result.itemCounts.statsSessions) NES sessions • \(result.itemCounts.statEvents) NES events
             """
             importSuccessMessage = nil
         } catch {
@@ -347,7 +364,9 @@ private struct BackupAndRestoreSettingsView: View {
             let result = try AppBackupService.importFullBackupFile(url: url, modelContext: modelContext)
             importSuccessMessage = """
             Backup imported on \(result.importedAt.formatted(date: .abbreviated, time: .shortened))
-            \(result.itemCounts.players) players • \(result.itemCounts.games) games • \(result.itemCounts.grades) grades
+            \(result.itemCounts.players) players • \(result.itemCounts.games) games • \(result.itemCounts.grades) grades • \
+            \(result.itemCounts.contacts) contacts • \(result.itemCounts.contactGroups) groups • \
+            \(result.itemCounts.statsSessions) NES sessions • \(result.itemCounts.statEvents) NES events
             """
             exportSuccessMessage = nil
         } catch {

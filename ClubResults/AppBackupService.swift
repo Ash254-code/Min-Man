@@ -70,6 +70,9 @@ struct AppBackupItemCounts: Codable {
     let customReportRecipientSections: Int
     let customReportRecipientGroups: Int
     let customReportRecipientContacts: Int
+    let statsSessions: Int
+    let statEvents: Int
+    let oppositionClubs: Int
     let lastStaffSelections: Int
     let draftResumeFlags: Int
 
@@ -77,6 +80,7 @@ struct AppBackupItemCounts: Codable {
         case grades, players, games, contacts, reportRecipients, customReportTemplates, staffMembers, staffDefaults
         case contactGroups, contactGroupMemberships, contactSectionMemberships
         case reportRecipientGroups, customReportRecipientSections, customReportRecipientGroups, customReportRecipientContacts
+        case statsSessions, statEvents, oppositionClubs
         case lastStaffSelections, draftResumeFlags
     }
 
@@ -96,6 +100,9 @@ struct AppBackupItemCounts: Codable {
         customReportRecipientSections: Int,
         customReportRecipientGroups: Int,
         customReportRecipientContacts: Int,
+        statsSessions: Int,
+        statEvents: Int,
+        oppositionClubs: Int,
         lastStaffSelections: Int,
         draftResumeFlags: Int
     ) {
@@ -114,6 +121,9 @@ struct AppBackupItemCounts: Codable {
         self.customReportRecipientSections = customReportRecipientSections
         self.customReportRecipientGroups = customReportRecipientGroups
         self.customReportRecipientContacts = customReportRecipientContacts
+        self.statsSessions = statsSessions
+        self.statEvents = statEvents
+        self.oppositionClubs = oppositionClubs
         self.lastStaffSelections = lastStaffSelections
         self.draftResumeFlags = draftResumeFlags
     }
@@ -135,6 +145,9 @@ struct AppBackupItemCounts: Codable {
         customReportRecipientSections = try c.decodeIfPresent(Int.self, forKey: .customReportRecipientSections) ?? 0
         customReportRecipientGroups = try c.decodeIfPresent(Int.self, forKey: .customReportRecipientGroups) ?? 0
         customReportRecipientContacts = try c.decodeIfPresent(Int.self, forKey: .customReportRecipientContacts) ?? 0
+        statsSessions = try c.decodeIfPresent(Int.self, forKey: .statsSessions) ?? 0
+        statEvents = try c.decodeIfPresent(Int.self, forKey: .statEvents) ?? 0
+        oppositionClubs = try c.decodeIfPresent(Int.self, forKey: .oppositionClubs) ?? 0
         lastStaffSelections = try c.decodeIfPresent(Int.self, forKey: .lastStaffSelections) ?? 0
         draftResumeFlags = try c.decodeIfPresent(Int.self, forKey: .draftResumeFlags) ?? 0
     }
@@ -156,6 +169,9 @@ struct AppBackupItemCounts: Codable {
             customReportRecipientSections: payload.customReportRecipientSections.count,
             customReportRecipientGroups: payload.customReportRecipientGroups.count,
             customReportRecipientContacts: payload.customReportRecipientContacts.count,
+            statsSessions: payload.statsSessions.count,
+            statEvents: payload.statEvents.count,
+            oppositionClubs: payload.appSettings.clubConfiguration.oppositions.count,
             lastStaffSelections: payload.appSettings.lastStaffSelections.count,
             draftResumeFlags: payload.appSettings.draftResumeOpenLiveFlags.count
         )
@@ -178,6 +194,8 @@ struct AppBackupPayload: Codable {
     let customReportRecipientSections: [CustomReportRecipientSectionRecord]
     let customReportRecipientGroups: [CustomReportRecipientGroupRecord]
     let customReportRecipientContacts: [CustomReportRecipientContactRecord]
+    let statsSessions: [StatsSessionRecord]
+    let statEvents: [StatEventRecord]
     let appSettings: AppSettingsRecord
 
     init(
@@ -196,6 +214,8 @@ struct AppBackupPayload: Codable {
         customReportRecipientSections: [CustomReportRecipientSectionRecord],
         customReportRecipientGroups: [CustomReportRecipientGroupRecord],
         customReportRecipientContacts: [CustomReportRecipientContactRecord],
+        statsSessions: [StatsSessionRecord],
+        statEvents: [StatEventRecord],
         appSettings: AppSettingsRecord
     ) {
         self.grades = grades
@@ -213,6 +233,8 @@ struct AppBackupPayload: Codable {
         self.customReportRecipientSections = customReportRecipientSections
         self.customReportRecipientGroups = customReportRecipientGroups
         self.customReportRecipientContacts = customReportRecipientContacts
+        self.statsSessions = statsSessions
+        self.statEvents = statEvents
         self.appSettings = appSettings
     }
 
@@ -221,6 +243,7 @@ struct AppBackupPayload: Codable {
         case staffMembers, staffDefaults
         case contactGroups, contactGroupMemberships, contactSectionMemberships
         case reportRecipientGroups, customReportRecipientSections, customReportRecipientGroups, customReportRecipientContacts
+        case statsSessions, statEvents
         case appSettings
     }
 
@@ -241,6 +264,8 @@ struct AppBackupPayload: Codable {
         customReportRecipientSections = try c.decodeIfPresent([CustomReportRecipientSectionRecord].self, forKey: .customReportRecipientSections) ?? []
         customReportRecipientGroups = try c.decodeIfPresent([CustomReportRecipientGroupRecord].self, forKey: .customReportRecipientGroups) ?? []
         customReportRecipientContacts = try c.decodeIfPresent([CustomReportRecipientContactRecord].self, forKey: .customReportRecipientContacts) ?? []
+        statsSessions = try c.decodeIfPresent([StatsSessionRecord].self, forKey: .statsSessions) ?? []
+        statEvents = try c.decodeIfPresent([StatEventRecord].self, forKey: .statEvents) ?? []
         appSettings = try c.decodeIfPresent(AppSettingsRecord.self, forKey: .appSettings) ?? AppSettingsRecord.defaults
     }
 }
@@ -733,6 +758,54 @@ struct CustomReportRecipientContactRecord: Codable {
     }
 }
 
+struct StatsSessionRecord: Codable {
+    let sessionId: UUID
+    let gradeId: UUID
+    let opposition: String
+    let date: Date
+    let venue: String
+    let createdAt: Date
+
+    init(_ item: StatsSession) {
+        sessionId = item.sessionId
+        gradeId = item.gradeId
+        opposition = item.opposition
+        date = item.date
+        venue = item.venue
+        createdAt = item.createdAt
+    }
+}
+
+struct StatEventRecord: Codable {
+    let id: UUID
+    let sessionId: UUID
+    let playerId: UUID
+    let statTypeId: UUID
+    let quarter: String
+    let timestamp: Date
+    let sourceRaw: String
+    let transcript: String?
+    let normalizedTranscript: String?
+    let parserConfidence: Double?
+    let efficiencyVoteRaw: String?
+    let contestedVoteRaw: String?
+
+    init(_ item: StatEvent) {
+        id = item.id
+        sessionId = item.sessionId
+        playerId = item.playerId
+        statTypeId = item.statTypeId
+        quarter = item.quarter
+        timestamp = item.timestamp
+        sourceRaw = item.sourceRaw
+        transcript = item.transcript
+        normalizedTranscript = item.normalizedTranscript
+        parserConfidence = item.parserConfidence
+        efficiencyVoteRaw = item.efficiencyVoteRaw
+        contestedVoteRaw = item.contestedVoteRaw
+    }
+}
+
 struct AppSettingsRecord: Codable {
     let appAppearanceRawValue: String
     let clubConfiguration: ClubConfiguration
@@ -853,6 +926,8 @@ enum AppBackupService {
         let customReportRecipientSections = try modelContext.fetch(FetchDescriptor<CustomReportRecipientSection>())
         let customReportRecipientGroups = try modelContext.fetch(FetchDescriptor<CustomReportRecipientGroup>())
         let customReportRecipientContacts = try modelContext.fetch(FetchDescriptor<CustomReportRecipientContact>())
+        let statsSessions = try modelContext.fetch(FetchDescriptor<StatsSession>())
+        let statEvents = try modelContext.fetch(FetchDescriptor<StatEvent>())
 
         let settings = exportSettings()
         let payload = AppBackupPayload(
@@ -871,6 +946,8 @@ enum AppBackupService {
             customReportRecipientSections: customReportRecipientSections.map { CustomReportRecipientSectionRecord($0) },
             customReportRecipientGroups: customReportRecipientGroups.map { CustomReportRecipientGroupRecord($0) },
             customReportRecipientContacts: customReportRecipientContacts.map { CustomReportRecipientContactRecord($0) },
+            statsSessions: statsSessions.map { StatsSessionRecord($0) },
+            statEvents: statEvents.map { StatEventRecord($0) },
             appSettings: settings
         )
 
@@ -1000,6 +1077,12 @@ enum AppBackupService {
 
         let customReportRecipientContacts = (try? modelContext.fetch(FetchDescriptor<CustomReportRecipientContact>())) ?? []
         customReportRecipientContacts.forEach { modelContext.delete($0) }
+
+        let statsSessions = (try? modelContext.fetch(FetchDescriptor<StatsSession>())) ?? []
+        statsSessions.forEach { modelContext.delete($0) }
+
+        let statEvents = (try? modelContext.fetch(FetchDescriptor<StatEvent>())) ?? []
+        statEvents.forEach { modelContext.delete($0) }
     }
 
     @MainActor
@@ -1184,6 +1267,38 @@ enum AppBackupService {
 
         payload.customReportRecipientContacts.forEach {
             modelContext.insert(CustomReportRecipientContact(id: $0.id, templateID: $0.templateID, contactID: $0.contactID))
+        }
+
+        payload.statsSessions.forEach {
+            modelContext.insert(
+                StatsSession(
+                    sessionId: $0.sessionId,
+                    gradeId: $0.gradeId,
+                    opposition: $0.opposition,
+                    date: $0.date,
+                    venue: $0.venue,
+                    createdAt: $0.createdAt
+                )
+            )
+        }
+
+        payload.statEvents.forEach {
+            modelContext.insert(
+                StatEvent(
+                    id: $0.id,
+                    sessionId: $0.sessionId,
+                    playerId: $0.playerId,
+                    statTypeId: $0.statTypeId,
+                    quarter: $0.quarter,
+                    timestamp: $0.timestamp,
+                    sourceRaw: $0.sourceRaw,
+                    transcript: $0.transcript,
+                    normalizedTranscript: $0.normalizedTranscript,
+                    parserConfidence: $0.parserConfidence,
+                    efficiencyVoteRaw: $0.efficiencyVoteRaw,
+                    contestedVoteRaw: $0.contestedVoteRaw
+                )
+            )
         }
     }
 
