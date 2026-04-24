@@ -4006,12 +4006,7 @@ func makeTemplatePreviewPDF(
     }
 
     func bestPlayerPoints(for index: Int) -> Int {
-        switch index {
-        case 0: return 3
-        case 1: return 2
-        case 2: return 1
-        default: return 0
-        }
+        max(0, 10 - index)
     }
 
     func metadataSummary(for game: Game) -> String {
