@@ -4379,6 +4379,13 @@ func makeTemplatePreviewPDF(
             let headerHeight: CGFloat = 24
             let rowHeight: CGFloat = 24
             let colWidths: [CGFloat]
+
+            func firstColumnWidthFittingHeader(_ header: String) -> CGFloat {
+                let measured = (header as NSString).size(withAttributes: [.font: headerFont]).width
+                let padded = measured + 14
+                return min(max(padded, 44), width * 0.35)
+            }
+
             if columns.count == 2,
                columns[0].lowercased() == "role",
                columns[1].lowercased() == "name" {
@@ -4386,11 +4393,13 @@ func makeTemplatePreviewPDF(
             } else if columns.count == 2,
                       (columns[0].lowercased() == "rank" || columns[0].lowercased() == "points"),
                       columns[1].lowercased() == "player" {
-                colWidths = [width * 0.16, width * 0.84]
+                let firstWidth = firstColumnWidthFittingHeader(columns[0])
+                colWidths = [firstWidth, width - firstWidth]
             } else if columns.count == 2,
                       columns[0].lowercased() == "goals",
                       columns[1].lowercased() == "player" {
-                colWidths = [width * 0.14, width * 0.86]
+                let firstWidth = firstColumnWidthFittingHeader(columns[0])
+                colWidths = [firstWidth, width - firstWidth]
             } else {
                 colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
             }
