@@ -1176,6 +1176,7 @@ struct LiveStatsView: View {
     @State private var suppressTapForButtonKey: String?
     @State private var activePlayerQuickStatsPlayerID: UUID?
     @State private var activePlayerQuickCardFrameGlobal: CGRect = .zero
+    @State private var playerCardFramesGlobal: [UUID: CGRect] = [:]
     @State private var interfaceScreenWidth: CGFloat = 1024
     @State private var interfaceScreenHeight: CGFloat = 768
     @State private var hoveredPlayerQuickStatName: String?
@@ -1192,6 +1193,7 @@ struct LiveStatsView: View {
     private let oppositionTeamStatPlayerID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB") ?? UUID()
     private let longPressHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let stepHaptic = UIImpactFeedbackGenerator(style: .heavy)
+    private let playerQuickStatsLongPressDuration: Double = 0.45
 
     var body: some View {
         GeometryReader { proxy in
@@ -2097,26 +2099,26 @@ struct LiveStatsView: View {
                             .contentShape(RoundedRectangle(cornerRadius: 10))
                         .background {
                             GeometryReader { cardProxy in
-                                if activePlayerQuickStatsPlayerID == player.id {
-                                    Color.clear
-                                        .onAppear {
-                                            activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
+                                Color.clear
+                                    .task(id: cardProxy.frame(in: .global)) {
+                                        let frame = cardProxy.frame(in: .global)
+                                        playerCardFramesGlobal[player.id] = frame
+
+                                        if activePlayerQuickStatsPlayerID == player.id {
+                                            activePlayerQuickCardFrameGlobal = frame
                                         }
-                                        .task(id: cardProxy.frame(in: .global)) {
-                                            activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
-                                        }
-                                }
+                                    }
                             }
                         }
                         .highPriorityGesture(
-                            LongPressGesture(minimumDuration: 1.0)
+                            LongPressGesture(minimumDuration: playerQuickStatsLongPressDuration)
                                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                                 .onChanged { value in
                                     switch value {
                                     case .first(true):
                                         selectedPlayerId = player.id
                                         activePlayerQuickStatsPlayerID = player.id
-                                        activePlayerQuickCardFrameGlobal = .zero
+                                        activePlayerQuickCardFrameGlobal = playerCardFramesGlobal[player.id] ?? .zero
                                         clearPendingPlayerQuickStat()
                                     case .second(true, let drag?):
                                         selectedPlayerId = player.id
@@ -2306,26 +2308,26 @@ struct LiveStatsView: View {
             )
         .background {
             GeometryReader { cardProxy in
-                if activePlayerQuickStatsPlayerID == player.id {
-                    Color.clear
-                        .onAppear {
-                            activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
+                Color.clear
+                    .task(id: cardProxy.frame(in: .global)) {
+                        let frame = cardProxy.frame(in: .global)
+                        playerCardFramesGlobal[player.id] = frame
+
+                        if activePlayerQuickStatsPlayerID == player.id {
+                            activePlayerQuickCardFrameGlobal = frame
                         }
-                        .task(id: cardProxy.frame(in: .global)) {
-                            activePlayerQuickCardFrameGlobal = cardProxy.frame(in: .global)
-                        }
-                }
+                    }
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 1.0)
+            LongPressGesture(minimumDuration: playerQuickStatsLongPressDuration)
                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                 .onChanged { value in
                     switch value {
                     case .first(true):
                         selectedPlayerId = player.id
                         activePlayerQuickStatsPlayerID = player.id
-                        activePlayerQuickCardFrameGlobal = .zero
+                        activePlayerQuickCardFrameGlobal = playerCardFramesGlobal[player.id] ?? .zero
                         clearPendingPlayerQuickStat()
                         triggerStrongHaptic()
                     case .second(true, let drag?):
