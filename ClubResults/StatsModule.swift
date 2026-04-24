@@ -2160,18 +2160,20 @@ struct LiveStatsView: View {
                     }
                 }
                 .overlay {
-                    if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
-                        let panelFrame = panelProxy.frame(in: .global)
-                        let cardFrame = activePlayerQuickCardFrameGlobal
-                        playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
-                            .frame(width: cardFrame.width, height: cardFrame.height)
-                            .position(
-                                x: cardFrame.midX - panelFrame.minX,
-                                y: cardFrame.midY - panelFrame.minY
-                            )
-                            .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                            .zIndex(6000)
-                            .allowsHitTesting(false)
+                    GeometryReader { overlayProxy in
+                        if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
+                            let overlayFrame = overlayProxy.frame(in: .global)
+                            let cardFrame = activePlayerQuickCardFrameGlobal
+                            playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
+                                .frame(width: cardFrame.width, height: cardFrame.height)
+                                .position(
+                                    x: cardFrame.midX - overlayFrame.minX,
+                                    y: cardFrame.midY - overlayFrame.minY
+                                )
+                                .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                                .zIndex(6000)
+                                .allowsHitTesting(false)
+                        }
                     }
                 }
                 .zIndex(6000)
@@ -2262,18 +2264,20 @@ struct LiveStatsView: View {
                     }
                 }
                 .overlay {
-                    if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
-                        let panelFrame = panelProxy.frame(in: .global)
-                        let cardFrame = activePlayerQuickCardFrameGlobal
-                        playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
-                            .frame(width: cardFrame.width, height: cardFrame.height)
-                            .position(
-                                x: cardFrame.midX - panelFrame.minX,
-                                y: cardFrame.midY - panelFrame.minY
-                            )
-                            .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                            .zIndex(6000)
-                            .allowsHitTesting(false)
+                    GeometryReader { overlayProxy in
+                        if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
+                            let overlayFrame = overlayProxy.frame(in: .global)
+                            let cardFrame = activePlayerQuickCardFrameGlobal
+                            playerQuickStatsFan(cardSize: cardFrame.size, globalMidX: cardFrame.midX)
+                                .frame(width: cardFrame.width, height: cardFrame.height)
+                                .position(
+                                    x: cardFrame.midX - overlayFrame.minX,
+                                    y: cardFrame.midY - overlayFrame.minY
+                                )
+                                .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                                .zIndex(6000)
+                                .allowsHitTesting(false)
+                        }
                     }
                 }
                 .zIndex(6000)
