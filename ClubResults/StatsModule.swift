@@ -300,11 +300,15 @@ struct StatsTypesSettingsView: View {
         GeometryReader { geometry in
             let paneWidth = max((geometry.size.width - 16) / 2, 0)
 
-            HStack(alignment: .top, spacing: 16) {
-                statsPane(title: "Our Club", side: .ourClub)
-                    .frame(width: paneWidth)
-                statsPane(title: "Opposition", side: .opposition)
-                    .frame(width: paneWidth)
+            VStack(alignment: .leading, spacing: 16) {
+                sharedControlsPane
+
+                HStack(alignment: .top, spacing: 16) {
+                    statsPane(title: "Our Club", side: .ourClub)
+                        .frame(width: paneWidth)
+                    statsPane(title: "Opposition", side: .opposition)
+                        .frame(width: paneWidth)
+                }
             }
             .padding(.horizontal)
             .padding(.bottom)
@@ -331,17 +335,6 @@ struct StatsTypesSettingsView: View {
                 .padding(.horizontal, 8)
 
             List {
-                if side == .ourClub {
-                    Section("Layout") {
-                        Picker("Layout", selection: $statsLayout) {
-                            ForEach(StatsLayoutOption.allCases) { layout in
-                                Text(layout.rawValue).tag(layout.rawValue)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-
                 Section("Tracking") {
                     if side == .ourClub {
                         Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
@@ -394,19 +387,36 @@ struct StatsTypesSettingsView: View {
                     }
                 }
 
-                Section("Speech") {
-                    NavigationLink {
-                        SpeechSetupView()
-                    } label: {
-                        Label("Speech Setup", systemImage: "waveform.badge.mic")
-                    }
-                }
             }
             .frame(maxWidth: .infinity, minHeight: 560)
             .listStyle(.insetGrouped)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var sharedControlsPane: some View {
+        List {
+            Section("Layout") {
+                Picker("Layout", selection: $statsLayout) {
+                    ForEach(StatsLayoutOption.allCases) { layout in
+                        Text(layout.rawValue).tag(layout.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            Section("Speech") {
+                NavigationLink {
+                    SpeechSetupView()
+                } label: {
+                    Label("Speech Setup", systemImage: "waveform.badge.mic")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 220)
+        .listStyle(.insetGrouped)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func addStatType() {
