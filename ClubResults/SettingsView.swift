@@ -5019,6 +5019,10 @@ private struct CustomReportEditView: View {
         let columnShift = Int((translation.width / includedDataColumnStepWidth).rounded())
         let targetColumn = max(0, min(startColumn + columnShift, reportColumnCount - 1))
 
+        // Keep in-flight long-press drag attached to the source column to avoid
+        // gesture cancellation when SwiftUI re-parents the card mid-drag.
+        guard targetColumn == startColumn else { return }
+
         let currentColumnKeys = keys(in: currentColumn)
         let currentIndex = currentColumnKeys.firstIndex(of: key) ?? 0
         if longPressDragStartIndex == nil {
@@ -5036,6 +5040,20 @@ private struct CustomReportEditView: View {
 
     private func endLongPressDrag(for key: String) {
         guard longPressDraggingKey == key else { return }
+
+        let startColumn = longPressDragStartColumn ?? includedDataColumns[key, default: 0]
+        let currentColumn = includedDataColumns[key, default: 0]
+        let columnShift = Int((longPressDragTranslation.width / includedDataColumnStepWidth).rounded())
+        let targetColumn = max(0, min(startColumn + columnShift, reportColumnCount - 1))
+        let startIndex = longPressDragStartIndex ?? 0
+        let rowShift = Int((longPressDragTranslation.height / includedDataCardStepHeight).rounded())
+        let targetColumnCountWithoutDragged = keys(in: targetColumn).filter { $0 != key }.count
+        let targetIndex = max(0, min(startIndex + rowShift, targetColumnCountWithoutDragged))
+
+        if targetColumn != currentColumn || targetIndex != (keys(in: currentColumn).firstIndex(of: key) ?? 0) {
+            moveIncludedKey(key, to: targetIndex, targetColumn: targetColumn)
+        }
+
         longPressDraggingKey = nil
         longPressDragTranslation = .zero
         longPressDragStartIndex = nil
