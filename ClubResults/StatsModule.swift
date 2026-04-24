@@ -589,17 +589,21 @@ private struct CustomSpeechStatSection: Identifiable, Codable, Hashable {
 }
 
 struct SpeechSetupView: View {
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: \StatType.sortOrder) private var allStatTypes: [StatType]
 
     @StateObject private var speechService = PressHoldSpeechService()
     @State private var activeSectionID: String?
     @State private var newSectionName = ""
+    @State private var showUnsavedChangesAlert = false
 
     @AppStorage("speech_setup_custom_sections") private var customSectionsData = ""
     @AppStorage("speech_setup_detected_words") private var detectedWordsData = ""
 
     @State private var customSections: [CustomSpeechStatSection] = []
     @State private var detectedWordsBySection: [String: [String]] = [:]
+    @State private var savedCustomSections: [CustomSpeechStatSection] = []
+    @State private var savedDetectedWordsBySection: [String: [String]] = [:]
 
     var body: some View {
         List {
@@ -615,17 +619,57 @@ struct SpeechSetupView: View {
 
             ForEach(allSections) { section in
                 Section(section.name) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 10) {
                             Text(activeSectionID == section.storageKey ? "Listening…" : "Hold to speak")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             Text("Press and hold the mic button to capture words.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
-                        }
 
-                        Spacer()
+                            TextField(
+                                "Add words manually, or speak and edit the result.",
+                                text: editableWordsBinding(for: section.storageKey),
+                                axis: .vertical
+                            )
+                            .textFieldStyle(.roundedBorder)
+
+                            let words = detectedWordsBySection[section.storageKey] ?? []
+                            if !words.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(words, id: \.self) { word in
+                                            HStack(spacing: 6) {
+                                                Text(word)
+                                                    .font(.subheadline)
+                                                Button {
+                                                    removeWord(word, from: section.storageKey)
+                                                } label: {
+                                                    Image(systemName: "xmark")
+                                                        .font(.caption.weight(.bold))
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                            .padding(.vertical, 6)
+                                            .padding(.horizontal, 10)
+                                            .background(
+                                                Capsule()
+                                                    .fill(Color(.secondarySystemBackground))
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            HStack {
+                                Spacer()
+                                Button("Clear") {
+                                    clearWords(for: section.storageKey)
+                                }
+                                .disabled((detectedWordsBySection[section.storageKey] ?? []).isEmpty)
+                            }
+                        }
 
                         Button {
                             // press-and-hold only
@@ -653,67 +697,56 @@ struct SpeechSetupView: View {
                             }
                         }, perform: {})
                     }
-
-                    if activeSectionID == section.storageKey {
-                        HStack {
-                            Spacer()
-                            Image(systemName: "mic.circle.fill")
-                                .font(.system(size: 64))
-                                .foregroundStyle(.red)
-                                .accessibilityLabel("Recording")
-                        }
-                    }
-
-                    TextField(
-                        "Add words manually, or speak and edit the result.",
-                        text: editableWordsBinding(for: section.storageKey),
-                        axis: .vertical
-                    )
-                    .textFieldStyle(.roundedBorder)
-
-                    let words = detectedWordsBySection[section.storageKey] ?? []
-                    if !words.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(words, id: \.self) { word in
-                                    HStack(spacing: 6) {
-                                        Text(word)
-                                            .font(.subheadline)
-                                        Button {
-                                            detectedWordsBySection[section.storageKey] = words.filter { $0 != word }
-                                            persistDetectedWords()
-                                        } label: {
-                                            Image(systemName: "xmark")
-                                                .font(.caption.weight(.bold))
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .padding(.vertical, 6)
-                                    .padding(.horizontal, 10)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color(.secondarySystemBackground))
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    HStack {
-                        Spacer()
-                        Button("Clear") {
-                            clearWords(for: section.storageKey)
-                        }
-                        .disabled((detectedWordsBySection[section.storageKey] ?? []).isEmpty)
-                    }
                 }
             }
         }
         .navigationTitle("Speech Recognition")
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    handleBackButtonPressed()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Save") {
+                    saveAllChanges()
+                }
+                .fontWeight(.semibold)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(hasUnsavedChanges ? Color.blue : Color.gray.opacity(0.35))
+                )
+                .foregroundStyle(.white)
+                .disabled(!hasUnsavedChanges)
+            }
+        }
+        .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
+            Button("Discard Changes", role: .destructive) {
+                dismiss()
+            }
+            Button("Save and Leave") {
+                saveAllChanges()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("You have unsaved changes. Save before leaving this page?")
+        }
         .onAppear {
             loadCustomSections()
             loadDetectedWords()
+            snapshotSavedState()
         }
+    }
+
+    private var hasUnsavedChanges: Bool {
+        customSections != savedCustomSections || detectedWordsBySection != savedDetectedWordsBySection
     }
 
     private var allSections: [SpeechSection] {
@@ -741,18 +774,40 @@ struct SpeechSetupView: View {
         Array(Set([section.name] + section.defaultVocabulary + allDetectedWords))
     }
 
+    private func handleBackButtonPressed() {
+        if hasUnsavedChanges {
+            showUnsavedChangesAlert = true
+        } else {
+            dismiss()
+        }
+    }
+
+    private func saveAllChanges() {
+        persistCustomSections()
+        persistDetectedWords()
+        snapshotSavedState()
+    }
+
+    private func snapshotSavedState() {
+        savedCustomSections = customSections
+        savedDetectedWordsBySection = detectedWordsBySection
+    }
+
     private func appendDetectedWords(_ transcript: String, to storageKey: String) {
         let newTokens = parseWords(from: transcript)
         guard !newTokens.isEmpty else { return }
 
         let existing = detectedWordsBySection[storageKey] ?? []
         detectedWordsBySection[storageKey] = deduplicatedWords(existing + newTokens)
-        persistDetectedWords()
+    }
+
+    private func removeWord(_ word: String, from storageKey: String) {
+        let existing = detectedWordsBySection[storageKey] ?? []
+        detectedWordsBySection[storageKey] = existing.filter { $0 != word }
     }
 
     private func clearWords(for storageKey: String) {
         detectedWordsBySection[storageKey] = []
-        persistDetectedWords()
     }
 
     private func editableWordsBinding(for storageKey: String) -> Binding<String> {
@@ -762,7 +817,6 @@ struct SpeechSetupView: View {
             },
             set: { rawValue in
                 detectedWordsBySection[storageKey] = parseWords(from: rawValue)
-                persistDetectedWords()
             }
         )
     }
@@ -796,7 +850,6 @@ struct SpeechSetupView: View {
         customSections.append(CustomSpeechStatSection(id: UUID(), name: trimmed))
         customSections.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         newSectionName = ""
-        persistCustomSections()
     }
 
     private func loadCustomSections() {
@@ -1188,14 +1241,14 @@ struct LiveStatsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .navigationBarLeading) {
                 Button {
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button("Settings") {
                         showStatsSettings = true
@@ -4081,12 +4134,12 @@ private struct StatsReportPreviewSheet: View {
                 .navigationTitle("Report Preview")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItem(placement: .navigationBarLeading) {
                         Button("Done") {
                             dismiss()
                         }
                     }
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Button("Share") {
                             onShare()
                         }
@@ -4238,7 +4291,7 @@ private struct PlayerVisibilityEditorView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button("Back") {
                         if hasUnsavedChanges {
                             showDiscardAlert = true
@@ -4248,7 +4301,7 @@ private struct PlayerVisibilityEditorView: View {
                     }
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         onSave(selectedIDs, gridOrder)
                         dismiss()
@@ -4316,7 +4369,7 @@ private struct EditStatEventView: View {
             }
             .navigationTitle("Edit Event")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         event.playerId = playerId
                         event.statTypeId = statTypeId
@@ -4538,7 +4591,7 @@ private struct StatsTotalsView: View {
             .navigationTitle("Game Totals")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }
