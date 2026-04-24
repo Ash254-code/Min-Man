@@ -2114,10 +2114,13 @@ struct LiveStatsView: View {
                                 .onChanged { value in
                                     switch value {
                                     case .first(true):
-                                        activePlayerQuickStatsPlayerID = player.id
-                                        activePlayerQuickCardFrameGlobal = .zero
-                                        clearPendingPlayerQuickStat()
+                                        break
                                     case .second(true, let drag?):
+                                        if activePlayerQuickStatsPlayerID != player.id {
+                                            activePlayerQuickStatsPlayerID = player.id
+                                            activePlayerQuickCardFrameGlobal = .zero
+                                            clearPendingPlayerQuickStat()
+                                        }
                                         activePlayerQuickStatsPlayerID = player.id
                                         let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
                                             ? CGSize(width: panelProxy.size.width / CGFloat(columnsCount), height: cellHeight)
@@ -2328,11 +2331,14 @@ struct LiveStatsView: View {
                 .onChanged { value in
                     switch value {
                     case .first(true):
-                        activePlayerQuickStatsPlayerID = player.id
-                        activePlayerQuickCardFrameGlobal = .zero
-                        clearPendingPlayerQuickStat()
-                        triggerStrongHaptic()
+                        break
                     case .second(true, let drag?):
+                        if activePlayerQuickStatsPlayerID != player.id {
+                            activePlayerQuickStatsPlayerID = player.id
+                            activePlayerQuickCardFrameGlobal = .zero
+                            clearPendingPlayerQuickStat()
+                            triggerStrongHaptic()
+                        }
                         activePlayerQuickStatsPlayerID = player.id
                         let fallbackWidth = max(panelProxy.size.width - 8, 120)
                         let cardSize = activePlayerQuickCardFrameGlobal.size == .zero
