@@ -3,7 +3,6 @@ import SwiftData
 import PDFKit
 import MessageUI
 import UIKit
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
@@ -4981,6 +4980,17 @@ private struct CustomReportEditView: View {
         "Column \(column + 1)"
     }
 
+    private var maxIncludedRowsInAnyColumn: Int {
+        max(1, (0..<reportColumnCount).map { keys(in: $0).count }.max() ?? 1)
+    }
+
+    private var includedColumnBodyMinHeight: CGFloat {
+        let rowHeight: CGFloat = 56
+        let rowSpacing: CGFloat = 8
+        let rows = CGFloat(maxIncludedRowsInAnyColumn)
+        return (rows * rowHeight) + (max(rows - 1, 0) * rowSpacing)
+    }
+
     @ViewBuilder
     private func dataIncludedRow(for key: String) -> some View {
         switch key {
@@ -5112,33 +5122,35 @@ private struct CustomReportEditView: View {
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                                ForEach(keys(in: column), id: \.self) { key in
-                                    includedDataCard(for: key)
-                                    .contentShape(Rectangle())
-                                    .onDrag {
-                                        NSItemProvider(object: key as NSString)
-                                    } preview: {
-                                        includedDataCard(for: key, showsDragHandle: false)
-                                            .frame(maxWidth: 280)
+                                VStack(spacing: 8) {
+                                    ForEach(keys(in: column), id: \.self) { key in
+                                        includedDataCard(for: key)
+                                            .contentShape(Rectangle())
+                                            .draggable(key) {
+                                                includedDataCard(for: key, showsDragHandle: false)
+                                                    .frame(maxWidth: 280)
+                                            }
+                                            .dropDestination(for: String.self) { items, _ in
+                                                guard let draggedKey = items.first else { return false }
+                                                moveIncludedKey(draggedKey, before: key, targetColumn: column)
+                                                return true
+                                            }
                                     }
-                                    .onDrop(of: [UTType.text, UTType.plainText], delegate: IncludedDataDropDelegate(
-                                        targetKey: key,
-                                        targetColumn: column,
-                                        moveAction: moveIncludedKey
-                                    ))
-                                }
 
-                                if keys(in: column).isEmpty {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6]))
-                                        .foregroundStyle(.secondary.opacity(0.35))
-                                        .frame(height: 56)
-                                        .overlay(
-                                            Text("Drop section here")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                        )
+                                    if keys(in: column).isEmpty {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6]))
+                                            .foregroundStyle(.secondary.opacity(0.35))
+                                            .frame(maxWidth: .infinity)
+                                            .frame(minHeight: includedColumnBodyMinHeight)
+                                            .overlay(
+                                                Text("Drop section here")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                            )
+                                    }
                                 }
+                                .frame(maxWidth: .infinity, minHeight: includedColumnBodyMinHeight, alignment: .top)
                             }
                             .padding(10)
                             .background(
@@ -5147,11 +5159,11 @@ private struct CustomReportEditView: View {
                             )
                             .frame(maxWidth: .infinity, alignment: .top)
                             .contentShape(Rectangle())
-                            .onDrop(of: [UTType.text, UTType.plainText], delegate: IncludedDataDropDelegate(
-                                targetKey: nil,
-                                targetColumn: column,
-                                moveAction: moveIncludedKey
-                            ))
+                            .dropDestination(for: String.self) { items, _ in
+                                guard let draggedKey = items.first else { return false }
+                                moveIncludedKey(draggedKey, before: nil, targetColumn: column)
+                                return true
+                            }
                         }
                     }
                 } header: {
@@ -5461,40 +5473,6 @@ private struct CustomReportEditView: View {
             .filter { !groupedIDs.contains($0.id) }
             .filter { !selectedRecipientContactIDs.contains($0.id) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-}
-
-private struct IncludedDataDropDelegate: DropDelegate {
-    let targetKey: String?
-    let targetColumn: Int
-    let moveAction: (String, String?, Int) -> Void
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let itemProvider = info.itemProviders(for: [UTType.text, UTType.plainText]).first else { return false }
-
-        if itemProvider.canLoadObject(ofClass: NSString.self) {
-            _ = itemProvider.loadObject(ofClass: NSString.self) { item, _ in
-                guard let key = (item as! String as String?)?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
-                DispatchQueue.main.async {
-                    moveAction(key, targetKey, targetColumn)
-                }
-            }
-            return true
-        }
-
-        itemProvider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
-            guard let data = item as? Data,
-                  let key = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !key.isEmpty else { return }
-            DispatchQueue.main.async {
-                moveAction(key, targetKey, targetColumn)
-            }
-        }
-        return true
     }
 }
 
