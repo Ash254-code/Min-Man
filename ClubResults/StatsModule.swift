@@ -29,7 +29,13 @@ extension StatType {
             "mark": ["mark", "marks"],
             "tackle": ["tackle", "tackles"],
             "goal": ["goal", "goals", "go", "no", "cow", "call"],
-            "behind": ["behind", "behinds", "point", "points", "rushed behind", "time", "holland"]
+            "behind": ["behind", "behinds", "point", "points", "rushed behind", "time", "holland"],
+            "inside 50": ["inside 50", "inside fifty", "inside 50s"],
+            "clearance": ["clearance", "clearances"],
+            "hit out": ["hit out", "hitouts", "hit outs"],
+            "free kick": ["free kick", "free kicks", "freakick", "freakicks"],
+            "turnover": ["turnover", "turnovers"],
+            "intercept": ["intercept", "intercepts"]
         ]
         let aliases = builtIn[lowercase] ?? [canonical]
         let detectedWords = SpeechDetectedWordsStore.words(for: id)
@@ -208,7 +214,20 @@ private struct QuickStatPieSlice: Shape {
 }
 
 private enum StatsDefaults {
-    static let statNames = ["Kick", "Handball", "Mark", "Tackle", "Goal", "Behind", "Inside 50"]
+    static let statNames = [
+        "Kick",
+        "Handball",
+        "Mark",
+        "Tackle",
+        "Goal",
+        "Behind",
+        "Inside 50",
+        "Clearance",
+        "Hit Out",
+        "Free Kick",
+        "Turnover",
+        "Intercept"
+    ]
 }
 
 struct StatsRootView: View {
@@ -321,6 +340,7 @@ struct StatsTypesSettingsView: View {
         .task {
             seedDefaultStatTypesIfNeeded()
             ensureAlwaysOnStatTypesIfNeeded()
+            ensureRequiredTeamComparisonStatTypesIfNeeded()
             removeDeprecatedStatTypesIfNeeded()
             ensureGoalAndBehindStatTypesIfNeeded()
             enforceOppositionTrackingDependency()
@@ -556,12 +576,38 @@ struct StatsTypesSettingsView: View {
         save()
     }
 
+    private func ensureRequiredTeamComparisonStatTypesIfNeeded() {
+        var existing = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
+        let requiredNames = ["Clearance", "Hit Out", "Free Kick", "Turnover", "Intercept"]
+        var didChange = false
+
+        for name in requiredNames {
+            if let match = existing.first(where: { $0.name.compare(name, options: .caseInsensitive) == .orderedSame }) {
+                if !match.isEnabled {
+                    match.isEnabled = true
+                    didChange = true
+                }
+                continue
+            }
+
+            let type = StatType(name: name, isEnabled: true, sortOrder: existing.count)
+            modelContext.insert(type)
+            existing.append(type)
+            didChange = true
+        }
+
+        if didChange {
+            resequence()
+            save()
+        }
+    }
+
     private func isAlwaysOnHiddenStatType(_ name: String) -> Bool {
         ["inside 50"].contains(name.lowercased())
     }
 
     private func removeDeprecatedStatTypesIfNeeded() {
-        let deprecatedNames = Set(["scores", "clearance", "clearances"])
+        let deprecatedNames = Set(["scores"])
         let existing = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
         let deprecated = existing.filter { deprecatedNames.contains($0.name.lowercased()) }
         guard !deprecated.isEmpty else { return }
@@ -1351,6 +1397,7 @@ struct LiveStatsView: View {
             }
         }
         .onAppear {
+            ensureRequiredTeamComparisonStatTypesIfNeeded()
             if visiblePlayerIDs.isEmpty {
                 let defaults = Set(playersForGrade.map(\.id))
                 visiblePlayerIDs = defaults
@@ -1418,6 +1465,34 @@ struct LiveStatsView: View {
 
     private var enabledStatTypes: [StatType] {
         allStatTypes.filter { $0.isEnabled }.sorted(by: { $0.sortOrder < $1.sortOrder })
+    }
+
+    private func ensureRequiredTeamComparisonStatTypesIfNeeded() {
+        var existing = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
+        let requiredNames = ["Clearance", "Hit Out", "Free Kick", "Turnover", "Intercept"]
+        var didChange = false
+
+        for name in requiredNames {
+            if let match = existing.first(where: { $0.name.compare(name, options: .caseInsensitive) == .orderedSame }) {
+                if !match.isEnabled {
+                    match.isEnabled = true
+                    didChange = true
+                }
+                continue
+            }
+
+            let type = StatType(name: name, isEnabled: true, sortOrder: existing.count)
+            modelContext.insert(type)
+            existing.append(type)
+            didChange = true
+        }
+
+        if didChange {
+            for (index, type) in existing.sorted(by: { $0.sortOrder < $1.sortOrder }).enumerated() {
+                type.sortOrder = index
+            }
+            try? modelContext.save()
+        }
     }
 
     private var sessionEvents: [StatEvent] {
@@ -1770,6 +1845,14 @@ struct LiveStatsView: View {
         let oppositionInside50 = teamTotal(aliases: ["inside 50", "inside50", "inside 50s"], isOpposition: true)
         let ourClearances = teamTotal(aliases: ["clearance", "clearances"], isOpposition: false)
         let oppositionClearances = teamTotal(aliases: ["clearance", "clearances"], isOpposition: true)
+        let ourHitOuts = teamTotal(aliases: ["hit out", "hitouts", "hit outs"], isOpposition: false)
+        let oppositionHitOuts = teamTotal(aliases: ["hit out", "hitouts", "hit outs"], isOpposition: true)
+        let ourFreeKicks = teamTotal(aliases: ["free kick", "free kicks", "freakick", "freakicks"], isOpposition: false)
+        let oppositionFreeKicks = teamTotal(aliases: ["free kick", "free kicks", "freakick", "freakicks"], isOpposition: true)
+        let ourTurnovers = teamTotal(aliases: ["turnover", "turnovers"], isOpposition: false)
+        let oppositionTurnovers = teamTotal(aliases: ["turnover", "turnovers"], isOpposition: true)
+        let ourIntercepts = teamTotal(aliases: ["intercept", "intercepts"], isOpposition: false)
+        let oppositionIntercepts = teamTotal(aliases: ["intercept", "intercepts"], isOpposition: true)
 
         var rows: [(label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double)] = []
 
@@ -1835,6 +1918,34 @@ struct LiveStatsView: View {
                 oppositionValue: "\(oppositionClearances)",
                 ourNumeric: Double(ourClearances),
                 oppositionNumeric: Double(oppositionClearances)
+            ),
+            (
+                label: "Hit Out",
+                ourValue: "\(ourHitOuts)",
+                oppositionValue: "\(oppositionHitOuts)",
+                ourNumeric: Double(ourHitOuts),
+                oppositionNumeric: Double(oppositionHitOuts)
+            ),
+            (
+                label: "Free Kick",
+                ourValue: "\(ourFreeKicks)",
+                oppositionValue: "\(oppositionFreeKicks)",
+                ourNumeric: Double(ourFreeKicks),
+                oppositionNumeric: Double(oppositionFreeKicks)
+            ),
+            (
+                label: "Turnover",
+                ourValue: "\(ourTurnovers)",
+                oppositionValue: "\(oppositionTurnovers)",
+                ourNumeric: Double(ourTurnovers),
+                oppositionNumeric: Double(oppositionTurnovers)
+            ),
+            (
+                label: "Intercept",
+                ourValue: "\(ourIntercepts)",
+                oppositionValue: "\(oppositionIntercepts)",
+                ourNumeric: Double(ourIntercepts),
+                oppositionNumeric: Double(oppositionIntercepts)
             )
         ])
 
@@ -1854,7 +1965,8 @@ struct LiveStatsView: View {
         let oppositionIsLeading = metric.oppositionNumeric > metric.ourNumeric
         let ourBackground = ourIsLeading ? Color.green.opacity(0.85) : (oppositionIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
         let oppositionBackground = oppositionIsLeading ? Color.green.opacity(0.85) : (ourIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
-        let isTappableMetric = metric.label == "Inside 50" || metric.label == "Clearance"
+        let tappableMetrics = Set(["Inside 50", "Clearance", "Hit Out", "Free Kick", "Turnover", "Intercept"])
+        let isTappableMetric = tappableMetrics.contains(metric.label)
 
         return HStack(spacing: 10) {
             comparisonMetricSide(
@@ -1937,6 +2049,14 @@ struct LiveStatsView: View {
             aliases = ["inside 50", "inside50", "inside 50s"]
         case "Clearance":
             aliases = ["clearance", "clearances"]
+        case "Hit Out":
+            aliases = ["hit out", "hitouts", "hit outs"]
+        case "Free Kick":
+            aliases = ["free kick", "free kicks", "freakick", "freakicks"]
+        case "Turnover":
+            aliases = ["turnover", "turnovers"]
+        case "Intercept":
+            aliases = ["intercept", "intercepts"]
         default:
             return
         }
@@ -2458,10 +2578,25 @@ struct LiveStatsView: View {
         )
         let normalizedName = normalizedStatName(name)
         let scoreKind: String? = (normalizedName == "goal" || normalizedName == "behind") ? normalizedName : nil
-        let isOptionalUsStat = normalizedName == "clearance"
-            || normalizedName == "clearances"
-            || normalizedName == "inside 50"
-            || normalizedName == "inside 50s"
+        let teamOnlyStats = Set([
+            "inside 50",
+            "inside50",
+            "inside 50s",
+            "clearance",
+            "clearances",
+            "hit out",
+            "hitouts",
+            "hit outs",
+            "free kick",
+            "free kicks",
+            "freakick",
+            "freakicks",
+            "turnover",
+            "turnovers",
+            "intercept",
+            "intercepts"
+        ])
+        let isTeamOnlyStat = teamOnlyStats.contains(normalizedName)
         let buttonKey = "\(normalizedName)-\(isOpposition ? "opp" : "our")"
         let supportsEfficiencyLongPress = supportsEfficiencyLongPress(for: normalizedName, isOpposition: isOpposition)
         let showEfficiencyVote = trackDisposalEfficiency && statRequiresEfficiencyVote(normalizedName)
@@ -2476,7 +2611,7 @@ struct LiveStatsView: View {
                 statTypeId: statType.id,
                 isOpposition: isOpposition,
                 scoreKind: scoreKind,
-                isOptionalUsStat: isOptionalUsStat,
+                isTeamOnlyStat: isTeamOnlyStat,
                 efficiencyVote: nil
             )
         } label: {
@@ -2574,7 +2709,7 @@ struct LiveStatsView: View {
                                     statTypeId: statType.id,
                                     isOpposition: isOpposition,
                                     scoreKind: scoreKind,
-                                    isOptionalUsStat: isOptionalUsStat,
+                                    isTeamOnlyStat: isTeamOnlyStat,
                                     efficiencyVote: vote,
                                     contestedVote: contestedVote
                                 )
@@ -2692,11 +2827,11 @@ struct LiveStatsView: View {
         statTypeId: UUID,
         isOpposition: Bool,
         scoreKind: String?,
-        isOptionalUsStat: Bool,
+        isTeamOnlyStat: Bool,
         efficiencyVote: EfficiencyVote?,
         contestedVote: ContestedPossessionVote? = nil
     ) {
-        let requiresSelectedPlayer = !isOpposition && trackIndividualTracking && !isOptionalUsStat
+        let requiresSelectedPlayer = !isOpposition && trackIndividualTracking && !isTeamOnlyStat
         if isOpposition {
             addTeamEvent(
                 statTypeId: statTypeId,
@@ -2710,12 +2845,8 @@ struct LiveStatsView: View {
 
         if !trackIndividualTracking {
             addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
-        } else if isOptionalUsStat {
-            if selectedPlayerId == nil {
-                addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
-            } else {
-                addManualEvent(statTypeId: statTypeId, transcript: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
-            }
+        } else if isTeamOnlyStat {
+            addTeamEvent(statTypeId: statTypeId, isOpposition: false, scoreKind: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
         } else if requiresSelectedPlayer {
             addManualEvent(statTypeId: statTypeId, transcript: scoreKind, efficiencyVote: efficiencyVote, contestedVote: contestedVote)
         } else {
@@ -2905,7 +3036,26 @@ struct LiveStatsView: View {
     }
 
     private var playerStatTypes: [StatType] {
-        let teamOnly = Set(["goal", "behind", "clearance", "clearances", "inside 50", "inside 50s"])
+        let teamOnly = Set([
+            "goal",
+            "behind",
+            "clearance",
+            "clearances",
+            "inside 50",
+            "inside50",
+            "inside 50s",
+            "hit out",
+            "hitouts",
+            "hit outs",
+            "free kick",
+            "free kicks",
+            "freakick",
+            "freakicks",
+            "turnover",
+            "turnovers",
+            "intercept",
+            "intercepts"
+        ])
         return enabledStatTypes.filter { !teamOnly.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
     }
 
