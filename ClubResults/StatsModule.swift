@@ -1332,8 +1332,13 @@ struct LiveStatsView: View {
                 sideSpeakMicOverlay
             }
         }
-        .fullScreenCover(isPresented: $showQuarterChangeReminder) {
-            quarterReminderOverlay
+        .alert("Change quarter?", isPresented: $showQuarterChangeReminder) {
+            Button("No", role: .cancel) { }
+            Button("Yes") {
+                advanceQuarter()
+            }
+        } message: {
+            Text("Current: \(selectedQuarter). Move to the next quarter now?")
         }
         .onDisappear {
             statusBannerTask?.cancel()
@@ -3771,35 +3776,6 @@ struct LiveStatsView: View {
                 .padding(.bottom, 12)
                 .allowsHitTesting(true)
             }
-        }
-    }
-
-    private var quarterReminderOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.65)
-                .ignoresSafeArea()
-            VStack(spacing: 20) {
-                Text("Change quarter?")
-                    .font(.system(size: 38, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("Current: \(selectedQuarter). Move to the next quarter now?")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-                HStack(spacing: 16) {
-                    Button("No") {
-                        showQuarterChangeReminder = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.gray)
-
-                    Button("Yes") {
-                        advanceQuarter()
-                        showQuarterChangeReminder = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-            .padding(28)
         }
     }
 
