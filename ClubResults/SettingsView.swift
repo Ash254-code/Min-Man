@@ -4720,8 +4720,8 @@ func makeTemplatePreviewPDF(
             for key in template.includeSectionOrder {
                 switch key {
                 case "scores":
-                    flushPending()
                     if template.includeScores, let scoreGame {
+                        flushPending()
                         drawScorePills(for: scoreGame, title: "Score")
                     }
                 case "bestPlayers":
@@ -4746,8 +4746,8 @@ func makeTemplatePreviewPDF(
                         pendingCompactTables.append((key: key, table: table))
                     }
                 case "matchNotes":
-                    flushPending()
                     if template.includeMatchNotes {
+                        flushPending()
                         let notes = metadataGame?.notes.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                         drawDetailTable(title: "Match Notes", columns: ["Notes"], rows: notes.isEmpty ? [] : [[notes]])
                     }
