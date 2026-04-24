@@ -2942,6 +2942,7 @@ struct ReportsSettingsView: View {
                 initialIncludeMatchNotes: template.includeMatchNotes,
                 initialIncludedDataOrder: template.includeSectionOrder,
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
+                initialIncludePlayersOnly: template.includePlayersOnly,
                 initialMinimumGamesPlayed: template.minimumGamesPlayed,
                 initialGroupingModeRawValue: template.groupingModeRawValue,
                 initialDateRangeQuickPickRawValue: template.dateRangeQuickPickRawValue,
@@ -3019,6 +3020,7 @@ struct ReportsSettingsView: View {
             includeSectionOrder: draft.includedDataOrder,
             sendReportOnGameSave: draft.sendReportOnGameSave,
             includeOnlyActiveGrades: draft.includeOnlyActiveGrades,
+            includePlayersOnly: draft.includePlayersOnly,
             minimumGamesPlayed: draft.minimumGamesPlayed,
             groupingModeRawValue: draft.groupingModeRawValue,
             dateRangeQuickPickRawValue: draft.selectedQuickPickRawValue,
@@ -3073,6 +3075,7 @@ struct ReportsSettingsView: View {
         template.includeMatchNotes = draft.includeMatchNotes
         template.includeSectionOrder = draft.includedDataOrder
         template.includeOnlyActiveGrades = draft.includeOnlyActiveGrades
+        template.includePlayersOnly = draft.includePlayersOnly
         template.minimumGamesPlayed = draft.minimumGamesPlayed
         template.groupingModeRawValue = draft.groupingModeRawValue
         template.dateRangeQuickPickRawValue = draft.selectedQuickPickRawValue
@@ -3241,6 +3244,7 @@ struct ReportsSettingsView: View {
             includeSectionOrder: template.includeSectionOrder,
             sendReportOnGameSave: template.sendReportOnGameSave,
             includeOnlyActiveGrades: template.includeOnlyActiveGrades,
+            includePlayersOnly: template.includePlayersOnly,
             minimumGamesPlayed: template.minimumGamesPlayed,
             groupingModeRawValue: template.groupingModeRawValue,
             dateRangeQuickPickRawValue: template.dateRangeQuickPickRawValue,
@@ -3888,7 +3892,7 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
     }()
 
     let grouping = ReportGroupingMode(rawValue: template.groupingModeRawValue) ?? .combinedTotals
-    let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive"), \(grouping.filterSummary)"
+    let filters = "Filters: min games \(template.minimumGamesPlayed), \(template.includeOnlyActiveGrades ? "active grades only" : "active + inactive"), \(template.includePlayersOnly ? "players only" : "all names"), \(grouping.filterSummary)"
     let dateRangeText = "Date range: \(formattedDate(dateRange.start)) – \(formattedDate(dateRange.end))"
     let sections = "Includes: " + (items.isEmpty ? "No sections selected" : items.joined(separator: ", "))
     return [gradesText, sections, filters, dateRangeText].joined(separator: " • ")
@@ -3986,6 +3990,16 @@ func makeTemplatePreviewPDF(
         .filter { dateRange.contains($0.date) }
         .sorted { $0.date > $1.date }
     let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
+    let normalizedPlayerNames: Set<String> = Set(
+        players
+            .map(\.name)
+            .map {
+                $0
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            }
+            .filter { !$0.isEmpty }
+    )
     let gradeLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0.name) })
     let selectedGradeNames = selectedGrades.map(\.name)
     let gradeSummary = selectedGradeNames.isEmpty ? "All grades" : selectedGradeNames.joined(separator: ", ")
@@ -4009,12 +4023,27 @@ func makeTemplatePreviewPDF(
         max(0, 10 - index)
     }
 
+    func includePlayerID(_ id: UUID) -> Bool {
+        guard template.includePlayersOnly else { return true }
+        return playerLookup[id] != nil
+    }
+
+    func includeName(_ rawName: String) -> Bool {
+        guard template.includePlayersOnly else { return true }
+        let normalized = rawName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        guard !normalized.isEmpty else { return false }
+        return normalizedPlayerNames.contains(normalized)
+    }
+
     func metadataSummary(for game: Game) -> String {
         var parts: [String] = []
         if template.includeStaffRoles {
             let staff = [game.headCoachName, game.assistantCoachName, game.teamManagerName, game.runnerName]
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
+                .filter(includeName)
             if !staff.isEmpty { parts.append("Staff: \(staff.joined(separator: ", "))") }
         }
         if template.includeOfficials || template.includeUmpires {
@@ -4028,12 +4057,14 @@ func makeTemplatePreviewPDF(
             officials = officials
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
+                .filter(includeName)
             if !officials.isEmpty { parts.append("Officials: \(officials.joined(separator: ", "))") }
         }
         if template.includeTrainers {
             let trainers = game.trainers
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
+                .filter(includeName)
             if !trainers.isEmpty { parts.append("Trainers: \(trainers.joined(separator: ", "))") }
         }
         if template.includeMatchNotes {
@@ -4344,7 +4375,7 @@ func makeTemplatePreviewPDF(
             let allBestPlayersRows: [[String]] = {
                 if games.count == 1, let game = games.first {
                     return game.bestPlayersRanked.enumerated().compactMap { index, playerID in
-                        guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                        guard includePlayerID(playerID), gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                         let rankLabel = index == 0 ? "Best" : String(index + 1)
                         return [rankLabel, playerLookup[playerID]?.name ?? "Unknown Player"]
                     }
@@ -4361,7 +4392,7 @@ func makeTemplatePreviewPDF(
                         return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
                     }
                     .compactMap { (playerID, totalPoints) -> [String]? in
-                        guard totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                        guard includePlayerID(playerID), totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                         return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
                     }
             }()
@@ -4377,7 +4408,7 @@ func makeTemplatePreviewPDF(
                     return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
                 }
                 .compactMap { (playerID, totalPoints) -> [String]? in
-                    guard totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    guard includePlayerID(playerID), totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                     return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
                 }
             let guestVoteRows = guestVotesLimit == 0 ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
@@ -4393,7 +4424,7 @@ func makeTemplatePreviewPDF(
                     return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
                 }
                 .compactMap { (playerID, totalGoals) -> [String]? in
-                    guard totalGoals > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    guard includePlayerID(playerID), totalGoals > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                     return [playerLookup[playerID]?.name ?? "Unknown Player", String(totalGoals)]
                 }
             let goalKickerRows = goalKickersLimit == 0 ? allGoalKickerRows : Array(allGoalKickerRows.prefix(goalKickersLimit))
@@ -4409,7 +4440,7 @@ func makeTemplatePreviewPDF(
             let allBestAndFairestRows = bestAndFairestPoints
                 .sorted { $0.value > $1.value }
                 .compactMap { (playerID, pointTotal) -> [String]? in
-                    guard pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    guard includePlayerID(playerID), pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                     return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
                 }
             let bestAndFairestRows = bestAndFairestLimit == 0 ? allBestAndFairestRows : Array(allBestAndFairestRows.prefix(bestAndFairestLimit))
@@ -4438,7 +4469,7 @@ func makeTemplatePreviewPDF(
 
             func increment(_ dictionary: inout [RoleNameKey: Int], role: String, name: String) {
                 let trimmed = normalizedName(name)
-                guard !trimmed.isEmpty else { return }
+                guard !trimmed.isEmpty, includeName(trimmed) else { return }
                 dictionary[roleNameKey(role: role, name: trimmed), default: 0] += 1
             }
 
@@ -4669,6 +4700,7 @@ private struct CustomReportTemplateDraft {
     let includeTrainers: Bool
     let includeMatchNotes: Bool
     let includeOnlyActiveGrades: Bool
+    let includePlayersOnly: Bool
     let minimumGamesPlayed: Int
     let groupingModeRawValue: Int
     let selectedQuickPickRawValue: String
@@ -4707,6 +4739,7 @@ private struct CustomReportEditView: View {
     @State private var includeMatchNotes: Bool
     @State private var includedDataOrder: [String]
     @State private var includeOnlyActiveGrades: Bool
+    @State private var includePlayersOnly: Bool
     @State private var minimumGamesPlayed: Int
     @State private var groupingMode: ReportGroupingMode
     @State private var selectedDateRangeQuickPick: ReportRangeQuickPick
@@ -4740,6 +4773,7 @@ private struct CustomReportEditView: View {
         initialIncludeMatchNotes: Bool = false,
         initialIncludedDataOrder: [String] = CustomReportTemplate.defaultIncludeSectionOrder,
         initialIncludeOnlyActiveGrades: Bool = true,
+        initialIncludePlayersOnly: Bool = false,
         initialMinimumGamesPlayed: Int = 1,
         initialGroupingModeRawValue: Int = 1,
         initialDateRangeQuickPickRawValue: String = ReportRangeQuickPick.mostRecentGame.rawValue,
@@ -4774,6 +4808,7 @@ private struct CustomReportEditView: View {
         _includeMatchNotes = State(initialValue: initialIncludeMatchNotes)
         _includedDataOrder = State(initialValue: CustomReportEditView.normalizeIncludedDataOrder(initialIncludedDataOrder))
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
+        _includePlayersOnly = State(initialValue: initialIncludePlayersOnly)
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
         _groupingMode = State(initialValue: ReportGroupingMode(rawValue: initialGroupingModeRawValue) ?? .combinedTotals)
         _selectedDateRangeQuickPick = State(initialValue: ReportRangeQuickPick(rawValue: initialDateRangeQuickPickRawValue) ?? .mostRecentGame)
@@ -5018,6 +5053,7 @@ private struct CustomReportEditView: View {
                     Toggle("Split report by game", isOn: splitByGameBinding)
                     Toggle("Split report by grade", isOn: splitByGradeBinding)
                     Toggle("Only active grades", isOn: $includeOnlyActiveGrades)
+                    Toggle("Players Only", isOn: $includePlayersOnly)
                     Stepper("Minimum games played: \(minimumGamesPlayed)", value: $minimumGamesPlayed, in: 0...100)
                 } header: {
                     Text("Filters")
@@ -5056,6 +5092,7 @@ private struct CustomReportEditView: View {
                             includeTrainers: includeTrainers,
                             includeMatchNotes: includeMatchNotes,
                             includeOnlyActiveGrades: includeOnlyActiveGrades,
+                            includePlayersOnly: includePlayersOnly,
                             minimumGamesPlayed: minimumGamesPlayed,
                             groupingModeRawValue: groupingMode.rawValue,
                             selectedQuickPickRawValue: selectedDateRangeQuickPick.rawValue,

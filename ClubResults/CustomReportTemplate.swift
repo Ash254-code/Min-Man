@@ -42,6 +42,7 @@ final class CustomReportTemplate {
     // Filters
     var sendReportOnGameSave: Bool
     var includeOnlyActiveGrades: Bool
+    var includePlayersOnly: Bool
     var minimumGamesPlayed: Int
     var groupingModeRawValue: Int
     var dateRangeQuickPickRawValue: String
@@ -70,6 +71,7 @@ final class CustomReportTemplate {
         includeSectionOrder: [String] = CustomReportTemplate.defaultIncludeSectionOrder,
         sendReportOnGameSave: Bool = false,
         includeOnlyActiveGrades: Bool = true,
+        includePlayersOnly: Bool = false,
         minimumGamesPlayed: Int = 0,
         groupingModeRawValue: Int = 0,
         dateRangeQuickPickRawValue: String = "Most Recent Game",
@@ -97,6 +99,7 @@ final class CustomReportTemplate {
         self.includeSectionOrderData = (try? JSONEncoder().encode(includeSectionOrder)) ?? Data()
         self.sendReportOnGameSave = sendReportOnGameSave
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
+        self.includePlayersOnly = includePlayersOnly
         self.minimumGamesPlayed = max(0, minimumGamesPlayed)
         self.groupingModeRawValue = groupingModeRawValue
         self.dateRangeQuickPickRawValue = dateRangeQuickPickRawValue

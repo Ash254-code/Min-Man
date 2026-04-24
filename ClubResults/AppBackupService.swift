@@ -518,6 +518,7 @@ struct CustomReportTemplateRecord: Codable {
     let includeSectionOrder: [String]
     let sendReportOnGameSave: Bool
     let includeOnlyActiveGrades: Bool
+    let includePlayersOnly: Bool
     let minimumGamesPlayed: Int
     let groupingModeRawValue: Int
 
@@ -543,6 +544,7 @@ struct CustomReportTemplateRecord: Codable {
         includeSectionOrder = template.includeSectionOrder
         sendReportOnGameSave = template.sendReportOnGameSave
         includeOnlyActiveGrades = template.includeOnlyActiveGrades
+        includePlayersOnly = template.includePlayersOnly
         minimumGamesPlayed = template.minimumGamesPlayed
         groupingModeRawValue = template.groupingModeRawValue
     }
@@ -552,7 +554,7 @@ struct CustomReportTemplateRecord: Codable {
         case includeGoalKickers, goalKickersLimit, includeGuernseyNumbers, includeBestAndFairestVotes
         case bestAndFairestLimit, includeStaffRoles, includeOfficials
         case includeUmpires, includeTrainers, includeMatchNotes, includeSectionOrder, includeOnlyActiveGrades
-        case sendReportOnGameSave, minimumGamesPlayed, groupingModeRawValue
+        case includePlayersOnly, sendReportOnGameSave, minimumGamesPlayed, groupingModeRawValue
     }
 
     init(from decoder: Decoder) throws {
@@ -578,6 +580,7 @@ struct CustomReportTemplateRecord: Codable {
         includeSectionOrder = try c.decodeIfPresent([String].self, forKey: .includeSectionOrder) ?? CustomReportTemplate.defaultIncludeSectionOrder
         sendReportOnGameSave = try c.decodeIfPresent(Bool.self, forKey: .sendReportOnGameSave) ?? false
         includeOnlyActiveGrades = try c.decodeIfPresent(Bool.self, forKey: .includeOnlyActiveGrades) ?? true
+        includePlayersOnly = try c.decodeIfPresent(Bool.self, forKey: .includePlayersOnly) ?? false
         minimumGamesPlayed = try c.decodeIfPresent(Int.self, forKey: .minimumGamesPlayed) ?? 0
         groupingModeRawValue = try c.decodeIfPresent(Int.self, forKey: .groupingModeRawValue) ?? 0
     }
@@ -1087,6 +1090,7 @@ enum AppBackupService {
                     includeSectionOrder: $0.includeSectionOrder,
                     sendReportOnGameSave: $0.sendReportOnGameSave,
                     includeOnlyActiveGrades: $0.includeOnlyActiveGrades,
+                    includePlayersOnly: $0.includePlayersOnly,
                     minimumGamesPlayed: $0.minimumGamesPlayed,
                     groupingModeRawValue: $0.groupingModeRawValue
                 )
