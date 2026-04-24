@@ -615,53 +615,96 @@ struct SpeechSetupView: View {
 
             ForEach(allSections) { section in
                 Section(section.name) {
-                    Button {
-                        // press-and-hold only
-                    } label: {
-                        Label(activeSectionID == section.storageKey ? "Recording…" : "Hold to Speak", systemImage: "mic.fill")
-                            .font(.headline)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(activeSectionID == section.storageKey ? .red : .blue)
-                    .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
-                        if isPressing {
-                            activeSectionID = section.storageKey
-                            speechService.startListening(vocabulary: sectionVocabulary(for: section))
-                        } else if activeSectionID == section.storageKey {
-                            speechService.stopListening { transcript in
-                                appendDetectedWords(transcript, to: section.storageKey)
-                                activeSectionID = nil
-                            }
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(activeSectionID == section.storageKey ? "Listening…" : "Hold to speak")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text("Press and hold the mic button to capture words.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
-                    }, perform: {})
+
+                        Spacer()
+
+                        Button {
+                            // press-and-hold only
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(activeSectionID == section.storageKey ? .red : .blue)
+                                Image(systemName: "mic.fill")
+                                    .font(.title2.weight(.bold))
+                                    .foregroundStyle(.white)
+                            }
+                            .frame(width: 74, height: 74)
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Circle())
+                        .onLongPressGesture(minimumDuration: 0.01, maximumDistance: .infinity, pressing: { isPressing in
+                            if isPressing {
+                                activeSectionID = section.storageKey
+                                speechService.startListening(vocabulary: sectionVocabulary(for: section))
+                            } else if activeSectionID == section.storageKey {
+                                speechService.stopListening { transcript in
+                                    appendDetectedWords(transcript, to: section.storageKey)
+                                    activeSectionID = nil
+                                }
+                            }
+                        }, perform: {})
+                    }
+
+                    if activeSectionID == section.storageKey {
+                        HStack {
+                            Spacer()
+                            Image(systemName: "mic.circle.fill")
+                                .font(.system(size: 64))
+                                .foregroundStyle(.red)
+                                .accessibilityLabel("Recording")
+                        }
+                    }
+
+                    TextField(
+                        "Add words manually, or speak and edit the result.",
+                        text: editableWordsBinding(for: section.storageKey),
+                        axis: .vertical
+                    )
+                    .textFieldStyle(.roundedBorder)
 
                     let words = detectedWordsBySection[section.storageKey] ?? []
-                    ZStack(alignment: .trailing) {
-                        TextField(
-                            "No words detected yet.",
-                            text: .constant(words.joined(separator: ", "))
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(true)
-                        .padding(.trailing, 84)
-
-                        HStack(spacing: 6) {
-                            Button {
-                                copyWords(for: section.storageKey)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
+                    if !words.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(words, id: \.self) { word in
+                                    HStack(spacing: 6) {
+                                        Text(word)
+                                            .font(.subheadline)
+                                        Button {
+                                            detectedWordsBySection[section.storageKey] = words.filter { $0 != word }
+                                            persistDetectedWords()
+                                        } label: {
+                                            Image(systemName: "xmark")
+                                                .font(.caption.weight(.bold))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 10)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color(.secondarySystemBackground))
+                                    )
+                                }
                             }
-                            .buttonStyle(.plain)
-                            .disabled(words.isEmpty)
-
-                            Button {
-                                clearWords(for: section.storageKey)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(words.isEmpty)
                         }
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button("Clear") {
+                            clearWords(for: section.storageKey)
+                        }
+                        .disabled((detectedWordsBySection[section.storageKey] ?? []).isEmpty)
                     }
                 }
             }
@@ -699,30 +742,51 @@ struct SpeechSetupView: View {
     }
 
     private func appendDetectedWords(_ transcript: String, to storageKey: String) {
-        let tokens = transcript
-            .lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        guard !tokens.isEmpty else { return }
+        let newTokens = parseWords(from: transcript)
+        guard !newTokens.isEmpty else { return }
 
         let existing = detectedWordsBySection[storageKey] ?? []
-        let combined = Array(Set(existing + tokens)).sorted()
-        detectedWordsBySection[storageKey] = combined
+        detectedWordsBySection[storageKey] = deduplicatedWords(existing + newTokens)
         persistDetectedWords()
-    }
-
-    private func copyWords(for storageKey: String) {
-        let text = (detectedWordsBySection[storageKey] ?? []).joined(separator: "\n")
-#if canImport(UIKit)
-        UIPasteboard.general.string = text
-#endif
     }
 
     private func clearWords(for storageKey: String) {
         detectedWordsBySection[storageKey] = []
         persistDetectedWords()
+    }
+
+    private func editableWordsBinding(for storageKey: String) -> Binding<String> {
+        Binding(
+            get: {
+                (detectedWordsBySection[storageKey] ?? []).joined(separator: ", ")
+            },
+            set: { rawValue in
+                detectedWordsBySection[storageKey] = parseWords(from: rawValue)
+                persistDetectedWords()
+            }
+        )
+    }
+
+    private func parseWords(from rawValue: String) -> [String] {
+        let tokens = rawValue
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return deduplicatedWords(tokens)
+    }
+
+    private func deduplicatedWords(_ words: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+
+        for word in words {
+            guard seen.insert(word).inserted else { continue }
+            result.append(word)
+        }
+
+        return result
     }
 
     private func addCustomSection() {

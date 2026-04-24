@@ -739,12 +739,15 @@ struct AppSettingsRecord: Codable {
     let boundaryUmpireGradeMappings: [String: [UUID]]
     let lastStaffSelections: [String: String]
     let draftResumeOpenLiveFlags: [String: Bool]
+    let speechSetupCustomSectionsData: String
+    let speechSetupDetectedWordsData: String
     let legacyGradesBackup: [GradeBackup]
     let legacyContactsBackup: [ContactBackup]
 
     private enum CodingKeys: String, CodingKey {
         case appAppearanceRawValue, clubConfiguration, boundaryUmpireGradeMappings
         case lastStaffSelections, draftResumeOpenLiveFlags
+        case speechSetupCustomSectionsData, speechSetupDetectedWordsData
         case legacyGradesBackup, legacyContactsBackup
     }
 
@@ -754,6 +757,8 @@ struct AppSettingsRecord: Codable {
         boundaryUmpireGradeMappings: [String: [UUID]],
         lastStaffSelections: [String: String],
         draftResumeOpenLiveFlags: [String: Bool],
+        speechSetupCustomSectionsData: String,
+        speechSetupDetectedWordsData: String,
         legacyGradesBackup: [GradeBackup],
         legacyContactsBackup: [ContactBackup]
     ) {
@@ -762,6 +767,8 @@ struct AppSettingsRecord: Codable {
         self.boundaryUmpireGradeMappings = boundaryUmpireGradeMappings
         self.lastStaffSelections = lastStaffSelections
         self.draftResumeOpenLiveFlags = draftResumeOpenLiveFlags
+        self.speechSetupCustomSectionsData = speechSetupCustomSectionsData
+        self.speechSetupDetectedWordsData = speechSetupDetectedWordsData
         self.legacyGradesBackup = legacyGradesBackup
         self.legacyContactsBackup = legacyContactsBackup
     }
@@ -773,6 +780,8 @@ struct AppSettingsRecord: Codable {
         boundaryUmpireGradeMappings = try c.decodeIfPresent([String: [UUID]].self, forKey: .boundaryUmpireGradeMappings) ?? [:]
         lastStaffSelections = try c.decodeIfPresent([String: String].self, forKey: .lastStaffSelections) ?? [:]
         draftResumeOpenLiveFlags = try c.decodeIfPresent([String: Bool].self, forKey: .draftResumeOpenLiveFlags) ?? [:]
+        speechSetupCustomSectionsData = try c.decodeIfPresent(String.self, forKey: .speechSetupCustomSectionsData) ?? ""
+        speechSetupDetectedWordsData = try c.decodeIfPresent(String.self, forKey: .speechSetupDetectedWordsData) ?? ""
         legacyGradesBackup = try c.decodeIfPresent([GradeBackup].self, forKey: .legacyGradesBackup) ?? []
         legacyContactsBackup = try c.decodeIfPresent([ContactBackup].self, forKey: .legacyContactsBackup) ?? []
     }
@@ -784,6 +793,8 @@ struct AppSettingsRecord: Codable {
             boundaryUmpireGradeMappings: [:],
             lastStaffSelections: [:],
             draftResumeOpenLiveFlags: [:],
+            speechSetupCustomSectionsData: "",
+            speechSetupDetectedWordsData: "",
             legacyGradesBackup: [],
             legacyContactsBackup: []
         )
@@ -1210,6 +1221,9 @@ enum AppBackupService {
             UserDefaults.standard.set($0.value, forKey: $0.key)
         }
 
+        UserDefaults.standard.set(settings.speechSetupCustomSectionsData, forKey: "speech_setup_custom_sections")
+        UserDefaults.standard.set(settings.speechSetupDetectedWordsData, forKey: "speech_setup_detected_words")
+
         if let gradesData = try? JSONEncoder().encode(settings.legacyGradesBackup) {
             UserDefaults.standard.set(gradesData, forKey: SettingsBackupStore.gradesKey)
         }
@@ -1241,6 +1255,8 @@ enum AppBackupService {
             boundaryUmpireGradeMappings: serializedMappings,
             lastStaffSelections: lastStaffSelections,
             draftResumeOpenLiveFlags: draftResumeFlags,
+            speechSetupCustomSectionsData: defaults.string(forKey: "speech_setup_custom_sections") ?? "",
+            speechSetupDetectedWordsData: defaults.string(forKey: "speech_setup_detected_words") ?? "",
             legacyGradesBackup: SettingsBackupStore.loadGrades(),
             legacyContactsBackup: SettingsBackupStore.loadContacts()
         )
