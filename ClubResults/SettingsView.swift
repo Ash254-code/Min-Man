@@ -4832,7 +4832,6 @@ private struct CustomReportEditView: View {
     @State private var customDateRangeEnd: Date
     @State private var selectedRecipientSectionKeys: Set<String>
     @State private var selectedRecipientContactIDs: Set<UUID>
-    @State private var draggedIncludedKey: String?
     @State private var showDeleteConfirmation = false
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
 
@@ -4993,10 +4992,16 @@ private struct CustomReportEditView: View {
 
     private let includedColumnPlaceholderCount = 10
 
-    private func handleIncludedDataDrop(to slotIndex: Int, column: Int) -> Bool {
-        guard let draggedIncludedKey else { return false }
-        moveIncludedKey(draggedIncludedKey, to: slotIndex, targetColumn: column)
-        self.draggedIncludedKey = nil
+    private func handleIncludedDataDrop(providers: [NSItemProvider], to slotIndex: Int, column: Int) -> Bool {
+        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else {
+            return false
+        }
+        provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let draggedKey = object as? String else { return }
+            DispatchQueue.main.async {
+                moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
+            }
+        }
         return true
     }
 
@@ -5240,14 +5245,13 @@ private struct CustomReportEditView: View {
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .contentShape(Rectangle())
                                             .onDrag {
-                                                draggedIncludedKey = key
                                                 return NSItemProvider(object: key as NSString)
                                             } preview: {
                                                 includedDataCard(for: key, showsDragHandle: false)
                                                     .frame(width: 280)
                                             }
-                                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { _ in
-                                                handleIncludedDataDrop(to: slotIndex, column: column)
+                                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
+                                                handleIncludedDataDrop(providers: providers, to: slotIndex, column: column)
                                             }
                                     }
 
@@ -5258,8 +5262,8 @@ private struct CustomReportEditView: View {
                                             .foregroundStyle(.secondary.opacity(0.3))
                                             .frame(height: 56)
                                             .frame(maxWidth: .infinity)
-                                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { _ in
-                                                handleIncludedDataDrop(to: slotIndex, column: column)
+                                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
+                                                handleIncludedDataDrop(providers: providers, to: slotIndex, column: column)
                                             }
                                     }
 
@@ -5273,8 +5277,8 @@ private struct CustomReportEditView: View {
                             )
                             .frame(maxWidth: .infinity, alignment: .top)
                             .contentShape(Rectangle())
-                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { _ in
-                                handleIncludedDataDrop(to: keys(in: column).count, column: column)
+                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
+                                handleIncludedDataDrop(providers: providers, to: keys(in: column).count, column: column)
                             }
                         }
                     }
