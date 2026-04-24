@@ -5296,22 +5296,40 @@ private struct CustomReportEditView: View {
                                 VStack(spacing: 8) {
                                     let columnKeys = keys(in: column)
                                     ForEach(Array(columnKeys.enumerated()), id: \.element) { slotIndex, key in
-                                        includedDataCard(for: key)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .contentShape(Rectangle())
-                                            .offset(y: longPressDraggingKey == key ? longPressDragTranslation : 0)
-                                            .zIndex(longPressDraggingKey == key ? 1 : 0)
-                                            .opacity(longPressDraggingKey == key ? 0.95 : 1)
-                                            .highPriorityGesture(column == 0 ? AnyGesture(columnOneLongPressGesture(for: key)) : AnyGesture(EmptyGesture()))
-                                            .onDrag {
-                                                return NSItemProvider(object: key as NSString)
-                                            } preview: {
-                                                includedDataCard(for: key, showsDragHandle: false)
-                                                    .frame(width: 280)
-                                            }
-                                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
-                                                handleIncludedDataDrop(providers: providers, to: slotIndex, column: column)
-                                            }
+                                        if column == 0 {
+                                            includedDataCard(for: key)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .contentShape(Rectangle())
+                                                .offset(y: longPressDraggingKey == key ? longPressDragTranslation : 0)
+                                                .zIndex(longPressDraggingKey == key ? 1 : 0)
+                                                .opacity(longPressDraggingKey == key ? 0.95 : 1)
+                                                .highPriorityGesture(AnyGesture(columnOneLongPressGesture(for: key)))
+                                                .onDrag {
+                                                    return NSItemProvider(object: key as NSString)
+                                                } preview: {
+                                                    includedDataCard(for: key, showsDragHandle: false)
+                                                        .frame(width: 280)
+                                                }
+                                                .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
+                                                    handleIncludedDataDrop(providers: providers, to: slotIndex, column: column)
+                                                }
+                                        } else {
+                                            includedDataCard(for: key)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .contentShape(Rectangle())
+                                                .offset(y: longPressDraggingKey == key ? longPressDragTranslation : 0)
+                                                .zIndex(longPressDraggingKey == key ? 1 : 0)
+                                                .opacity(longPressDraggingKey == key ? 0.95 : 1)
+                                                .onDrag {
+                                                    return NSItemProvider(object: key as NSString)
+                                                } preview: {
+                                                    includedDataCard(for: key, showsDragHandle: false)
+                                                        .frame(width: 280)
+                                                }
+                                                .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
+                                                    handleIncludedDataDrop(providers: providers, to: slotIndex, column: column)
+                                                }
+                                        }
                                     }
 
                                     ForEach(0..<max(0, includedColumnPlaceholderCount - columnKeys.count), id: \.self) { offset in
