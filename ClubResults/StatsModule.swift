@@ -2240,7 +2240,6 @@ struct LiveStatsView: View {
 
     private var sideSpeakButtonSize: CGFloat { 138 }
     private var edgePlayerTopBlankHeight: CGFloat { 176 }
-    private var edgeSpeakBottomSpacing: CGFloat { 176 }
 
     private func edgePlayerColumn(players: [Player], isTrailingSide: Bool) -> some View {
         GeometryReader { panelProxy in
@@ -2264,9 +2263,14 @@ struct LiveStatsView: View {
 
                         ScrollView {
                             edgePlayerColumnList(players: players, panelProxy: panelProxy)
+                                .padding(.bottom, 8)
                         }
+                        .scrollIndicators(.hidden)
+                        .frame(maxHeight: .infinity, alignment: .top)
                     }
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
                 .overlay {
                     GeometryReader { overlayProxy in
                         if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
@@ -2286,10 +2290,10 @@ struct LiveStatsView: View {
                 }
                 .zIndex(6000)
 
+                Spacer(minLength: 8)
+
                 speakButton(isOpposition: isTrailingSide)
                     .padding(.top, 4)
-
-                Spacer(minLength: edgeSpeakBottomSpacing)
             }
             .padding(12)
             .frame(maxHeight: .infinity, alignment: .top)
