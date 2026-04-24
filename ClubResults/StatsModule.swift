@@ -3329,9 +3329,9 @@ struct LiveStatsView: View {
                 contestedVote: hoveredPlayerQuickContestedVote
             )
         } else {
-            selectedPlayerId = playerID
             addManualEvent(
                 statTypeId: statType.id,
+                playerID: playerID,
                 transcript: option.transcript,
                 efficiencyVote: hoveredPlayerQuickEfficiencyVote,
                 contestedVote: hoveredPlayerQuickContestedVote
@@ -3425,11 +3425,12 @@ struct LiveStatsView: View {
 
     private func addManualEvent(
         statTypeId: UUID,
+        playerID: UUID? = nil,
         transcript: String? = nil,
         efficiencyVote: EfficiencyVote? = nil,
         contestedVote: ContestedPossessionVote? = nil
     ) {
-        guard let currentSelectedPlayerId = selectedPlayerId else {
+        guard let currentSelectedPlayerId = playerID ?? selectedPlayerId else {
             lastMessage = "Select a player first"
             showStatusBanner(text: "ERROR • Select a player first", isSuccess: false)
             feedbackToken = UUID()
