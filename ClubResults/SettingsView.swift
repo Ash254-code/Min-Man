@@ -4977,6 +4977,10 @@ private struct CustomReportEditView: View {
         includedDataOrder = reordered
     }
 
+    private func reportColumnTitle(for column: Int) -> String {
+        "Column \(column + 1)"
+    }
+
     @ViewBuilder
     private func dataIncludedRow(for key: String) -> some View {
         switch key {
@@ -5001,6 +5005,24 @@ private struct CustomReportEditView: View {
         default:
             EmptyView()
         }
+    }
+
+    @ViewBuilder
+    private func includedDataCard(for key: String, showsDragHandle: Bool = true) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            if showsDragHandle {
+                Image(systemName: "line.3.horizontal")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 2)
+            }
+            dataIncludedRow(for: key)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+        )
     }
 
     var body: some View {
@@ -5077,26 +5099,27 @@ private struct CustomReportEditView: View {
 
                     dataIncludedRow(for: "scores")
 
+                    Text("Arrange sections below to match the final report layout. Drag items to reorder within a column or move them between columns.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: reportColumnCount)
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(0..<reportColumnCount, id: \.self) { column in
                             VStack(spacing: 8) {
+                                Text(reportColumnTitle(for: column))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
                                 ForEach(keys(in: column), id: \.self) { key in
-                                    HStack(alignment: .center, spacing: 8) {
-                                        Image(systemName: "line.3.horizontal")
-                                            .font(.body.weight(.semibold))
-                                            .foregroundStyle(.secondary)
-                                            .padding(.leading, 2)
-                                        dataIncludedRow(for: key)
-                                    }
-                                    .padding(10)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .fill(Color.secondary.opacity(0.12))
-                                    )
+                                    includedDataCard(for: key)
                                     .contentShape(Rectangle())
                                     .onDrag {
                                         NSItemProvider(object: key as NSString)
+                                    } preview: {
+                                        includedDataCard(for: key, showsDragHandle: false)
+                                            .frame(maxWidth: 280)
                                     }
                                     .onDrop(of: [UTType.text, UTType.plainText], delegate: IncludedDataDropDelegate(
                                         targetKey: key,
@@ -5104,7 +5127,24 @@ private struct CustomReportEditView: View {
                                         moveAction: moveIncludedKey
                                     ))
                                 }
+
+                                if keys(in: column).isEmpty {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6]))
+                                        .foregroundStyle(.secondary.opacity(0.35))
+                                        .frame(height: 56)
+                                        .overlay(
+                                            Text("Drop section here")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        )
+                                }
                             }
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color.secondary.opacity(0.08))
+                            )
                             .frame(maxWidth: .infinity, alignment: .top)
                             .contentShape(Rectangle())
                             .onDrop(of: [UTType.text, UTType.plainText], delegate: IncludedDataDropDelegate(
