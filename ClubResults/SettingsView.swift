@@ -1877,23 +1877,50 @@ private struct GroupsSettingsView: View {
 
     @ViewBuilder
     private var twoColumnSectionsLayout: some View {
+        if !fixedSections.isEmpty {
+            twoColumnGridSection(for: fixedSections)
+        }
+
+        Section("Coaching Staff") {
+            if orderedGrades.isEmpty {
+                Text("Add club grades in Settings > Club Grades to manage coach contacts by grade.")
+                    .foregroundStyle(.secondary)
+            } else {
+                twoColumnGrid(for: coachingSections)
+            }
+        }
+
+        if !customSections.isEmpty {
+            Section("Custom Groups") {
+                twoColumnGrid(for: customSections)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func twoColumnGridSection(for sections: [GroupSectionDescriptor]) -> some View {
+        Section {
+            twoColumnGrid(for: sections)
+        }
+    }
+
+    private func twoColumnGrid(for sections: [GroupSectionDescriptor]) -> some View {
         let gridColumns = [
             GridItem(.flexible(), spacing: 12),
             GridItem(.flexible(), spacing: 12)
         ]
-        Section {
-            LazyVGrid(columns: gridColumns, spacing: 12) {
-                ForEach(allDisplayedSections, id: \.sectionKey) { section in
-                    sectionCardView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
-                }
+
+        return LazyVGrid(columns: gridColumns, spacing: 12) {
+            ForEach(sections, id: \.sectionKey) { section in
+                sectionCardView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
             }
-            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-            .listRowBackground(Color.clear)
         }
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        .listRowBackground(Color.clear)
     }
 
     private func useTwoColumnLayout(in size: CGSize) -> Bool {
-        size.width > size.height && horizontalSizeClass != .compact
+        horizontalSizeClass != .compact && size.width >= 600
     }
 
     private var manageableGroups: [GroupManagementDraft] {
