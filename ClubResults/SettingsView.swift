@@ -4379,11 +4379,18 @@ func makeTemplatePreviewPDF(
             let headerHeight: CGFloat = 24
             let rowHeight: CGFloat = 24
             let colWidths: [CGFloat]
-            if columns.count == 3,
+            if columns.count == 2,
                columns[0].lowercased() == "role",
-               columns[1].lowercased() == "name",
-               columns[2].lowercased() == "appearances" {
-                colWidths = [width * 0.36, width * 0.46, width * 0.18]
+               columns[1].lowercased() == "name" {
+                colWidths = [width * 0.36, width * 0.64]
+            } else if columns.count == 2,
+                      (columns[0].lowercased() == "rank" || columns[0].lowercased() == "points"),
+                      columns[1].lowercased() == "player" {
+                colWidths = [width * 0.16, width * 0.84]
+            } else if columns.count == 2,
+                      columns[0].lowercased() == "goals",
+                      columns[1].lowercased() == "player" {
+                colWidths = [width * 0.14, width * 0.86]
             } else {
                 colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
             }
@@ -4585,7 +4592,7 @@ func makeTemplatePreviewPDF(
                         }
                         return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
                     }
-                    .map { [$0.role, $0.name, String($0.count)] }
+                    .map { [$0.role, $0.name] }
             }
 
             for game in games {
@@ -4613,9 +4620,9 @@ func makeTemplatePreviewPDF(
             }
 
             var tables: [String: CompactReportTable] = [:]
-            tables["coachingStaff"] = CompactReportTable(title: "Coaching Staff", columns: ["Role", "Name", "Appearances"], rows: makeRoleCountRows(coachingCounts))
-            tables["officials"] = CompactReportTable(title: "Officials", columns: ["Role", "Name", "Appearances"], rows: makeRoleCountRows(officialCounts))
-            tables["trainers"] = CompactReportTable(title: "Trainers", columns: ["Role", "Name", "Appearances"], rows: makeRoleCountRows(trainerCounts))
+            tables["coachingStaff"] = CompactReportTable(title: "Coaching Staff", columns: ["Role", "Name"], rows: makeRoleCountRows(coachingCounts))
+            tables["officials"] = CompactReportTable(title: "Officials", columns: ["Role", "Name"], rows: makeRoleCountRows(officialCounts))
+            tables["trainers"] = CompactReportTable(title: "Trainers", columns: ["Role", "Name"], rows: makeRoleCountRows(trainerCounts))
             return tables
         }
 
