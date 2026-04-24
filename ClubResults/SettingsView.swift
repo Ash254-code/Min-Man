@@ -4346,20 +4346,30 @@ func makeTemplatePreviewPDF(
         let bestAndFairestLimit = max(0, min(template.bestAndFairestLimit, 10))
 
         func reportRows(for games: [Game]) -> (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]]) {
-            let bestPlayersByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
-                for (index, playerID) in game.bestPlayersRanked.enumerated() {
-                    partialResult[playerID, default: 0] += bestPlayerPoints(for: index)
+            let allBestPlayersRows: [[String]] = {
+                if games.count == 1, let game = games.first {
+                    return game.bestPlayersRanked.enumerated().compactMap { index, playerID in
+                        guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                        let rankLabel = index == 0 ? "Best" : String(index + 1)
+                        return [rankLabel, playerLookup[playerID]?.name ?? "Unknown Player"]
+                    }
                 }
-            }
-            let allBestPlayersRows = bestPlayersByPlayer
-                .sorted { left, right in
-                    if left.value != right.value { return left.value > right.value }
-                    return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
+
+                let bestPlayersByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
+                    for (index, playerID) in game.bestPlayersRanked.enumerated() {
+                        partialResult[playerID, default: 0] += bestPlayerPoints(for: index)
+                    }
                 }
-                .compactMap { (playerID, totalPoints) -> [String]? in
-                    guard totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
-                    return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
-                }
+                return bestPlayersByPlayer
+                    .sorted { left, right in
+                        if left.value != right.value { return left.value > right.value }
+                        return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
+                    }
+                    .compactMap { (playerID, totalPoints) -> [String]? in
+                        guard totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                        return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
+                    }
+            }()
             let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
             let guestVotePointsByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
                 for vote in game.guestVotesRanked {
@@ -4572,7 +4582,8 @@ func makeTemplatePreviewPDF(
                     }
                 case "bestPlayers":
                     if template.includeBestPlayers {
-                        pendingCompactTables.append(CompactReportTable(title: "Best Players", columns: ["Points", "Player"], rows: rows.bestPlayers))
+                        let bestPlayersLabel = games.count == 1 ? "Rank" : "Points"
+                        pendingCompactTables.append(CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers))
                     }
                 case "guestVotes":
                     if template.includePlayerGrades {
@@ -4919,20 +4930,20 @@ private struct CustomReportEditView: View {
                             columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
                             spacing: 8
                         ) {
-                            ForEach(recipientSections, id: \.sectionKey) { section in
-                                let isSelected = selectedRecipientSectionKeys.contains(section.sectionKey)
+                            ForEach(recipientSections, id: \.id) { section in
+                                let isSelected = section.sectionKeys.contains { selectedRecipientSectionKeys.contains($0) }
                                 Button {
                                     if isSelected {
-                                        selectedRecipientSectionKeys.remove(section.sectionKey)
+                                        section.sectionKeys.forEach { selectedRecipientSectionKeys.remove($0) }
                                     } else {
-                                        selectedRecipientSectionKeys.insert(section.sectionKey)
+                                        section.sectionKeys.forEach { selectedRecipientSectionKeys.insert($0) }
                                     }
                                 } label: {
                                     VStack(spacing: 2) {
                                         Text(section.title)
                                             .font(.footnote.weight(.semibold))
                                             .lineLimit(1)
-                                        Text("\(contactCountBySectionKey[section.sectionKey, default: 0])")
+                                        Text("\(contactCount(for: section.sectionKeys))")
                                             .font(.caption2)
                                             .lineLimit(1)
                                     }
@@ -5128,7 +5139,8 @@ private struct CustomReportEditView: View {
     }
 
     private struct RecipientSectionOption {
-        let sectionKey: String
+        let id: String
+        let sectionKeys: [String]
         let title: String
     }
 
@@ -5143,15 +5155,32 @@ private struct CustomReportEditView: View {
     }
 
     private var recipientSections: [RecipientSectionOption] {
-        let sectionKeys = Set(sectionMemberships.map(\.sectionKey))
-        return sectionKeys
-            .map { RecipientSectionOption(sectionKey: $0, title: displayTitle(for: $0)) }
+        var groupedSectionKeysByTitle: [String: Set<String>] = [:]
+        for sectionKey in Set(sectionMemberships.map(\.sectionKey)) {
+            let title = displayTitle(for: sectionKey)
+            groupedSectionKeysByTitle[title, default: []].insert(sectionKey)
+        }
+
+        return groupedSectionKeysByTitle
+            .map { title, sectionKeys in
+                let sortedSectionKeys = sectionKeys.sorted()
+                return RecipientSectionOption(
+                    id: sortedSectionKeys.joined(separator: "|"),
+                    sectionKeys: sortedSectionKeys,
+                    title: title
+                )
+            }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    private var contactCountBySectionKey: [String: Int] {
-        Dictionary(grouping: sectionMemberships, by: \.sectionKey)
-            .mapValues { Set($0.map(\.contactID)).count }
+    private func contactCount(for sectionKeys: [String]) -> Int {
+        let sectionKeySet = Set(sectionKeys)
+        let uniqueContactIDs = Set(
+            sectionMemberships
+                .filter { sectionKeySet.contains($0.sectionKey) }
+                .map(\.contactID)
+        )
+        return uniqueContactIDs.count
     }
 
     private func displayTitle(for sectionKey: String) -> String {
