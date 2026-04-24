@@ -4833,6 +4833,9 @@ private struct CustomReportEditView: View {
     @State private var selectedRecipientSectionKeys: Set<String>
     @State private var selectedRecipientContactIDs: Set<UUID>
     @State private var showDeleteConfirmation = false
+    @State private var longPressDraggingKey: String?
+    @State private var longPressDragTranslation: CGFloat = 0
+    @State private var longPressDragStartIndex: Int?
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
 
     init(
@@ -4991,6 +4994,58 @@ private struct CustomReportEditView: View {
     }
 
     private let includedColumnPlaceholderCount = 10
+    private let includedDataCardStepHeight: CGFloat = 64
+    private let includedDataLongPressDuration: Double = 0.35
+
+    private func beginColumnOneLongPressDrag(for key: String) {
+        guard longPressDraggingKey == nil else { return }
+        let columnKeys = keys(in: 0)
+        guard let index = columnKeys.firstIndex(of: key) else { return }
+        longPressDraggingKey = key
+        longPressDragStartIndex = index
+        longPressDragTranslation = 0
+    }
+
+    private func updateColumnOneLongPressDrag(for key: String, translation: CGFloat) {
+        guard longPressDraggingKey == key else { return }
+        longPressDragTranslation = translation
+        let columnKeys = keys(in: 0)
+        guard let currentIndex = columnKeys.firstIndex(of: key) else { return }
+        if longPressDragStartIndex == nil {
+            longPressDragStartIndex = currentIndex
+        }
+        guard let startIndex = longPressDragStartIndex else { return }
+
+        let rowShift = Int((translation / includedDataCardStepHeight).rounded())
+        let targetIndex = max(0, min(startIndex + rowShift, columnKeys.count - 1))
+        if targetIndex != currentIndex {
+            moveIncludedKey(key, to: targetIndex, targetColumn: 0)
+        }
+    }
+
+    private func endColumnOneLongPressDrag(for key: String) {
+        guard longPressDraggingKey == key else { return }
+        longPressDraggingKey = nil
+        longPressDragTranslation = 0
+        longPressDragStartIndex = nil
+    }
+
+    private func columnOneLongPressGesture(for key: String) -> some Gesture {
+        let longPress = LongPressGesture(minimumDuration: includedDataLongPressDuration)
+            .onEnded { _ in
+                beginColumnOneLongPressDrag(for: key)
+            }
+
+        let drag = DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                updateColumnOneLongPressDrag(for: key, translation: value.translation.height)
+            }
+            .onEnded { _ in
+                endColumnOneLongPressDrag(for: key)
+            }
+
+        return longPress.simultaneously(with: drag)
+    }
 
     private func handleIncludedDataDrop(providers: [NSItemProvider], to slotIndex: Int, column: Int) -> Bool {
         guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else {
@@ -5244,6 +5299,10 @@ private struct CustomReportEditView: View {
                                         includedDataCard(for: key)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .contentShape(Rectangle())
+                                            .offset(y: longPressDraggingKey == key ? longPressDragTranslation : 0)
+                                            .zIndex(longPressDraggingKey == key ? 1 : 0)
+                                            .opacity(longPressDraggingKey == key ? 0.95 : 1)
+                                            .highPriorityGesture(column == 0 ? AnyGesture(columnOneLongPressGesture(for: key)) : AnyGesture(EmptyGesture()))
                                             .onDrag {
                                                 return NSItemProvider(object: key as NSString)
                                             } preview: {
