@@ -4919,20 +4919,20 @@ private struct CustomReportEditView: View {
                             columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
                             spacing: 8
                         ) {
-                            ForEach(recipientSections, id: \.sectionKey) { section in
-                                let isSelected = selectedRecipientSectionKeys.contains(section.sectionKey)
+                            ForEach(recipientSections, id: \.id) { section in
+                                let isSelected = section.sectionKeys.contains { selectedRecipientSectionKeys.contains($0) }
                                 Button {
                                     if isSelected {
-                                        selectedRecipientSectionKeys.remove(section.sectionKey)
+                                        section.sectionKeys.forEach { selectedRecipientSectionKeys.remove($0) }
                                     } else {
-                                        selectedRecipientSectionKeys.insert(section.sectionKey)
+                                        section.sectionKeys.forEach { selectedRecipientSectionKeys.insert($0) }
                                     }
                                 } label: {
                                     VStack(spacing: 2) {
                                         Text(section.title)
                                             .font(.footnote.weight(.semibold))
                                             .lineLimit(1)
-                                        Text("\(contactCountBySectionKey[section.sectionKey, default: 0])")
+                                        Text("\(contactCount(for: section.sectionKeys))")
                                             .font(.caption2)
                                             .lineLimit(1)
                                     }
@@ -5128,7 +5128,8 @@ private struct CustomReportEditView: View {
     }
 
     private struct RecipientSectionOption {
-        let sectionKey: String
+        let id: String
+        let sectionKeys: [String]
         let title: String
     }
 
@@ -5143,15 +5144,32 @@ private struct CustomReportEditView: View {
     }
 
     private var recipientSections: [RecipientSectionOption] {
-        let sectionKeys = Set(sectionMemberships.map(\.sectionKey))
-        return sectionKeys
-            .map { RecipientSectionOption(sectionKey: $0, title: displayTitle(for: $0)) }
+        var groupedSectionKeysByTitle: [String: Set<String>] = [:]
+        for sectionKey in Set(sectionMemberships.map(\.sectionKey)) {
+            let title = displayTitle(for: sectionKey)
+            groupedSectionKeysByTitle[title, default: []].insert(sectionKey)
+        }
+
+        return groupedSectionKeysByTitle
+            .map { title, sectionKeys in
+                let sortedSectionKeys = sectionKeys.sorted()
+                return RecipientSectionOption(
+                    id: sortedSectionKeys.joined(separator: "|"),
+                    sectionKeys: sortedSectionKeys,
+                    title: title
+                )
+            }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    private var contactCountBySectionKey: [String: Int] {
-        Dictionary(grouping: sectionMemberships, by: \.sectionKey)
-            .mapValues { Set($0.map(\.contactID)).count }
+    private func contactCount(for sectionKeys: [String]) -> Int {
+        let sectionKeySet = Set(sectionKeys)
+        let uniqueContactIDs = Set(
+            sectionMemberships
+                .filter { sectionKeySet.contains($0.sectionKey) }
+                .map(\.contactID)
+        )
+        return uniqueContactIDs.count
     }
 
     private func displayTitle(for sectionKey: String) -> String {
