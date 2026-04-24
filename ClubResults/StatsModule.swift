@@ -2412,6 +2412,8 @@ struct LiveStatsView: View {
             || normalizedName == "inside 50s"
         let buttonKey = "\(normalizedName)-\(isOpposition ? "opp" : "our")"
         let supportsEfficiencyLongPress = supportsEfficiencyLongPress(for: normalizedName, isOpposition: isOpposition)
+        let showEfficiencyVote = trackDisposalEfficiency && statRequiresEfficiencyVote(normalizedName)
+        let showContestedVote = trackContestedPossessions && statSupportsContestedVote(normalizedName)
         let baseButton = Button {
             if suppressTapForButtonKey == buttonKey {
                 suppressTapForButtonKey = nil
@@ -2439,7 +2441,7 @@ struct LiveStatsView: View {
             GeometryReader { proxy in
                 if activeEfficiencyButtonKey == buttonKey {
                     let popupShift = popupHorizontalShift(for: proxy.frame(in: .global).midX)
-                    if trackDisposalEfficiency && trackContestedPossessions {
+                    if showEfficiencyVote && showContestedVote {
                         ZStack {
                             contestedSlidePopup
                                 .offset(y: 46)
@@ -2450,10 +2452,10 @@ struct LiveStatsView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.94)))
                     } else {
                         VStack(spacing: 8) {
-                            if trackDisposalEfficiency {
+                            if showEfficiencyVote {
                                 efficiencySlidePopup
                             }
-                            if trackContestedPossessions {
+                            if showContestedVote {
                                 contestedSlidePopup
                             }
                         }
@@ -2482,15 +2484,15 @@ struct LiveStatsView: View {
                         case .second(true, let drag?):
                             let previousEfficiencyVote = activeEfficiencyHoverVote
                             let previousContestedVote = activeContestedHoverVote
-                            if trackDisposalEfficiency && trackContestedPossessions {
+                            if showEfficiencyVote && showContestedVote {
                                 if drag.location.y < -76 {
                                     activeEfficiencyHoverVote = drag.location.x < 110 ? .thumbsUp : .thumbsDown
                                 } else {
                                     activeContestedHoverVote = drag.location.x < 110 ? .contested : .uncontested
                                 }
-                            } else if trackDisposalEfficiency {
+                            } else if showEfficiencyVote {
                                 activeEfficiencyHoverVote = drag.location.x < 110 ? .thumbsUp : .thumbsDown
-                            } else if trackContestedPossessions {
+                            } else if showContestedVote {
                                 activeContestedHoverVote = drag.location.x < 110 ? .contested : .uncontested
                             }
                             if previousEfficiencyVote != activeEfficiencyHoverVote || previousContestedVote != activeContestedHoverVote {
@@ -2512,8 +2514,8 @@ struct LiveStatsView: View {
                         case .second(true, _):
                             let vote = activeEfficiencyHoverVote
                             let contestedVote = activeContestedHoverVote
-                            let hasRequiredEfficiency = !trackDisposalEfficiency || vote != nil
-                            let hasRequiredContested = !trackContestedPossessions || contestedVote != nil
+                            let hasRequiredEfficiency = !showEfficiencyVote || vote != nil
+                            let hasRequiredContested = !showContestedVote || contestedVote != nil
                             if hasRequiredEfficiency && hasRequiredContested {
                                 suppressTapForButtonKey = buttonKey
                                 handleTeamStatAction(
@@ -2615,9 +2617,23 @@ struct LiveStatsView: View {
     }
 
     private func supportsEfficiencyLongPress(for normalizedName: String, isOpposition: Bool) -> Bool {
-        guard trackDisposalEfficiency || trackContestedPossessions else { return false }
+        guard supportsLongPressVotes(for: normalizedName) else { return false }
         guard !isOpposition else { return false }
-        return normalizedName == "kick" || normalizedName == "handball" || normalizedName == "mark"
+        return true
+    }
+
+    private func supportsLongPressVotes(for normalizedName: String) -> Bool {
+        let supportsEfficiency = trackDisposalEfficiency && statRequiresEfficiencyVote(normalizedName)
+        let supportsContested = trackContestedPossessions && statSupportsContestedVote(normalizedName)
+        return supportsEfficiency || supportsContested
+    }
+
+    private func statRequiresEfficiencyVote(_ normalizedName: String) -> Bool {
+        normalizedName == "kick" || normalizedName == "handball"
+    }
+
+    private func statSupportsContestedVote(_ normalizedName: String) -> Bool {
+        normalizedName == "kick" || normalizedName == "handball" || normalizedName == "mark"
     }
 
     private func handleTeamStatAction(
@@ -3042,7 +3058,7 @@ struct LiveStatsView: View {
         let contestedEnabled = activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID
             ? oppositionTrackContestedPossessions
             : trackContestedPossessions
-        return needsQuickStatVotes(for: statID) && contestedEnabled
+        return needsQuickStatContestedVote(for: statID, trackingEnabled: nil) && contestedEnabled
     }
 
     private var shouldShowEfficiencyPopup: Bool {
@@ -3053,7 +3069,7 @@ struct LiveStatsView: View {
         let contestedEnabled = activePlayerQuickStatsPlayerID == oppositionTeamStatPlayerID
             ? oppositionTrackContestedPossessions
             : trackContestedPossessions
-        guard needsQuickStatVotes(for: statID), efficiencyEnabled else { return false }
+        guard needsQuickStatEfficiencyVote(for: statID, trackingEnabled: nil), efficiencyEnabled else { return false }
         if contestedEnabled {
             return hoveredPlayerQuickContestedVote != nil
         }
@@ -3245,10 +3261,12 @@ struct LiveStatsView: View {
         }
 
         guard let statID = hoveredPlayerQuickStatName, needsQuickStatVotes(for: statID) else { return }
+        let requiresContestedVote = needsQuickStatContestedVote(for: statID, trackingEnabled: contestedEnabled)
+        let requiresEfficiencyVote = needsQuickStatEfficiencyVote(for: statID, trackingEnabled: efficiencyEnabled)
 
         let selectedFirstTierAngle = selectedQuickStatMidAngle(layout: layout)
         let contestedLayout = votePopupPieLayout(primaryLayout: layout, selectedAngle: selectedFirstTierAngle, tier: 1)
-        if contestedEnabled {
+        if contestedEnabled && requiresContestedVote {
             let selection = votePopupSelectionIndex(location: location, layout: contestedLayout)
             if selection == 0 {
                 hoveredPlayerQuickContestedVote = .contested
@@ -3257,8 +3275,8 @@ struct LiveStatsView: View {
             }
         }
 
-        if !efficiencyEnabled { return }
-        if contestedEnabled && hoveredPlayerQuickContestedVote == nil { return }
+        if !requiresEfficiencyVote { return }
+        if contestedEnabled && requiresContestedVote && hoveredPlayerQuickContestedVote == nil { return }
 
         let selectedSecondTierAngle = selectedVoteMidAngle(
             layout: contestedLayout,
@@ -3293,8 +3311,18 @@ struct LiveStatsView: View {
     }
 
     private func needsQuickStatVotes(for statID: String) -> Bool {
-        let applies = statID == "kick" || statID == "mark" || statID == "handball"
-        return applies && (trackDisposalEfficiency || trackContestedPossessions)
+        needsQuickStatEfficiencyVote(for: statID, trackingEnabled: nil)
+            || needsQuickStatContestedVote(for: statID, trackingEnabled: nil)
+    }
+
+    private func needsQuickStatEfficiencyVote(for statID: String, trackingEnabled: Bool?) -> Bool {
+        let trackingEnabled = trackingEnabled ?? trackDisposalEfficiency
+        return (statID == "kick" || statID == "handball") && trackingEnabled
+    }
+
+    private func needsQuickStatContestedVote(for statID: String, trackingEnabled: Bool?) -> Bool {
+        let trackingEnabled = trackingEnabled ?? trackContestedPossessions
+        return (statID == "kick" || statID == "mark" || statID == "handball") && trackingEnabled
     }
 
     private func commitPendingPlayerQuickStatIfValid(playerID: UUID) {
@@ -3310,8 +3338,8 @@ struct LiveStatsView: View {
         let isOppositionQuick = playerID == oppositionTeamStatPlayerID
         let efficiencyEnabled = isOppositionQuick ? oppositionTrackDisposalEfficiency : trackDisposalEfficiency
         let contestedEnabled = isOppositionQuick ? oppositionTrackContestedPossessions : trackContestedPossessions
-        let hasRequiredEfficiency = !efficiencyEnabled || !needsQuickStatVotes(for: statID) || hoveredPlayerQuickEfficiencyVote != nil
-        let hasRequiredContested = !contestedEnabled || !needsQuickStatVotes(for: statID) || hoveredPlayerQuickContestedVote != nil
+        let hasRequiredEfficiency = !needsQuickStatEfficiencyVote(for: statID, trackingEnabled: efficiencyEnabled) || hoveredPlayerQuickEfficiencyVote != nil
+        let hasRequiredContested = !needsQuickStatContestedVote(for: statID, trackingEnabled: contestedEnabled) || hoveredPlayerQuickContestedVote != nil
         guard hasRequiredEfficiency && hasRequiredContested else { return }
 
         if playerID == oppositionTeamStatPlayerID {
@@ -3593,11 +3621,12 @@ struct LiveStatsView: View {
             normalizedTranscript: result.normalizedTranscript,
             confidence: result.confidence
         )
-        let supportsVoiceVotes = statSupportsVoiceVotes(statTypeId)
-        let efficiencyVote = supportsVoiceVotes && trackDisposalEfficiency
+        let supportsEfficiencyVoiceVotes = statSupportsVoiceEfficiencyVote(statTypeId)
+        let supportsContestedVoiceVotes = statSupportsVoiceContestedVote(statTypeId)
+        let efficiencyVote = supportsEfficiencyVoiceVotes && trackDisposalEfficiency
             ? voiceEfficiencyVote(in: result.normalizedTranscript)
             : nil
-        let contestedVote = supportsVoiceVotes && trackContestedPossessions
+        let contestedVote = supportsContestedVoiceVotes && trackContestedPossessions
             ? voiceContestedVote(in: result.normalizedTranscript)
             : nil
         if let efficiencyVote {
@@ -3839,7 +3868,12 @@ struct LiveStatsView: View {
         }
     }
 
-    private func statSupportsVoiceVotes(_ statTypeId: UUID) -> Bool {
+    private func statSupportsVoiceEfficiencyVote(_ statTypeId: UUID) -> Bool {
+        let normalized = normalizedStatName(statName(for: statTypeId))
+        return normalized == "kick" || normalized == "handball"
+    }
+
+    private func statSupportsVoiceContestedVote(_ statTypeId: UUID) -> Bool {
         let normalized = normalizedStatName(statName(for: statTypeId))
         return normalized == "kick" || normalized == "handball" || normalized == "mark"
     }
