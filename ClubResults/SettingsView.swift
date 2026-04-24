@@ -4341,20 +4341,30 @@ func makeTemplatePreviewPDF(
         let bestAndFairestLimit = max(0, min(template.bestAndFairestLimit, 10))
 
         func reportRows(for games: [Game]) -> (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]]) {
-            let bestPlayersByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
-                for (index, playerID) in game.bestPlayersRanked.enumerated() {
-                    partialResult[playerID, default: 0] += bestPlayerPoints(for: index)
+            let allBestPlayersRows: [[String]] = {
+                if games.count == 1, let game = games.first {
+                    return game.bestPlayersRanked.enumerated().compactMap { index, playerID in
+                        guard gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                        let rankLabel = index == 0 ? "Best" : String(index + 1)
+                        return [rankLabel, playerLookup[playerID]?.name ?? "Unknown Player"]
+                    }
                 }
-            }
-            let allBestPlayersRows = bestPlayersByPlayer
-                .sorted { left, right in
-                    if left.value != right.value { return left.value > right.value }
-                    return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
+
+                let bestPlayersByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
+                    for (index, playerID) in game.bestPlayersRanked.enumerated() {
+                        partialResult[playerID, default: 0] += bestPlayerPoints(for: index)
+                    }
                 }
-                .compactMap { (playerID, totalPoints) -> [String]? in
-                    guard totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
-                    return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
-                }
+                return bestPlayersByPlayer
+                    .sorted { left, right in
+                        if left.value != right.value { return left.value > right.value }
+                        return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
+                    }
+                    .compactMap { (playerID, totalPoints) -> [String]? in
+                        guard totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                        return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
+                    }
+            }()
             let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
             let guestVotePointsByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
                 for vote in game.guestVotesRanked {
@@ -4567,7 +4577,8 @@ func makeTemplatePreviewPDF(
                     }
                 case "bestPlayers":
                     if template.includeBestPlayers {
-                        pendingCompactTables.append(CompactReportTable(title: "Best Players", columns: ["Points", "Player"], rows: rows.bestPlayers))
+                        let bestPlayersLabel = games.count == 1 ? "Rank" : "Points"
+                        pendingCompactTables.append(CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers))
                     }
                 case "guestVotes":
                     if template.includePlayerGrades {
