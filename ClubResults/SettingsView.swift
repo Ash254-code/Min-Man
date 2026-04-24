@@ -3001,7 +3001,8 @@ struct ReportsSettingsView: View {
         let template = CustomReportTemplate(
             name: draft.name,
             gradeIDs: draft.selectedGradeIDs,
-            includeScores: draft.includeScores, sendReportOnGameSave:  draft.includeScores, sendReportOnGameSave: .
+            includeScores: draft.includeScores,
+            sendReportOnGameSave: draft.sendReportOnGameSave,
             includeBestPlayers: draft.includeBestPlayers,
             bestPlayersLimit: draft.bestPlayersLimit,
             includePlayerGrades: draft.includeGuestVotes,
