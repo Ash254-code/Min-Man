@@ -5227,33 +5227,33 @@ private struct CustomReportEditView: View {
 
                                 VStack(spacing: 8) {
                                     let columnKeys = keys(in: column)
-                                    ForEach(0..<max(includedColumnPlaceholderCount, columnKeys.count), id: \.self) { slotIndex in
-                                        if slotIndex < columnKeys.count {
-                                            let key = columnKeys[slotIndex]
-                                            includedDataCard(for: key)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .contentShape(Rectangle())
-                                                .draggable(key) {
-                                                    includedDataCard(for: key, showsDragHandle: false)
-                                                        .frame(maxWidth: 280)
-                                                }
-                                                .dropDestination(for: String.self) { items, _ in
-                                                    guard let draggedKey = items.first else { return false }
-                                                    moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
-                                                    return true
-                                                }
-                                        } else {
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6]))
-                                                .foregroundStyle(.secondary.opacity(0.3))
-                                                .frame(height: 56)
-                                                .frame(maxWidth: .infinity)
-                                                .dropDestination(for: String.self) { items, _ in
-                                                    guard let draggedKey = items.first else { return false }
-                                                    moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
-                                                    return true
-                                                }
-                                        }
+                                    ForEach(Array(columnKeys.enumerated()), id: \.element) { slotIndex, key in
+                                        includedDataCard(for: key)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                            .draggable(key) {
+                                                includedDataCard(for: key, showsDragHandle: false)
+                                                    .frame(width: 280)
+                                            }
+                                            .dropDestination(for: String.self) { items, _ in
+                                                guard let draggedKey = items.first else { return false }
+                                                moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
+                                                return true
+                                            }
+                                    }
+
+                                    ForEach(0..<max(0, includedColumnPlaceholderCount - columnKeys.count), id: \.self) { offset in
+                                        let slotIndex = columnKeys.count + offset
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6]))
+                                            .foregroundStyle(.secondary.opacity(0.3))
+                                            .frame(height: 56)
+                                            .frame(maxWidth: .infinity)
+                                            .dropDestination(for: String.self) { items, _ in
+                                                guard let draggedKey = items.first else { return false }
+                                                moveIncludedKey(draggedKey, to: slotIndex, targetColumn: column)
+                                                return true
+                                            }
                                     }
 
                                 }
