@@ -2193,8 +2193,8 @@ struct LiveStatsView: View {
         let sideWidth = min(max(proxy.size.width * 0.16, 128), 180)
         let centerWidth = max(proxy.size.width - (sideWidth * 2) - 48, 320)
         let splitIndex = Int(ceil(Double(gridPlayers.count) / 2.0))
-        let leftPlayers = Array(gridPlayers.prefix(splitIndex))
-        let rightPlayers = Array(gridPlayers.dropFirst(splitIndex))
+        let leftPlayers = Array(gridPlayers.prefix(splitIndex).prefix(12))
+        let rightPlayers = Array(gridPlayers.dropFirst(splitIndex).prefix(12))
         let recentAreaHeight = max(280, min(proxy.size.height * 0.33, 360))
 
         return VStack(spacing: 10) {
@@ -2239,38 +2239,60 @@ struct LiveStatsView: View {
     }
 
     private var sideSpeakButtonSize: CGFloat { 138 }
-    private var edgePlayerTopBlankHeight: CGFloat { 176 }
 
     private func edgePlayerColumn(players: [Player], isTrailingSide: Bool) -> some View {
         GeometryReader { panelProxy in
+            let topControlsHeight = sideSpeakButtonSize + 56
+            let listVerticalSpacing: CGFloat = 8
+            let availableHeight = max(0, panelProxy.size.height - topControlsHeight)
+            let estimatedHeight = (availableHeight - (listVerticalSpacing * 11)) / 12
+            let cardHeight = max(58, min(82, estimatedHeight))
+
             VStack(spacing: 10) {
                 HStack {
-                    if !isTrailingSide { Spacer() }
-                    Button {
-                        showPlayerVisibilityEditor = true
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.title3)
-                    }
-                    .buttonStyle(.plain)
-                    if isTrailingSide { Spacer() }
-                }
-
-                Group {
-                    VStack(spacing: 0) {
-                        Color.clear
-                            .frame(height: edgePlayerTopBlankHeight)
-
-                        ScrollView {
-                            edgePlayerColumnList(players: players, panelProxy: panelProxy)
-                                .padding(.bottom, 8)
+                    if isTrailingSide {
+                        Button {
+                            showPlayerVisibilityEditor = true
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
                         }
-                        .scrollIndicators(.hidden)
-                        .frame(maxHeight: .infinity, alignment: .top)
+                        .buttonStyle(.plain)
+                        Spacer()
+                        speakButton(isOpposition: true)
+                    } else {
+                        speakButton(isOpposition: false)
+                        Spacer()
+                        Button {
+                            showPlayerVisibilityEditor = true
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .frame(maxHeight: .infinity, alignment: .top)
                 }
+                .frame(maxWidth: .infinity)
+
+                edgePlayerColumnList(
+                    players: players,
+                    panelProxy: panelProxy,
+                    cardHeight: cardHeight,
+                    spacing: listVerticalSpacing
+                )
                 .frame(maxHeight: .infinity, alignment: .top)
+                .overlay(alignment: .top) {
+                    if players.count < 12 {
+                        VStack(spacing: listVerticalSpacing) {
+                            ForEach(0..<(12 - players.count), id: \.self) { _ in
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color.black.opacity(0.04))
+                                    .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight)
+                            }
+                        }
+                        .allowsHitTesting(false)
+                    }
+                }
                 .overlay {
                     GeometryReader { overlayProxy in
                         if activePlayerQuickStatsPlayerID != nil, activePlayerQuickCardFrameGlobal != .zero {
@@ -2289,11 +2311,6 @@ struct LiveStatsView: View {
                     }
                 }
                 .zIndex(6000)
-
-                Spacer(minLength: 8)
-
-                speakButton(isOpposition: isTrailingSide)
-                    .padding(.top, 4)
             }
             .padding(12)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -2301,17 +2318,22 @@ struct LiveStatsView: View {
         }
     }
 
-    private func edgePlayerColumnList(players: [Player], panelProxy: GeometryProxy) -> some View {
-        return VStack(spacing: 8) {
+    private func edgePlayerColumnList(
+        players: [Player],
+        panelProxy: GeometryProxy,
+        cardHeight: CGFloat,
+        spacing: CGFloat
+    ) -> some View {
+        return VStack(spacing: spacing) {
             ForEach(Array(players.enumerated()), id: \.element.id) { _, player in
-                edgePlayerCard(player: player, panelProxy: panelProxy)
+                edgePlayerCard(player: player, panelProxy: panelProxy, minHeight: cardHeight)
             }
         }
     }
 
-    private func edgePlayerCard(player: Player, panelProxy: GeometryProxy) -> some View {
+    private func edgePlayerCard(player: Player, panelProxy: GeometryProxy, minHeight: CGFloat) -> some View {
         playerCardContent(player: player)
-            .frame(maxWidth: .infinity, minHeight: 82)
+            .frame(maxWidth: .infinity, minHeight: minHeight, maxHeight: minHeight)
             .background(
                 activePlayerQuickStatsPlayerID == player.id ? Color.blue : Color.black.opacity(0.06),
                 in: RoundedRectangle(cornerRadius: 10)
