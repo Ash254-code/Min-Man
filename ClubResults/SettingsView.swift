@@ -4611,25 +4611,62 @@ func makeTemplatePreviewPDF(
                 tableColumns[assignedColumn].append(item.table)
             }
 
-            var rowIndex = 0
-            while tableColumns.contains(where: { rowIndex < $0.count }) {
-                beginNewPageIfNeeded(requiredHeight: 160)
-                let rowStartY = cursorY
-                var rowHeight: CGFloat = 0
-                for column in 0..<columnCount {
-                    guard rowIndex < tableColumns[column].count else { continue }
-                    let table = tableColumns[column][rowIndex]
-                    let height = drawCompactTable(
-                        title: table.title,
-                        columns: table.columns,
-                        rows: table.rows,
-                        xOrigin: contentRect.minX + CGFloat(column) * (columnWidth + gap),
-                        width: columnWidth
-                    )
-                    rowHeight = max(rowHeight, height)
+            func compactTableHeight(for table: CompactReportTable) -> CGFloat {
+                let visibleRows = max(table.rows.count, 1)
+                return 46 + (CGFloat(visibleRows) * 24)
+            }
+
+            var nextTableIndexByColumn = Array(repeating: 0, count: columnCount)
+            var firstPage = true
+
+            while tableColumns.enumerated().contains(where: { index, tables in
+                nextTableIndexByColumn[index] < tables.count
+            }) {
+                if firstPage {
+                    firstPage = false
+                } else {
+                    beginNewPage()
                 }
-                cursorY = rowStartY + rowHeight + 8
-                rowIndex += 1
+
+                let pageStartY = cursorY
+                var columnY = Array(repeating: pageStartY, count: columnCount)
+                var renderedAtLeastOneTable = false
+
+                for column in 0..<columnCount {
+                    while nextTableIndexByColumn[column] < tableColumns[column].count {
+                        let table = tableColumns[column][nextTableIndexByColumn[column]]
+                        let tableHeight = compactTableHeight(for: table)
+                        let wouldOverflow = columnY[column] + tableHeight > bottomLimit
+                        if wouldOverflow, columnY[column] > pageStartY {
+                            break
+                        }
+
+                        let previousCursor = cursorY
+                        cursorY = columnY[column]
+                        let renderedHeight = drawCompactTable(
+                            title: table.title,
+                            columns: table.columns,
+                            rows: table.rows,
+                            xOrigin: contentRect.minX + CGFloat(column) * (columnWidth + gap),
+                            width: columnWidth
+                        )
+                        cursorY = previousCursor
+
+                        columnY[column] += renderedHeight + 8
+                        nextTableIndexByColumn[column] += 1
+                        renderedAtLeastOneTable = true
+
+                        if columnY[column] >= bottomLimit {
+                            break
+                        }
+                    }
+                }
+
+                cursorY = columnY.max() ?? pageStartY
+
+                if !renderedAtLeastOneTable {
+                    break
+                }
             }
         }
 
