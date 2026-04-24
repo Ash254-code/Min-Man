@@ -13,6 +13,10 @@ struct GradeBackup: Codable {
     let asksFieldUmpire: Bool
     let asksBoundaryUmpire1: Bool
     let asksBoundaryUmpire2: Bool
+    let asksWaterBoy1: Bool
+    let asksWaterBoy2: Bool
+    let asksWaterBoy3: Bool
+    let asksWaterBoy4: Bool
     let asksTrainers: Bool
     let asksTrainer1: Bool
     let asksTrainer2: Bool
@@ -41,6 +45,10 @@ struct GradeBackup: Codable {
         asksFieldUmpire: Bool = true,
         asksBoundaryUmpire1: Bool = true,
         asksBoundaryUmpire2: Bool = true,
+        asksWaterBoy1: Bool = false,
+        asksWaterBoy2: Bool = false,
+        asksWaterBoy3: Bool = false,
+        asksWaterBoy4: Bool = false,
         asksTrainers: Bool = true,
         asksTrainer1: Bool = true,
         asksTrainer2: Bool = true,
@@ -68,6 +76,10 @@ struct GradeBackup: Codable {
         self.asksFieldUmpire = asksFieldUmpire
         self.asksBoundaryUmpire1 = asksBoundaryUmpire1
         self.asksBoundaryUmpire2 = asksBoundaryUmpire2
+        self.asksWaterBoy1 = asksWaterBoy1
+        self.asksWaterBoy2 = asksWaterBoy2
+        self.asksWaterBoy3 = asksWaterBoy3
+        self.asksWaterBoy4 = asksWaterBoy4
         self.asksTrainers = asksTrainers
         self.asksTrainer1 = asksTrainer1
         self.asksTrainer2 = asksTrainer2
@@ -89,6 +101,7 @@ struct GradeBackup: Codable {
         case asksHeadCoach, asksAssistantCoach, asksTeamManager, asksRunner, asksGoalUmpire
         case asksFieldUmpire
         case asksBoundaryUmpire1, asksBoundaryUmpire2, asksBoundaryUmpires
+        case asksWaterBoy1, asksWaterBoy2, asksWaterBoy3, asksWaterBoy4
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
         case bestPlayersCount, asksBestPlayers
@@ -110,6 +123,10 @@ struct GradeBackup: Codable {
         let legacyAsksBoundaryUmpires = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpires) ?? true
         asksBoundaryUmpire1 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire1) ?? legacyAsksBoundaryUmpires
         asksBoundaryUmpire2 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire2) ?? legacyAsksBoundaryUmpires
+        asksWaterBoy1 = try c.decodeIfPresent(Bool.self, forKey: .asksWaterBoy1) ?? false
+        asksWaterBoy2 = try c.decodeIfPresent(Bool.self, forKey: .asksWaterBoy2) ?? false
+        asksWaterBoy3 = try c.decodeIfPresent(Bool.self, forKey: .asksWaterBoy3) ?? false
+        asksWaterBoy4 = try c.decodeIfPresent(Bool.self, forKey: .asksWaterBoy4) ?? false
         let legacyAsksTrainers = try c.decodeIfPresent(Bool.self, forKey: .asksTrainers) ?? true
         asksTrainer1 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer1) ?? legacyAsksTrainers
         asksTrainer2 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer2) ?? legacyAsksTrainers
@@ -146,6 +163,10 @@ struct GradeBackup: Codable {
         try c.encode(asksFieldUmpire, forKey: .asksFieldUmpire)
         try c.encode(asksBoundaryUmpire1, forKey: .asksBoundaryUmpire1)
         try c.encode(asksBoundaryUmpire2, forKey: .asksBoundaryUmpire2)
+        try c.encode(asksWaterBoy1, forKey: .asksWaterBoy1)
+        try c.encode(asksWaterBoy2, forKey: .asksWaterBoy2)
+        try c.encode(asksWaterBoy3, forKey: .asksWaterBoy3)
+        try c.encode(asksWaterBoy4, forKey: .asksWaterBoy4)
         try c.encode(asksTrainers, forKey: .asksTrainers)
         try c.encode(asksTrainer1, forKey: .asksTrainer1)
         try c.encode(asksTrainer2, forKey: .asksTrainer2)
@@ -200,6 +221,10 @@ enum SettingsBackupStore {
                 asksFieldUmpire: $0.asksFieldUmpire,
                 asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                 asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
+                asksWaterBoy1: $0.asksWaterBoy1,
+                asksWaterBoy2: $0.asksWaterBoy2,
+                asksWaterBoy3: $0.asksWaterBoy3,
+                asksWaterBoy4: $0.asksWaterBoy4,
                 asksTrainers: $0.asksTrainers,
                 asksTrainer1: $0.asksTrainer1,
                 asksTrainer2: $0.asksTrainer2,
@@ -312,6 +337,10 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 asksFieldUmpire: backup.asksFieldUmpire,
                 asksBoundaryUmpire1: backup.asksBoundaryUmpire1,
                 asksBoundaryUmpire2: backup.asksBoundaryUmpire2,
+                asksWaterBoy1: backup.asksWaterBoy1,
+                asksWaterBoy2: backup.asksWaterBoy2,
+                asksWaterBoy3: backup.asksWaterBoy3,
+                asksWaterBoy4: backup.asksWaterBoy4,
                 asksTrainers: backup.asksTrainers,
                 asksTrainer1: backup.asksTrainer1,
                 asksTrainer2: backup.asksTrainer2,

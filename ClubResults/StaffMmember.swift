@@ -9,6 +9,7 @@ enum StaffRole: String, Codable, CaseIterable {
     case goalUmpire
     case fieldUmpire
     case boundaryUmpire
+    case waterBoy
     case trainer
 }
 

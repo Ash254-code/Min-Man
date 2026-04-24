@@ -556,6 +556,7 @@ private enum AdminPickerType: String, CaseIterable, Identifiable, Hashable {
     case runner
     case goalUmpire
     case fieldUmpire
+    case waterBoy
     case trainer
 
     var id: String { rawValue }
@@ -568,6 +569,7 @@ private enum AdminPickerType: String, CaseIterable, Identifiable, Hashable {
         case .runner: return "Runner"
         case .goalUmpire: return "Goal Umpire"
         case .fieldUmpire: return "Field Umpire"
+        case .waterBoy: return "Water Boys"
         case .trainer: return "Trainers"
         }
     }
@@ -580,6 +582,7 @@ private enum AdminPickerType: String, CaseIterable, Identifiable, Hashable {
         case .runner: return .runner
         case .goalUmpire: return .goalUmpire
         case .fieldUmpire: return .fieldUmpire
+        case .waterBoy: return .waterBoy
         case .trainer: return .trainer
         }
     }
@@ -592,6 +595,7 @@ private enum AdminPickerType: String, CaseIterable, Identifiable, Hashable {
         case .runner: return ["runner"]
         case .goalUmpire: return ["goalUmpire"]
         case .fieldUmpire: return ["fieldUmpire"]
+        case .waterBoy: return ["waterBoy1", "waterBoy2", "waterBoy3", "waterBoy4"]
         case .trainer: return ["trainer1", "trainer2", "trainer3", "trainer4"]
         }
     }
@@ -608,7 +612,7 @@ private struct UmpiresSettingsView: View {
     var body: some View {
         List {
             Section {
-                Text("Choose which grade lists provide names in the umpire duties picker. These selections control the names shown for Boundary Umpire 1, Boundary Umpire 2, and Field Umpire.")
+                Text("Choose which grade lists provide names in the umpire duties picker. These selections control the names shown for Boundary Umpire 1, Boundary Umpire 2, Field Umpire, and Water Boy 1-4.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -820,6 +824,10 @@ private struct ClubGradesSettingsView: View {
                         Toggle("Field Umpire", isOn: bind(\.asksFieldUmpire))
                         Toggle("Boundary Umpire 1", isOn: bind(\.asksBoundaryUmpire1))
                         Toggle("Boundary Umpire 2", isOn: bind(\.asksBoundaryUmpire2))
+                        Toggle("Water Boy 1", isOn: bind(\.asksWaterBoy1))
+                        Toggle("Water Boy 2", isOn: bind(\.asksWaterBoy2))
+                        Toggle("Water Boy 3", isOn: bind(\.asksWaterBoy3))
+                        Toggle("Water Boy 4", isOn: bind(\.asksWaterBoy4))
                     }
 
                     Section {
@@ -944,6 +952,10 @@ private struct ClubGradesSettingsView: View {
             asksFieldUmpire: draft.asksFieldUmpire,
             asksBoundaryUmpire1: draft.asksBoundaryUmpire1,
             asksBoundaryUmpire2: draft.asksBoundaryUmpire2,
+            asksWaterBoy1: draft.asksWaterBoy1,
+            asksWaterBoy2: draft.asksWaterBoy2,
+            asksWaterBoy3: draft.asksWaterBoy3,
+            asksWaterBoy4: draft.asksWaterBoy4,
             asksTrainers: draft.hasAnyTrainerEnabled,
             asksTrainer1: draft.asksTrainer1,
             asksTrainer2: draft.asksTrainer2,
@@ -982,6 +994,10 @@ private struct ClubGradesSettingsView: View {
         gradeEditing.asksFieldUmpire = editGradeDraft.asksFieldUmpire
         gradeEditing.asksBoundaryUmpire1 = editGradeDraft.asksBoundaryUmpire1
         gradeEditing.asksBoundaryUmpire2 = editGradeDraft.asksBoundaryUmpire2
+        gradeEditing.asksWaterBoy1 = editGradeDraft.asksWaterBoy1
+        gradeEditing.asksWaterBoy2 = editGradeDraft.asksWaterBoy2
+        gradeEditing.asksWaterBoy3 = editGradeDraft.asksWaterBoy3
+        gradeEditing.asksWaterBoy4 = editGradeDraft.asksWaterBoy4
         gradeEditing.asksTrainer1 = editGradeDraft.asksTrainer1
         gradeEditing.asksTrainer2 = editGradeDraft.asksTrainer2
         gradeEditing.asksTrainer3 = editGradeDraft.asksTrainer3
@@ -1022,6 +1038,10 @@ private struct ClubGradesSettingsView: View {
             || editGradeDraft.asksFieldUmpire != gradeEditing.asksFieldUmpire
             || editGradeDraft.asksBoundaryUmpire1 != gradeEditing.asksBoundaryUmpire1
             || editGradeDraft.asksBoundaryUmpire2 != gradeEditing.asksBoundaryUmpire2
+            || editGradeDraft.asksWaterBoy1 != gradeEditing.asksWaterBoy1
+            || editGradeDraft.asksWaterBoy2 != gradeEditing.asksWaterBoy2
+            || editGradeDraft.asksWaterBoy3 != gradeEditing.asksWaterBoy3
+            || editGradeDraft.asksWaterBoy4 != gradeEditing.asksWaterBoy4
             || editGradeDraft.asksTrainer1 != gradeEditing.asksTrainer1
             || editGradeDraft.asksTrainer2 != gradeEditing.asksTrainer2
             || editGradeDraft.asksTrainer3 != gradeEditing.asksTrainer3
@@ -1154,6 +1174,10 @@ private struct ClubGradesSettingsView: View {
                                 asksFieldUmpire: item.asksFieldUmpire,
                                 asksBoundaryUmpire1: item.asksBoundaryUmpire1,
                                 asksBoundaryUmpire2: item.asksBoundaryUmpire2,
+                                asksWaterBoy1: item.asksWaterBoy1,
+                                asksWaterBoy2: item.asksWaterBoy2,
+                                asksWaterBoy3: item.asksWaterBoy3,
+                                asksWaterBoy4: item.asksWaterBoy4,
                                 asksTrainers: item.asksTrainers,
                                 asksTrainer1: item.asksTrainer1,
                                 asksTrainer2: item.asksTrainer2,
@@ -1201,6 +1225,10 @@ private struct ClubGradesSettingsView: View {
                     asksFieldUmpire: $0.asksFieldUmpire,
                     asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                     asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
+                    asksWaterBoy1: $0.asksWaterBoy1,
+                    asksWaterBoy2: $0.asksWaterBoy2,
+                    asksWaterBoy3: $0.asksWaterBoy3,
+                    asksWaterBoy4: $0.asksWaterBoy4,
                     asksTrainers: $0.asksTrainers,
                     asksTrainer1: $0.asksTrainer1,
                     asksTrainer2: $0.asksTrainer2,
@@ -1251,6 +1279,10 @@ private struct EditGradeDraft {
     var asksFieldUmpire = true
     var asksBoundaryUmpire1 = true
     var asksBoundaryUmpire2 = true
+    var asksWaterBoy1 = false
+    var asksWaterBoy2 = false
+    var asksWaterBoy3 = false
+    var asksWaterBoy4 = false
     var asksTrainer1 = true
     var asksTrainer2 = true
     var asksTrainer3 = true
@@ -1276,6 +1308,10 @@ private struct EditGradeDraft {
         asksFieldUmpire = grade.asksFieldUmpire
         asksBoundaryUmpire1 = grade.asksBoundaryUmpire1
         asksBoundaryUmpire2 = grade.asksBoundaryUmpire2
+        asksWaterBoy1 = grade.asksWaterBoy1
+        asksWaterBoy2 = grade.asksWaterBoy2
+        asksWaterBoy3 = grade.asksWaterBoy3
+        asksWaterBoy4 = grade.asksWaterBoy4
         asksTrainer1 = grade.asksTrainer1
         asksTrainer2 = grade.asksTrainer2
         asksTrainer3 = grade.asksTrainer3
@@ -1309,6 +1345,10 @@ private struct NewGradeDraft {
     var asksFieldUmpire = true
     var asksBoundaryUmpire1 = true
     var asksBoundaryUmpire2 = true
+    var asksWaterBoy1 = false
+    var asksWaterBoy2 = false
+    var asksWaterBoy3 = false
+    var asksWaterBoy4 = false
     var asksTrainer1 = true
     var asksTrainer2 = true
     var asksTrainer3 = true
@@ -1368,6 +1408,10 @@ private struct AddGradeWizardView: View {
                         Toggle("Field Umpire", isOn: $draft.asksFieldUmpire)
                         Toggle("Boundary Umpire 1", isOn: $draft.asksBoundaryUmpire1)
                         Toggle("Boundary Umpire 2", isOn: $draft.asksBoundaryUmpire2)
+                        Toggle("Water Boy 1", isOn: $draft.asksWaterBoy1)
+                        Toggle("Water Boy 2", isOn: $draft.asksWaterBoy2)
+                        Toggle("Water Boy 3", isOn: $draft.asksWaterBoy3)
+                        Toggle("Water Boy 4", isOn: $draft.asksWaterBoy4)
                     } header: {
                         Text("Officials")
                     }
@@ -4079,7 +4123,7 @@ func makeTemplatePreviewPDF(
                 officials += [game.goalUmpireName, game.fieldUmpireName]
             }
             if template.includeUmpires {
-                officials += [game.boundaryUmpire1Name, game.boundaryUmpire2Name]
+                officials += [game.boundaryUmpire1Name, game.boundaryUmpire2Name, game.waterBoy1Name, game.waterBoy2Name, game.waterBoy3Name, game.waterBoy4Name]
             }
             officials = officials
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -4529,6 +4573,10 @@ func makeTemplatePreviewPDF(
                     increment(&officialCounts, role: "Field Umpire", name: game.fieldUmpireName)
                     increment(&officialCounts, role: "Boundary Umpire 1", name: game.boundaryUmpire1Name)
                     increment(&officialCounts, role: "Boundary Umpire 2", name: game.boundaryUmpire2Name)
+                    increment(&officialCounts, role: "Water Boy 1", name: game.waterBoy1Name)
+                    increment(&officialCounts, role: "Water Boy 2", name: game.waterBoy2Name)
+                    increment(&officialCounts, role: "Water Boy 3", name: game.waterBoy3Name)
+                    increment(&officialCounts, role: "Water Boy 4", name: game.waterBoy4Name)
                 }
                 if template.includeTrainers {
                     for trainer in game.trainers {

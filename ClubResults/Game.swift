@@ -34,6 +34,10 @@ final class Game: Identifiable {
     var fieldUmpireName: String
     var boundaryUmpire1Name: String
     var boundaryUmpire2Name: String
+    var waterBoy1Name: String
+    var waterBoy2Name: String
+    var waterBoy3Name: String
+    var waterBoy4Name: String
     var trainers: [String]
 
     // Notes
@@ -62,6 +66,10 @@ final class Game: Identifiable {
         fieldUmpireName: String = "",
         boundaryUmpire1Name: String = "",
         boundaryUmpire2Name: String = "",
+        waterBoy1Name: String = "",
+        waterBoy2Name: String = "",
+        waterBoy3Name: String = "",
+        waterBoy4Name: String = "",
         trainers: [String] = [],
         notes: String,
         guestBestFairestVotesScanPDF: Data? = nil,
@@ -87,6 +95,10 @@ final class Game: Identifiable {
         self.fieldUmpireName = fieldUmpireName
         self.boundaryUmpire1Name = boundaryUmpire1Name
         self.boundaryUmpire2Name = boundaryUmpire2Name
+        self.waterBoy1Name = waterBoy1Name
+        self.waterBoy2Name = waterBoy2Name
+        self.waterBoy3Name = waterBoy3Name
+        self.waterBoy4Name = waterBoy4Name
         self.trainers = trainers
         self.notes = notes
         self.guestBestFairestVotesScanPDF = guestBestFairestVotesScanPDF

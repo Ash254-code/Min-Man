@@ -37,7 +37,7 @@ struct StaffPickerField: View {
 
     private var boundarySelectionPlayerNames: [String] {
         guard let gradeID else { return [] }
-        guard role == .boundaryUmpire || role == .fieldUmpire else { return [] }
+        guard role == .boundaryUmpire || role == .fieldUmpire || role == .waterBoy else { return [] }
 
         let mappings = SettingsBackupStore.loadBoundaryUmpireGradeMappings()
         let selectedGradeIDs = mappings[gradeID].flatMap { $0.isEmpty ? nil : $0 } ?? [gradeID]

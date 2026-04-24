@@ -17,6 +17,10 @@ final class Grade {
     var asksFieldUmpire: Bool
     var asksBoundaryUmpire1: Bool
     var asksBoundaryUmpire2: Bool
+    var asksWaterBoy1: Bool
+    var asksWaterBoy2: Bool
+    var asksWaterBoy3: Bool
+    var asksWaterBoy4: Bool
     var asksTrainers: Bool
     var asksTrainer1: Bool
     var asksTrainer2: Bool
@@ -45,6 +49,10 @@ final class Grade {
         asksFieldUmpire: Bool = true,
         asksBoundaryUmpire1: Bool = true,
         asksBoundaryUmpire2: Bool = true,
+        asksWaterBoy1: Bool = false,
+        asksWaterBoy2: Bool = false,
+        asksWaterBoy3: Bool = false,
+        asksWaterBoy4: Bool = false,
         asksTrainers: Bool = true,
         asksTrainer1: Bool = true,
         asksTrainer2: Bool = true,
@@ -72,6 +80,10 @@ final class Grade {
         self.asksFieldUmpire = asksFieldUmpire
         self.asksBoundaryUmpire1 = asksBoundaryUmpire1
         self.asksBoundaryUmpire2 = asksBoundaryUmpire2
+        self.asksWaterBoy1 = asksWaterBoy1
+        self.asksWaterBoy2 = asksWaterBoy2
+        self.asksWaterBoy3 = asksWaterBoy3
+        self.asksWaterBoy4 = asksWaterBoy4
         self.asksTrainers = asksTrainers
         self.asksTrainer1 = asksTrainer1
         self.asksTrainer2 = asksTrainer2

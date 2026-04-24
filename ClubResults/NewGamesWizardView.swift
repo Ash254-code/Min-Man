@@ -264,6 +264,10 @@ struct NewGameWizardView: View {
     // Boundary umpires are chosen from a configured grade's players, or entered manually.
     @State private var boundaryUmpire1Name: String = ""
     @State private var boundaryUmpire2Name: String = ""
+    @State private var waterBoy1Name: String = ""
+    @State private var waterBoy2Name: String = ""
+    @State private var waterBoy3Name: String = ""
+    @State private var waterBoy4Name: String = ""
 
     @State private var trainer1Name: String = ""
     @State private var trainer2Name: String = ""
@@ -279,6 +283,10 @@ struct NewGameWizardView: View {
     @State private var game2FieldUmpireName: String = ""
     @State private var game2BoundaryUmpire1Name: String = ""
     @State private var game2BoundaryUmpire2Name: String = ""
+    @State private var game2WaterBoy1Name: String = ""
+    @State private var game2WaterBoy2Name: String = ""
+    @State private var game2WaterBoy3Name: String = ""
+    @State private var game2WaterBoy4Name: String = ""
     @State private var game2Trainer1Name: String = ""
     @State private var game2Trainer2Name: String = ""
     @State private var game2Trainer3Name: String = ""
@@ -565,6 +573,10 @@ struct NewGameWizardView: View {
         case fieldUmpire
         case boundaryUmpire1
         case boundaryUmpire2
+        case waterBoy1
+        case waterBoy2
+        case waterBoy3
+        case waterBoy4
         case trainer1
         case trainer2
         case trainer3
@@ -605,6 +617,10 @@ struct NewGameWizardView: View {
         assignDefault(for: .fieldUmpire, role: .fieldUmpire, gradeID: gradeID) { fieldUmpireName = $0 }
         assignDefault(for: .boundaryUmpire1, role: .boundaryUmpire, gradeID: gradeID) { boundaryUmpire1Name = $0 }
         assignDefault(for: .boundaryUmpire2, role: .boundaryUmpire, gradeID: gradeID) { boundaryUmpire2Name = $0 }
+        assignDefault(for: .waterBoy1, role: .waterBoy, gradeID: gradeID) { waterBoy1Name = $0 }
+        assignDefault(for: .waterBoy2, role: .waterBoy, gradeID: gradeID) { waterBoy2Name = $0 }
+        assignDefault(for: .waterBoy3, role: .waterBoy, gradeID: gradeID) { waterBoy3Name = $0 }
+        assignDefault(for: .waterBoy4, role: .waterBoy, gradeID: gradeID) { waterBoy4Name = $0 }
         assignDefault(for: .trainer1, role: .trainer, gradeID: gradeID) { trainer1Name = $0 }
         assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { trainer2Name = $0 }
         assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { trainer3Name = $0 }
@@ -617,6 +633,10 @@ struct NewGameWizardView: View {
         assignDefault(for: .fieldUmpire, role: .fieldUmpire, gradeID: gradeID) { game2FieldUmpireName = $0 }
         assignDefault(for: .boundaryUmpire1, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire1Name = $0 }
         assignDefault(for: .boundaryUmpire2, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire2Name = $0 }
+        assignDefault(for: .waterBoy1, role: .waterBoy, gradeID: gradeID) { game2WaterBoy1Name = $0 }
+        assignDefault(for: .waterBoy2, role: .waterBoy, gradeID: gradeID) { game2WaterBoy2Name = $0 }
+        assignDefault(for: .waterBoy3, role: .waterBoy, gradeID: gradeID) { game2WaterBoy3Name = $0 }
+        assignDefault(for: .waterBoy4, role: .waterBoy, gradeID: gradeID) { game2WaterBoy4Name = $0 }
         assignDefault(for: .trainer1, role: .trainer, gradeID: gradeID) { game2Trainer1Name = $0 }
         assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { game2Trainer2Name = $0 }
         assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { game2Trainer3Name = $0 }
@@ -638,6 +658,10 @@ struct NewGameWizardView: View {
         saveLastSelection(fieldUmpireName, for: .fieldUmpire, gradeID: gradeID)
         saveLastSelection(boundaryUmpire1Name, for: .boundaryUmpire1, gradeID: gradeID)
         saveLastSelection(boundaryUmpire2Name, for: .boundaryUmpire2, gradeID: gradeID)
+        saveLastSelection(waterBoy1Name, for: .waterBoy1, gradeID: gradeID)
+        saveLastSelection(waterBoy2Name, for: .waterBoy2, gradeID: gradeID)
+        saveLastSelection(waterBoy3Name, for: .waterBoy3, gradeID: gradeID)
+        saveLastSelection(waterBoy4Name, for: .waterBoy4, gradeID: gradeID)
         saveLastSelection(trainer1Name, for: .trainer1, gradeID: gradeID)
         saveLastSelection(trainer2Name, for: .trainer2, gradeID: gradeID)
         saveLastSelection(trainer3Name, for: .trainer3, gradeID: gradeID)
@@ -651,6 +675,10 @@ struct NewGameWizardView: View {
             saveLastSelection(game2FieldUmpireName, for: .fieldUmpire, gradeID: gradeID)
             saveLastSelection(game2BoundaryUmpire1Name, for: .boundaryUmpire1, gradeID: gradeID)
             saveLastSelection(game2BoundaryUmpire2Name, for: .boundaryUmpire2, gradeID: gradeID)
+            saveLastSelection(game2WaterBoy1Name, for: .waterBoy1, gradeID: gradeID)
+            saveLastSelection(game2WaterBoy2Name, for: .waterBoy2, gradeID: gradeID)
+            saveLastSelection(game2WaterBoy3Name, for: .waterBoy3, gradeID: gradeID)
+            saveLastSelection(game2WaterBoy4Name, for: .waterBoy4, gradeID: gradeID)
             saveLastSelection(game2Trainer1Name, for: .trainer1, gradeID: gradeID)
             saveLastSelection(game2Trainer2Name, for: .trainer2, gradeID: gradeID)
             saveLastSelection(game2Trainer3Name, for: .trainer3, gradeID: gradeID)
@@ -793,7 +821,11 @@ struct NewGameWizardView: View {
         if grade.asksGoalUmpire ||
             grade.asksFieldUmpire ||
             grade.asksBoundaryUmpire1 ||
-            grade.asksBoundaryUmpire2 {
+            grade.asksBoundaryUmpire2 ||
+            grade.asksWaterBoy1 ||
+            grade.asksWaterBoy2 ||
+            grade.asksWaterBoy3 ||
+            grade.asksWaterBoy4 {
             steps.append(.officials)
         }
         if grade.asksTrainer1 ||
@@ -952,12 +984,20 @@ struct NewGameWizardView: View {
             let asksFieldUmpire = selectedGrade?.asksFieldUmpire ?? true
             let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
             let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
+            let asksWaterBoy1 = selectedGrade?.asksWaterBoy1 ?? false
+            let asksWaterBoy2 = selectedGrade?.asksWaterBoy2 ?? false
+            let asksWaterBoy3 = selectedGrade?.asksWaterBoy3 ?? false
+            let asksWaterBoy4 = selectedGrade?.asksWaterBoy4 ?? false
 
             let officialsCompleted =
                 (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
                 (!asksFieldUmpire || !finalFieldUmpire.isEmpty) &&
                 (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
-                (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty)
+                (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty) &&
+                (!asksWaterBoy1 || !clean(waterBoy1Name).isEmpty) &&
+                (!asksWaterBoy2 || !clean(waterBoy2Name).isEmpty) &&
+                (!asksWaterBoy3 || !clean(waterBoy3Name).isEmpty) &&
+                (!asksWaterBoy4 || !clean(waterBoy4Name).isEmpty)
 
             let boundarySelectionIsUnique =
                 !(asksBoundaryUmpire1 && asksBoundaryUmpire2 &&
@@ -968,7 +1008,11 @@ struct NewGameWizardView: View {
                 (!asksGoalUmpire || !finalGame2GoalUmpire.isEmpty) &&
                 (!asksFieldUmpire || !finalGame2FieldUmpire.isEmpty) &&
                 (!asksBoundaryUmpire1 || !finalGame2Boundary1.isEmpty) &&
-                (!asksBoundaryUmpire2 || !finalGame2Boundary2.isEmpty)
+                (!asksBoundaryUmpire2 || !finalGame2Boundary2.isEmpty) &&
+                (!asksWaterBoy1 || !clean(game2WaterBoy1Name).isEmpty) &&
+                (!asksWaterBoy2 || !clean(game2WaterBoy2Name).isEmpty) &&
+                (!asksWaterBoy3 || !clean(game2WaterBoy3Name).isEmpty) &&
+                (!asksWaterBoy4 || !clean(game2WaterBoy4Name).isEmpty)
 
             let boundaryGame2SelectionIsUnique =
                 !(asksBoundaryUmpire1 && asksBoundaryUmpire2 &&
@@ -1487,6 +1531,10 @@ struct NewGameWizardView: View {
         fieldUmpireName = draft.fieldUmpireName
         boundaryUmpire1Name = draft.boundaryUmpire1Name
         boundaryUmpire2Name = draft.boundaryUmpire2Name
+        waterBoy1Name = draft.waterBoy1Name
+        waterBoy2Name = draft.waterBoy2Name
+        waterBoy3Name = draft.waterBoy3Name
+        waterBoy4Name = draft.waterBoy4Name
         trainer1Name = draft.trainers.indices.contains(0) ? draft.trainers[0] : ""
         trainer2Name = draft.trainers.indices.contains(1) ? draft.trainers[1] : ""
         trainer3Name = draft.trainers.indices.contains(2) ? draft.trainers[2] : ""
@@ -1743,6 +1791,19 @@ struct NewGameWizardView: View {
                         )
                     }
 
+                    if selectedGrade?.asksWaterBoy1 ?? false {
+                        StaffPickerField(title: "Water Boy 1", role: .waterBoy, gradeID: gradeID, value: $waterBoy1Name)
+                    }
+                    if selectedGrade?.asksWaterBoy2 ?? false {
+                        StaffPickerField(title: "Water Boy 2", role: .waterBoy, gradeID: gradeID, value: $waterBoy2Name)
+                    }
+                    if selectedGrade?.asksWaterBoy3 ?? false {
+                        StaffPickerField(title: "Water Boy 3", role: .waterBoy, gradeID: gradeID, value: $waterBoy3Name)
+                    }
+                    if selectedGrade?.asksWaterBoy4 ?? false {
+                        StaffPickerField(title: "Water Boy 4", role: .waterBoy, gradeID: gradeID, value: $waterBoy4Name)
+                    }
+
                     if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalBoundary1.isEmpty, finalBoundary1 == finalBoundary2 {
                         Text("Boundary Umpire 1 and Boundary Umpire 2 can’t be the same.")
                             .font(.caption)
@@ -1779,6 +1840,19 @@ struct NewGameWizardView: View {
                                 gradeID: gradeID,
                                 value: $game2BoundaryUmpire2Name
                             )
+                        }
+
+                        if selectedGrade?.asksWaterBoy1 ?? false {
+                            StaffPickerField(title: "Water Boy 1", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy1Name)
+                        }
+                        if selectedGrade?.asksWaterBoy2 ?? false {
+                            StaffPickerField(title: "Water Boy 2", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy2Name)
+                        }
+                        if selectedGrade?.asksWaterBoy3 ?? false {
+                            StaffPickerField(title: "Water Boy 3", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy3Name)
+                        }
+                        if selectedGrade?.asksWaterBoy4 ?? false {
+                            StaffPickerField(title: "Water Boy 4", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy4Name)
                         }
 
                         if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalGame2Boundary1.isEmpty, finalGame2Boundary1 == finalGame2Boundary2 {
@@ -2940,6 +3014,10 @@ struct NewGameWizardView: View {
             existingGame.fieldUmpireName = finalFieldUmpire
             existingGame.boundaryUmpire1Name = finalBoundary1
             existingGame.boundaryUmpire2Name = finalBoundary2
+            existingGame.waterBoy1Name = clean(waterBoy1Name)
+            existingGame.waterBoy2Name = clean(waterBoy2Name)
+            existingGame.waterBoy3Name = clean(waterBoy3Name)
+            existingGame.waterBoy4Name = clean(waterBoy4Name)
             existingGame.trainers = selectedTrainerNames
             existingGame.notes = cleanedNotes
             existingGame.guestBestFairestVotesScanPDF = guestBestFairestVotesScanPDF
@@ -2967,6 +3045,10 @@ struct NewGameWizardView: View {
                 fieldUmpireName: finalFieldUmpire,
                 boundaryUmpire1Name: finalBoundary1,
                 boundaryUmpire2Name: finalBoundary2,
+                waterBoy1Name: clean(waterBoy1Name),
+                waterBoy2Name: clean(waterBoy2Name),
+                waterBoy3Name: clean(waterBoy3Name),
+                waterBoy4Name: clean(waterBoy4Name),
                 trainers: selectedTrainerNames,
                 notes: cleanedNotes,
                 guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF,
@@ -2997,6 +3079,10 @@ struct NewGameWizardView: View {
                     fieldUmpireName: finalGame2FieldUmpire,
                     boundaryUmpire1Name: finalGame2Boundary1,
                     boundaryUmpire2Name: finalGame2Boundary2,
+                    waterBoy1Name: clean(game2WaterBoy1Name),
+                    waterBoy2Name: clean(game2WaterBoy2Name),
+                    waterBoy3Name: clean(game2WaterBoy3Name),
+                    waterBoy4Name: clean(game2WaterBoy4Name),
                     trainers: selectedGame2TrainerNames,
                     notes: cleanedNotes,
                     guestBestFairestVotesScanPDF: guestBestFairestVotesScanPDF,

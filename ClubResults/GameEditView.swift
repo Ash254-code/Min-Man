@@ -35,6 +35,10 @@ struct GameEditView: View {
     @State private var fieldUmpireName: String
     @State private var boundaryUmpire1Name: String
     @State private var boundaryUmpire2Name: String
+    @State private var waterBoy1Name: String
+    @State private var waterBoy2Name: String
+    @State private var waterBoy3Name: String
+    @State private var waterBoy4Name: String
     @State private var trainer1Name: String
     @State private var trainer2Name: String
     @State private var trainer3Name: String
@@ -73,6 +77,10 @@ struct GameEditView: View {
         _fieldUmpireName = State(initialValue: game.fieldUmpireName)
         _boundaryUmpire1Name = State(initialValue: game.boundaryUmpire1Name)
         _boundaryUmpire2Name = State(initialValue: game.boundaryUmpire2Name)
+        _waterBoy1Name = State(initialValue: game.waterBoy1Name)
+        _waterBoy2Name = State(initialValue: game.waterBoy2Name)
+        _waterBoy3Name = State(initialValue: game.waterBoy3Name)
+        _waterBoy4Name = State(initialValue: game.waterBoy4Name)
         _trainer1Name = State(initialValue: game.trainers.indices.contains(0) ? game.trainers[0] : "")
         _trainer2Name = State(initialValue: game.trainers.indices.contains(1) ? game.trainers[1] : "")
         _trainer3Name = State(initialValue: game.trainers.indices.contains(2) ? game.trainers[2] : "")
@@ -107,6 +115,10 @@ struct GameEditView: View {
         game.fieldUmpireName != fieldUmpireName ||
         game.boundaryUmpire1Name != boundaryUmpire1Name ||
         game.boundaryUmpire2Name != boundaryUmpire2Name ||
+        game.waterBoy1Name != waterBoy1Name ||
+        game.waterBoy2Name != waterBoy2Name ||
+        game.waterBoy3Name != waterBoy3Name ||
+        game.waterBoy4Name != waterBoy4Name ||
         game.trainers != selectedTrainerNames ||
         game.notes != notes
     }
@@ -157,6 +169,10 @@ struct GameEditView: View {
                     StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $fieldUmpireName)
                     StaffPickerField(title: "Boundary Umpire 1", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire1Name)
                     StaffPickerField(title: "Boundary Umpire 2", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire2Name)
+                    StaffPickerField(title: "Water Boy 1", role: .waterBoy, gradeID: gradeID, value: $waterBoy1Name)
+                    StaffPickerField(title: "Water Boy 2", role: .waterBoy, gradeID: gradeID, value: $waterBoy2Name)
+                    StaffPickerField(title: "Water Boy 3", role: .waterBoy, gradeID: gradeID, value: $waterBoy3Name)
+                    StaffPickerField(title: "Water Boy 4", role: .waterBoy, gradeID: gradeID, value: $waterBoy4Name)
                 }
 
                 Section("Trainers") {
@@ -445,6 +461,10 @@ struct GameEditView: View {
         game.fieldUmpireName = fieldUmpireName
         game.boundaryUmpire1Name = boundaryUmpire1Name
         game.boundaryUmpire2Name = boundaryUmpire2Name
+        game.waterBoy1Name = waterBoy1Name
+        game.waterBoy2Name = waterBoy2Name
+        game.waterBoy3Name = waterBoy3Name
+        game.waterBoy4Name = waterBoy4Name
         game.trainers = selectedTrainerNames
 
         game.notes = notes

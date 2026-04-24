@@ -258,6 +258,10 @@ struct GradeRecord: Codable {
     let asksFieldUmpire: Bool
     let asksBoundaryUmpire1: Bool
     let asksBoundaryUmpire2: Bool
+    let asksWaterBoy1: Bool
+    let asksWaterBoy2: Bool
+    let asksWaterBoy3: Bool
+    let asksWaterBoy4: Bool
     let asksTrainers: Bool
     let asksTrainer1: Bool
     let asksTrainer2: Bool
@@ -277,6 +281,7 @@ struct GradeRecord: Codable {
         case id, name, isActive, displayOrder
         case asksHeadCoach, asksAssistantCoach, asksTeamManager, asksRunner
         case asksGoalUmpire, asksFieldUmpire, asksBoundaryUmpire1, asksBoundaryUmpire2
+        case asksWaterBoy1, asksWaterBoy2, asksWaterBoy3, asksWaterBoy4
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
         case bestPlayersCount, guestBestPlayersCount
@@ -296,6 +301,10 @@ struct GradeRecord: Codable {
         asksFieldUmpire = grade.asksFieldUmpire
         asksBoundaryUmpire1 = grade.asksBoundaryUmpire1
         asksBoundaryUmpire2 = grade.asksBoundaryUmpire2
+        asksWaterBoy1 = grade.asksWaterBoy1
+        asksWaterBoy2 = grade.asksWaterBoy2
+        asksWaterBoy3 = grade.asksWaterBoy3
+        asksWaterBoy4 = grade.asksWaterBoy4
         asksTrainers = grade.asksTrainers
         asksTrainer1 = grade.asksTrainer1
         asksTrainer2 = grade.asksTrainer2
@@ -326,6 +335,10 @@ struct GradeRecord: Codable {
         asksFieldUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksFieldUmpire) ?? true
         asksBoundaryUmpire1 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire1) ?? true
         asksBoundaryUmpire2 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire2) ?? true
+        asksWaterBoy1 = try c.decodeIfPresent(Bool.self, forKey: .asksWaterBoy1) ?? false
+        asksWaterBoy2 = try c.decodeIfPresent(Bool.self, forKey: .asksWaterBoy2) ?? false
+        asksWaterBoy3 = try c.decodeIfPresent(Bool.self, forKey: .asksWaterBoy3) ?? false
+        asksWaterBoy4 = try c.decodeIfPresent(Bool.self, forKey: .asksWaterBoy4) ?? false
         asksTrainers = try c.decodeIfPresent(Bool.self, forKey: .asksTrainers) ?? true
         asksTrainer1 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer1) ?? asksTrainers
         asksTrainer2 = try c.decodeIfPresent(Bool.self, forKey: .asksTrainer2) ?? asksTrainers
@@ -396,6 +409,10 @@ struct GameRecord: Codable {
     let fieldUmpireName: String
     let boundaryUmpire1Name: String
     let boundaryUmpire2Name: String
+    let waterBoy1Name: String
+    let waterBoy2Name: String
+    let waterBoy3Name: String
+    let waterBoy4Name: String
     let trainers: [String]
     let notes: String
     let guestBestFairestVotesScanPDF: Data?
@@ -407,6 +424,7 @@ struct GameRecord: Codable {
         case goalKickers, bestPlayersRanked, guestVotesRanked
         case headCoachName, assistantCoachName, teamManagerName, runnerName
         case goalUmpireName, fieldUmpireName, boundaryUmpire1Name, boundaryUmpire2Name
+        case waterBoy1Name, waterBoy2Name, waterBoy3Name, waterBoy4Name
         case trainers, notes, guestBestFairestVotesScanPDF, isDraft
     }
 
@@ -431,6 +449,10 @@ struct GameRecord: Codable {
         fieldUmpireName = game.fieldUmpireName
         boundaryUmpire1Name = game.boundaryUmpire1Name
         boundaryUmpire2Name = game.boundaryUmpire2Name
+        waterBoy1Name = game.waterBoy1Name
+        waterBoy2Name = game.waterBoy2Name
+        waterBoy3Name = game.waterBoy3Name
+        waterBoy4Name = game.waterBoy4Name
         trainers = game.trainers
         notes = game.notes
         guestBestFairestVotesScanPDF = game.guestBestFairestVotesScanPDF
@@ -459,6 +481,10 @@ struct GameRecord: Codable {
         fieldUmpireName = try c.decodeIfPresent(String.self, forKey: .fieldUmpireName) ?? ""
         boundaryUmpire1Name = try c.decodeIfPresent(String.self, forKey: .boundaryUmpire1Name) ?? ""
         boundaryUmpire2Name = try c.decodeIfPresent(String.self, forKey: .boundaryUmpire2Name) ?? ""
+        waterBoy1Name = try c.decodeIfPresent(String.self, forKey: .waterBoy1Name) ?? ""
+        waterBoy2Name = try c.decodeIfPresent(String.self, forKey: .waterBoy2Name) ?? ""
+        waterBoy3Name = try c.decodeIfPresent(String.self, forKey: .waterBoy3Name) ?? ""
+        waterBoy4Name = try c.decodeIfPresent(String.self, forKey: .waterBoy4Name) ?? ""
         trainers = try c.decodeIfPresent([String].self, forKey: .trainers) ?? []
         notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         guestBestFairestVotesScanPDF = try c.decodeIfPresent(Data.self, forKey: .guestBestFairestVotesScanPDF)
@@ -986,6 +1012,10 @@ enum AppBackupService {
                     asksFieldUmpire: $0.asksFieldUmpire,
                     asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                     asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
+                    asksWaterBoy1: $0.asksWaterBoy1,
+                    asksWaterBoy2: $0.asksWaterBoy2,
+                    asksWaterBoy3: $0.asksWaterBoy3,
+                    asksWaterBoy4: $0.asksWaterBoy4,
                     asksTrainers: $0.asksTrainers,
                     asksTrainer1: $0.asksTrainer1,
                     asksTrainer2: $0.asksTrainer2,
@@ -1042,6 +1072,10 @@ enum AppBackupService {
                     fieldUmpireName: $0.fieldUmpireName,
                     boundaryUmpire1Name: $0.boundaryUmpire1Name,
                     boundaryUmpire2Name: $0.boundaryUmpire2Name,
+                    waterBoy1Name: $0.waterBoy1Name,
+                    waterBoy2Name: $0.waterBoy2Name,
+                    waterBoy3Name: $0.waterBoy3Name,
+                    waterBoy4Name: $0.waterBoy4Name,
                     trainers: $0.trainers,
                     notes: $0.notes,
                     guestBestFairestVotesScanPDF: $0.guestBestFairestVotesScanPDF,

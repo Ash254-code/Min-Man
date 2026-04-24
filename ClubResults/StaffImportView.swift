@@ -25,7 +25,7 @@ struct StaffImportView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    Text("Roles: headCoach, assistantCoach, teamManager, runner, goalUmpire, fieldUmpire, boundaryUmpire, trainer")
+                    Text("Roles: headCoach, assistantCoach, teamManager, runner, goalUmpire, fieldUmpire, boundaryUmpire, waterBoy, trainer")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
