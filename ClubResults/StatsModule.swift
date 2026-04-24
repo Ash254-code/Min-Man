@@ -2326,20 +2326,21 @@ struct LiveStatsView: View {
         let leftPlayers = Array(gridPlayers.prefix(splitIndex).prefix(12))
         let rightPlayers = Array(gridPlayers.dropFirst(splitIndex).prefix(12))
         let recentAreaHeight = max(280, min(proxy.size.height * 0.33, 360))
+        let sectionGap: CGFloat = 10
 
-        return VStack(spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(spacing: 10) {
+        return VStack(spacing: sectionGap) {
+            HStack(alignment: .top, spacing: sectionGap) {
+                VStack(spacing: sectionGap) {
                     edgePlayerColumn(players: leftPlayers, isTrailingSide: false)
                 }
                 .frame(width: sideWidth)
 
-                VStack(spacing: 8) {
+                VStack(spacing: sectionGap) {
                     headerBannerArea
                         .frame(height: 76)
                         .frame(maxWidth: centerWidth)
 
-                    VStack(spacing: 8) {
+                    VStack(spacing: sectionGap) {
                         combinedScoreAndActionsPanel
                             .frame(maxHeight: 472, alignment: .top)
 
@@ -2353,13 +2354,12 @@ struct LiveStatsView: View {
                         recentEventsPanel
                             .frame(height: recentAreaHeight)
                     }
-                    .padding(.top, 40)
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .frame(width: centerWidth)
                 .frame(maxHeight: .infinity, alignment: .top)
 
-                VStack(spacing: 10) {
+                VStack(spacing: sectionGap) {
                     edgePlayerColumn(players: rightPlayers, isTrailingSide: true)
                 }
                 .frame(width: sideWidth)
@@ -2372,34 +2372,21 @@ struct LiveStatsView: View {
 
     private func edgePlayerColumn(players: [Player], isTrailingSide: Bool) -> some View {
         GeometryReader { panelProxy in
-            let topControlsHeight = sideSpeakButtonSize + 56
+            let topControlsHeight = sideSpeakButtonSize + 20
+            let bottomButtonReserve: CGFloat = 40
             let listVerticalSpacing: CGFloat = 8
-            let availableHeight = max(0, panelProxy.size.height - topControlsHeight)
+            let availableHeight = max(0, panelProxy.size.height - topControlsHeight - bottomButtonReserve)
             let estimatedHeight = (availableHeight - (listVerticalSpacing * 11)) / 12
             let cardHeight = max(58, min(82, estimatedHeight))
 
             VStack(spacing: 10) {
                 HStack {
                     if isTrailingSide {
-                        Button {
-                            showPlayerVisibilityEditor = true
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.title3)
-                        }
-                        .buttonStyle(.plain)
                         Spacer()
                         speakButton(isOpposition: true)
                     } else {
                         speakButton(isOpposition: false)
                         Spacer()
-                        Button {
-                            showPlayerVisibilityEditor = true
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.title3)
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -2445,6 +2432,16 @@ struct LiveStatsView: View {
             .padding(12)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(alignment: isTrailingSide ? .bottomTrailing : .bottomLeading) {
+                Button {
+                    showPlayerVisibilityEditor = true
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+            }
         }
     }
 
