@@ -542,6 +542,8 @@ struct CustomReportTemplateRecord: Codable {
     let includeTrainers: Bool
     let includeMatchNotes: Bool
     let includeSectionOrder: [String]
+    let reportColumnCount: Int
+    let includeSectionColumnAssignments: [String: Int]
     let sendReportOnGameSave: Bool
     let includeOnlyActiveGrades: Bool
     let includePlayersOnly: Bool
@@ -568,6 +570,8 @@ struct CustomReportTemplateRecord: Codable {
         includeTrainers = template.includeTrainers
         includeMatchNotes = template.includeMatchNotes
         includeSectionOrder = template.includeSectionOrder
+        reportColumnCount = template.normalizedReportColumnCount
+        includeSectionColumnAssignments = template.includeSectionColumnAssignments
         sendReportOnGameSave = template.sendReportOnGameSave
         includeOnlyActiveGrades = template.includeOnlyActiveGrades
         includePlayersOnly = template.includePlayersOnly
@@ -581,6 +585,7 @@ struct CustomReportTemplateRecord: Codable {
         case bestAndFairestLimit, includeStaffRoles, includeOfficials
         case includeUmpires, includeTrainers, includeMatchNotes, includeSectionOrder, includeOnlyActiveGrades
         case includePlayersOnly, sendReportOnGameSave, minimumGamesPlayed, groupingModeRawValue
+        case reportColumnCount, includeSectionColumnAssignments
     }
 
     init(from decoder: Decoder) throws {
@@ -604,6 +609,8 @@ struct CustomReportTemplateRecord: Codable {
         includeTrainers = try c.decodeIfPresent(Bool.self, forKey: .includeTrainers) ?? true
         includeMatchNotes = try c.decodeIfPresent(Bool.self, forKey: .includeMatchNotes) ?? false
         includeSectionOrder = try c.decodeIfPresent([String].self, forKey: .includeSectionOrder) ?? CustomReportTemplate.defaultIncludeSectionOrder
+        reportColumnCount = try c.decodeIfPresent(Int.self, forKey: .reportColumnCount) ?? 2
+        includeSectionColumnAssignments = try c.decodeIfPresent([String: Int].self, forKey: .includeSectionColumnAssignments) ?? [:]
         sendReportOnGameSave = try c.decodeIfPresent(Bool.self, forKey: .sendReportOnGameSave) ?? false
         includeOnlyActiveGrades = try c.decodeIfPresent(Bool.self, forKey: .includeOnlyActiveGrades) ?? true
         includePlayersOnly = try c.decodeIfPresent(Bool.self, forKey: .includePlayersOnly) ?? false
@@ -1122,6 +1129,8 @@ enum AppBackupService {
                     includeTrainers: $0.includeTrainers,
                     includeMatchNotes: $0.includeMatchNotes,
                     includeSectionOrder: $0.includeSectionOrder,
+                    reportColumnCount: $0.reportColumnCount,
+                    includeSectionColumnAssignments: $0.includeSectionColumnAssignments,
                     sendReportOnGameSave: $0.sendReportOnGameSave,
                     includeOnlyActiveGrades: $0.includeOnlyActiveGrades,
                     includePlayersOnly: $0.includePlayersOnly,

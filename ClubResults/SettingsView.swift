@@ -3012,6 +3012,8 @@ struct ReportsSettingsView: View {
                 initialIncludeTrainers: template.includeTrainers,
                 initialIncludeMatchNotes: template.includeMatchNotes,
                 initialIncludedDataOrder: template.includeSectionOrder,
+                initialReportColumnCount: template.normalizedReportColumnCount,
+                initialIncludedDataColumns: template.includeSectionColumnAssignments,
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
                 initialIncludePlayersOnly: template.includePlayersOnly,
                 initialMinimumGamesPlayed: template.minimumGamesPlayed,
@@ -3089,6 +3091,8 @@ struct ReportsSettingsView: View {
             includeTrainers: draft.includeTrainers,
             includeMatchNotes: draft.includeMatchNotes,
             includeSectionOrder: draft.includedDataOrder,
+            reportColumnCount: draft.reportColumnCount,
+            includeSectionColumnAssignments: draft.includedDataColumns,
             sendReportOnGameSave: draft.sendReportOnGameSave,
             includeOnlyActiveGrades: draft.includeOnlyActiveGrades,
             includePlayersOnly: draft.includePlayersOnly,
@@ -3145,6 +3149,8 @@ struct ReportsSettingsView: View {
         template.includeTrainers = draft.includeTrainers
         template.includeMatchNotes = draft.includeMatchNotes
         template.includeSectionOrder = draft.includedDataOrder
+        template.reportColumnCount = draft.reportColumnCount
+        template.includeSectionColumnAssignments = draft.includedDataColumns
         template.includeOnlyActiveGrades = draft.includeOnlyActiveGrades
         template.includePlayersOnly = draft.includePlayersOnly
         template.minimumGamesPlayed = draft.minimumGamesPlayed
@@ -3313,6 +3319,8 @@ struct ReportsSettingsView: View {
             includeTrainers: template.includeTrainers,
             includeMatchNotes: template.includeMatchNotes,
             includeSectionOrder: template.includeSectionOrder,
+            reportColumnCount: template.normalizedReportColumnCount,
+            includeSectionColumnAssignments: template.includeSectionColumnAssignments,
             sendReportOnGameSave: template.sendReportOnGameSave,
             includeOnlyActiveGrades: template.includeOnlyActiveGrades,
             includePlayersOnly: template.includePlayersOnly,
@@ -4592,38 +4600,36 @@ func makeTemplatePreviewPDF(
             return tables
         }
 
-        func drawCompactTables(_ compactTables: [CompactReportTable]) {
+        func drawCompactTables(_ compactTables: [(key: String, table: CompactReportTable)]) {
             guard !compactTables.isEmpty else { return }
+            let columnCount = max(1, min(template.normalizedReportColumnCount, 3))
             let gap: CGFloat = 10
-            let halfWidth = (contentRect.width - gap) / 2
-            var index = 0
-            while index < compactTables.count {
+            let columnWidth = (contentRect.width - (CGFloat(columnCount - 1) * gap)) / CGFloat(columnCount)
+            var tableColumns: [[CompactReportTable]] = Array(repeating: [], count: columnCount)
+            for item in compactTables {
+                let assignedColumn = max(0, min(template.includeSectionColumnAssignments[item.key] ?? 0, columnCount - 1))
+                tableColumns[assignedColumn].append(item.table)
+            }
+
+            var rowIndex = 0
+            while tableColumns.contains(where: { rowIndex < $0.count }) {
                 beginNewPageIfNeeded(requiredHeight: 160)
-                let leftTable = compactTables[index]
-                let leftHeight = drawCompactTable(
-                    title: leftTable.title,
-                    columns: leftTable.columns,
-                    rows: leftTable.rows,
-                    xOrigin: contentRect.minX,
-                    width: halfWidth
-                )
                 let rowStartY = cursorY
-                var rowHeight = leftHeight
-
-                if index + 1 < compactTables.count {
-                    let rightTable = compactTables[index + 1]
-                    let rightHeight = drawCompactTable(
-                        title: rightTable.title,
-                        columns: rightTable.columns,
-                        rows: rightTable.rows,
-                        xOrigin: contentRect.minX + halfWidth + gap,
-                        width: halfWidth
+                var rowHeight: CGFloat = 0
+                for column in 0..<columnCount {
+                    guard rowIndex < tableColumns[column].count else { continue }
+                    let table = tableColumns[column][rowIndex]
+                    let height = drawCompactTable(
+                        title: table.title,
+                        columns: table.columns,
+                        rows: table.rows,
+                        xOrigin: contentRect.minX + CGFloat(column) * (columnWidth + gap),
+                        width: columnWidth
                     )
-                    rowHeight = max(leftHeight, rightHeight)
+                    rowHeight = max(rowHeight, height)
                 }
-
                 cursorY = rowStartY + rowHeight + 8
-                index += 2
+                rowIndex += 1
             }
         }
 
@@ -4667,7 +4673,7 @@ func makeTemplatePreviewPDF(
             let rows = reportRows(for: games)
             let staffTables = buildStaffTables(for: games)
             let metadataGame = games.first
-            var pendingCompactTables: [CompactReportTable] = []
+            var pendingCompactTables: [(key: String, table: CompactReportTable)] = []
 
             func flushPending() {
                 drawCompactTables(pendingCompactTables)
@@ -4684,23 +4690,23 @@ func makeTemplatePreviewPDF(
                 case "bestPlayers":
                     if template.includeBestPlayers {
                         let bestPlayersLabel = games.count == 1 ? "Rank" : "Points"
-                        pendingCompactTables.append(CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers))
+                        pendingCompactTables.append((key: "bestPlayers", table: CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers)))
                     }
                 case "guestVotes":
                     if template.includePlayerGrades {
-                        pendingCompactTables.append(CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes))
+                        pendingCompactTables.append((key: "guestVotes", table: CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes)))
                     }
                 case "goalKickers":
                     if template.includeGoalKickers {
-                        pendingCompactTables.append(CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows.goalKickers))
+                        pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows.goalKickers)))
                     }
                 case "bestAndFairest":
                     if template.includeBestAndFairestVotes {
-                        pendingCompactTables.append(CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest))
+                        pendingCompactTables.append((key: "bestAndFairest", table: CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest)))
                     }
                 case "coachingStaff", "officials", "trainers":
                     if let table = staffTables[key], !table.rows.isEmpty {
-                        pendingCompactTables.append(table)
+                        pendingCompactTables.append((key: key, table: table))
                     }
                 case "matchNotes":
                     flushPending()
@@ -4784,6 +4790,8 @@ private struct CustomReportTemplateDraft {
     let selectedRecipientSectionKeys: [String]
     let selectedRecipientContactIDs: [UUID]
     let includedDataOrder: [String]
+    let reportColumnCount: Int
+    let includedDataColumns: [String: Int]
 }
 
 private struct CustomReportEditView: View {
@@ -4813,6 +4821,8 @@ private struct CustomReportEditView: View {
     @State private var includeTrainers: Bool
     @State private var includeMatchNotes: Bool
     @State private var includedDataOrder: [String]
+    @State private var reportColumnCount: Int
+    @State private var includedDataColumns: [String: Int]
     @State private var includeOnlyActiveGrades: Bool
     @State private var includePlayersOnly: Bool
     @State private var minimumGamesPlayed: Int
@@ -4847,6 +4857,8 @@ private struct CustomReportEditView: View {
         initialIncludeTrainers: Bool = false,
         initialIncludeMatchNotes: Bool = false,
         initialIncludedDataOrder: [String] = CustomReportTemplate.defaultIncludeSectionOrder,
+        initialReportColumnCount: Int = 2,
+        initialIncludedDataColumns: [String: Int] = [:],
         initialIncludeOnlyActiveGrades: Bool = true,
         initialIncludePlayersOnly: Bool = false,
         initialMinimumGamesPlayed: Int = 1,
@@ -4882,6 +4894,8 @@ private struct CustomReportEditView: View {
         _includeTrainers = State(initialValue: initialIncludeTrainers)
         _includeMatchNotes = State(initialValue: initialIncludeMatchNotes)
         _includedDataOrder = State(initialValue: CustomReportEditView.normalizeIncludedDataOrder(initialIncludedDataOrder))
+        _reportColumnCount = State(initialValue: max(1, min(initialReportColumnCount, 3)))
+        _includedDataColumns = State(initialValue: CustomReportEditView.normalizeIncludedDataColumns(initialIncludedDataColumns, order: initialIncludedDataOrder, columnCount: max(1, min(initialReportColumnCount, 3))))
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
         _includePlayersOnly = State(initialValue: initialIncludePlayersOnly)
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
@@ -4924,6 +4938,43 @@ private struct CustomReportEditView: View {
             order.append(key)
         }
         return order
+    }
+
+    private static func normalizeIncludedDataColumns(_ rawColumns: [String: Int], order: [String], columnCount: Int) -> [String: Int] {
+        let normalizedOrder = normalizeIncludedDataOrder(order)
+        let clampedColumnCount = max(1, min(columnCount, 3))
+        var result: [String: Int] = [:]
+        var fallbackColumn = 0
+        for key in normalizedOrder where key != "scores" {
+            if let value = rawColumns[key] {
+                result[key] = max(0, min(value, clampedColumnCount - 1))
+            } else {
+                result[key] = fallbackColumn
+                fallbackColumn = (fallbackColumn + 1) % clampedColumnCount
+            }
+        }
+        return result
+    }
+
+    private var nonScoreIncludedKeys: [String] {
+        includedDataOrder.filter { $0 != "scores" }
+    }
+
+    private func keys(in column: Int) -> [String] {
+        nonScoreIncludedKeys.filter { includedDataColumns[$0, default: 0] == column }
+    }
+
+    private func moveIncludedKey(_ draggedKey: String, before targetKey: String?, targetColumn: Int) {
+        guard nonScoreIncludedKeys.contains(draggedKey) else { return }
+        includedDataColumns[draggedKey] = max(0, min(targetColumn, reportColumnCount - 1))
+
+        var reordered = includedDataOrder.filter { $0 != draggedKey }
+        if let targetKey, let targetIndex = reordered.firstIndex(of: targetKey) {
+            reordered.insert(draggedKey, at: targetIndex)
+        } else {
+            reordered.append(draggedKey)
+        }
+        includedDataOrder = reordered
     }
 
     @ViewBuilder
@@ -5014,16 +5065,52 @@ private struct CustomReportEditView: View {
                 }
 
                 Section {
-                    ForEach(includedDataOrder, id: \.self) { key in
-                        dataIncludedRow(for: key)
+                    Picker("Report columns", selection: $reportColumnCount) {
+                        Text("1").tag(1)
+                        Text("2").tag(2)
+                        Text("3").tag(3)
                     }
-                    .onMove { source, destination in
-                        includedDataOrder.move(fromOffsets: source, toOffset: destination)
+                    .pickerStyle(.segmented)
+                    .onChange(of: reportColumnCount) { _, newValue in
+                        includedDataColumns = CustomReportEditView.normalizeIncludedDataColumns(includedDataColumns, order: includedDataOrder, columnCount: newValue)
+                    }
+
+                    dataIncludedRow(for: "scores")
+
+                    let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: reportColumnCount)
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(0..<reportColumnCount, id: \.self) { column in
+                            VStack(spacing: 8) {
+                                ForEach(keys(in: column), id: \.self) { key in
+                                    dataIncludedRow(for: key)
+                                        .padding(10)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(Color.secondary.opacity(0.12))
+                                        )
+                                        .onDrag {
+                                            NSItemProvider(object: key as NSString)
+                                        }
+                                        .onDrop(of: [UTType.plainText], delegate: IncludedDataDropDelegate(
+                                            targetKey: key,
+                                            targetColumn: column,
+                                            moveAction: moveIncludedKey
+                                        ))
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .top)
+                            .contentShape(Rectangle())
+                            .onDrop(of: [UTType.plainText], delegate: IncludedDataDropDelegate(
+                                targetKey: nil,
+                                targetColumn: column,
+                                moveAction: moveIncludedKey
+                            ))
+                        }
                     }
                 } header: {
                     Text("Data Included")
                 } footer: {
-                    Text("Drag to reorder report sections.")
+                    Text("Drag to reorder report sections and move them between columns. Scores always stays above the column layout.")
                 }
 
                 Section {
@@ -5175,7 +5262,9 @@ private struct CustomReportEditView: View {
                             customDateRangeEnd: customDateRangeEnd,
                             selectedRecipientSectionKeys: Array(selectedRecipientSectionKeys),
                             selectedRecipientContactIDs: Array(selectedRecipientContactIDs),
-                            includedDataOrder: includedDataOrder
+                            includedDataOrder: includedDataOrder,
+                            reportColumnCount: reportColumnCount,
+                            includedDataColumns: includedDataColumns
                         )
                         onSave(draft)
                         dismiss()
@@ -5325,6 +5414,33 @@ private struct CustomReportEditView: View {
             .filter { !groupedIDs.contains($0.id) }
             .filter { !selectedRecipientContactIDs.contains($0.id) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}
+
+private struct IncludedDataDropDelegate: DropDelegate {
+    let targetKey: String?
+    let targetColumn: Int
+    let moveAction: (String, String?, Int) -> Void
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let itemProvider = info.itemProviders(for: [UTType.plainText]).first else { return false }
+        itemProvider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
+            let droppedKey: String?
+            if let data = item as? Data {
+                droppedKey = String(data: data, encoding: .utf8)
+            } else if let text = item as? String {
+                droppedKey = text
+            } else if let text = item as? NSString {
+                droppedKey = text as String
+            } else {
+                droppedKey = nil
+            }
+            guard let key = droppedKey?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
+            DispatchQueue.main.async {
+                moveAction(key, targetKey, targetColumn)
+            }
+        }
+        return true
     }
 }
 

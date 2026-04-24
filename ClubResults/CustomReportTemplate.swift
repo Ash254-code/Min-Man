@@ -38,6 +38,8 @@ final class CustomReportTemplate {
     var includeTrainers: Bool
     var includeMatchNotes: Bool
     var includeSectionOrderData: Data
+    var reportColumnCount: Int
+    var includeSectionColumnAssignmentsData: Data
 
     // Filters
     var sendReportOnGameSave: Bool
@@ -69,6 +71,8 @@ final class CustomReportTemplate {
         includeTrainers: Bool = true,
         includeMatchNotes: Bool = false,
         includeSectionOrder: [String] = CustomReportTemplate.defaultIncludeSectionOrder,
+        reportColumnCount: Int = 2,
+        includeSectionColumnAssignments: [String: Int] = [:],
         sendReportOnGameSave: Bool = false,
         includeOnlyActiveGrades: Bool = true,
         includePlayersOnly: Bool = false,
@@ -97,6 +101,8 @@ final class CustomReportTemplate {
         self.includeTrainers = includeTrainers
         self.includeMatchNotes = includeMatchNotes
         self.includeSectionOrderData = (try? JSONEncoder().encode(includeSectionOrder)) ?? Data()
+        self.reportColumnCount = max(1, min(reportColumnCount, 3))
+        self.includeSectionColumnAssignmentsData = (try? JSONEncoder().encode(includeSectionColumnAssignments)) ?? Data()
         self.sendReportOnGameSave = sendReportOnGameSave
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
         self.includePlayersOnly = includePlayersOnly
@@ -141,6 +147,31 @@ final class CustomReportTemplate {
                 normalized.append(key)
             }
             includeSectionOrderData = (try? JSONEncoder().encode(normalized)) ?? Data()
+        }
+    }
+
+    var normalizedReportColumnCount: Int {
+        max(1, min(reportColumnCount, 3))
+    }
+
+    var includeSectionColumnAssignments: [String: Int] {
+        get {
+            let decoded = (try? JSONDecoder().decode([String: Int].self, from: includeSectionColumnAssignmentsData)) ?? [:]
+            var normalized: [String: Int] = [:]
+            for key in Self.defaultIncludeSectionOrder {
+                let assigned = decoded[key] ?? 0
+                normalized[key] = max(0, min(assigned, normalizedReportColumnCount - 1))
+            }
+            return normalized
+        }
+        set {
+            var normalized: [String: Int] = [:]
+            let columnCount = normalizedReportColumnCount
+            for key in Self.defaultIncludeSectionOrder {
+                let assigned = newValue[key] ?? 0
+                normalized[key] = max(0, min(assigned, columnCount - 1))
+            }
+            includeSectionColumnAssignmentsData = (try? JSONEncoder().encode(normalized)) ?? Data()
         }
     }
 }
