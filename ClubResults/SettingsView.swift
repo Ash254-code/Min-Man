@@ -5242,6 +5242,9 @@ private struct CustomReportEditView: View {
                                             .onDrag {
                                                 draggedIncludedKey = key
                                                 return NSItemProvider(object: key as NSString)
+                                            } preview: {
+                                                includedDataCard(for: key, showsDragHandle: false)
+                                                    .frame(width: 280)
                                             }
                                             .onDrop(of: [UTType.text.identifier], isTargeted: nil) { _ in
                                                 handleIncludedDataDrop(to: slotIndex, column: column)
