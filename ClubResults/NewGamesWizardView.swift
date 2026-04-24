@@ -207,6 +207,7 @@ struct NewGameWizardView: View {
     @Query private var reportRecipients: [ReportRecipient]
     @Query private var reportRecipientGroups: [ReportRecipientGroup]
     @Query private var contactGroupMemberships: [ContactGroupMembership]
+    @Query private var customReportTemplates: [CustomReportTemplate]
 
     // ✅ stored defaults per grade + role
     @Query private var staffDefaults: [StaffDefault]
@@ -1008,6 +1009,22 @@ struct NewGameWizardView: View {
         canProceed
     }
 
+    private var shouldSendReportOnSave: Bool {
+        guard let gid = gradeID else { return false }
+        return customReportTemplates.contains { template in
+            guard template.sendReportOnGameSave else { return false }
+            return template.gradeIDs.isEmpty || template.gradeIDs.contains(gid)
+        }
+    }
+
+    private func completeFinalSave() {
+        if shouldSendReportOnSave {
+            saveAndSendReport()
+        } else {
+            _ = saveGame(asDraft: false, dismissOnSuccess: true)
+        }
+    }
+
     private func startLiveSessionIfNeeded() {
         let configuredPeriod = min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30)
         liveGameSession.configureIfNeeded(initialPeriodMinutes: configuredPeriod)
@@ -1082,7 +1099,7 @@ struct NewGameWizardView: View {
 
                         if isLastStepInFlow {
                             Button("Save") {
-                                _ = saveGame(asDraft: false, dismissOnSuccess: true)
+                                completeFinalSave()
                             }
                             .buttonStyle(.borderedProminent)
                             .saveButtonBehavior(isEnabled: canProceedOnCurrentStep)
@@ -1305,7 +1322,7 @@ struct NewGameWizardView: View {
         }
 
         if isLastStepInFlow {
-            _ = saveGame(asDraft: false, dismissOnSuccess: true)
+            completeFinalSave()
             return
         }
 
@@ -1325,7 +1342,7 @@ struct NewGameWizardView: View {
 
     private func proceedFromVotesStep() {
         if isLastStepInFlow {
-            _ = saveGame(asDraft: false, dismissOnSuccess: true)
+            completeFinalSave()
             return
         }
 
@@ -1346,7 +1363,7 @@ struct NewGameWizardView: View {
         } else if activeSteps.contains(.votes) {
             move(to: .votes)
         } else {
-            _ = saveGame(asDraft: false, dismissOnSuccess: true)
+            completeFinalSave()
         }
     }
 
