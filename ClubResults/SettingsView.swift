@@ -4834,8 +4834,9 @@ private struct CustomReportEditView: View {
     @State private var selectedRecipientContactIDs: Set<UUID>
     @State private var showDeleteConfirmation = false
     @State private var longPressDraggingKey: String?
-    @State private var longPressDragTranslation: CGFloat = 0
+    @State private var longPressDragTranslation: CGSize = .zero
     @State private var longPressDragStartIndex: Int?
+    @State private var longPressDragStartColumn: Int?
     @AppStorage("contactSectionCustomTitles") private var customSectionTitlesData: String = ""
 
     init(
@@ -4995,53 +4996,64 @@ private struct CustomReportEditView: View {
 
     private let includedColumnPlaceholderCount = 10
     private let includedDataCardStepHeight: CGFloat = 64
+    private let includedDataColumnStepWidth: CGFloat = 180
     private let includedDataLongPressDuration: Double = 0.35
 
-    private func beginColumnOneLongPressDrag(for key: String) {
+    private func beginLongPressDrag(for key: String) {
         guard longPressDraggingKey == nil else { return }
-        let columnKeys = keys(in: 0)
+        let column = includedDataColumns[key, default: 0]
+        let columnKeys = keys(in: column)
         guard let index = columnKeys.firstIndex(of: key) else { return }
         longPressDraggingKey = key
         longPressDragStartIndex = index
-        longPressDragTranslation = 0
+        longPressDragStartColumn = column
+        longPressDragTranslation = .zero
     }
 
-    private func updateColumnOneLongPressDrag(for key: String, translation: CGFloat) {
+    private func updateLongPressDrag(for key: String, translation: CGSize) {
         guard longPressDraggingKey == key else { return }
         longPressDragTranslation = translation
-        let columnKeys = keys(in: 0)
-        guard let currentIndex = columnKeys.firstIndex(of: key) else { return }
+
+        let startColumn = longPressDragStartColumn ?? includedDataColumns[key, default: 0]
+        let currentColumn = includedDataColumns[key, default: 0]
+        let columnShift = Int((translation.width / includedDataColumnStepWidth).rounded())
+        let targetColumn = max(0, min(startColumn + columnShift, reportColumnCount - 1))
+
+        let currentColumnKeys = keys(in: currentColumn)
+        let currentIndex = currentColumnKeys.firstIndex(of: key) ?? 0
         if longPressDragStartIndex == nil {
             longPressDragStartIndex = currentIndex
         }
         guard let startIndex = longPressDragStartIndex else { return }
 
-        let rowShift = Int((translation / includedDataCardStepHeight).rounded())
-        let targetIndex = max(0, min(startIndex + rowShift, columnKeys.count - 1))
-        if targetIndex != currentIndex {
-            moveIncludedKey(key, to: targetIndex, targetColumn: 0)
+        let rowShift = Int((translation.height / includedDataCardStepHeight).rounded())
+        let targetColumnCountWithoutDragged = keys(in: targetColumn).filter { $0 != key }.count
+        let targetIndex = max(0, min(startIndex + rowShift, targetColumnCountWithoutDragged))
+        if targetColumn != currentColumn || targetIndex != currentIndex {
+            moveIncludedKey(key, to: targetIndex, targetColumn: targetColumn)
         }
     }
 
-    private func endColumnOneLongPressDrag(for key: String) {
+    private func endLongPressDrag(for key: String) {
         guard longPressDraggingKey == key else { return }
         longPressDraggingKey = nil
-        longPressDragTranslation = 0
+        longPressDragTranslation = .zero
         longPressDragStartIndex = nil
+        longPressDragStartColumn = nil
     }
 
-    private func columnOneLongPressGesture(for key: String) -> some Gesture {
+    private func includedDataLongPressGesture(for key: String) -> some Gesture {
         let longPress = LongPressGesture(minimumDuration: includedDataLongPressDuration)
             .onEnded { _ in
-                beginColumnOneLongPressDrag(for: key)
+                beginLongPressDrag(for: key)
             }
 
         let drag = DragGesture(minimumDistance: 0)
             .onChanged { value in
-                updateColumnOneLongPressDrag(for: key, translation: value.translation.height)
+                updateLongPressDrag(for: key, translation: value.translation)
             }
             .onEnded { _ in
-                endColumnOneLongPressDrag(for: key)
+                endLongPressDrag(for: key)
             }
 
         return longPress.simultaneously(with: drag)
@@ -5296,40 +5308,25 @@ private struct CustomReportEditView: View {
                                 VStack(spacing: 8) {
                                     let columnKeys = keys(in: column)
                                     ForEach(Array(columnKeys.enumerated()), id: \.element) { slotIndex, key in
-                                        if column == 0 {
-                                            includedDataCard(for: key)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .contentShape(Rectangle())
-                                                .offset(y: longPressDraggingKey == key ? longPressDragTranslation : 0)
-                                                .zIndex(longPressDraggingKey == key ? 1 : 0)
-                                                .opacity(longPressDraggingKey == key ? 0.95 : 1)
-                                                .highPriorityGesture(AnyGesture(columnOneLongPressGesture(for: key)))
-                                                .onDrag {
-                                                    return NSItemProvider(object: key as NSString)
-                                                } preview: {
-                                                    includedDataCard(for: key, showsDragHandle: false)
-                                                        .frame(width: 280)
-                                                }
-                                                .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
-                                                    handleIncludedDataDrop(providers: providers, to: slotIndex, column: column)
-                                                }
-                                        } else {
-                                            includedDataCard(for: key)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .contentShape(Rectangle())
-                                                .offset(y: longPressDraggingKey == key ? longPressDragTranslation : 0)
-                                                .zIndex(longPressDraggingKey == key ? 1 : 0)
-                                                .opacity(longPressDraggingKey == key ? 0.95 : 1)
-                                                .onDrag {
-                                                    return NSItemProvider(object: key as NSString)
-                                                } preview: {
-                                                    includedDataCard(for: key, showsDragHandle: false)
-                                                        .frame(width: 280)
-                                                }
-                                                .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
-                                                    handleIncludedDataDrop(providers: providers, to: slotIndex, column: column)
-                                                }
-                                        }
+                                        includedDataCard(for: key)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                            .offset(
+                                                x: longPressDraggingKey == key ? longPressDragTranslation.width : 0,
+                                                y: longPressDraggingKey == key ? longPressDragTranslation.height : 0
+                                            )
+                                            .zIndex(longPressDraggingKey == key ? 1 : 0)
+                                            .opacity(longPressDraggingKey == key ? 0.95 : 1)
+                                            .highPriorityGesture(AnyGesture(includedDataLongPressGesture(for: key)))
+                                            .onDrag {
+                                                return NSItemProvider(object: key as NSString)
+                                            } preview: {
+                                                includedDataCard(for: key, showsDragHandle: false)
+                                                    .frame(width: 280)
+                                            }
+                                            .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers in
+                                                handleIncludedDataDrop(providers: providers, to: slotIndex, column: column)
+                                            }
                                     }
 
                                     ForEach(0..<max(0, includedColumnPlaceholderCount - columnKeys.count), id: \.self) { offset in
