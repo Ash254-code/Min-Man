@@ -4754,7 +4754,11 @@ func makeTemplatePreviewPDF(
                     }
                 case "goalKickers":
                     if template.includeGoalKickers {
-                        pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Player", "Goals"], rows: rows.goalKickers)))
+                        let goalKickerRows = rows.goalKickers.map { row -> [String] in
+                            guard row.count >= 2 else { return row }
+                            return [row[1], row[0]]
+                        }
+                        pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Goals", "Player"], rows: goalKickerRows)))
                     }
                 case "bestAndFairest":
                     if template.includeBestAndFairestVotes {
