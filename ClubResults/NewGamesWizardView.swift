@@ -3677,6 +3677,8 @@ struct NewGameWizardView: View {
                 }
             }
             .onDisappear {
+                let isPresentingOverlaySheet = showPlayerPicker || showPointPicker || showGoalKickerEditor
+                guard !isPresentingOverlaySheet else { return }
                 pauseTimer()
             }
             .alert("Period complete", isPresented: $showEndOfPeriodPrompt) {
