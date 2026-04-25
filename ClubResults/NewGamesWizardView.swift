@@ -3323,6 +3323,10 @@ struct NewGameWizardView: View {
         @State private var showManualSavePrompt = false
         @State private var showCancelConfirmation = false
         @State private var pendingAutoAdvanceSave = false
+        @State private var goalUndoHistory: [UUID] = []
+        @State private var pointUndoHistory: [UUID?] = []
+        @State private var pendingUndoAction: UndoAction?
+        @State private var showUndoConfirmation = false
 
         init(
             date: Binding<Date>,
@@ -3417,6 +3421,11 @@ struct NewGameWizardView: View {
             var rushedPoints: Int
         }
 
+        private enum UndoAction {
+            case goal(UUID)
+            case point(UUID?)
+        }
+
         private func makeGoalKickerEditorState() -> GoalKickerEditorState {
             GoalKickerEditorState(
                 rows: scorerTally.map { scorer in
@@ -3449,6 +3458,8 @@ struct NewGameWizardView: View {
             liveSession.rushedPoints = max(0, state.rushedPoints)
             ourGoals = goalKickers.reduce(0) { $0 + $1.goals }
             ourBehinds = liveSession.pointScorers.values.reduce(0, +) + liveSession.rushedPoints
+            goalUndoHistory.removeAll()
+            pointUndoHistory.removeAll()
         }
 
         var body: some View {
@@ -3478,6 +3489,12 @@ struct NewGameWizardView: View {
                                         score: ourScore,
                                         goalAction: { showPlayerPicker = true },
                                         pointAction: { showPointPicker = true },
+                                        showUndoButtons: true,
+                                        showManualAdjusters: false,
+                                        goalUndoAction: { confirmUndoGoal() },
+                                        pointUndoAction: { confirmUndoPoint() },
+                                        canUndoGoal: canUndoGoal,
+                                        canUndoPoint: canUndoPoint,
                                         minHeight: sharedCardHeight
                                     )
                                     teamPressureCard(
@@ -3499,6 +3516,12 @@ struct NewGameWizardView: View {
                                         score: theirScore,
                                         goalAction: { recordOpponentGoal() },
                                         pointAction: { recordOpponentPoint() },
+                                        showUndoButtons: false,
+                                        showManualAdjusters: true,
+                                        goalUndoAction: {},
+                                        pointUndoAction: {},
+                                        canUndoGoal: false,
+                                        canUndoPoint: false,
                                         minHeight: sharedCardHeight
                                     )
                                     teamPressureCard(
@@ -3523,6 +3546,12 @@ struct NewGameWizardView: View {
                                                     score: ourScore,
                                                     goalAction: { showPlayerPicker = true },
                                                     pointAction: { showPointPicker = true },
+                                                    showUndoButtons: true,
+                                                    showManualAdjusters: false,
+                                                    goalUndoAction: { confirmUndoGoal() },
+                                                    pointUndoAction: { confirmUndoPoint() },
+                                                    canUndoGoal: canUndoGoal,
+                                                    canUndoPoint: canUndoPoint,
                                                     minHeight: sharedCardHeight
                                                 )
                                                 teamPressureCard(
@@ -3552,6 +3581,12 @@ struct NewGameWizardView: View {
                                                     score: theirScore,
                                                     goalAction: { recordOpponentGoal() },
                                                     pointAction: { recordOpponentPoint() },
+                                                    showUndoButtons: false,
+                                                    showManualAdjusters: true,
+                                                    goalUndoAction: {},
+                                                    pointUndoAction: {},
+                                                    canUndoGoal: false,
+                                                    canUndoPoint: false,
                                                     minHeight: sharedCardHeight
                                                 )
                                                 teamPressureCard(
@@ -3688,6 +3723,16 @@ struct NewGameWizardView: View {
                 }
             } message: {
                 Text("Save \(nextPeriodLabel ?? "period") using the updated live scores?")
+            }
+            .alert("Confirm undo", isPresented: $showUndoConfirmation) {
+                Button("Cancel", role: .cancel) {
+                    pendingUndoAction = nil
+                }
+                Button("Confirm") {
+                    applyPendingUndo()
+                }
+            } message: {
+                Text(undoConfirmationMessage)
             }
         }
 
@@ -4214,11 +4259,26 @@ struct NewGameWizardView: View {
             score: Int,
             goalAction: @escaping () -> Void,
             pointAction: @escaping () -> Void,
+            showUndoButtons: Bool,
+            showManualAdjusters: Bool,
+            goalUndoAction: @escaping () -> Void,
+            pointUndoAction: @escaping () -> Void,
+            canUndoGoal: Bool,
+            canUndoPoint: Bool,
             minHeight: CGFloat
         ) -> some View {
             VStack(alignment: .leading, spacing: 18) {
-                scoreColumn(title: title, style: style, goals: goals, behinds: behinds, score: score)
-                teamActionSection(style: style, goalAction: goalAction, pointAction: pointAction)
+                scoreColumn(title: title, style: style, goals: goals, behinds: behinds, score: score, showManualAdjusters: showManualAdjusters)
+                teamActionSection(
+                    style: style,
+                    goalAction: goalAction,
+                    pointAction: pointAction,
+                    showUndoButtons: showUndoButtons,
+                    goalUndoAction: goalUndoAction,
+                    pointUndoAction: pointUndoAction,
+                    canUndoGoal: canUndoGoal,
+                    canUndoPoint: canUndoPoint
+                )
             }
             .padding(20)
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
@@ -4226,7 +4286,7 @@ struct NewGameWizardView: View {
         }
 
         @ViewBuilder
-        private func scoreColumn(title: String, style: ClubStyle.Style, goals: Binding<Int>, behinds: Binding<Int>, score: Int) -> some View {
+        private func scoreColumn(title: String, style: ClubStyle.Style, goals: Binding<Int>, behinds: Binding<Int>, score: Int, showManualAdjusters: Bool) -> some View {
             VStack(alignment: .leading, spacing: 10) {
                 ScorePill(title, style: style, fixedWidth: 170)
 
@@ -4237,9 +4297,11 @@ struct NewGameWizardView: View {
                     .font(.system(size: 46, weight: .bold, design: .rounded))
                     .monospacedDigit()
 
-                HStack(spacing: 12) {
-                    compactScoreAdjuster(value: goals, label: "Goals")
-                    compactScoreAdjuster(value: behinds, label: "Points")
+                if showManualAdjusters {
+                    HStack(spacing: 12) {
+                        compactScoreAdjuster(value: goals, label: "Goals")
+                        compactScoreAdjuster(value: behinds, label: "Points")
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -4280,15 +4342,38 @@ struct NewGameWizardView: View {
         private func teamActionSection(
             style: ClubStyle.Style,
             goalAction: @escaping () -> Void,
-            pointAction: @escaping () -> Void
+            pointAction: @escaping () -> Void,
+            showUndoButtons: Bool,
+            goalUndoAction: @escaping () -> Void,
+            pointUndoAction: @escaping () -> Void,
+            canUndoGoal: Bool,
+            canUndoPoint: Bool
         ) -> some View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     prominentActionButton(title: "Goal", background: style.background, textColor: style.text, action: goalAction)
                     prominentActionButton(title: "Point", background: style.background, textColor: style.text, action: pointAction)
                 }
+                if showUndoButtons {
+                    HStack(spacing: 10) {
+                        undoActionButton(action: goalUndoAction, isEnabled: canUndoGoal)
+                        undoActionButton(action: pointUndoAction, isEnabled: canUndoPoint)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private func undoActionButton(action: @escaping () -> Void, isEnabled: Bool) -> some View {
+            Button(action: action) {
+                Text("Undo")
+                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
+            .disabled(!isEnabled)
         }
 
         private func prominentActionButton(title: String, background: Color, textColor: Color, action: @escaping () -> Void) -> some View {
@@ -4324,15 +4409,18 @@ struct NewGameWizardView: View {
             } else {
                 goalKickers.append(WizardGoalKickerEntry(playerID: playerID, goals: 1))
             }
+            goalUndoHistory.append(playerID)
         }
 
         private func recordPoint(for playerID: UUID?) {
             ourBehinds += 1
             guard let playerID else {
                 liveSession.rushedPoints += 1
+                pointUndoHistory.append(nil)
                 return
             }
             liveSession.pointScorers[playerID, default: 0] += 1
+            pointUndoHistory.append(playerID)
         }
 
         private func recordOpponentGoal() {
@@ -4341,6 +4429,77 @@ struct NewGameWizardView: View {
 
         private func recordOpponentPoint() {
             theirBehinds += 1
+        }
+
+        private var canUndoGoal: Bool {
+            !goalUndoHistory.isEmpty
+        }
+
+        private var canUndoPoint: Bool {
+            !pointUndoHistory.isEmpty
+        }
+
+        private var undoConfirmationMessage: String {
+            guard let pendingUndoAction else { return "" }
+            switch pendingUndoAction {
+            case .goal(let playerID):
+                return "Are you sure you want to undo \(playerName(playerID)) - Goal?"
+            case .point(let playerID):
+                if let playerID {
+                    return "Are you sure you want to undo \(playerName(playerID)) - Point?"
+                }
+                return "Are you sure you want to undo Rushed - Point?"
+            }
+        }
+
+        private func confirmUndoGoal() {
+            guard let playerID = goalUndoHistory.last else { return }
+            pendingUndoAction = .goal(playerID)
+            showUndoConfirmation = true
+        }
+
+        private func confirmUndoPoint() {
+            guard let playerID = pointUndoHistory.last else { return }
+            pendingUndoAction = .point(playerID)
+            showUndoConfirmation = true
+        }
+
+        private func applyPendingUndo() {
+            guard let pendingUndoAction else { return }
+            switch pendingUndoAction {
+            case .goal(let playerID):
+                undoGoal(for: playerID)
+            case .point(let playerID):
+                undoPoint(for: playerID)
+            }
+            self.pendingUndoAction = nil
+        }
+
+        private func undoGoal(for playerID: UUID) {
+            guard ourGoals > 0 else { return }
+            _ = goalUndoHistory.popLast()
+            ourGoals = max(0, ourGoals - 1)
+            guard let index = goalKickers.firstIndex(where: { $0.playerID == playerID }) else { return }
+            goalKickers[index].goals = max(0, goalKickers[index].goals - 1)
+            if goalKickers[index].goals == 0 {
+                goalKickers.remove(at: index)
+            }
+        }
+
+        private func undoPoint(for playerID: UUID?) {
+            guard ourBehinds > 0 else { return }
+            _ = pointUndoHistory.popLast()
+            ourBehinds = max(0, ourBehinds - 1)
+            guard let playerID else {
+                liveSession.rushedPoints = max(0, liveSession.rushedPoints - 1)
+                return
+            }
+            let current = liveSession.pointScorers[playerID, default: 0]
+            if current <= 1 {
+                liveSession.pointScorers.removeValue(forKey: playerID)
+            } else {
+                liveSession.pointScorers[playerID] = current - 1
+            }
         }
 
         private func startTimer() {
