@@ -985,30 +985,46 @@ struct NewGameWizardView: View {
             let asksWaterBoy3 = selectedGrade?.asksWaterBoy3 ?? false
             let asksWaterBoy4 = selectedGrade?.asksWaterBoy4 ?? false
 
+            let requiredWaterBoys = 2
+            func waterBoyRequirementMet(
+                _ names: [String],
+                asks: [Bool]
+            ) -> Bool {
+                let askedSlots = zip(names, asks).filter { _, isAsked in isAsked }
+                guard !askedSlots.isEmpty else { return true }
+                let allocatedCount = askedSlots
+                    .filter { !clean($0.0).isEmpty }
+                    .count
+                return allocatedCount >= min(requiredWaterBoys, askedSlots.count)
+            }
+
+            let waterBoysCompleted = waterBoyRequirementMet(
+                [waterBoy1Name, waterBoy2Name, waterBoy3Name, waterBoy4Name],
+                asks: [asksWaterBoy1, asksWaterBoy2, asksWaterBoy3, asksWaterBoy4]
+            )
+
             let officialsCompleted =
                 (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
                 (!asksFieldUmpire || !finalFieldUmpire.isEmpty) &&
                 (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
                 (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty) &&
-                (!asksWaterBoy1 || !clean(waterBoy1Name).isEmpty) &&
-                (!asksWaterBoy2 || !clean(waterBoy2Name).isEmpty) &&
-                (!asksWaterBoy3 || !clean(waterBoy3Name).isEmpty) &&
-                (!asksWaterBoy4 || !clean(waterBoy4Name).isEmpty)
+                waterBoysCompleted
 
             let boundarySelectionIsUnique =
                 !(asksBoundaryUmpire1 && asksBoundaryUmpire2 &&
                   !finalBoundary1.isEmpty && finalBoundary1 == finalBoundary2)
 
             if !isTwoGameFlow { return officialsCompleted && boundarySelectionIsUnique }
+            let game2WaterBoysCompleted = waterBoyRequirementMet(
+                [game2WaterBoy1Name, game2WaterBoy2Name, game2WaterBoy3Name, game2WaterBoy4Name],
+                asks: [asksWaterBoy1, asksWaterBoy2, asksWaterBoy3, asksWaterBoy4]
+            )
             let officialsGame2Completed =
                 (!asksGoalUmpire || !finalGame2GoalUmpire.isEmpty) &&
                 (!asksFieldUmpire || !finalGame2FieldUmpire.isEmpty) &&
                 (!asksBoundaryUmpire1 || !finalGame2Boundary1.isEmpty) &&
                 (!asksBoundaryUmpire2 || !finalGame2Boundary2.isEmpty) &&
-                (!asksWaterBoy1 || !clean(game2WaterBoy1Name).isEmpty) &&
-                (!asksWaterBoy2 || !clean(game2WaterBoy2Name).isEmpty) &&
-                (!asksWaterBoy3 || !clean(game2WaterBoy3Name).isEmpty) &&
-                (!asksWaterBoy4 || !clean(game2WaterBoy4Name).isEmpty)
+                game2WaterBoysCompleted
 
             let boundaryGame2SelectionIsUnique =
                 !(asksBoundaryUmpire1 && asksBoundaryUmpire2 &&
