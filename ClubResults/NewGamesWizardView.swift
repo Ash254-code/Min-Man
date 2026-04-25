@@ -507,7 +507,7 @@ struct NewGameWizardView: View {
         let selectedVenue = finalVenue.lowercased()
         guard !selectedVenue.isEmpty else { return false }
         return clubConfiguration.clubTeam.sanitizedVenues
-            .map(\.lowercased)
+            .map { $0.lowercased() }
             .contains(selectedVenue)
     }
 
