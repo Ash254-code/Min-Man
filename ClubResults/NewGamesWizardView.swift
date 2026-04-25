@@ -418,6 +418,43 @@ struct NewGameWizardView: View {
             UserDefaults.standard.removeObject(forKey: statePrefix + gameID.uuidString)
         }
     }
+
+    private enum DraftWizardProgressStore {
+        private static let keyPrefix = "draftWizard.progress."
+
+        private struct StoredProgress: Codable {
+            var stepRawValue: Int
+            var entryModeRawValue: String?
+            var gameCountRawValue: String?
+        }
+
+        static func save(
+            step: Step,
+            entryMode: EntryMode?,
+            gameCountSelection: GameCountSelection?,
+            for gameID: UUID
+        ) {
+            let payload = StoredProgress(
+                stepRawValue: step.rawValue,
+                entryModeRawValue: entryMode.map { $0 == .live ? "live" : "post" },
+                gameCountRawValue: gameCountSelection?.rawValue
+            )
+            guard let encoded = try? JSONEncoder().encode(payload) else { return }
+            UserDefaults.standard.set(encoded, forKey: keyPrefix + gameID.uuidString)
+        }
+
+        static func load(for gameID: UUID) -> StoredProgress? {
+            guard let data = UserDefaults.standard.data(forKey: keyPrefix + gameID.uuidString),
+                  let payload = try? JSONDecoder().decode(StoredProgress.self, from: data) else {
+                return nil
+            }
+            return payload
+        }
+
+        static func clear(for gameID: UUID) {
+            UserDefaults.standard.removeObject(forKey: keyPrefix + gameID.uuidString)
+        }
+    }
     @State private var hasAppliedInitialGrade = false
     @State private var hasAppliedDraftRestore = false
     @State private var isRestoringDraft = false
@@ -1208,6 +1245,12 @@ struct NewGameWizardView: View {
 
                         Spacer()
 
+                        Button("Save as Draft") {
+                            saveDraftAndReturnHome()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(gradeID == nil)
+
                         if isLastStepInFlow {
                             Button("Save") {
                                 completeFinalSave()
@@ -1386,8 +1429,27 @@ struct NewGameWizardView: View {
         let savedGame = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
         if let savedGame {
             LiveDraftResumeStore.save(liveGameSession, for: savedGame.id, continueCountdownInBackground: true)
+            DraftWizardProgressStore.save(
+                step: step,
+                entryMode: entryMode,
+                gameCountSelection: gameCountSelection,
+                for: savedGame.id
+            )
         }
         onBackToHomeFromLive?(gid)
+        dismiss()
+    }
+
+    private func saveDraftAndReturnHome() {
+        guard gradeID != nil else { return }
+        let savedGame = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
+        guard let savedGame else { return }
+        DraftWizardProgressStore.save(
+            step: step,
+            entryMode: entryMode,
+            gameCountSelection: gameCountSelection,
+            for: savedGame.id
+        )
         dismiss()
     }
 
@@ -1420,6 +1482,7 @@ struct NewGameWizardView: View {
 
         for gameID in clearedDraftIDs {
             LiveDraftResumeStore.clear(for: gameID)
+            DraftWizardProgressStore.clear(for: gameID)
         }
 
         onBackToHomeFromLive?(gid)
@@ -1539,7 +1602,13 @@ struct NewGameWizardView: View {
         suppressNextGradeChangeReset = true
         editingGame = draft
         gradeID = draft.gradeID
-        gameCountSelection = defaultGameCountSelection
+        let storedProgress = DraftWizardProgressStore.load(for: draft.id)
+        if let storedGameCount = storedProgress?.gameCountRawValue,
+           let decoded = GameCountSelection(rawValue: storedGameCount) {
+            gameCountSelection = decoded
+        } else {
+            gameCountSelection = defaultGameCountSelection
+        }
         date = draft.date
         opponentName = draft.opponent
         venueName = draft.venue
@@ -1590,8 +1659,23 @@ struct NewGameWizardView: View {
             move(to: .score)
             isRestoringDraft = false
         } else {
-            entryMode = .postGame
-            dataEntrySelection = .postGame
+            if let storedMode = storedProgress?.entryModeRawValue {
+                if storedMode == "live", supportsLiveGameView {
+                    entryMode = .live
+                    dataEntrySelection = .liveGame
+                } else {
+                    entryMode = .postGame
+                    dataEntrySelection = .postGame
+                }
+            } else {
+                entryMode = .postGame
+                dataEntrySelection = .postGame
+            }
+            if let restoredStepRaw = storedProgress?.stepRawValue,
+               let restoredStep = Step(rawValue: restoredStepRaw),
+               activeSteps.contains(restoredStep) {
+                move(to: restoredStep)
+            }
             isRestoringDraft = false
         }
     }
@@ -2980,8 +3064,10 @@ struct NewGameWizardView: View {
     @discardableResult
     private func saveGame(asDraft: Bool, dismissOnSuccess: Bool, enforceCompletionRequirements: Bool = true) -> Game? {
         guard let gid = gradeID else { return nil }
-        guard !finalOpponent.isEmpty else { return nil }
-        guard !finalVenue.isEmpty else { return nil }
+        if !asDraft {
+            guard !finalOpponent.isEmpty else { return nil }
+            guard !finalVenue.isEmpty else { return nil }
+        }
 
         let bestPlayersCount = requiredBestPlayersCount
         let guestBestPlayersCount = requiredGuestBestPlayersCount
@@ -3129,6 +3215,8 @@ struct NewGameWizardView: View {
 
         if !asDraft {
             LiveDraftResumeStore.clear(for: game.id)
+            DraftWizardProgressStore.clear(for: game.id)
+            clearAnyOtherDrafts(for: gid, excluding: game.id)
         }
 
         if dismissOnSuccess {
@@ -3136,6 +3224,23 @@ struct NewGameWizardView: View {
         }
 
         return game
+    }
+
+    private func clearAnyOtherDrafts(for gradeID: UUID, excluding retainedGameID: UUID) {
+        let staleDrafts = games.filter {
+            $0.gradeID == gradeID && $0.isDraft && $0.id != retainedGameID
+        }
+        guard !staleDrafts.isEmpty else { return }
+        staleDrafts.forEach {
+            LiveDraftResumeStore.clear(for: $0.id)
+            DraftWizardProgressStore.clear(for: $0.id)
+            dataContext.delete($0)
+        }
+        do {
+            try dataContext.save()
+        } catch {
+            print("❌ Failed to clear stale drafts for grade: \(error)")
+        }
     }
 
     private func saveAndSendReport() {

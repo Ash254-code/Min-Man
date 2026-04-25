@@ -666,6 +666,11 @@ private struct NewGameQuickStartSection: View {
                                         .font(.system(size: horizontalSizeClass == .compact ? 11 : 14, weight: .semibold))
                                         .foregroundStyle(.orange)
                                     .multilineTextAlignment(.center)
+                                } else if statusForGrade(grade.id) == .draftOnly {
+                                    Text("Draft game in progress")
+                                        .font(.system(size: horizontalSizeClass == .compact ? 11 : 14, weight: .semibold))
+                                        .foregroundStyle(.orange)
+                                        .multilineTextAlignment(.center)
                                 }
                             }
                             .frame(maxWidth: .infinity, minHeight: cardMinHeight)
