@@ -812,6 +812,9 @@ struct NewGameWizardView: View {
         guard let grade = selectedGrade else { return [.setup] }
 
         var steps: [Step] = [.setup]
+        if entryMode == .live {
+            steps.append(.score)
+        }
         if grade.asksHeadCoach ||
             grade.asksAssistantCoach ||
             grade.asksTeamManager ||
@@ -834,9 +837,7 @@ struct NewGameWizardView: View {
             grade.asksTrainer4 {
             steps.append(.medical)
         }
-        if entryMode == .live {
-            steps.append(.score)
-        } else if grade.asksScore && !grade.asksGoalKickers {
+        if entryMode != .live && grade.asksScore && !grade.asksGoalKickers {
             steps.append(.score)
         }
         if grade.asksGoalKickers && entryMode != .live { steps.append(.goals) }
@@ -850,11 +851,6 @@ struct NewGameWizardView: View {
     }
 
     private var entryModeTriggerStep: Step {
-        if !shouldAskForEntryMode { return .setup }
-        if activeSteps.contains(.officials) { return .officials }
-        if activeSteps.contains(.medical) { return .medical }
-        if activeSteps.contains(.officials) { return .officials }
-        if activeSteps.contains(.staff) { return .staff }
         return .setup
     }
 
@@ -1445,13 +1441,16 @@ struct NewGameWizardView: View {
     }
 
     private func proceedAfterLiveSave() {
-        if activeSteps.contains(.best) {
-            move(to: .best)
-        } else if activeSteps.contains(.votes) {
-            move(to: .votes)
-        } else {
+        guard let currentIndex = activeSteps.firstIndex(of: .score) else {
             completeFinalSave()
+            return
         }
+        let nextIndex = currentIndex + 1
+        guard activeSteps.indices.contains(nextIndex) else {
+            completeFinalSave()
+            return
+        }
+        move(to: activeSteps[nextIndex])
     }
 
     private func move(to newStep: Step) {
