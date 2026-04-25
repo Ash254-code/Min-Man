@@ -422,7 +422,7 @@ struct NewGameWizardView: View {
     private enum DraftWizardProgressStore {
         private static let keyPrefix = "draftWizard.progress."
 
-        private struct StoredProgress: Codable {
+        struct StoredProgress: Codable {
             var stepRawValue: Int
             var entryModeRawValue: String?
             var gameCountRawValue: String?
