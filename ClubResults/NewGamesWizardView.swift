@@ -1448,6 +1448,9 @@ struct NewGameWizardView: View {
         guard gradeID != nil else { return }
         let savedGame = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
         guard let savedGame else { return }
+        if entryMode == .live {
+            LiveDraftResumeStore.save(liveGameSession, for: savedGame.id, continueCountdownInBackground: false)
+        }
         DraftWizardProgressStore.save(
             step: step,
             entryMode: entryMode,
@@ -3723,11 +3726,17 @@ struct NewGameWizardView: View {
             }
             .background(Color(.systemGroupedBackground))
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItemGroup(placement: .topBarLeading) {
                     Button("Cancel") {
                         pauseTimer()
                         showCancelConfirmation = true
                     }
+
+                    Button("Save as Draft") {
+                        pauseTimer()
+                        onBackToHome()
+                    }
+                    .buttonStyle(.bordered)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save Game") {
