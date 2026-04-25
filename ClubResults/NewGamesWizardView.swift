@@ -3320,7 +3320,6 @@ struct NewGameWizardView: View {
         @State private var showPointPicker = false
         @State private var showTimerAdjuster = false
         @State private var showGoalKickerEditor = false
-        @State private var showEndOfPeriodPrompt = false
         @State private var showManualSavePrompt = false
         @State private var showCancelConfirmation = false
         @State private var pendingAutoAdvanceSave = false
@@ -3681,16 +3680,6 @@ struct NewGameWizardView: View {
                 let isPresentingOverlaySheet = showPlayerPicker || showPointPicker || showGoalKickerEditor
                 guard !isPresentingOverlaySheet else { return }
                 pauseTimer()
-            }
-            .alert("Period complete", isPresented: $showEndOfPeriodPrompt) {
-                Button("No, keep editing", role: .cancel) {
-                    showManualSavePrompt = false
-                }
-                Button("Yes, save score") {
-                    saveCurrentPeriodSnapshot()
-                }
-            } message: {
-                Text("Are the current scores correct for \(nextPeriodLabel ?? "this period")?")
             }
             .alert("Save updated score?", isPresented: $showManualSavePrompt) {
                 Button("Cancel", role: .cancel) {}
@@ -4370,7 +4359,6 @@ struct NewGameWizardView: View {
                             pendingAutoAdvanceSave = true
                             AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
                             UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                            showEndOfPeriodPrompt = true
                         }
                     }
                 }
