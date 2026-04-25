@@ -443,12 +443,16 @@ struct NewGameWizardView: View {
             UserDefaults.standard.set(encoded, forKey: keyPrefix + gameID.uuidString)
         }
 
-        static func load(for gameID: UUID) -> StoredProgress? {
+        static func load(for gameID: UUID) -> (stepRawValue: Int, entryModeRawValue: String?, gameCountRawValue: String?)? {
             guard let data = UserDefaults.standard.data(forKey: keyPrefix + gameID.uuidString),
                   let payload = try? JSONDecoder().decode(StoredProgress.self, from: data) else {
                 return nil
             }
-            return payload
+            return (
+                stepRawValue: payload.stepRawValue,
+                entryModeRawValue: payload.entryModeRawValue,
+                gameCountRawValue: payload.gameCountRawValue
+            )
         }
 
         static func clear(for gameID: UUID) {
