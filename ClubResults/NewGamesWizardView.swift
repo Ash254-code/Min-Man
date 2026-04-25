@@ -3323,6 +3323,7 @@ struct NewGameWizardView: View {
         @State private var showEndOfPeriodPrompt = false
         @State private var showManualSavePrompt = false
         @State private var showCancelConfirmation = false
+        @State private var pendingAutoAdvanceSave = false
 
         init(
             date: Binding<Date>,
@@ -4364,6 +4365,7 @@ struct NewGameWizardView: View {
                         let previousSeconds = liveSession.secondsRemaining
                         liveSession.secondsRemaining -= 1
                         if previousSeconds > 0 && liveSession.secondsRemaining == 0 {
+                            pendingAutoAdvanceSave = true
                             AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
                             UINotificationFeedbackGenerator().notificationOccurred(.warning)
                             showEndOfPeriodPrompt = true
@@ -4380,8 +4382,16 @@ struct NewGameWizardView: View {
         }
 
         private func resetTimer() {
+            let shouldSaveAndAutoAdvance = pendingAutoAdvanceSave && nextPeriodLabel != nil
+            if shouldSaveAndAutoAdvance {
+                saveCurrentPeriodSnapshot()
+            }
             pauseTimer()
             liveSession.secondsRemaining = liveSession.periodMinutes * 60
+            pendingAutoAdvanceSave = false
+            if shouldSaveAndAutoAdvance {
+                startTimer()
+            }
         }
 
         private func timeText(_ seconds: Int) -> String {
@@ -4403,6 +4413,7 @@ struct NewGameWizardView: View {
                     theirBehinds: theirBehinds
                 )
             )
+            pendingAutoAdvanceSave = false
         }
 
         private func applyConfiguredInitialPeriod() {
