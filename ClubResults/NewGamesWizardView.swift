@@ -503,6 +503,18 @@ struct NewGameWizardView: View {
         clubConfiguration.sortedOppositions.first(where: { $0.name == finalOpponent })
     }
 
+    private var isHomeGame: Bool {
+        let selectedVenue = finalVenue.lowercased()
+        guard !selectedVenue.isEmpty else { return false }
+        return clubConfiguration.clubTeam.sanitizedVenues
+            .map(\.lowercased)
+            .contains(selectedVenue)
+    }
+
+    private var shouldAskFieldUmpire: Bool {
+        (selectedGrade?.asksFieldUmpire ?? true) && isHomeGame
+    }
+
     private var venuesForSelection: [String] {
         let combined = clubConfiguration.clubTeam.sanitizedVenues + (selectedOpposition?.sanitizedVenues ?? [])
         var seen = Set<String>()
@@ -981,7 +993,7 @@ struct NewGameWizardView: View {
 
         case .officials:
             let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
-            let asksFieldUmpire = selectedGrade?.asksFieldUmpire ?? true
+            let asksFieldUmpire = shouldAskFieldUmpire
             let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
             let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
             let asksWaterBoy1 = selectedGrade?.asksWaterBoy1 ?? false
@@ -1766,7 +1778,7 @@ struct NewGameWizardView: View {
                     if selectedGrade?.asksGoalUmpire ?? true {
                         StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
                     }
-                    if selectedGrade?.asksFieldUmpire ?? true {
+                    if shouldAskFieldUmpire {
                         StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $fieldUmpireName)
                     }
 
@@ -1817,7 +1829,7 @@ struct NewGameWizardView: View {
                         if selectedGrade?.asksGoalUmpire ?? true {
                             StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $game2GoalUmpireName)
                         }
-                        if selectedGrade?.asksFieldUmpire ?? true {
+                        if shouldAskFieldUmpire {
                             StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $game2FieldUmpireName)
                         }
 
@@ -3011,7 +3023,7 @@ struct NewGameWizardView: View {
             existingGame.teamManagerName = finalTeamManager
             existingGame.runnerName = finalRunner
             existingGame.goalUmpireName = finalGoalUmpire
-            existingGame.fieldUmpireName = finalFieldUmpire
+            existingGame.fieldUmpireName = shouldAskFieldUmpire ? finalFieldUmpire : ""
             existingGame.boundaryUmpire1Name = finalBoundary1
             existingGame.boundaryUmpire2Name = finalBoundary2
             existingGame.waterBoy1Name = clean(waterBoy1Name)
@@ -3042,7 +3054,7 @@ struct NewGameWizardView: View {
                 teamManagerName: finalTeamManager,
                 runnerName: finalRunner,
                 goalUmpireName: finalGoalUmpire,
-                fieldUmpireName: finalFieldUmpire,
+                fieldUmpireName: shouldAskFieldUmpire ? finalFieldUmpire : "",
                 boundaryUmpire1Name: finalBoundary1,
                 boundaryUmpire2Name: finalBoundary2,
                 waterBoy1Name: clean(waterBoy1Name),
@@ -3076,7 +3088,7 @@ struct NewGameWizardView: View {
                     teamManagerName: finalGame2TeamManager,
                     runnerName: finalGame2Runner,
                     goalUmpireName: finalGame2GoalUmpire,
-                    fieldUmpireName: finalGame2FieldUmpire,
+                    fieldUmpireName: shouldAskFieldUmpire ? finalGame2FieldUmpire : "",
                     boundaryUmpire1Name: finalGame2Boundary1,
                     boundaryUmpire2Name: finalGame2Boundary2,
                     waterBoy1Name: clean(game2WaterBoy1Name),
