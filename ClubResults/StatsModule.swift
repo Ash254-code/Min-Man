@@ -363,7 +363,7 @@ struct StatsTypesSettingsView: View {
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
-    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = "https://example.com/min-man/invite"
+    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
     @State private var editingInvite: StatsInviteAssignment?
 
     var body: some View {
@@ -1288,7 +1288,7 @@ struct LiveStatsView: View {
     @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
-    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = "https://example.com/min-man/invite"
+    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
 
     let session: StatsSession
 
@@ -3887,7 +3887,10 @@ struct LiveStatsView: View {
     private func sendInvite(contact: PhoneInviteContact, statTypeIDs: Set<UUID>) {
         guard !statTypeIDs.isEmpty else { return }
         let token = UUID().uuidString.lowercased()
-        let linkURL = inviteURL(token: token)
+        guard let linkURL = inviteURL(token: token) else {
+            showStatusBanner(text: "INVITE LINK HOST REQUIRED • Set invite URL in Stat Takers before sending", isSuccess: false)
+            return
+        }
         let assignment: StatsInviteAssignment
         let storedContact: Contact
 
@@ -3936,9 +3939,9 @@ struct LiveStatsView: View {
         try? modelContext.save()
     }
 
-    private func inviteURL(token: String) -> String {
+    private func inviteURL(token: String) -> String? {
         let trimmed = statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "https://example.com/min-man/invite?token=\(token)" }
+        guard !trimmed.isEmpty else { return nil }
         let separator = trimmed.contains("?") ? "&" : "?"
         return "\(trimmed)\(separator)token=\(token)"
     }
@@ -5212,10 +5215,11 @@ private struct StatsStatTakersView: View {
     @Binding var selectedStatTypeIDs: Set<UUID>
     let onSendInvite: (PhoneInviteContact, Set<UUID>) -> Void
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
     @State private var showSystemContactPicker = false
     @State private var smsDraft: SMSDraft?
     @State private var composedSMSBody = ""
-    @State private var latestInviteURL = "https://example.com/min-man/invite"
+    @State private var latestInviteURL = ""
     private var canSendSMS: Bool { MFMessageComposeViewController.canSendText() }
     private var sortedStatTypes: [StatType] {
         statTypes.sorted(by: { $0.sortOrder < $1.sortOrder })
@@ -5225,6 +5229,13 @@ private struct StatsStatTakersView: View {
         NavigationStack {
             List {
                 Section("Invite Stat Taker") {
+                    TextField("https://your-host/invite", text: $statsInviteBaseURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Text("Set your deployed invite page URL here before sending SMS invites.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     Button("Pick From iPhone Contacts") {
                         showSystemContactPicker = true
                     }
@@ -5265,12 +5276,22 @@ private struct StatsStatTakersView: View {
                         """
                         smsDraft = SMSDraft(recipients: [selectedContact.phoneNumber], body: composedSMSBody)
                     }
-                    .disabled(selectedContact == nil || selectedStatTypeIDs.isEmpty || !canSendSMS)
+                    .disabled(
+                        selectedContact == nil ||
+                        selectedStatTypeIDs.isEmpty ||
+                        !canSendSMS ||
+                        statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
 
                     if !canSendSMS {
                         Text("SMS is not available on this device. Run on an iPhone with messaging enabled.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                    if statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("Invite link host is required.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                 }
 
