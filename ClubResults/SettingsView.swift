@@ -525,6 +525,10 @@ private struct AdminNameResetView: View {
         }
 
         for gradeID in selectedGradeIDs {
+            for role in selectedRoles {
+                let key = "staffPickerNames.\(gradeID.uuidString).\(role.rawValue)"
+                UserDefaults.standard.removeObject(forKey: key)
+            }
             for fieldKey in selectedLastSelectionFields {
                 let key = "lastStaffSelection.\(gradeID.uuidString).\(fieldKey)"
                 UserDefaults.standard.removeObject(forKey: key)
