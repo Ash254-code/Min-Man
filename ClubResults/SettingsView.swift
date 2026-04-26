@@ -3199,6 +3199,7 @@ struct ReportsSettingsView: View {
                 initialIncludedDataColumns: template.includeSectionColumnAssignments,
                 initialIncludeOnlyActiveGrades: template.includeOnlyActiveGrades,
                 initialIncludePlayersOnly: template.includePlayersOnly,
+                initialPlayersOnlyGradeFilterIDs: template.playersOnlyGradeFilterIDs,
                 initialMinimumGamesPlayed: template.minimumGamesPlayed,
                 initialGroupingModeRawValue: template.groupingModeRawValue,
                 initialDateRangeQuickPickRawValue: template.dateRangeQuickPickRawValue,
@@ -3288,6 +3289,7 @@ struct ReportsSettingsView: View {
             sendReportTriggerGradeID: draft.sendReportTriggerGradeID,
             includeOnlyActiveGrades: draft.includeOnlyActiveGrades,
             includePlayersOnly: draft.includePlayersOnly,
+            playersOnlyGradeFilterIDs: draft.playersOnlyGradeFilterIDs,
             minimumGamesPlayed: draft.minimumGamesPlayed,
             groupingModeRawValue: draft.groupingModeRawValue,
             dateRangeQuickPickRawValue: draft.selectedQuickPickRawValue,
@@ -3346,6 +3348,7 @@ struct ReportsSettingsView: View {
         template.includeSectionColumnAssignments = draft.includedDataColumns
         template.includeOnlyActiveGrades = draft.includeOnlyActiveGrades
         template.includePlayersOnly = draft.includePlayersOnly
+        template.playersOnlyGradeFilterIDs = draft.playersOnlyGradeFilterIDs
         template.minimumGamesPlayed = draft.minimumGamesPlayed
         template.groupingModeRawValue = draft.groupingModeRawValue
         template.dateRangeQuickPickRawValue = draft.selectedQuickPickRawValue
@@ -3511,6 +3514,7 @@ struct ReportsSettingsView: View {
             sendReportTriggerGradeID: template.sendReportTriggerGradeID,
             includeOnlyActiveGrades: template.includeOnlyActiveGrades,
             includePlayersOnly: template.includePlayersOnly,
+            playersOnlyGradeFilterIDs: template.playersOnlyGradeFilterIDs,
             minimumGamesPlayed: template.minimumGamesPlayed,
             groupingModeRawValue: template.groupingModeRawValue,
             dateRangeQuickPickRawValue: template.dateRangeQuickPickRawValue,
@@ -4309,8 +4313,17 @@ func makeTemplatePreviewPDF(
         .filter { dateRange.contains($0.date) }
         .sorted { $0.date > $1.date }
     let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
+    let playersOnlyGradeFilterIDs = Set(template.playersOnlyGradeFilterIDs)
+    let playersInPlayersOnlyScope = players.filter { player in
+        guard player.isActive else { return false }
+        guard playersOnlyGradeFilterIDs.isEmpty else {
+            return !Set(player.gradeIDs).isDisjoint(with: playersOnlyGradeFilterIDs)
+        }
+        return true
+    }
+    let playersOnlyScopedPlayerIDs = Set(playersInPlayersOnlyScope.map(\.id))
     let normalizedPlayerNames: Set<String> = Set(
-        players
+        playersInPlayersOnlyScope
             .map(\.name)
             .map {
                 $0
@@ -4348,7 +4361,7 @@ func makeTemplatePreviewPDF(
 
     func includePlayerID(_ id: UUID) -> Bool {
         guard template.includePlayersOnly else { return true }
-        return playerLookup[id] != nil
+        return playersOnlyScopedPlayerIDs.contains(id)
     }
 
     func includeName(_ rawName: String) -> Bool {
@@ -4867,12 +4880,7 @@ func makeTemplatePreviewPDF(
             }
 
             if template.includePlayersOnly {
-                let scopedPlayers = players.filter { player in
-                    guard player.isActive else { return false }
-                    guard !selectedGradeIDs.isEmpty else { return true }
-                    return !Set(player.gradeIDs).isDisjoint(with: selectedGradeIDs)
-                }
-                for player in scopedPlayers {
+                for player in playersInPlayersOnlyScope {
                     let trimmed = normalizedName(player.name)
                     guard !trimmed.isEmpty else { continue }
                     let alreadyIncluded = officialDutyCountsByName.keys.contains {
@@ -5230,6 +5238,7 @@ private struct CustomReportTemplateDraft {
     let includeMatchNotes: Bool
     let includeOnlyActiveGrades: Bool
     let includePlayersOnly: Bool
+    let playersOnlyGradeFilterIDs: [UUID]
     let minimumGamesPlayed: Int
     let groupingModeRawValue: Int
     let selectedQuickPickRawValue: String
@@ -5274,6 +5283,7 @@ private struct CustomReportEditView: View {
     @State private var includedDataColumns: [String: Int]
     @State private var includeOnlyActiveGrades: Bool
     @State private var includePlayersOnly: Bool
+    @State private var playersOnlyGradeFilterIDs: Set<UUID>
     @State private var minimumGamesPlayed: Int
     @State private var groupingMode: ReportGroupingMode
     @State private var selectedDateRangeQuickPick: ReportRangeQuickPick
@@ -5315,6 +5325,7 @@ private struct CustomReportEditView: View {
         initialIncludedDataColumns: [String: Int] = CustomReportTemplate.defaultIncludeSectionColumns,
         initialIncludeOnlyActiveGrades: Bool = true,
         initialIncludePlayersOnly: Bool = false,
+        initialPlayersOnlyGradeFilterIDs: [UUID] = [],
         initialMinimumGamesPlayed: Int = 1,
         initialGroupingModeRawValue: Int = 1,
         initialDateRangeQuickPickRawValue: String = ReportRangeQuickPick.mostRecentGame.rawValue,
@@ -5353,6 +5364,7 @@ private struct CustomReportEditView: View {
         _includedDataColumns = State(initialValue: CustomReportEditView.normalizeIncludedDataColumns(initialIncludedDataColumns, order: initialIncludedDataOrder, columnCount: max(1, min(initialReportColumnCount, 3))))
         _includeOnlyActiveGrades = State(initialValue: initialIncludeOnlyActiveGrades)
         _includePlayersOnly = State(initialValue: initialIncludePlayersOnly)
+        _playersOnlyGradeFilterIDs = State(initialValue: Set(initialPlayersOnlyGradeFilterIDs))
         _minimumGamesPlayed = State(initialValue: max(0, initialMinimumGamesPlayed))
         _groupingMode = State(initialValue: ReportGroupingMode(rawValue: initialGroupingModeRawValue) ?? .combinedTotals)
         _selectedDateRangeQuickPick = State(initialValue: ReportRangeQuickPick(rawValue: initialDateRangeQuickPickRawValue) ?? .mostRecentGame)
@@ -5952,6 +5964,35 @@ private struct CustomReportEditView: View {
                     Toggle("Split report by grade", isOn: splitByGradeBinding)
                     Toggle("Only active grades", isOn: $includeOnlyActiveGrades)
                     Toggle("Players Only", isOn: $includePlayersOnly)
+                    if includePlayersOnly {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
+                            ForEach(grades) { grade in
+                                let isSelected = playersOnlyGradeFilterIDs.contains(grade.id)
+                                Button {
+                                    if isSelected {
+                                        playersOnlyGradeFilterIDs.remove(grade.id)
+                                    } else {
+                                        playersOnlyGradeFilterIDs.insert(grade.id)
+                                    }
+                                } label: {
+                                    Text(grade.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 10)
+                                        .background(
+                                            Capsule()
+                                                .fill(isSelected ? Color.blue : Color.secondary.opacity(0.2))
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        Text("Player filter grades (optional). No grade selected means all players club wide.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Stepper("Minimum games played: \(minimumGamesPlayed)", value: $minimumGamesPlayed, in: 0...100)
                 } header: {
                     Text("Filters")
@@ -6013,6 +6054,7 @@ private struct CustomReportEditView: View {
                             includeMatchNotes: includeMatchNotes,
                             includeOnlyActiveGrades: includeOnlyActiveGrades,
                             includePlayersOnly: includePlayersOnly,
+                            playersOnlyGradeFilterIDs: Array(playersOnlyGradeFilterIDs),
                             minimumGamesPlayed: minimumGamesPlayed,
                             groupingModeRawValue: groupingMode.rawValue,
                             selectedQuickPickRawValue: selectedDateRangeQuickPick.rawValue,
