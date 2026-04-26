@@ -29,6 +29,8 @@ struct GradeBackup: Codable {
     let bestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
     let guestBestPlayersCount: Int
+    let bestPlayersVotes: [Int]
+    let guestBestPlayersVotes: [Int]
     let allowsLiveGameView: Bool
     let quarterLengthMinutes: Int
 
@@ -61,6 +63,8 @@ struct GradeBackup: Codable {
         bestPlayersCount: Int = 6,
         asksGuestBestFairestVotesScan: Bool = false,
         guestBestPlayersCount: Int = 3,
+        bestPlayersVotes: [Int]? = nil,
+        guestBestPlayersVotes: [Int]? = nil,
         allowsLiveGameView: Bool = true,
         quarterLengthMinutes: Int = 20
     ) {
@@ -92,6 +96,8 @@ struct GradeBackup: Codable {
         self.bestPlayersCount = min(max(bestPlayersCount, 0), 10)
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
         self.guestBestPlayersCount = min(max(guestBestPlayersCount, 1), 10)
+        self.bestPlayersVotes = Grade.normalizedVotes(bestPlayersVotes, count: self.bestPlayersCount)
+        self.guestBestPlayersVotes = Grade.normalizedVotes(guestBestPlayersVotes, count: self.guestBestPlayersCount)
         self.allowsLiveGameView = allowsLiveGameView
         self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
     }
@@ -105,6 +111,7 @@ struct GradeBackup: Codable {
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
         case bestPlayersCount, asksBestPlayers
+        case bestPlayersVotes, guestBestPlayersVotes
         case asksGuestBestFairestVotesScan, guestBestPlayersCount, allowsLiveGameView, quarterLengthMinutes
     }
 
@@ -145,6 +152,8 @@ struct GradeBackup: Codable {
         }
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
         guestBestPlayersCount = min(max(try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? 3, 1), 10)
+        bestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .bestPlayersVotes), count: bestPlayersCount)
+        guestBestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .guestBestPlayersVotes), count: guestBestPlayersCount)
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? true
         quarterLengthMinutes = min(max(try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20, 10), 30)
     }
@@ -179,6 +188,8 @@ struct GradeBackup: Codable {
         try c.encode(bestPlayersCount, forKey: .bestPlayersCount)
         try c.encode(asksGuestBestFairestVotesScan, forKey: .asksGuestBestFairestVotesScan)
         try c.encode(guestBestPlayersCount, forKey: .guestBestPlayersCount)
+        try c.encode(bestPlayersVotes, forKey: .bestPlayersVotes)
+        try c.encode(guestBestPlayersVotes, forKey: .guestBestPlayersVotes)
         try c.encode(allowsLiveGameView, forKey: .allowsLiveGameView)
         try c.encode(quarterLengthMinutes, forKey: .quarterLengthMinutes)
     }
@@ -237,6 +248,8 @@ enum SettingsBackupStore {
                 bestPlayersCount: $0.bestPlayersCount,
                 asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                 guestBestPlayersCount: $0.guestBestPlayersCount,
+                bestPlayersVotes: $0.bestPlayersVotes,
+                guestBestPlayersVotes: $0.guestBestPlayersVotes,
                 allowsLiveGameView: $0.allowsLiveGameView,
                 quarterLengthMinutes: $0.quarterLengthMinutes
             )
@@ -353,6 +366,8 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 bestPlayersCount: backup.bestPlayersCount,
                 asksGuestBestFairestVotesScan: backup.asksGuestBestFairestVotesScan,
                 guestBestPlayersCount: backup.guestBestPlayersCount,
+                bestPlayersVotes: backup.bestPlayersVotes,
+                guestBestPlayersVotes: backup.guestBestPlayersVotes,
                 allowsLiveGameView: backup.allowsLiveGameView,
                 quarterLengthMinutes: backup.quarterLengthMinutes
             )
