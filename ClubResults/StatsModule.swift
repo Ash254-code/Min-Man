@@ -1323,11 +1323,10 @@ struct LiveStatsView: View {
     @State private var statusBanner: StatRecordBanner?
     @State private var statusBannerTask: Task<Void, Never>?
     @State private var showStatsSettings = false
-    @State private var showInviteComposer = false
+    @State private var showStatTakers = false
     @State private var composedShareText: String?
     @State private var selectedInviteContact: PhoneInviteContact?
     @State private var selectedInviteStatTypeIDs: Set<UUID> = []
-    @State private var activeInviteWebUI: StatsInviteAssignment?
     @State private var showQuarterChangeReminder = false
     @State private var showQuarterPickerDialog = false
     @State private var showTimerModeEditor = false
@@ -1419,17 +1418,8 @@ struct LiveStatsView: View {
                     Button("Settings") {
                         showStatsSettings = true
                     }
-                    Button("Invite Stat Taker") {
-                        showInviteComposer = true
-                    }
-                    if !inviteAssignments.isEmpty {
-                        Divider()
-                        ForEach(inviteAssignments) { assignment in
-                            let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Invite"
-                            Button("Open \(contactName) UI") {
-                                activeInviteWebUI = assignment
-                            }
-                        }
+                    Button("Stat Takers") {
+                        showStatTakers = true
                     }
                     Button("Generate Report") {
                         generateReport()
@@ -1483,28 +1473,14 @@ struct LiveStatsView: View {
                 StatsTypesSettingsView()
             }
         }
-        .sheet(isPresented: $showInviteComposer) {
-            StatsInviteComposerSheet(
+        .fullScreenCover(isPresented: $showStatTakers) {
+            StatsStatTakersView(
                 contacts: contacts,
+                inviteAssignments: inviteAssignments,
                 statTypes: enabledStatTypes,
                 selectedContact: $selectedInviteContact,
                 selectedStatTypeIDs: $selectedInviteStatTypeIDs,
                 onSendInvite: sendInvite
-            )
-        }
-        .sheet(item: $activeInviteWebUI) { assignment in
-            InviteStatWebInterfaceView(
-                assignment: assignment,
-                statTypes: enabledStatTypes,
-                contactName: contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Stat Taker",
-                onRecord: { statType in
-                    handleRemoteInviteStatTap(statType)
-                },
-                onConnectionChanged: { isConnected in
-                    assignment.isConnected = isConnected
-                    assignment.lastConnectedAt = isConnected ? Date() : assignment.lastConnectedAt
-                    try? modelContext.save()
-                }
             )
         }
         .sheet(isPresented: $showPlayerVisibilityEditor) {
@@ -3971,20 +3947,6 @@ struct LiveStatsView: View {
         value.filter(\.isNumber)
     }
 
-    private func handleRemoteInviteStatTap(_ statType: StatType) {
-        let event = StatEvent(
-            sessionId: session.sessionId,
-            playerId: ourTeamStatPlayerID,
-            statTypeId: statType.id,
-            quarter: selectedQuarter,
-            sourceRaw: StatsEventSource.remoteInvite.rawValue,
-            transcript: "Invite UI"
-        )
-        modelContext.insert(event)
-        try? modelContext.save()
-        showSuccessBanner(for: event)
-    }
-
     private func undoLastEvent() {
         guard let latest = sessionEvents.first else { return }
         modelContext.delete(latest)
@@ -5242,8 +5204,9 @@ private struct StatsTotalsView: View {
     }
 }
 
-private struct StatsInviteComposerSheet: View {
+private struct StatsStatTakersView: View {
     let contacts: [Contact]
+    let inviteAssignments: [StatsInviteAssignment]
     let statTypes: [StatType]
     @Binding var selectedContact: PhoneInviteContact?
     @Binding var selectedStatTypeIDs: Set<UUID>
@@ -5254,11 +5217,14 @@ private struct StatsInviteComposerSheet: View {
     @State private var composedSMSBody = ""
     @State private var latestInviteURL = "https://example.com/min-man/invite"
     private var canSendSMS: Bool { MFMessageComposeViewController.canSendText() }
+    private var sortedStatTypes: [StatType] {
+        statTypes.sorted(by: { $0.sortOrder < $1.sortOrder })
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Contact Picker") {
+            List {
+                Section("Invite Stat Taker") {
                     Button("Pick From iPhone Contacts") {
                         showSystemContactPicker = true
                     }
@@ -5269,9 +5235,8 @@ private struct StatsInviteComposerSheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                }
-                Section("Assign Stats") {
-                    ForEach(statTypes) { type in
+
+                    ForEach(sortedStatTypes) { type in
                         Toggle(
                             type.name,
                             isOn: Binding(
@@ -5282,26 +5247,11 @@ private struct StatsInviteComposerSheet: View {
                             )
                         )
                     }
-                }
-                if !canSendSMS {
-                    Section {
-                        Text("SMS is not available on this device. Run on an iPhone with messaging enabled.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .navigationTitle("Invite Stat Taker")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Send Link") {
+                    Button("Send Invite Link") {
                         guard let selectedContact else { return }
                         onSendInvite(selectedContact, selectedStatTypeIDs)
                         latestInviteURL = UserDefaults.standard.string(forKey: "stats.lastInviteURL") ?? latestInviteURL
-                        let assigned = statTypes
+                        let assigned = sortedStatTypes
                             .filter { selectedStatTypeIDs.contains($0.id) }
                             .map(\.name)
                             .joined(separator: ", ")
@@ -5316,6 +5266,29 @@ private struct StatsInviteComposerSheet: View {
                         smsDraft = SMSDraft(recipients: [selectedContact.phoneNumber], body: composedSMSBody)
                     }
                     .disabled(selectedContact == nil || selectedStatTypeIDs.isEmpty || !canSendSMS)
+
+                    if !canSendSMS {
+                        Text("SMS is not available on this device. Run on an iPhone with messaging enabled.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Invited Users") {
+                    if inviteAssignments.isEmpty {
+                        Text("No invited users yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(inviteAssignments) { assignment in
+                            invitedUserRow(assignment)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Stat Takers")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
         }
@@ -5327,6 +5300,33 @@ private struct StatsInviteComposerSheet: View {
         .sheet(item: $smsDraft, onDismiss: { dismiss() }) { draft in
             SMSComposerView(recipients: draft.recipients, body: draft.body)
         }
+    }
+
+    @ViewBuilder
+    private func invitedUserRow(_ assignment: StatsInviteAssignment) -> some View {
+        let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Unknown Contact"
+        let statusText = assignment.isConnected ? "Connected" : "Waiting"
+        let statNames = sortedStatTypes
+            .filter { assignment.assignedStatTypeIDs.contains($0.id) }
+            .map(\.name)
+            .joined(separator: ", ")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(assignment.isConnected ? Color.green : Color.gray.opacity(0.5))
+                    .frame(width: 10, height: 10)
+                Text(contactName)
+                    .font(.headline)
+                Spacer()
+                Text(statusText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(assignment.isConnected ? .green : .secondary)
+            }
+            Text("Collecting: \(statNames.isEmpty ? "None" : statNames)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
     }
 }
 
