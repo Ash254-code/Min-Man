@@ -877,6 +877,14 @@ private struct ClubGradesSettingsView: View {
                                 Text("\(count)").tag(count)
                             }
                         }
+                        Toggle("Guest Best Players", isOn: bind(\.asksGuestBestFairestVotesScan))
+                        if editGradeDraft.asksGuestBestFairestVotesScan {
+                            Picker("Guest Best Players Quantity", selection: guestBestPlayersCountBinding) {
+                                ForEach(1...10, id: \.self) { count in
+                                    Text("\(count)").tag(count)
+                                }
+                            }
+                        }
                         NavigationLink {
                             VoteAllocationEditorView(
                                 bestPlayersCount: bestPlayersCountBinding,
@@ -886,14 +894,6 @@ private struct ClubGradesSettingsView: View {
                             )
                         } label: {
                             Label("Best & Fairest", systemImage: "list.number")
-                        }
-                        Toggle("Guest Best Players", isOn: bind(\.asksGuestBestFairestVotesScan))
-                        if editGradeDraft.asksGuestBestFairestVotesScan {
-                            Picker("Guest Best Players Quantity", selection: guestBestPlayersCountBinding) {
-                                ForEach(1...10, id: \.self) { count in
-                                    Text("\(count)").tag(count)
-                                }
-                            }
                         }
                     }
 
@@ -1334,15 +1334,37 @@ private struct VoteAllocationEditorView: View {
 
     var body: some View {
         Form {
-            Section("Best Players Votes") {
+            Section {
+                Text("Choose how many Best & Fairest votes each ranked player receives.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 ForEach(0..<bestPlayersCount, id: \.self) { index in
-                    Stepper("Rank \(index + 1): \(bestVotes(for: index))", value: bestVoteBinding(index), in: 0...20)
+                    Stepper(value: bestVoteBinding(index), in: 0...20) {
+                        VoteAllocationRow(
+                            rank: index + 1,
+                            votes: bestVotes(for: index),
+                            description: "Player ranked #\(index + 1) gets \(bestVotes(for: index)) vote\(bestVotes(for: index) == 1 ? "" : "s")."
+                        )
+                    }
                 }
+            } header: {
+                Text("Best Players Votes")
             }
-            Section("Guest Best Players Votes") {
+            Section {
+                Text("Set the vote weighting used when collecting guest best players.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 ForEach(0..<guestBestPlayersCount, id: \.self) { index in
-                    Stepper("Rank \(index + 1): \(guestVotes(for: index))", value: guestVoteBinding(index), in: 0...20)
+                    Stepper(value: guestVoteBinding(index), in: 0...20) {
+                        VoteAllocationRow(
+                            rank: index + 1,
+                            votes: guestVotes(for: index),
+                            description: "Guest player ranked #\(index + 1) gets \(guestVotes(for: index)) vote\(guestVotes(for: index) == 1 ? "" : "s")."
+                        )
+                    }
                 }
+            } header: {
+                Text("Guest Best Players Votes")
             }
         }
         .navigationTitle("Best & Fairest")
@@ -1384,6 +1406,21 @@ private struct VoteAllocationEditorView: View {
                 guestBestPlayersVotes = values
             }
         )
+    }
+}
+
+private struct VoteAllocationRow: View {
+    let rank: Int
+    let votes: Int
+    let description: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Rank \(rank): \(votes)")
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -1556,6 +1593,14 @@ private struct AddGradeWizardView: View {
                                 Text("\(count)").tag(count)
                             }
                         }
+                        Toggle("Guest Best Players", isOn: $draft.asksGuestBestFairestVotesScan)
+                        if draft.asksGuestBestFairestVotesScan {
+                            Picker("Guest Best Players Quantity", selection: $draft.guestBestPlayersCount) {
+                                ForEach(1...10, id: \.self) { count in
+                                    Text("\(count)").tag(count)
+                                }
+                            }
+                        }
                         NavigationLink {
                             VoteAllocationEditorView(
                                 bestPlayersCount: $draft.bestPlayersCount,
@@ -1565,14 +1610,6 @@ private struct AddGradeWizardView: View {
                             )
                         } label: {
                             Label("Best & Fairest", systemImage: "list.number")
-                        }
-                        Toggle("Guest Best Players", isOn: $draft.asksGuestBestFairestVotesScan)
-                        if draft.asksGuestBestFairestVotesScan {
-                            Picker("Guest Best Players Quantity", selection: $draft.guestBestPlayersCount) {
-                                ForEach(1...10, id: \.self) { count in
-                                    Text("\(count)").tag(count)
-                                }
-                            }
                         }
                     } header: {
                         Text("Awards")
