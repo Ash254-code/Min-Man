@@ -152,12 +152,15 @@ struct PresView: View {
 
             lines.append("\(section.grade.name): \(section.games.count) game\(section.games.count == 1 ? "" : "s") to report.")
             for game in section.games {
-                let resultLine = shouldShowScore(section.grade.id)
-                ? "\(ourTeamName) \(game.ourScore), \(game.opponent) \(game.theirScore)."
+                let teamName = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Our Team"
+                : clubConfiguration.clubTeam.name
+                let resultLine = shouldShowScore(for: section.grade.id)
+                ? "\(teamName) \(game.ourScore), \(game.opponent) \(game.theirScore)."
                 : "score summary disabled for this grade."
                 lines.append("Played against \(game.opponent) on \(game.date.formatted(date: .abbreviated, time: .omitted)); \(resultLine)")
 
-                let bestPlayers = bestPlayerItems(game).prefix(3).joined(separator: ", ")
+                let bestPlayers = bestPlayerItems(for: game).prefix(3).joined(separator: ", ")
                 if !bestPlayers.isEmpty, bestPlayers != "None recorded" {
                     lines.append("Best players included \(bestPlayers).")
                 }
