@@ -863,28 +863,33 @@ private struct ClubGradesSettingsView: View {
                     }
 
                     Section {
+                        let bestPlayersCountBinding = bind(\.bestPlayersCount)
+                        let guestBestPlayersCountBinding = bind(\.guestBestPlayersCount)
+                        let bestPlayersVotesBinding = bind(\.bestPlayersVotes)
+                        let guestBestPlayersVotesBinding = bind(\.guestBestPlayersVotes)
+
                         Label("Awards", systemImage: "rosette")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Score", isOn: bind(\.asksScore))
                         Toggle("Goal Kickers", isOn: bind(\.asksGoalKickers))
-                        Picker("Best Players", selection: bind(\.bestPlayersCount)) {
+                        Picker("Best Players", selection: bestPlayersCountBinding) {
                             ForEach(1...10, id: \.self) { count in
                                 Text("\(count)").tag(count)
                             }
                         }
                         NavigationLink {
                             VoteAllocationEditorView(
-                                bestPlayersCount: bind(\.bestPlayersCount),
-                                guestBestPlayersCount: bind(\.guestBestPlayersCount),
-                                bestPlayersVotes: bind(\.bestPlayersVotes),
-                                guestBestPlayersVotes: bind(\.guestBestPlayersVotes)
+                                bestPlayersCount: bestPlayersCountBinding,
+                                guestBestPlayersCount: guestBestPlayersCountBinding,
+                                bestPlayersVotes: bestPlayersVotesBinding,
+                                guestBestPlayersVotes: guestBestPlayersVotesBinding
                             )
                         } label: {
                             Label("Best & Fairest", systemImage: "list.number")
                         }
                         Toggle("Guest Best Players", isOn: bind(\.asksGuestBestFairestVotesScan))
                         if editGradeDraft.asksGuestBestFairestVotesScan {
-                            Picker("Guest Best Players Quantity", selection: bind(\.guestBestPlayersCount)) {
+                            Picker("Guest Best Players Quantity", selection: guestBestPlayersCountBinding) {
                                 ForEach(1...10, id: \.self) { count in
                                     Text("\(count)").tag(count)
                                 }
