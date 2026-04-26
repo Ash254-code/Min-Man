@@ -580,6 +580,7 @@ struct CustomReportTemplateRecord: Codable {
     let sendReportTriggerGradeID: UUID?
     let includeOnlyActiveGrades: Bool
     let includePlayersOnly: Bool
+    let playersOnlyGradeFilterIDs: [UUID]
     let minimumGamesPlayed: Int
     let groupingModeRawValue: Int
 
@@ -609,6 +610,7 @@ struct CustomReportTemplateRecord: Codable {
         sendReportTriggerGradeID = template.sendReportTriggerGradeID
         includeOnlyActiveGrades = template.includeOnlyActiveGrades
         includePlayersOnly = template.includePlayersOnly
+        playersOnlyGradeFilterIDs = template.playersOnlyGradeFilterIDs
         minimumGamesPlayed = template.minimumGamesPlayed
         groupingModeRawValue = template.groupingModeRawValue
     }
@@ -618,7 +620,7 @@ struct CustomReportTemplateRecord: Codable {
         case includeGoalKickers, goalKickersLimit, includeGuernseyNumbers, includeBestAndFairestVotes
         case bestAndFairestLimit, includeStaffRoles, includeOfficials
         case includeUmpires, includeTrainers, includeMatchNotes, includeSectionOrder, includeOnlyActiveGrades
-        case includePlayersOnly, sendReportOnGameSave, sendReportTriggerGradeID, minimumGamesPlayed, groupingModeRawValue
+        case includePlayersOnly, playersOnlyGradeFilterIDs, sendReportOnGameSave, sendReportTriggerGradeID, minimumGamesPlayed, groupingModeRawValue
         case reportColumnCount, includeSectionColumnAssignments
     }
 
@@ -649,6 +651,7 @@ struct CustomReportTemplateRecord: Codable {
         sendReportTriggerGradeID = try c.decodeIfPresent(UUID.self, forKey: .sendReportTriggerGradeID)
         includeOnlyActiveGrades = try c.decodeIfPresent(Bool.self, forKey: .includeOnlyActiveGrades) ?? true
         includePlayersOnly = try c.decodeIfPresent(Bool.self, forKey: .includePlayersOnly) ?? false
+        playersOnlyGradeFilterIDs = try c.decodeIfPresent([UUID].self, forKey: .playersOnlyGradeFilterIDs) ?? []
         minimumGamesPlayed = try c.decodeIfPresent(Int.self, forKey: .minimumGamesPlayed) ?? 0
         groupingModeRawValue = try c.decodeIfPresent(Int.self, forKey: .groupingModeRawValue) ?? 0
     }
@@ -1241,6 +1244,7 @@ enum AppBackupService {
                     sendReportTriggerGradeID: $0.sendReportTriggerGradeID,
                     includeOnlyActiveGrades: $0.includeOnlyActiveGrades,
                     includePlayersOnly: $0.includePlayersOnly,
+                    playersOnlyGradeFilterIDs: $0.playersOnlyGradeFilterIDs,
                     minimumGamesPlayed: $0.minimumGamesPlayed,
                     groupingModeRawValue: $0.groupingModeRawValue
                 )

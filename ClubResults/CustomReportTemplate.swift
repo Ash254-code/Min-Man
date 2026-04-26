@@ -57,6 +57,7 @@ final class CustomReportTemplate {
     var sendReportTriggerGradeID: UUID?
     var includeOnlyActiveGrades: Bool
     var includePlayersOnly: Bool
+    var playersOnlyGradeFilterIDsData: Data
     var minimumGamesPlayed: Int
     var groupingModeRawValue: Int
     var dateRangeQuickPickRawValue: String
@@ -89,6 +90,7 @@ final class CustomReportTemplate {
         sendReportTriggerGradeID: UUID? = nil,
         includeOnlyActiveGrades: Bool = true,
         includePlayersOnly: Bool = false,
+        playersOnlyGradeFilterIDs: [UUID] = [],
         minimumGamesPlayed: Int = 0,
         groupingModeRawValue: Int = 0,
         dateRangeQuickPickRawValue: String = "Most Recent Game",
@@ -120,6 +122,7 @@ final class CustomReportTemplate {
         self.sendReportTriggerGradeID = sendReportTriggerGradeID
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
         self.includePlayersOnly = includePlayersOnly
+        self.playersOnlyGradeFilterIDsData = (try? JSONEncoder().encode(playersOnlyGradeFilterIDs)) ?? Data()
         self.minimumGamesPlayed = max(0, minimumGamesPlayed)
         self.groupingModeRawValue = groupingModeRawValue
         self.dateRangeQuickPickRawValue = dateRangeQuickPickRawValue
@@ -166,6 +169,15 @@ final class CustomReportTemplate {
 
     var normalizedReportColumnCount: Int {
         max(1, min(reportColumnCount, 3))
+    }
+
+    var playersOnlyGradeFilterIDs: [UUID] {
+        get {
+            (try? JSONDecoder().decode([UUID].self, from: playersOnlyGradeFilterIDsData)) ?? []
+        }
+        set {
+            playersOnlyGradeFilterIDsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+        }
     }
 
     var includeSectionColumnAssignments: [String: Int] {
