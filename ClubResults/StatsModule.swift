@@ -177,6 +177,51 @@ final class StatEvent {
 enum StatsEventSource: String, CaseIterable {
     case manual
     case voice
+    case remoteInvite
+}
+
+@Model
+final class StatsInviteAssignment {
+    var id: UUID
+    var contactId: UUID
+    var assignedStatTypeIDsRaw: String
+    var inviteLinkToken: String
+    var inviteLinkURL: String
+    var lastInvitedAt: Date
+    var isConnected: Bool
+    var lastConnectedAt: Date?
+
+    init(
+        id: UUID = UUID(),
+        contactId: UUID,
+        assignedStatTypeIDsRaw: String,
+        inviteLinkToken: String,
+        inviteLinkURL: String,
+        lastInvitedAt: Date = Date(),
+        isConnected: Bool = false,
+        lastConnectedAt: Date? = nil
+    ) {
+        self.id = id
+        self.contactId = contactId
+        self.assignedStatTypeIDsRaw = assignedStatTypeIDsRaw
+        self.inviteLinkToken = inviteLinkToken
+        self.inviteLinkURL = inviteLinkURL
+        self.lastInvitedAt = lastInvitedAt
+        self.isConnected = isConnected
+        self.lastConnectedAt = lastConnectedAt
+    }
+}
+
+extension StatsInviteAssignment {
+    var assignedStatTypeIDs: [UUID] {
+        assignedStatTypeIDsRaw
+            .split(separator: ",")
+            .compactMap { UUID(uuidString: String($0)) }
+    }
+
+    func setAssignedStatTypeIDs(_ ids: [UUID]) {
+        assignedStatTypeIDsRaw = ids.map(\.uuidString).joined(separator: ",")
+    }
 }
 
 private enum EfficiencyVote: String {
@@ -306,6 +351,8 @@ struct StatsTypesSettingsView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StatType.sortOrder) private var statTypes: [StatType]
+    @Query(sort: \Contact.name) private var contacts: [Contact]
+    @Query(sort: \StatsInviteAssignment.lastInvitedAt, order: .reverse) private var inviteAssignments: [StatsInviteAssignment]
     @State private var newName = ""
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
@@ -314,6 +361,7 @@ struct StatsTypesSettingsView: View {
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
+    @State private var editingInvite: StatsInviteAssignment?
 
     var body: some View {
         GeometryReader { geometry in
@@ -433,10 +481,58 @@ struct StatsTypesSettingsView: View {
                     Label("Speech Setup", systemImage: "waveform.badge.mic")
                 }
             }
+
+            Section("Invited Stat Takers") {
+                if inviteAssignments.isEmpty {
+                    Text("No invited users yet. Invite from Live Stats.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(inviteAssignments) { assignment in
+                    let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Unknown Contact"
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Circle()
+                                .fill(assignment.isConnected ? Color.green : Color.gray.opacity(0.4))
+                                .frame(width: 8, height: 8)
+                            Text(contactName)
+                                .font(.headline)
+                            Spacer()
+                            Button("Manage") {
+                                editingInvite = assignment
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        Text("Assigned: \(assignedStatNames(for: assignment))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 220)
         .listStyle(.insetGrouped)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .sheet(item: $editingInvite) { assignment in
+            StatsInviteManagementSheet(
+                assignment: assignment,
+                allStatTypes: statTypes.sorted(by: { $0.sortOrder < $1.sortOrder }),
+                onSave: {
+                    save()
+                },
+                onReinvite: {
+                    assignment.lastInvitedAt = Date()
+                    save()
+                }
+            )
+        }
+    }
+
+    private func assignedStatNames(for assignment: StatsInviteAssignment) -> String {
+        let names = statTypes
+            .filter { assignment.assignedStatTypeIDs.contains($0.id) }
+            .sorted(by: { $0.sortOrder < $1.sortOrder })
+            .map(\.name)
+        return names.isEmpty ? "None" : names.joined(separator: ", ")
     }
 
     private func addStatType() {
@@ -1187,6 +1283,8 @@ struct LiveStatsView: View {
     @Query(sort: \Player.name) private var allPlayers: [Player]
     @Query(sort: \StatType.sortOrder) private var allStatTypes: [StatType]
     @Query(sort: \StatEvent.timestamp, order: .reverse) private var allEvents: [StatEvent]
+    @Query(sort: \Contact.name) private var contacts: [Contact]
+    @Query(sort: \StatsInviteAssignment.lastInvitedAt, order: .reverse) private var inviteAssignments: [StatsInviteAssignment]
 
     @State private var selectedQuarter = "Q1"
     @State private var selectedPlayerId: UUID?
@@ -1212,6 +1310,11 @@ struct LiveStatsView: View {
     @State private var statusBanner: StatRecordBanner?
     @State private var statusBannerTask: Task<Void, Never>?
     @State private var showStatsSettings = false
+    @State private var showInviteComposer = false
+    @State private var composedShareText: String?
+    @State private var selectedInviteContactID: UUID?
+    @State private var selectedInviteStatTypeIDs: Set<UUID> = []
+    @State private var activeInviteWebUI: StatsInviteAssignment?
     @State private var showQuarterChangeReminder = false
     @State private var showQuarterPickerDialog = false
     @State private var showTimerModeEditor = false
@@ -1303,6 +1406,17 @@ struct LiveStatsView: View {
                     Button("Settings") {
                         showStatsSettings = true
                     }
+                    Button("Invite Stat Taker") {
+                        showInviteComposer = true
+                    }
+                    if !inviteAssignments.isEmpty {
+                        Divider()
+                        ForEach(inviteAssignments) { assignment in
+                            Button("Open \(contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Invite") UI") {
+                                activeInviteWebUI = assignment
+                            }
+                        }
+                    }
                     Button("Generate Report") {
                         generateReport()
                     }
@@ -1345,10 +1459,39 @@ struct LiveStatsView: View {
                 ShareSheet(items: [shareURL])
             }
         }
+        .sheet(isPresented: Binding(get: { composedShareText != nil }, set: { if !$0 { composedShareText = nil } })) {
+            if let composedShareText {
+                ShareSheet(items: [composedShareText])
+            }
+        }
         .sheet(isPresented: $showStatsSettings) {
             NavigationStack {
                 StatsTypesSettingsView()
             }
+        }
+        .sheet(isPresented: $showInviteComposer) {
+            StatsInviteComposerSheet(
+                contacts: contacts,
+                statTypes: enabledStatTypes,
+                selectedContactID: $selectedInviteContactID,
+                selectedStatTypeIDs: $selectedInviteStatTypeIDs,
+                onSendInvite: sendInvite
+            )
+        }
+        .sheet(item: $activeInviteWebUI) { assignment in
+            InviteStatWebInterfaceView(
+                assignment: assignment,
+                statTypes: enabledStatTypes,
+                contactName: contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Stat Taker",
+                onRecord: { statType in
+                    handleRemoteInviteStatTap(statType)
+                },
+                onConnectionChanged: { isConnected in
+                    assignment.isConnected = isConnected
+                    assignment.lastConnectedAt = isConnected ? Date() : assignment.lastConnectedAt
+                    try? modelContext.save()
+                }
+            )
         }
         .sheet(isPresented: $showPlayerVisibilityEditor) {
             PlayerVisibilityEditorView(
@@ -1465,6 +1608,10 @@ struct LiveStatsView: View {
 
     private var enabledStatTypes: [StatType] {
         allStatTypes.filter { $0.isEnabled }.sorted(by: { $0.sortOrder < $1.sortOrder })
+    }
+
+    private var connectedInviteAssignments: [StatsInviteAssignment] {
+        inviteAssignments.filter(\.isConnected)
     }
 
     private func ensureRequiredTeamComparisonStatTypesIfNeeded() {
@@ -1613,7 +1760,26 @@ struct LiveStatsView: View {
 
                 Spacer(minLength: 0)
 
-                quarterBadge
+                VStack(alignment: .trailing, spacing: 6) {
+                    quarterBadge
+                    if !connectedInviteAssignments.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(connectedInviteAssignments.prefix(3)) { assignment in
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color.green)
+                                        .frame(width: 7, height: 7)
+                                    Text(contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Connected")
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.12), in: Capsule())
+                            }
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 18)
 
@@ -3717,6 +3883,57 @@ struct LiveStatsView: View {
         feedbackToken = UUID()
     }
 
+    private func sendInvite(contactID: UUID, statTypeIDs: Set<UUID>) {
+        guard !statTypeIDs.isEmpty else { return }
+        let token = UUID().uuidString.lowercased()
+        let linkURL = "https://min-man.app/invite?token=\(token)"
+        let assignment: StatsInviteAssignment
+
+        if let existing = inviteAssignments.first(where: { $0.contactId == contactID }) {
+            assignment = existing
+            assignment.inviteLinkToken = token
+            assignment.inviteLinkURL = linkURL
+            assignment.lastInvitedAt = Date()
+            assignment.setAssignedStatTypeIDs(Array(statTypeIDs))
+        } else {
+            assignment = StatsInviteAssignment(
+                contactId: contactID,
+                assignedStatTypeIDsRaw: Array(statTypeIDs).map(\.uuidString).joined(separator: ","),
+                inviteLinkToken: token,
+                inviteLinkURL: linkURL,
+                lastInvitedAt: Date()
+            )
+            modelContext.insert(assignment)
+        }
+
+        let assignedNames = enabledStatTypes
+            .filter { statTypeIDs.contains($0.id) }
+            .map(\.name)
+            .joined(separator: ", ")
+        let recipientName = contacts.first(where: { $0.id == contactID })?.name ?? "Stat Taker"
+        composedShareText = """
+        \(recipientName), use this live stat link:
+        \(linkURL)
+
+        Your buttons: \(assignedNames)
+        """
+        try? modelContext.save()
+    }
+
+    private func handleRemoteInviteStatTap(_ statType: StatType) {
+        let event = StatEvent(
+            sessionId: session.sessionId,
+            playerId: ourTeamStatPlayerID,
+            statTypeId: statType.id,
+            quarter: selectedQuarter,
+            sourceRaw: StatsEventSource.remoteInvite.rawValue,
+            transcript: "Invite UI"
+        )
+        modelContext.insert(event)
+        try? modelContext.save()
+        showSuccessBanner(for: event)
+    }
+
     private func undoLastEvent() {
         guard let latest = sessionEvents.first else { return }
         modelContext.delete(latest)
@@ -4971,5 +5188,144 @@ private struct StatsTotalsView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+private struct StatsInviteComposerSheet: View {
+    let contacts: [Contact]
+    let statTypes: [StatType]
+    @Binding var selectedContactID: UUID?
+    @Binding var selectedStatTypeIDs: Set<UUID>
+    let onSendInvite: (UUID, Set<UUID>) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Contact Picker") {
+                    Picker("Invite", selection: Binding(get: { selectedContactID }, set: { selectedContactID = $0 })) {
+                        Text("Select contact").tag(Optional<UUID>.none)
+                        ForEach(contacts) { contact in
+                            Text(contact.name).tag(Optional(contact.id))
+                        }
+                    }
+                }
+                Section("Assign Stats") {
+                    ForEach(statTypes) { type in
+                        Toggle(
+                            type.name,
+                            isOn: Binding(
+                                get: { selectedStatTypeIDs.contains(type.id) },
+                                set: { isOn in
+                                    if isOn { selectedStatTypeIDs.insert(type.id) } else { selectedStatTypeIDs.remove(type.id) }
+                                }
+                            )
+                        )
+                    }
+                }
+            }
+            .navigationTitle("Invite Stat Taker")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Send Link") {
+                        guard let selectedContactID else { return }
+                        onSendInvite(selectedContactID, selectedStatTypeIDs)
+                        dismiss()
+                    }
+                    .disabled(selectedContactID == nil || selectedStatTypeIDs.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+private struct StatsInviteManagementSheet: View {
+    let assignment: StatsInviteAssignment
+    let allStatTypes: [StatType]
+    let onSave: () -> Void
+    let onReinvite: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedIDs: Set<UUID> = []
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Assigned Stat Types") {
+                    ForEach(allStatTypes) { type in
+                        Toggle(type.name, isOn: Binding(
+                            get: { selectedIDs.contains(type.id) },
+                            set: { isOn in
+                                if isOn { selectedIDs.insert(type.id) } else { selectedIDs.remove(type.id) }
+                                assignment.setAssignedStatTypeIDs(Array(selectedIDs))
+                                onSave()
+                            }
+                        ))
+                    }
+                }
+                Section("Actions") {
+                    Button("Re-invite") {
+                        onReinvite()
+                    }
+                }
+            }
+            .navigationTitle("Manage Invite")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .onAppear {
+                selectedIDs = Set(assignment.assignedStatTypeIDs)
+            }
+        }
+    }
+}
+
+private struct InviteStatWebInterfaceView: View {
+    let assignment: StatsInviteAssignment
+    let statTypes: [StatType]
+    let contactName: String
+    let onRecord: (StatType) -> Void
+    let onConnectionChanged: (Bool) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var assignedTypes: [StatType] {
+        statTypes.filter { assignment.assignedStatTypeIDs.contains($0.id) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Text("Web Stats UI")
+                    .font(.title.weight(.bold))
+                Text("\(contactName) sees only assigned stat buttons.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12)], spacing: 12) {
+                    ForEach(assignedTypes) { type in
+                        Button(type.name) {
+                            onRecord(type)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+                .padding(.top, 8)
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Invite Link View")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onConnectionChanged(false)
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear { onConnectionChanged(true) }
+        }
     }
 }
