@@ -1125,7 +1125,13 @@ struct NewGameWizardView: View {
     private var autoSendTemplateForSelectedGrade: CustomReportTemplate? {
         guard let gid = gradeID else { return nil }
         return customReportTemplates.first { template in
-            template.sendReportOnGameSave && (template.gradeIDs.isEmpty || template.gradeIDs.contains(gid))
+            guard template.sendReportOnGameSave else { return false }
+            let gradeIsEligible = template.gradeIDs.isEmpty || template.gradeIDs.contains(gid)
+            guard gradeIsEligible else { return false }
+            if let triggerGradeID = template.sendReportTriggerGradeID {
+                return triggerGradeID == gid
+            }
+            return true
         }
     }
 
