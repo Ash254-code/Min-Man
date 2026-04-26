@@ -4715,10 +4715,14 @@ func makeTemplatePreviewPDF(
 
         let renderedSections: [RenderedSection] = {
             if groupingMode.splitByGradeEnabled, groupingMode.splitByGameEnabled {
-                return relevantGames.map { game in
-                    let gradeName = gradeLookup[game.gradeID] ?? "Unknown Grade"
-                    let title = "\(gradeName) • \(formattedDate(game.date)) vs \(game.opponent)"
-                    return RenderedSection(title: title, games: [game])
+                return orderedGradeGroups.flatMap { (gradeID, games) in
+                    games
+                        .sorted { $0.date > $1.date }
+                        .map { game in
+                            let gradeName = gradeLookup[gradeID] ?? "Unknown Grade"
+                            let title = "\(gradeName) • \(formattedDate(game.date)) vs \(game.opponent)"
+                            return RenderedSection(title: title, games: [game])
+                        }
                 }
             }
             if groupingMode.splitByGradeEnabled {
