@@ -3086,6 +3086,30 @@ struct ReportsSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if isMoveModeEnabled {
+                    HStack {
+                        Button("Back") {
+                            handleMoveModeBackTapped()
+                        }
+                        .font(.headline)
+
+                        Spacer()
+
+                        Button("Save") {
+                            finishMoveModeAndSave()
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(hasMoveOrderChanges ? Color.blue : Color.gray.opacity(0.4))
+                        .foregroundStyle(.white.opacity(hasMoveOrderChanges ? 1 : 0.7))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .buttonStyle(.plain)
+                        .disabled(!hasMoveOrderChanges)
+                    }
+                    .padding(.horizontal)
+                }
+
                 if templates.isEmpty {
                     Text("No custom reports yet. Create one to save reusable report filters.")
                         .font(.subheadline)
@@ -3113,28 +3137,6 @@ struct ReportsSettingsView: View {
             .padding(.vertical)
         }
         .navigationTitle("Reports")
-        .toolbar {
-            if isMoveModeEnabled {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Back") {
-                        handleMoveModeBackTapped()
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        finishMoveModeAndSave()
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(hasMoveOrderChanges ? Color.blue : Color.gray.opacity(0.4))
-                    .foregroundStyle(.white.opacity(hasMoveOrderChanges ? 1 : 0.7))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .buttonStyle(.plain)
-                    .disabled(!hasMoveOrderChanges)
-                }
-            }
-        }
         .onAppear {
             syncTemplateOrderWithCurrentTemplates()
         }
