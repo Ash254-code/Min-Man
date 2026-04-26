@@ -4842,21 +4842,24 @@ func makeTemplatePreviewPDF(
                 }
             }
 
-            let officialRows = officialDutyCountsByName
-                .map { (name: $0.key, tally: $0.value) }
-                .sorted { left, right in
-                    if left.tally.total != right.tally.total { return left.tally.total > right.tally.total }
-                    return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+            let officialEntries: [(name: String, tally: OfficialDutyTally)] = officialDutyCountsByName.map {
+                (name: $0.key, tally: $0.value)
+            }
+            let sortedOfficialEntries = officialEntries.sorted { left, right in
+                if left.tally.total != right.tally.total {
+                    return left.tally.total > right.tally.total
                 }
-                .map {
-                    [
-                        $0.name,
-                        String($0.tally.boundaryUmpire),
-                        String($0.tally.waterBoy),
-                        String($0.tally.fieldUmpire),
-                        String($0.tally.total)
-                    ]
-                }
+                return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+            }
+            let officialRows = sortedOfficialEntries.map { entry in
+                [
+                    entry.name,
+                    String(entry.tally.boundaryUmpire),
+                    String(entry.tally.waterBoy),
+                    String(entry.tally.fieldUmpire),
+                    String(entry.tally.total)
+                ]
+            }
 
             var tables: [String: CompactReportTable] = [:]
             tables["coachingStaff"] = CompactReportTable(title: "Coaching Staff", columns: ["Role", "Name"], rows: makeRoleCountRows(coachingCounts))
