@@ -3834,13 +3834,13 @@ struct NewGameWizardView: View {
                 guard !isPresentingOverlaySheet else { return }
                 pauseTimer()
             }
-            .alert("Save updated score?", isPresented: $showManualSavePrompt) {
-                Button("Cancel", role: .cancel) {}
-                Button("Save score") {
-                    saveCurrentPeriodSnapshot()
+            .alert("Save and reset?", isPresented: $showManualSavePrompt) {
+                Button("Back", role: .cancel) {}
+                Button("Confirm") {
+                    saveAndResetPeriod()
                 }
             } message: {
-                Text("Save \(nextPeriodLabel ?? "period") using the updated live scores?")
+                Text("Do you wish to change \(nextPeriodLabel ?? "this period") scores?")
             }
             .alert("Confirm undo", isPresented: $showUndoConfirmation) {
                 Button("Cancel", role: .cancel) {
@@ -3911,32 +3911,38 @@ struct NewGameWizardView: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .center)
 
-                HStack(spacing: 10) {
-                    Button {
-                        startTimer()
-                    } label: {
-                        Image(systemName: "play.fill")
+                VStack(spacing: 10) {
+                    HStack(spacing: 12) {
+                        Button {
+                            startTimer()
+                        } label: {
+                            Image(systemName: "play.fill")
+                                .frame(width: 72)
+                        }
+                        .accessibilityLabel("Start")
+                        .buttonStyle(.borderedProminent)
+                        .disabled(timerRunning)
+
+                        Button {
+                            pauseTimer()
+                        } label: {
+                            Image(systemName: "pause.fill")
+                                .frame(width: 72)
+                        }
+                        .accessibilityLabel("Pause")
+                        .buttonStyle(.bordered)
+                        .disabled(!timerRunning)
                     }
-                    .accessibilityLabel("Start")
-                    .buttonStyle(.borderedProminent)
-                    .disabled(timerRunning)
 
                     Button {
-                        pauseTimer()
+                        showManualSavePrompt = true
                     } label: {
-                        Image(systemName: "pause.fill")
+                        Text("Save and reset")
+                            .frame(maxWidth: .infinity)
                     }
-                    .accessibilityLabel("Pause")
+                    .accessibilityLabel("Save and reset")
                     .buttonStyle(.bordered)
-                    .disabled(!timerRunning)
-
-                    Button {
-                        resetTimer()
-                    } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                    }
-                    .accessibilityLabel("Reset")
-                    .buttonStyle(.bordered)
+                    .disabled(nextPeriodLabel == nil)
                 }
                 .font(.title3.weight(.semibold))
                 .controlSize(.large)
@@ -3972,14 +3978,6 @@ struct NewGameWizardView: View {
                     }
                 }
 
-                if nextPeriodLabel != nil {
-                    Button("Save \(nextPeriodLabel ?? "period") score") {
-                        showManualSavePrompt = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .saveButtonBehavior(isEnabled: true)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                }
             }
         }
 
@@ -4648,17 +4646,12 @@ struct NewGameWizardView: View {
             timerTask = nil
         }
 
-        private func resetTimer() {
-            let shouldSaveAndAutoAdvance = pendingAutoAdvanceSave && nextPeriodLabel != nil
-            if shouldSaveAndAutoAdvance {
-                saveCurrentPeriodSnapshot()
-            }
+        private func saveAndResetPeriod() {
+            guard nextPeriodLabel != nil else { return }
+            saveCurrentPeriodSnapshot()
             pauseTimer()
             liveSession.secondsRemaining = liveSession.periodMinutes * 60
             pendingAutoAdvanceSave = false
-            if shouldSaveAndAutoAdvance {
-                startTimer()
-            }
         }
 
         private func timeText(_ seconds: Int) -> String {
