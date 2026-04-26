@@ -3026,7 +3026,6 @@ struct ReportsSettingsView: View {
     @State private var draggingTemplateID: UUID?
     @State private var draggingTranslation: CGSize = .zero
     @State private var draggingStartSlotIndex: Int?
-    @State private var draggingLastTargetSlotIndex: Int?
     @AppStorage("reports.templateOrder.v1") private var templateOrderData = ""
     var onOpenContactsSettings: (() -> Void)? = nil
 
@@ -3518,7 +3517,6 @@ struct ReportsSettingsView: View {
         draggingTemplateID = nil
         draggingTranslation = .zero
         draggingStartSlotIndex = nil
-        draggingLastTargetSlotIndex = nil
     }
 
     private func activeTemplateOrderIDs() -> [UUID] {
@@ -3593,50 +3591,47 @@ struct ReportsSettingsView: View {
                     if draggingTemplateID != templateID {
                         draggingTemplateID = templateID
                         draggingStartSlotIndex = moveDraftSlots.firstIndex(of: templateID)
-                        draggingLastTargetSlotIndex = draggingStartSlotIndex
                     }
                 case .second(true, let dragValue?):
                     if draggingTemplateID != templateID {
                         draggingTemplateID = templateID
                         draggingStartSlotIndex = moveDraftSlots.firstIndex(of: templateID)
-                        draggingLastTargetSlotIndex = draggingStartSlotIndex
                     }
                     draggingTranslation = dragValue.translation
-                    updateDragReorder(tileWidth: tileWidth)
                 default:
                     break
                 }
             }
             .onEnded { _ in
+                commitDragReorder(tileWidth: tileWidth)
                 draggingTemplateID = nil
                 draggingTranslation = .zero
                 draggingStartSlotIndex = nil
-                draggingLastTargetSlotIndex = nil
             }
     }
 
-    private func updateDragReorder(tileWidth: CGFloat) {
-        guard let draggingTemplateID else { return }
-        guard let sourceIndex = moveDraftSlots.firstIndex(of: draggingTemplateID) else { return }
-        guard let startSlotIndex = draggingStartSlotIndex else { return }
-
+    private func nearestSlotIndex(for translation: CGSize, tileWidth: CGFloat) -> Int {
+        guard let startSlotIndex = draggingStartSlotIndex else { return 0 }
         let cellWidth = max(tileWidth + templateGridSpacing, 1)
         let cellHeight = templateTileHeight + templateGridSpacing
-        let horizontalShift = Int((draggingTranslation.width / cellWidth).rounded())
-        let verticalShift = Int((draggingTranslation.height / cellHeight).rounded())
+        let horizontalShift = Int((translation.width / cellWidth).rounded())
+        let verticalShift = Int((translation.height / cellHeight).rounded())
         let proposedTarget = startSlotIndex + horizontalShift + (verticalShift * templateGridColumnCount)
-        let clampedTarget = min(max(0, proposedTarget), max(moveDraftSlots.count - 1, 0))
+        return min(max(0, proposedTarget), max(moveDraftSlots.count - 1, 0))
+    }
 
-        guard clampedTarget != sourceIndex else { return }
-        guard clampedTarget != draggingLastTargetSlotIndex else { return }
+    private func commitDragReorder(tileWidth: CGFloat) {
+        guard let draggingTemplateID else { return }
+        guard let sourceIndex = moveDraftSlots.firstIndex(of: draggingTemplateID) else { return }
+
+        let targetIndex = nearestSlotIndex(for: draggingTranslation, tileWidth: tileWidth)
+        guard targetIndex != sourceIndex else { return }
 
         var currentSlots = moveDraftSlots
-        let destinationItem = currentSlots[clampedTarget]
-        currentSlots[clampedTarget] = draggingTemplateID
+        let destinationItem = currentSlots[targetIndex]
+        currentSlots[targetIndex] = draggingTemplateID
         currentSlots[sourceIndex] = destinationItem
         moveDraftSlots = currentSlots
-        draggingStartSlotIndex = clampedTarget
-        draggingLastTargetSlotIndex = clampedTarget
     }
 
     private func gridHeightEstimate() -> CGFloat {
