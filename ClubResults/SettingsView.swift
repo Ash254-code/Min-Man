@@ -4842,6 +4842,24 @@ func makeTemplatePreviewPDF(
                 }
             }
 
+            if template.includePlayersOnly {
+                let scopedPlayers = players.filter { player in
+                    guard player.isActive else { return false }
+                    guard !selectedGradeIDs.isEmpty else { return true }
+                    return !Set(player.gradeIDs).isDisjoint(with: selectedGradeIDs)
+                }
+                for player in scopedPlayers {
+                    let trimmed = normalizedName(player.name)
+                    guard !trimmed.isEmpty else { continue }
+                    let alreadyIncluded = officialDutyCountsByName.keys.contains {
+                        $0.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                    }
+                    if !alreadyIncluded {
+                        officialDutyCountsByName[trimmed] = OfficialDutyTally()
+                    }
+                }
+            }
+
             let officialEntries: [(name: String, tally: OfficialDutyTally)] = officialDutyCountsByName.map {
                 (name: $0.key, tally: $0.value)
             }
