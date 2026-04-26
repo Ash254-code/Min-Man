@@ -3726,20 +3726,20 @@ struct NewGameWizardView: View {
             }
             .background(Color(.systemGroupedBackground))
             .toolbar {
-                ToolbarItemGroup(placement: .topBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         pauseTimer()
                         showCancelConfirmation = true
                     }
-
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     Button("Save as Draft") {
                         pauseTimer()
                         onBackToHome()
                     }
                     .buttonStyle(.bordered)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save Game") {
+
+                    Button("Next") {
                         pauseTimer()
                         onSaveAndContinue()
                     }
