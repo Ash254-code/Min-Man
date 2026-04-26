@@ -1425,7 +1425,8 @@ struct LiveStatsView: View {
                     if !inviteAssignments.isEmpty {
                         Divider()
                         ForEach(inviteAssignments) { assignment in
-                            Button("Open \(contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Invite") UI") {
+                            let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Invite"
+                            Button("Open \(contactName) UI") {
                                 activeInviteWebUI = assignment
                             }
                         }
@@ -5246,7 +5247,7 @@ private struct StatsInviteComposerSheet: View {
     let statTypes: [StatType]
     @Binding var selectedContact: PhoneInviteContact?
     @Binding var selectedStatTypeIDs: Set<UUID>
-    let onSendInvite: (UUID, Set<UUID>) -> Void
+    let onSendInvite: (PhoneInviteContact, Set<UUID>) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var showSystemContactPicker = false
     @State private var smsDraft: SMSDraft?
