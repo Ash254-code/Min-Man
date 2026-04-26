@@ -59,6 +59,7 @@ struct SettingsView: View {
             settingsLink("Teams & Venues", icon: "flag.2.crossed", destination: AnyView(TeamsAndVenuesSettingsView()))
             settingsLink("Contacts", icon: "person.crop.circle.badge.checkmark", destination: AnyView(ContactsSettingsView()))
             settingsLink("Groups", icon: "person.3.sequence", destination: AnyView(GroupsSettingsView()))
+            settingsLink("AI Master of Ceremonies", icon: "waveform.badge.mic", destination: AnyView(AIMasterOfCeremoniesSettingsView()))
         }
     }
 

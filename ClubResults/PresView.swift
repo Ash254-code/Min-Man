@@ -20,6 +20,17 @@ struct PresView: View {
     @Query(sort: \Player.name) private var players: [Player]   // ✅ ADD
 
     @State private var selectedPresentationGrade: GradePresentationSection?
+    @StateObject private var aiNarrator = AIMCNarrator()
+    @State private var aiNarrationPreview = ""
+    @State private var aiHasApprovedNarration = false
+    @State private var isPreviewSheetPresented = false
+
+    @AppStorage(AIMCStorageKeys.selectedAppleVoiceID) private var selectedAppleVoiceID = ""
+    @AppStorage(AIMCStorageKeys.includeWeather) private var includeWeather = true
+    @AppStorage(AIMCStorageKeys.includeKeyPoints) private var includeKeyPoints = true
+    @AppStorage(AIMCStorageKeys.includeAnnouncements) private var includeAnnouncements = true
+    @AppStorage(AIMCStorageKeys.keyPoints) private var keyPointsInput = ""
+    @AppStorage(AIMCStorageKeys.announcementGradeID) private var announcementGradeID = ""
 
     // MARK: - Ordered grades (U9 → A Grade)
     private var orderedGrades: [Grade] {
@@ -107,6 +118,75 @@ struct PresView: View {
         return gradeByID[gradeID]?.asksScore ?? true
     }
 
+    private var announcementGradeName: String {
+        guard let grade = orderedGrades.first(where: { $0.id.uuidString == announcementGradeID }) else {
+            return "each grade section"
+        }
+        return grade.name
+    }
+
+    private func generateAINarrationPreview() {
+        let reportDate = Date().formatted(date: .complete, time: .omitted)
+        var lines: [String] = [
+            "Good evening everyone, here is the club report for \(reportDate)."
+        ]
+
+        if includeWeather {
+            lines.append("Weather update: conditions look good for presentations.")
+        }
+
+        if includeKeyPoints {
+            let trimmedKeyPoints = keyPointsInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedKeyPoints.isEmpty {
+                lines.append("Key point: celebrate effort, teamwork, and sportsmanship across all grades.")
+            } else {
+                lines.append("Key points: \(trimmedKeyPoints).")
+            }
+        }
+
+        for section in gradeSections {
+            if includeAnnouncements,
+               section.grade.id.uuidString == announcementGradeID {
+                lines.append("Before \(section.grade.name), a quick announcement from the committee.")
+            }
+
+            lines.append("\(section.grade.name): \(section.games.count) game\(section.games.count == 1 ? "" : "s") to report.")
+            for game in section.games {
+                let resultLine = shouldShowScore(section.grade.id)
+                ? "\(ourTeamName) \(game.ourScore), \(game.opponent) \(game.theirScore)."
+                : "score summary disabled for this grade."
+                lines.append("Played against \(game.opponent) on \(game.date.formatted(date: .abbreviated, time: .omitted)); \(resultLine)")
+
+                let bestPlayers = bestPlayerItems(game).prefix(3).joined(separator: ", ")
+                if !bestPlayers.isEmpty, bestPlayers != "None recorded" {
+                    lines.append("Best players included \(bestPlayers).")
+                }
+
+                let kickers = goalKickerItems(for: game)
+                    .filter { $0.goals > 0 }
+                    .prefix(3)
+                    .map { "\($0.name) \($0.goals)" }
+                    .joined(separator: ", ")
+                if !kickers.isEmpty {
+                    lines.append("Goal kickers: \(kickers).")
+                }
+            }
+        }
+
+        lines.append("That concludes the AI Master of Ceremonies report.")
+        aiNarrationPreview = lines.joined(separator: "\n\n")
+        aiHasApprovedNarration = false
+    }
+
+    private func handleAIButtonTapped() {
+        if aiHasApprovedNarration {
+            aiNarrator.speak(text: aiNarrationPreview, appleVoiceID: selectedAppleVoiceID.isEmpty ? nil : selectedAppleVoiceID)
+        } else {
+            generateAINarrationPreview()
+            isPreviewSheetPresented = true
+        }
+    }
+
     private func startPresentations() {
         guard let firstGradeSection = gradeSections.first else { return }
         selectedPresentationGrade = firstGradeSection
@@ -137,7 +217,61 @@ struct PresView: View {
                             }
                         }
                     }
+
+                    Section("AI Intelligence") {
+                        Toggle("Include weather", isOn: $includeWeather)
+                        Toggle("Include key points", isOn: $includeKeyPoints)
+                        Toggle("Include announcements", isOn: $includeAnnouncements)
+
+                        if includeKeyPoints {
+                            TextField("Key points for tonight", text: $keyPointsInput, axis: .vertical)
+                                .lineLimit(2...5)
+                        }
+
+                        Picker("Announcement placement", selection: $announcementGradeID) {
+                            Text("Before each grade").tag("")
+                            ForEach(orderedGrades) { grade in
+                                Text("Before \(grade.name)").tag(grade.id.uuidString)
+                            }
+                        }
+
+                        Text("Announcements will run before \(announcementGradeName).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+
+                HStack(spacing: 12) {
+                    Button {
+                        handleAIButtonTapped()
+                    } label: {
+                        Label(aiHasApprovedNarration ? "Play AI" : "AI", systemImage: aiHasApprovedNarration ? "play.circle.fill" : "sparkles")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.purple, in: Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(gradeSections.isEmpty)
+                    .opacity(gradeSections.isEmpty ? 0.45 : 1.0)
+
+                    if aiNarrator.isSpeaking {
+                        Button {
+                            aiNarrator.stop()
+                        } label: {
+                            Label("Stop", systemImage: "stop.circle.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .background(Color.red, in: Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 20)
+
                 Button {
                     startPresentations()
                 } label: {
@@ -155,6 +289,29 @@ struct PresView: View {
                 .padding(.bottom, 12)
             }
             .navigationTitle("Pres")
+            .sheet(isPresented: $isPreviewSheetPresented) {
+                NavigationStack {
+                    ScrollView {
+                        Text(aiNarrationPreview)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding()
+                    }
+                    .navigationTitle("AI Preview")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") {
+                                isPreviewSheetPresented = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Approve") {
+                                aiHasApprovedNarration = true
+                                isPreviewSheetPresented = false
+                            }
+                        }
+                    }
+                }
+            }
             .fullScreenCover(item: $selectedPresentationGrade) { selectedGrade in
                 PresentationGradeFullScreenView(
                     sections: gradeSections,
