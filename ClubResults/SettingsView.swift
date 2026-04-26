@@ -4749,20 +4749,22 @@ func makeTemplatePreviewPDF(
             }
 
             func makeRoleCountRows(_ countsByRoleName: [RoleNameKey: Int]) -> [[String]] {
-                countsByRoleName
-                    .compactMap { key, value -> (role: String, name: String, count: Int)? in
+                let roleRows = countsByRoleName.compactMap { key, value -> (role: String, name: String, count: Int)? in
                         let parts = key.components(separatedBy: "||")
                         guard parts.count == 2 else { return nil }
                         return (role: parts[0], name: parts[1], count: value)
                     }
-                    .sorted { left, right in
+                let sortedRoleRows = roleRows.sorted { left, right in
                         if left.count != right.count { return left.count > right.count }
-                        if left.role.localizedCaseInsensitiveCompare(right.role) != .orderedSame {
-                            return left.role.localizedCaseInsensitiveCompare(right.role) == .orderedAscending
+                        let roleComparison = left.role.localizedCaseInsensitiveCompare(right.role)
+                        if roleComparison != .orderedSame {
+                            return roleComparison == .orderedAscending
                         }
-                        return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+                        let nameComparison = left.name.localizedCaseInsensitiveCompare(right.name)
+                        return nameComparison == .orderedAscending
                     }
-                    .map { [$0.role, $0.name] }
+
+                return sortedRoleRows.map { [$0.role, $0.name] }
             }
 
             for game in games {
