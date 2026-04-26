@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import UIKit
 import PDFKit
+import MessageUI
 
 @Model
 final class StatType {
@@ -174,9 +175,68 @@ final class StatEvent {
     }
 }
 
+@Model
+final class InvitedStatTaker {
+    var id: UUID
+    var sessionId: UUID
+    var contactId: UUID?
+    var name: String
+    var mobile: String
+    var assignedStatTypeIDsRaw: String
+    var inviteLink: String
+    var lastInvitedAt: Date
+    var isConnected: Bool
+    var lastActivityAt: Date?
+
+    init(
+        id: UUID = UUID(),
+        sessionId: UUID,
+        contactId: UUID? = nil,
+        name: String,
+        mobile: String,
+        assignedStatTypeIDsRaw: String = "[]",
+        inviteLink: String = "",
+        lastInvitedAt: Date = Date(),
+        isConnected: Bool = false,
+        lastActivityAt: Date? = nil
+    ) {
+        self.id = id
+        self.sessionId = sessionId
+        self.contactId = contactId
+        self.name = name
+        self.mobile = mobile
+        self.assignedStatTypeIDsRaw = assignedStatTypeIDsRaw
+        self.inviteLink = inviteLink
+        self.lastInvitedAt = lastInvitedAt
+        self.isConnected = isConnected
+        self.lastActivityAt = lastActivityAt
+    }
+}
+
+extension InvitedStatTaker {
+    var assignedStatTypeIDs: [UUID] {
+        get {
+            guard let data = assignedStatTypeIDsRaw.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([UUID].self, from: data) else {
+                return []
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue),
+               let encoded = String(data: data, encoding: .utf8) {
+                assignedStatTypeIDsRaw = encoded
+            } else {
+                assignedStatTypeIDsRaw = "[]"
+            }
+        }
+    }
+}
+
 enum StatsEventSource: String, CaseIterable {
     case manual
     case voice
+    case remoteInvite
 }
 
 private enum EfficiencyVote: String {
@@ -431,6 +491,14 @@ struct StatsTypesSettingsView: View {
                     SpeechSetupView()
                 } label: {
                     Label("Speech Setup", systemImage: "waveform.badge.mic")
+                }
+            }
+
+            Section("Invited Stat Takers") {
+                NavigationLink {
+                    InvitedUsersSettingsView()
+                } label: {
+                    Label("Manage Invited Users", systemImage: "person.2.badge.gearshape")
                 }
             }
         }
@@ -1134,6 +1202,249 @@ struct StatsSessionSetupView: View {
     }
 }
 
+struct InvitedUsersSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \InvitedStatTaker.lastInvitedAt, order: .reverse) private var invites: [InvitedStatTaker]
+    @Query(sort: \StatType.sortOrder) private var statTypes: [StatType]
+    @State private var editingInvite: InvitedStatTaker?
+
+    var body: some View {
+        List {
+            if invites.isEmpty {
+                ContentUnavailableView("No invited users", systemImage: "person.crop.circle.badge.questionmark")
+            } else {
+                Section("Current Invites") {
+                    ForEach(invites) { invite in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Circle()
+                                    .fill(invite.isConnected ? Color.green : Color.gray.opacity(0.35))
+                                    .frame(width: 10, height: 10)
+                                Text(invite.name)
+                                    .font(.headline)
+                                Spacer()
+                                Button("Edit") { editingInvite = invite }
+                                    .buttonStyle(.borderless)
+                            }
+
+                            Text(invite.mobile)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Text(assignedStatNames(for: invite).joined(separator: ", "))
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Invited Users")
+        .sheet(item: $editingInvite) { invite in
+            NavigationStack {
+                InviteStatTakerSheet(
+                    sessionID: invite.sessionId,
+                    existingInvite: invite
+                )
+            }
+        }
+        .toolbar {
+            EditButton()
+        }
+    }
+
+    private func assignedStatNames(for invite: InvitedStatTaker) -> [String] {
+        statTypes
+            .filter { invite.assignedStatTypeIDs.contains($0.id) }
+            .sorted(by: { $0.sortOrder < $1.sortOrder })
+            .map(\.name)
+    }
+}
+
+private struct InviteStatTakerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Contact.name) private var contacts: [Contact]
+    @Query(sort: \StatType.sortOrder) private var statTypes: [StatType]
+    @Query(sort: \InvitedStatTaker.lastInvitedAt, order: .reverse) private var invites: [InvitedStatTaker]
+
+    let sessionID: UUID
+    var existingInvite: InvitedStatTaker?
+
+    @State private var selectedContactID: UUID?
+    @State private var manualName = ""
+    @State private var mobile = ""
+    @State private var selectedStatTypeIDs: Set<UUID> = []
+    @State private var smsBody = ""
+    @State private var recipients: [String] = []
+    @State private var showMessageComposer = false
+
+    var body: some View {
+        Form {
+            Section("Contact") {
+                Picker("Select Contact", selection: $selectedContactID) {
+                    Text("Manual Entry").tag(UUID?.none)
+                    ForEach(contacts) { contact in
+                        Text(contact.name).tag(Optional(contact.id))
+                    }
+                }
+                if selectedContactID == nil {
+                    TextField("Name", text: $manualName)
+                    TextField("Mobile", text: $mobile)
+                }
+            }
+
+            Section("Assigned Stats") {
+                ForEach(statTypes.filter(\.isEnabled)) { stat in
+                    Toggle(
+                        stat.name,
+                        isOn: Binding(
+                            get: { selectedStatTypeIDs.contains(stat.id) },
+                            set: { isOn in
+                                if isOn { selectedStatTypeIDs.insert(stat.id) }
+                                else { selectedStatTypeIDs.remove(stat.id) }
+                            }
+                        )
+                    )
+                }
+            }
+
+            Section {
+                Button(existingInvite == nil ? "Invite Stat Taker" : "Re-invite & Update") {
+                    invite()
+                }
+                .disabled(resolvedName.isEmpty || resolvedMobile.isEmpty || selectedStatTypeIDs.isEmpty)
+            }
+        }
+        .navigationTitle(existingInvite == nil ? "Invite Stat Taker" : "Edit Invite")
+        .onAppear {
+            if let existingInvite {
+                selectedContactID = existingInvite.contactId
+                manualName = existingInvite.name
+                mobile = existingInvite.mobile
+                selectedStatTypeIDs = Set(existingInvite.assignedStatTypeIDs)
+            }
+        }
+        .sheet(isPresented: $showMessageComposer) {
+            StatsInviteMessageComposer(recipients: recipients, body: smsBody)
+        }
+    }
+
+    private var resolvedContact: Contact? {
+        guard let selectedContactID else { return nil }
+        return contacts.first(where: { $0.id == selectedContactID })
+    }
+
+    private var resolvedName: String {
+        (resolvedContact?.name ?? manualName).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var resolvedMobile: String {
+        (resolvedContact?.mobile ?? mobile).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func invite() {
+        let statNames = statTypes
+            .filter { selectedStatTypeIDs.contains($0.id) }
+            .sorted(by: { $0.sortOrder < $1.sortOrder })
+            .map(\.name)
+
+        let link = buildInviteLink(
+            sessionID: sessionID,
+            inviteeName: resolvedName,
+            statTypeIDs: Array(selectedStatTypeIDs)
+        )
+
+        let invite = existingInvite ?? invites.first(where: { $0.sessionId == sessionID && $0.mobile == resolvedMobile }) ?? InvitedStatTaker(
+            sessionId: sessionID,
+            contactId: selectedContactID,
+            name: resolvedName,
+            mobile: resolvedMobile
+        )
+        if existingInvite == nil && !invites.contains(where: { $0.id == invite.id }) {
+            modelContext.insert(invite)
+        }
+        invite.contactId = selectedContactID
+        invite.name = resolvedName
+        invite.mobile = resolvedMobile
+        invite.assignedStatTypeIDs = Array(selectedStatTypeIDs)
+        invite.inviteLink = link
+        invite.lastInvitedAt = Date()
+        try? modelContext.save()
+
+        smsBody = """
+        You’re invited to take live stats for \(resolvedName).
+        Assigned stats: \(statNames.joined(separator: ", "))
+        Open: \(link)
+        """
+        recipients = [resolvedMobile]
+        if MFMessageComposeViewController.canSendText() {
+            showMessageComposer = true
+        } else {
+            UIPasteboard.general.string = smsBody
+            dismiss()
+        }
+    }
+
+    private func buildInviteLink(sessionID: UUID, inviteeName: String, statTypeIDs: [UUID]) -> String {
+        let statIDs = statTypeIDs.map(\.uuidString).joined(separator: ",")
+        let encodedName = inviteeName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "stat-taker"
+        return "https://minman.app/stat-taker?session=\(sessionID.uuidString)&invitee=\(encodedName)&stats=\(statIDs)"
+    }
+}
+
+private struct StatTakerWebPreviewView: View {
+    let invite: InvitedStatTaker
+    let statTypes: [StatType]
+    let onRecord: (UUID) -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Web Stat Taker UI")
+                .font(.title2.weight(.bold))
+            Text(invite.name)
+                .foregroundStyle(.secondary)
+            ForEach(assignedStatTypes) { statType in
+                Button(statType.name) {
+                    onRecord(statType.id)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            Spacer()
+        }
+        .padding()
+        .navigationTitle("Assigned Stats")
+    }
+
+    private var assignedStatTypes: [StatType] {
+        statTypes.filter { invite.assignedStatTypeIDs.contains($0.id) }
+    }
+}
+
+private struct StatsInviteMessageComposer: UIViewControllerRepresentable {
+    let recipients: [String]
+    let body: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIViewController(context: Context) -> MFMessageComposeViewController {
+        let controller = MFMessageComposeViewController()
+        controller.body = body
+        controller.recipients = recipients
+        controller.messageComposeDelegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: MFMessageComposeViewController, context: Context) {}
+
+    final class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
+        func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
+            controller.dismiss(animated: true)
+        }
+    }
+}
+
 private struct TotalsRow: Identifiable {
     let id = UUID()
     let player: Player
@@ -1187,6 +1498,7 @@ struct LiveStatsView: View {
     @Query(sort: \Player.name) private var allPlayers: [Player]
     @Query(sort: \StatType.sortOrder) private var allStatTypes: [StatType]
     @Query(sort: \StatEvent.timestamp, order: .reverse) private var allEvents: [StatEvent]
+    @Query(sort: \InvitedStatTaker.lastInvitedAt, order: .reverse) private var allInvitedStatTakers: [InvitedStatTaker]
 
     @State private var selectedQuarter = "Q1"
     @State private var selectedPlayerId: UUID?
@@ -1213,6 +1525,8 @@ struct LiveStatsView: View {
     @State private var statusBannerTask: Task<Void, Never>?
     @State private var showStatsSettings = false
     @State private var showQuarterChangeReminder = false
+    @State private var showInviteStatTakerSheet = false
+    @State private var previewInvite: InvitedStatTaker?
     @State private var showQuarterPickerDialog = false
     @State private var showTimerModeEditor = false
     @State private var customQuarterMinutes = 20
@@ -1300,6 +1614,9 @@ struct LiveStatsView: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    Button("Invite Stat Taker") {
+                        showInviteStatTakerSheet = true
+                    }
                     Button("Settings") {
                         showStatsSettings = true
                     }
@@ -1348,6 +1665,22 @@ struct LiveStatsView: View {
         .sheet(isPresented: $showStatsSettings) {
             NavigationStack {
                 StatsTypesSettingsView()
+            }
+        }
+        .sheet(isPresented: $showInviteStatTakerSheet) {
+            NavigationStack {
+                InviteStatTakerSheet(sessionID: session.sessionId)
+            }
+        }
+        .sheet(item: $previewInvite) { invite in
+            NavigationStack {
+                StatTakerWebPreviewView(
+                    invite: invite,
+                    statTypes: enabledStatTypes,
+                    onRecord: { statTypeID in
+                        recordRemoteStat(invite: invite, statTypeID: statTypeID)
+                    }
+                )
             }
         }
         .sheet(isPresented: $showPlayerVisibilityEditor) {
@@ -1499,6 +1832,10 @@ struct LiveStatsView: View {
         allEvents.filter { $0.sessionId == session.sessionId }
     }
 
+    private var sessionInvites: [InvitedStatTaker] {
+        allInvitedStatTakers.filter { $0.sessionId == session.sessionId }
+    }
+
     private var selectedGrade: Grade? {
         grades.first(where: { $0.id == session.gradeId })
     }
@@ -1593,27 +1930,53 @@ struct LiveStatsView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.thinMaterial)
-            HStack(spacing: 10) {
-                timerBadge
-
-                Spacer(minLength: 0)
-
+            VStack(spacing: 6) {
                 HStack(spacing: 10) {
-                    Text(gradeName)
-                        .font(.title.weight(.black))
-                        .lineLimit(1)
-                    Text("•")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                    Text(session.date.formatted(date: .abbreviated, time: .omitted))
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    timerBadge
+
+                    Spacer(minLength: 0)
+
+                    HStack(spacing: 10) {
+                        Text(gradeName)
+                            .font(.title.weight(.black))
+                            .lineLimit(1)
+                        Text("•")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(session.date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    quarterBadge
                 }
-
-                Spacer(minLength: 0)
-
-                quarterBadge
+                if !sessionInvites.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(sessionInvites) { invite in
+                                Button {
+                                    previewInvite = invite
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(invite.isConnected ? Color.green : Color.gray.opacity(0.35))
+                                            .frame(width: 8, height: 8)
+                                        Text(invite.name)
+                                            .font(.caption.weight(.semibold))
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Color.black.opacity(0.06), in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 18)
 
@@ -3717,6 +4080,22 @@ struct LiveStatsView: View {
         feedbackToken = UUID()
     }
 
+    private func recordRemoteStat(invite: InvitedStatTaker, statTypeID: UUID) {
+        let event = StatEvent(
+            sessionId: session.sessionId,
+            playerId: ourTeamStatPlayerID,
+            statTypeId: statTypeID,
+            quarter: selectedQuarter,
+            sourceRaw: StatsEventSource.remoteInvite.rawValue,
+            transcript: invite.name
+        )
+        modelContext.insert(event)
+        invite.isConnected = true
+        invite.lastActivityAt = Date()
+        try? modelContext.save()
+        showSuccessBanner(for: event)
+    }
+
     private func undoLastEvent() {
         guard let latest = sessionEvents.first else { return }
         modelContext.delete(latest)
@@ -3907,6 +4286,11 @@ struct LiveStatsView: View {
     }
 
     private func successBannerText(for event: StatEvent) -> String {
+        if event.sourceRaw == StatsEventSource.remoteInvite.rawValue {
+            let statText = statName(for: event.statTypeId)
+            let actor = (event.transcript ?? "Remote user").trimmingCharacters(in: .whitespacesAndNewlines)
+            return "\(actor) - \(statText)"
+        }
         let playerText = playerBannerLabel(for: event.playerId)
         let statText = statName(for: event.statTypeId)
         var segments = [playerText, statText]

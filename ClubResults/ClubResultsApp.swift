@@ -78,7 +78,8 @@ struct ClubResultsApp: App {
             StaffDefault.self,   // ✅ Default per grade + role
             StatType.self,
             StatsSession.self,
-            StatEvent.self
+            StatEvent.self,
+            InvitedStatTaker.self
         ])
     }
 }
