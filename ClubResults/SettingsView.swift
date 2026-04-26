@@ -4265,18 +4265,18 @@ func makeTemplatePreviewPDF(
 
     func guestVotePoints(for game: Game, rank: Int) -> Int {
         guard let grade = gradeConfigLookup[game.gradeID] else {
-            return Grade.normalizedGuestVotes(nil, count: 3)[safe: rank - 1] ?? 0
+            return Grade.normalizedGuestVotes(nil, count: 3)[rank - 1]
         }
         let votes = Grade.normalizedGuestVotes(grade.guestBestPlayersVotes, count: grade.guestBestPlayersCount)
-        return votes[safe: rank - 1] ?? 0
+        return votes[rank - 1]
     }
 
     func bestPlayerPoints(for game: Game, index: Int) -> Int {
         guard let grade = gradeConfigLookup[game.gradeID] else {
-            return Grade.normalizedVotes(nil, count: 6)[safe: index] ?? 0
+            return Grade.normalizedVotes(nil, count: 6)[index]
         }
         let votes = Grade.normalizedVotes(grade.bestPlayersVotes, count: grade.bestPlayersCount)
-        return votes[safe: index] ?? 0
+        return votes[index]
     }
 
     func includePlayerID(_ id: UUID) -> Bool {
