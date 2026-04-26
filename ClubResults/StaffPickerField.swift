@@ -20,7 +20,7 @@ struct StaffPickerField: View {
     @State private var chooserDetent: PresentationDetent = .large
 
     private var options: [String] {
-        let savedForRole = persistedNames(for: role)
+        let savedForRole = persistedNames(for: role, gradeID: gradeID)
 
         let namesFromDataStore = staffNamesForSelectedGrade
         let namesFromBoundarySelection = boundarySelectionPlayerNames
@@ -222,17 +222,22 @@ struct StaffPickerField: View {
 
 
 
-    private func persistedNames(for role: StaffRole) -> [String] {
-        let key = "staffPickerNames.\(role.rawValue)"
+    private func persistedNames(for role: StaffRole, gradeID: UUID?) -> [String] {
+        guard let key = pickerNamesKey(for: role, gradeID: gradeID) else { return [] }
         let names = UserDefaults.standard.stringArray(forKey: key) ?? []
         return deduplicatedNames(from: names)
     }
 
-    private func persistName(_ name: String, for role: StaffRole) {
-        let key = "staffPickerNames.\(role.rawValue)"
+    private func persistName(_ name: String, for role: StaffRole, gradeID: UUID?) {
+        guard let key = pickerNamesKey(for: role, gradeID: gradeID) else { return }
         var names = UserDefaults.standard.stringArray(forKey: key) ?? []
         names.append(name)
         UserDefaults.standard.set(deduplicatedNames(from: names), forKey: key)
+    }
+
+    private func pickerNamesKey(for role: StaffRole, gradeID: UUID?) -> String? {
+        guard let gradeID else { return nil }
+        return "staffPickerNames.\(gradeID.uuidString).\(role.rawValue)"
     }
 
     private func deduplicatedNames(from names: [String]) -> [String] {
@@ -257,7 +262,7 @@ struct StaffPickerField: View {
         guard canSaveNewStaff else { return }
 
         let cleanedName = trimmedNewName
-        persistName(cleanedName, for: role)
+        persistName(cleanedName, for: role, gradeID: gradeID)
 
         if let gradeID {
             let nameAlreadyExists = staffMembers.contains { member in
