@@ -3023,6 +3023,7 @@ struct ReportsSettingsView: View {
     @State private var isMoveModeEnabled = false
     @State private var moveDraftOrder: [UUID] = []
     @State private var moveDraftSlots: [UUID?] = []
+    @State private var moveInitialOrder: [UUID] = []
     @State private var draggingTemplateID: UUID?
     @State private var draggingTranslation: CGSize = .zero
     @State private var draggingStartSlotIndex: Int?
@@ -3077,6 +3078,10 @@ struct ReportsSettingsView: View {
         )
     }
 
+    private var hasMoveOrderChanges: Bool {
+        moveDraftSlots.compactMap { $0 } != moveInitialOrder
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -3109,11 +3114,18 @@ struct ReportsSettingsView: View {
         .navigationTitle("Reports")
         .toolbar {
             if isMoveModeEnabled {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Back") {
+                        cancelMoveMode()
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
+                    Button("Save") {
                         finishMoveModeAndSave()
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .disabled(!hasMoveOrderChanges)
                 }
             }
         }
@@ -3503,6 +3515,7 @@ struct ReportsSettingsView: View {
     private func beginMoveMode() {
         syncTemplateOrderWithCurrentTemplates()
         moveDraftOrder = persistedTemplateOrderIDs()
+        moveInitialOrder = moveDraftOrder
         moveDraftSlots = moveDraftOrder.map { Optional($0) }
         if moveDraftSlots.count < placeholderSlotCount {
             moveDraftSlots.append(contentsOf: Array(repeating: nil, count: placeholderSlotCount - moveDraftSlots.count))
@@ -3511,8 +3524,22 @@ struct ReportsSettingsView: View {
     }
 
     private func finishMoveModeAndSave() {
+        guard hasMoveOrderChanges else { return }
         moveDraftOrder = moveDraftSlots.compactMap { $0 }
         persistTemplateOrder(moveDraftOrder)
+        moveInitialOrder = moveDraftOrder
+        isMoveModeEnabled = false
+        draggingTemplateID = nil
+        draggingTranslation = .zero
+        draggingStartSlotIndex = nil
+    }
+
+    private func cancelMoveMode() {
+        moveDraftOrder = moveInitialOrder
+        moveDraftSlots = moveInitialOrder.map { Optional($0) }
+        if moveDraftSlots.count < placeholderSlotCount {
+            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: placeholderSlotCount - moveDraftSlots.count))
+        }
         isMoveModeEnabled = false
         draggingTemplateID = nil
         draggingTranslation = .zero
