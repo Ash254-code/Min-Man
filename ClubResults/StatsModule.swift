@@ -1949,39 +1949,49 @@ struct LiveStatsView: View {
     }
 
     private var comparisonScoreCardPanel: some View {
-        let metrics = scoreComparisonMetrics
         return VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                VStack(spacing: 6) {
-                    ScorePill(ourTeamName, style: ourStyle)
-                        .font(.title2.weight(.black))
-                        .padding(.horizontal, 8)
-                    Text("\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))")
-                        .font(.system(size: 58, weight: .black, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
+            edgeScoreSummaryPanel
+            edgeComparisonMetricsPanel
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
 
-                VStack(spacing: 6) {
-                    ScorePill(session.opposition, style: oppositionStyle)
-                        .font(.title2.weight(.black))
-                        .padding(.horizontal, 8)
-                    Text("\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))")
-                        .font(.system(size: 58, weight: .black, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
+    private var edgeScoreSummaryPanel: some View {
+        HStack(spacing: 12) {
+            VStack(spacing: 6) {
+                ScorePill(ourTeamName, style: ourStyle)
+                    .font(.title2.weight(.black))
+                    .padding(.horizontal, 8)
+                Text("\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))")
+                    .font(.system(size: 58, weight: .black, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .frame(maxWidth: .infinity, alignment: .center)
 
+            VStack(spacing: 6) {
+                ScorePill(session.opposition, style: oppositionStyle)
+                    .font(.title2.weight(.black))
+                    .padding(.horizontal, 8)
+                Text("\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))")
+                    .font(.system(size: 58, weight: .black, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var edgeComparisonMetricsPanel: some View {
+        let metrics = scoreComparisonMetrics
+        return ScrollView {
             VStack(spacing: 8) {
                 ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
                     comparisonMetricRow(metric)
@@ -1989,9 +1999,9 @@ struct LiveStatsView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .scrollIndicators(.hidden)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var scoreComparisonMetrics: [(label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double)] {
@@ -2492,8 +2502,7 @@ struct LiveStatsView: View {
         let leftPlayers = Array(gridPlayers.prefix(splitIndex).prefix(12))
         let rightPlayers = Array(gridPlayers.dropFirst(splitIndex).prefix(12))
         let recentAreaHeight = max(280, min(proxy.size.height * 0.33, 360))
-        let sectionGap: CGFloat = 10
-        let edgeCenterCardsTopOffset: CGFloat = 18
+        let sectionGap: CGFloat = 12
 
         return VStack(spacing: sectionGap) {
             HStack(alignment: .top, spacing: sectionGap) {
@@ -2507,23 +2516,22 @@ struct LiveStatsView: View {
                         .frame(height: 76)
                         .frame(maxWidth: centerWidth)
 
-                    VStack(spacing: sectionGap) {
+                    if oppositionTrackPossessions {
+                        edgeScoreSummaryPanel
+
+                        edgeComparisonMetricsPanel
+                            .frame(maxHeight: .infinity, alignment: .top)
+                    } else {
                         combinedScoreAndActionsPanel
                             .frame(height: topPanelHeight, alignment: .top)
                             .clipped()
 
-                        if !oppositionTrackPossessions {
-                            statButtonsPanel
-                                .frame(height: rightStatActionsHeight)
-                        }
-
-                        Spacer(minLength: 6)
-
-                        recentEventsPanel
-                            .frame(height: recentAreaHeight)
+                        statButtonsPanel
+                            .frame(height: rightStatActionsHeight)
                     }
-                    .padding(.top, edgeCenterCardsTopOffset)
-                    .frame(maxHeight: .infinity, alignment: .top)
+
+                    recentEventsPanel
+                        .frame(height: recentAreaHeight)
                 }
                 .frame(width: centerWidth)
                 .frame(maxHeight: .infinity, alignment: .top)
