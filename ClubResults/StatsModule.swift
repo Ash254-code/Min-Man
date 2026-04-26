@@ -2493,6 +2493,7 @@ struct LiveStatsView: View {
         let rightPlayers = Array(gridPlayers.dropFirst(splitIndex).prefix(12))
         let recentAreaHeight = max(280, min(proxy.size.height * 0.33, 360))
         let sectionGap: CGFloat = 10
+        let edgeCenterCardsTopOffset: CGFloat = 12
 
         return VStack(spacing: sectionGap) {
             HStack(alignment: .top, spacing: sectionGap) {
@@ -2505,6 +2506,7 @@ struct LiveStatsView: View {
                     headerBannerArea
                         .frame(height: 76)
                         .frame(maxWidth: centerWidth)
+                        .zIndex(2)
 
                     VStack(spacing: sectionGap) {
                         combinedScoreAndActionsPanel
@@ -2520,6 +2522,8 @@ struct LiveStatsView: View {
                         recentEventsPanel
                             .frame(height: recentAreaHeight)
                     }
+                    .padding(.top, edgeCenterCardsTopOffset)
+                    .zIndex(1)
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .frame(width: centerWidth)
