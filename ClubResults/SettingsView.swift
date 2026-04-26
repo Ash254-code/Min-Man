@@ -3022,11 +3022,11 @@ struct ReportsSettingsView: View {
     @State private var saveErrorMessage: String?
     @State private var isMoveModeEnabled = false
     @State private var moveDraftOrder: [UUID] = []
+    @State private var moveDraftSlots: [UUID?] = []
     @State private var draggingTemplateID: UUID?
     @State private var draggingTranslation: CGSize = .zero
-    @State private var draggingStartIndex: Int?
-    @State private var draggingLastTargetIndex: Int?
-    @State private var wobblePhase = false
+    @State private var draggingStartSlotIndex: Int?
+    @State private var draggingLastTargetSlotIndex: Int?
     @AppStorage("reports.templateOrder.v1") private var templateOrderData = ""
     var onOpenContactsSettings: (() -> Void)? = nil
 
@@ -3095,14 +3095,10 @@ struct ReportsSettingsView: View {
                         / CGFloat(templateGridColumnCount)
                     )
 
-                    ZStack(alignment: .topLeading) {
-                        LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
-                            ForEach(0..<placeholderSlotCount, id: \.self) { index in
-                                placeholderTile(at: index)
-                            }
+                    LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
+                        ForEach(0..<placeholderSlotCount, id: \.self) { index in
+                            slotTile(at: index, tileWidth: tileWidth)
                         }
-
-                        templateTilesGrid(tileWidth: tileWidth)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -3112,26 +3108,22 @@ struct ReportsSettingsView: View {
             .padding(.vertical)
         }
         .navigationTitle("Reports")
-        .overlay(alignment: .topTrailing) {
+        .toolbar {
             if isMoveModeEnabled {
-                Button("Done") {
-                    finishMoveModeAndSave()
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        finishMoveModeAndSave()
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 8)
-                .padding(.trailing, 16)
             }
         }
         .onAppear {
             syncTemplateOrderWithCurrentTemplates()
-            updateWobbleState(for: isMoveModeEnabled)
         }
         .onChange(of: templates.map(\.id)) { _, _ in
             syncTemplateOrderWithCurrentTemplates()
             syncMoveDraftWithCurrentTemplates()
-        }
-        .onChange(of: isMoveModeEnabled) { _, newValue in
-            updateWobbleState(for: newValue)
         }
         .confirmationDialog(
             "Report actions",
@@ -3383,26 +3375,21 @@ struct ReportsSettingsView: View {
     }
 
     @ViewBuilder
-    private func templateTilesGrid(tileWidth: CGFloat) -> some View {
-        LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
-            ForEach(displayedTemplates) { template in
-                let tile = reportTile(for: template, tileWidth: tileWidth)
-                if isMoveModeEnabled {
-                    tile.zIndex(draggingTemplateID == template.id ? 2 : 1)
-                } else {
-                    tile
-                }
+    private func slotTile(at index: Int, tileWidth: CGFloat) -> some View {
+        if let template = templateForSlot(index) {
+            let tile = reportTile(for: template, tileWidth: tileWidth)
+            if isMoveModeEnabled {
+                tile.zIndex(draggingTemplateID == template.id ? 2 : 1)
+            } else {
+                tile
             }
+        } else {
+            placeholderTile(at: index)
         }
-        .animation(
-            isMoveModeEnabled ? .spring(response: 0.25, dampingFraction: 0.78) : nil,
-            value: moveDraftOrder
-        )
     }
 
     @ViewBuilder
     private func reportTile(for template: CustomReportTemplate, tileWidth: CGFloat) -> some View {
-        let wobbleDirection = template.id.uuidString.hashValue.isMultiple(of: 2) ? 1.0 : -1.0
         let baseTile = VStack(spacing: 6) {
             Text(template.name)
                 .font(.title.weight(.bold))
@@ -3435,14 +3422,12 @@ struct ReportsSettingsView: View {
             )
         }
         .onLongPressGesture {
-            guard !isMoveModeEnabled else { return }
+            if isMoveModeEnabled { return }
             templateActioning = template
         }
         .scaleEffect(draggingTemplateID == template.id ? 1.08 : (isMoveModeEnabled ? 1.02 : 1))
-        .rotationEffect(.degrees(isMoveModeEnabled ? (wobbleDirection * (wobblePhase ? 3.2 : -3.2)) : 0))
         .offset(draggingTemplateID == template.id ? draggingTranslation : .zero)
         .shadow(color: .black.opacity(draggingTemplateID == template.id ? 0.2 : 0), radius: 12, y: 8)
-        .animation(.easeInOut(duration: 0.12), value: wobblePhase)
         .frame(maxWidth: .infinity)
         .frame(height: templateTileHeight)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -3519,27 +3504,21 @@ struct ReportsSettingsView: View {
     private func beginMoveMode() {
         syncTemplateOrderWithCurrentTemplates()
         moveDraftOrder = persistedTemplateOrderIDs()
+        moveDraftSlots = moveDraftOrder.map { Optional($0) }
+        if moveDraftSlots.count < placeholderSlotCount {
+            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: placeholderSlotCount - moveDraftSlots.count))
+        }
         isMoveModeEnabled = true
     }
 
     private func finishMoveModeAndSave() {
+        moveDraftOrder = moveDraftSlots.compactMap { $0 }
         persistTemplateOrder(moveDraftOrder)
         isMoveModeEnabled = false
         draggingTemplateID = nil
         draggingTranslation = .zero
-        draggingStartIndex = nil
-        draggingLastTargetIndex = nil
-    }
-
-    private func updateWobbleState(for isEnabled: Bool) {
-        if isEnabled {
-            wobblePhase = false
-            withAnimation(.easeInOut(duration: 0.12).repeatForever(autoreverses: true)) {
-                wobblePhase = true
-            }
-        } else {
-            wobblePhase = false
-        }
+        draggingStartSlotIndex = nil
+        draggingLastTargetSlotIndex = nil
     }
 
     private func activeTemplateOrderIDs() -> [UUID] {
@@ -3551,6 +3530,20 @@ struct ReportsSettingsView: View {
         moveDraftOrder = moveDraftOrder.filter { currentTemplateIDs.contains($0) }
         let missing = templates.map(\.id).filter { !moveDraftOrder.contains($0) }
         moveDraftOrder.append(contentsOf: missing)
+        moveDraftSlots = moveDraftSlots.map { slot in
+            guard let slot else { return nil }
+            return currentTemplateIDs.contains(slot) ? slot : nil
+        }
+        for id in missing where !moveDraftSlots.contains(id) {
+            if let firstEmpty = moveDraftSlots.firstIndex(where: { $0 == nil }) {
+                moveDraftSlots[firstEmpty] = id
+            } else {
+                moveDraftSlots.append(id)
+            }
+        }
+        if isMoveModeEnabled && moveDraftSlots.count < placeholderSlotCount {
+            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: placeholderSlotCount - moveDraftSlots.count))
+        }
     }
 
     private func persistedTemplateOrderIDs() -> [UUID] {
@@ -3589,46 +3582,61 @@ struct ReportsSettingsView: View {
     }
 
     private func templateMoveGesture(for templateID: UUID, tileWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 5)
+        let hold = LongPressGesture(minimumDuration: 0.2)
+        let drag = DragGesture(minimumDistance: 0)
+
+        return hold.sequenced(before: drag)
             .onChanged { value in
                 guard isMoveModeEnabled else { return }
-                if draggingTemplateID != templateID {
-                    draggingTemplateID = templateID
-                    draggingStartIndex = moveDraftOrder.firstIndex(of: templateID)
-                    draggingLastTargetIndex = draggingStartIndex
+                switch value {
+                case .first(true):
+                    if draggingTemplateID != templateID {
+                        draggingTemplateID = templateID
+                        draggingStartSlotIndex = moveDraftSlots.firstIndex(of: templateID)
+                        draggingLastTargetSlotIndex = draggingStartSlotIndex
+                    }
+                case .second(true, let dragValue?):
+                    if draggingTemplateID != templateID {
+                        draggingTemplateID = templateID
+                        draggingStartSlotIndex = moveDraftSlots.firstIndex(of: templateID)
+                        draggingLastTargetSlotIndex = draggingStartSlotIndex
+                    }
+                    draggingTranslation = dragValue.translation
+                    updateDragReorder(tileWidth: tileWidth)
+                default:
+                    break
                 }
-
-                draggingTranslation = value.translation
-                updateDragReorder(tileWidth: tileWidth)
             }
             .onEnded { _ in
                 draggingTemplateID = nil
                 draggingTranslation = .zero
-                draggingStartIndex = nil
-                draggingLastTargetIndex = nil
+                draggingStartSlotIndex = nil
+                draggingLastTargetSlotIndex = nil
             }
     }
 
     private func updateDragReorder(tileWidth: CGFloat) {
         guard let draggingTemplateID else { return }
-        guard let sourceIndex = moveDraftOrder.firstIndex(of: draggingTemplateID) else { return }
-        guard let draggingStartIndex else { return }
+        guard let sourceIndex = moveDraftSlots.firstIndex(of: draggingTemplateID) else { return }
+        guard let draggingStartSlotIndex else { return }
 
         let cellWidth = max(tileWidth + templateGridSpacing, 1)
         let cellHeight = templateTileHeight + templateGridSpacing
         let horizontalShift = Int((draggingTranslation.width / cellWidth).rounded())
         let verticalShift = Int((draggingTranslation.height / cellHeight).rounded())
-        let proposedTarget = draggingStartIndex + horizontalShift + (verticalShift * templateGridColumnCount)
-        let clampedTarget = min(max(0, proposedTarget), moveDraftOrder.count - 1)
+        let proposedTarget = draggingStartSlotIndex + horizontalShift + (verticalShift * templateGridColumnCount)
+        let clampedTarget = min(max(0, proposedTarget), max(moveDraftSlots.count - 1, 0))
 
         guard clampedTarget != sourceIndex else { return }
-        guard clampedTarget != draggingLastTargetIndex else { return }
+        guard clampedTarget != draggingLastTargetSlotIndex else { return }
 
-        var currentOrder = moveDraftOrder
-        let movedID = currentOrder.remove(at: sourceIndex)
-        currentOrder.insert(movedID, at: clampedTarget)
-        moveDraftOrder = currentOrder
-        draggingLastTargetIndex = clampedTarget
+        var currentSlots = moveDraftSlots
+        let destinationItem = currentSlots[clampedTarget]
+        currentSlots[clampedTarget] = draggingTemplateID
+        currentSlots[sourceIndex] = destinationItem
+        moveDraftSlots = currentSlots
+        draggingStartSlotIndex = clampedTarget
+        draggingLastTargetSlotIndex = clampedTarget
     }
 
     private func gridHeightEstimate() -> CGFloat {
@@ -3639,6 +3647,15 @@ struct ReportsSettingsView: View {
             return max(1, Int(ceil(Double(displayedTemplates.count + 1) / Double(templateGridColumnCount))))
         }()
         return (CGFloat(rowCount) * templateTileHeight) + (CGFloat(max(0, rowCount - 1)) * templateGridSpacing)
+    }
+
+    private func templateForSlot(_ index: Int) -> CustomReportTemplate? {
+        if isMoveModeEnabled {
+            guard index < moveDraftSlots.count, let id = moveDraftSlots[index] else { return nil }
+            return displayedTemplates.first(where: { $0.id == id })
+        }
+        guard index < displayedTemplates.count else { return nil }
+        return displayedTemplates[index]
     }
 
     private func gradesSummary(for template: CustomReportTemplate) -> String {
