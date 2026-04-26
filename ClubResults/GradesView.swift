@@ -65,7 +65,7 @@ final class Grade {
         asksLiveGameView: Bool = true,
         asksGoalKickers: Bool = true,
         bestPlayersCount: Int = 6,
-        asksGuestBestFairestVotesScan: Bool = false,
+        asksGuestBestFairestVotesScan: Bool = true,
         guestBestPlayersCount: Int = 3,
         bestPlayersVotes: [Int]? = nil,
         guestBestPlayersVotes: [Int]? = nil,
@@ -103,18 +103,26 @@ final class Grade {
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
         self.guestBestPlayersCount = normalizedGuestBestPlayersCount
         self.bestPlayersVotes = Grade.normalizedVotes(bestPlayersVotes, count: normalizedBestPlayersCount)
-        self.guestBestPlayersVotes = Grade.normalizedVotes(guestBestPlayersVotes, count: normalizedGuestBestPlayersCount)
+        self.guestBestPlayersVotes = Grade.normalizedGuestVotes(guestBestPlayersVotes, count: normalizedGuestBestPlayersCount)
         self.allowsLiveGameView = allowsLiveGameView
         self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
     }
 
     static func normalizedVotes(_ votes: [Int]?, count: Int) -> [Int] {
+        normalizedVotes(votes, count: count, fallback: Array((0..<count).map { max(count - $0 - 1, 0) }))
+    }
+
+    static func normalizedGuestVotes(_ votes: [Int]?, count: Int) -> [Int] {
+        normalizedVotes(votes, count: count, fallback: Array((0..<count).map { max(count - $0, 1) }))
+    }
+
+    private static func normalizedVotes(_ votes: [Int]?, count: Int, fallback: [Int]) -> [Int] {
         guard count > 0 else { return [] }
-        let fallback = Array((0..<count).map { max(count - $0 - 1, 0) })
-        guard let votes else { return fallback }
+        let defaults = Array(fallback.prefix(count))
+        guard let votes else { return defaults }
         var normalized = Array(votes.prefix(count)).map { max($0, 0) }
         if normalized.count < count {
-            normalized.append(contentsOf: fallback.dropFirst(normalized.count))
+            normalized.append(contentsOf: defaults.dropFirst(normalized.count))
         }
         return normalized
     }

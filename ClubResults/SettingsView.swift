@@ -1056,7 +1056,7 @@ private struct ClubGradesSettingsView: View {
         gradeEditing.asksGuestBestFairestVotesScan = editGradeDraft.asksGuestBestFairestVotesScan
         gradeEditing.guestBestPlayersCount = editGradeDraft.guestBestPlayersCount
         gradeEditing.bestPlayersVotes = Grade.normalizedVotes(editGradeDraft.bestPlayersVotes, count: editGradeDraft.bestPlayersCount)
-        gradeEditing.guestBestPlayersVotes = Grade.normalizedVotes(editGradeDraft.guestBestPlayersVotes, count: editGradeDraft.guestBestPlayersCount)
+        gradeEditing.guestBestPlayersVotes = Grade.normalizedGuestVotes(editGradeDraft.guestBestPlayersVotes, count: editGradeDraft.guestBestPlayersCount)
         gradeEditing.asksNotes = editGradeDraft.asksNotes
         gradeEditing.allowsLiveGameView = editGradeDraft.allowsLiveGameView
         gradeEditing.quarterLengthMinutes = editGradeDraft.quarterLengthMinutes
@@ -1101,7 +1101,7 @@ private struct ClubGradesSettingsView: View {
             || editGradeDraft.asksGuestBestFairestVotesScan != gradeEditing.asksGuestBestFairestVotesScan
             || editGradeDraft.guestBestPlayersCount != gradeEditing.guestBestPlayersCount
             || Grade.normalizedVotes(editGradeDraft.bestPlayersVotes, count: editGradeDraft.bestPlayersCount) != gradeEditing.bestPlayersVotes
-            || Grade.normalizedVotes(editGradeDraft.guestBestPlayersVotes, count: editGradeDraft.guestBestPlayersCount) != gradeEditing.guestBestPlayersVotes
+            || Grade.normalizedGuestVotes(editGradeDraft.guestBestPlayersVotes, count: editGradeDraft.guestBestPlayersCount) != gradeEditing.guestBestPlayersVotes
             || editGradeDraft.asksNotes != gradeEditing.asksNotes
             || editGradeDraft.allowsLiveGameView != gradeEditing.allowsLiveGameView
             || editGradeDraft.quarterLengthMinutes != gradeEditing.quarterLengthMinutes
@@ -1353,7 +1353,7 @@ private struct VoteAllocationEditorView: View {
 
     private func normalizeArrays() {
         bestPlayersVotes = Grade.normalizedVotes(bestPlayersVotes, count: bestPlayersCount)
-        guestBestPlayersVotes = Grade.normalizedVotes(guestBestPlayersVotes, count: guestBestPlayersCount)
+        guestBestPlayersVotes = Grade.normalizedGuestVotes(guestBestPlayersVotes, count: guestBestPlayersCount)
     }
 
     private func bestVotes(for index: Int) -> Int {
@@ -1361,7 +1361,7 @@ private struct VoteAllocationEditorView: View {
     }
 
     private func guestVotes(for index: Int) -> Int {
-        Grade.normalizedVotes(guestBestPlayersVotes, count: guestBestPlayersCount)[index]
+        Grade.normalizedGuestVotes(guestBestPlayersVotes, count: guestBestPlayersCount)[index]
     }
 
     private func bestVoteBinding(_ index: Int) -> Binding<Int> {
@@ -1379,7 +1379,7 @@ private struct VoteAllocationEditorView: View {
         Binding(
             get: { guestVotes(for: index) },
             set: { newValue in
-                var values = Grade.normalizedVotes(guestBestPlayersVotes, count: guestBestPlayersCount)
+                var values = Grade.normalizedGuestVotes(guestBestPlayersVotes, count: guestBestPlayersCount)
                 values[index] = max(0, newValue)
                 guestBestPlayersVotes = values
             }
@@ -1408,10 +1408,10 @@ private struct EditGradeDraft {
     var asksScore = true
     var asksGoalKickers = true
     var bestPlayersCount = 6
-    var asksGuestBestFairestVotesScan = false
+    var asksGuestBestFairestVotesScan = true
     var guestBestPlayersCount = 3
     var bestPlayersVotes = Grade.normalizedVotes(nil, count: 6)
-    var guestBestPlayersVotes = Grade.normalizedVotes(nil, count: 3)
+    var guestBestPlayersVotes = Grade.normalizedGuestVotes(nil, count: 3)
     var asksNotes = true
     var allowsLiveGameView = true
     var quarterLengthMinutes = 20
@@ -1442,7 +1442,7 @@ private struct EditGradeDraft {
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         guestBestPlayersCount = grade.guestBestPlayersCount
         bestPlayersVotes = Grade.normalizedVotes(grade.bestPlayersVotes, count: grade.bestPlayersCount)
-        guestBestPlayersVotes = Grade.normalizedVotes(grade.guestBestPlayersVotes, count: grade.guestBestPlayersCount)
+        guestBestPlayersVotes = Grade.normalizedGuestVotes(grade.guestBestPlayersVotes, count: grade.guestBestPlayersCount)
         asksNotes = grade.asksNotes
         allowsLiveGameView = grade.allowsLiveGameView
         quarterLengthMinutes = grade.quarterLengthMinutes
@@ -1478,10 +1478,10 @@ private struct NewGradeDraft {
     var asksNotes = true
     var asksGoalKickers = true
     var bestPlayersCount = 6
-    var asksGuestBestFairestVotesScan = false
+    var asksGuestBestFairestVotesScan = true
     var guestBestPlayersCount = 3
     var bestPlayersVotes = Grade.normalizedVotes(nil, count: 6)
-    var guestBestPlayersVotes = Grade.normalizedVotes(nil, count: 3)
+    var guestBestPlayersVotes = Grade.normalizedGuestVotes(nil, count: 3)
     var allowsLiveGameView = true
     var quarterLengthMinutes = 20
 

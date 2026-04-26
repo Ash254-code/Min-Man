@@ -381,7 +381,7 @@ struct GradeRecord: Codable {
         bestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) ?? 6
         guestBestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? 3
         bestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .bestPlayersVotes), count: bestPlayersCount)
-        guestBestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .guestBestPlayersVotes), count: guestBestPlayersCount)
+        guestBestPlayersVotes = Grade.normalizedGuestVotes(try c.decodeIfPresent([Int].self, forKey: .guestBestPlayersVotes), count: guestBestPlayersCount)
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? false
         quarterLengthMinutes = try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20
