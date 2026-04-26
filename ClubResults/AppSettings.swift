@@ -93,11 +93,13 @@ struct GradeBackup: Codable {
         self.asksScore = asksScore
         self.asksLiveGameView = asksLiveGameView
         self.asksGoalKickers = asksGoalKickers
-        self.bestPlayersCount = min(max(bestPlayersCount, 0), 10)
+        let normalizedBestPlayersCount = min(max(bestPlayersCount, 0), 10)
+        let normalizedGuestBestPlayersCount = min(max(guestBestPlayersCount, 1), 10)
+        self.bestPlayersCount = normalizedBestPlayersCount
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
-        self.guestBestPlayersCount = min(max(guestBestPlayersCount, 1), 10)
-        self.bestPlayersVotes = Grade.normalizedVotes(bestPlayersVotes, count: self.bestPlayersCount)
-        self.guestBestPlayersVotes = Grade.normalizedVotes(guestBestPlayersVotes, count: self.guestBestPlayersCount)
+        self.guestBestPlayersCount = normalizedGuestBestPlayersCount
+        self.bestPlayersVotes = Grade.normalizedVotes(bestPlayersVotes, count: normalizedBestPlayersCount)
+        self.guestBestPlayersVotes = Grade.normalizedVotes(guestBestPlayersVotes, count: normalizedGuestBestPlayersCount)
         self.allowsLiveGameView = allowsLiveGameView
         self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
     }
