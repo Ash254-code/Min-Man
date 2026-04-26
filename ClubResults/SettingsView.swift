@@ -3618,13 +3618,13 @@ struct ReportsSettingsView: View {
     private func updateDragReorder(tileWidth: CGFloat) {
         guard let draggingTemplateID else { return }
         guard let sourceIndex = moveDraftSlots.firstIndex(of: draggingTemplateID) else { return }
-        guard let draggingStartSlotIndex else { return }
+        guard let startSlotIndex = draggingStartSlotIndex else { return }
 
         let cellWidth = max(tileWidth + templateGridSpacing, 1)
         let cellHeight = templateTileHeight + templateGridSpacing
         let horizontalShift = Int((draggingTranslation.width / cellWidth).rounded())
         let verticalShift = Int((draggingTranslation.height / cellHeight).rounded())
-        let proposedTarget = draggingStartSlotIndex + horizontalShift + (verticalShift * templateGridColumnCount)
+        let proposedTarget = startSlotIndex + horizontalShift + (verticalShift * templateGridColumnCount)
         let clampedTarget = min(max(0, proposedTarget), max(moveDraftSlots.count - 1, 0))
 
         guard clampedTarget != sourceIndex else { return }
