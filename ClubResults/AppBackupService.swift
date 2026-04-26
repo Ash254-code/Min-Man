@@ -583,6 +583,9 @@ struct CustomReportTemplateRecord: Codable {
     let playersOnlyGradeFilterIDs: [UUID]
     let minimumGamesPlayed: Int
     let groupingModeRawValue: Int
+    let dateRangeQuickPickRawValue: String
+    let customDateRangeStart: Date
+    let customDateRangeEnd: Date
 
     init(_ template: CustomReportTemplate) {
         id = template.id
@@ -613,6 +616,9 @@ struct CustomReportTemplateRecord: Codable {
         playersOnlyGradeFilterIDs = template.playersOnlyGradeFilterIDs
         minimumGamesPlayed = template.minimumGamesPlayed
         groupingModeRawValue = template.groupingModeRawValue
+        dateRangeQuickPickRawValue = template.dateRangeQuickPickRawValue
+        customDateRangeStart = template.customDateRangeStart
+        customDateRangeEnd = template.customDateRangeEnd
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -622,6 +628,7 @@ struct CustomReportTemplateRecord: Codable {
         case includeUmpires, includeTrainers, includeMatchNotes, includeSectionOrder, includeOnlyActiveGrades
         case includePlayersOnly, playersOnlyGradeFilterIDs, sendReportOnGameSave, sendReportTriggerGradeID, minimumGamesPlayed, groupingModeRawValue
         case reportColumnCount, includeSectionColumnAssignments
+        case dateRangeQuickPickRawValue, customDateRangeStart, customDateRangeEnd
     }
 
     init(from decoder: Decoder) throws {
@@ -654,6 +661,10 @@ struct CustomReportTemplateRecord: Codable {
         playersOnlyGradeFilterIDs = try c.decodeIfPresent([UUID].self, forKey: .playersOnlyGradeFilterIDs) ?? []
         minimumGamesPlayed = try c.decodeIfPresent(Int.self, forKey: .minimumGamesPlayed) ?? 0
         groupingModeRawValue = try c.decodeIfPresent(Int.self, forKey: .groupingModeRawValue) ?? 0
+        dateRangeQuickPickRawValue = try c.decodeIfPresent(String.self, forKey: .dateRangeQuickPickRawValue) ?? "Most Recent Game"
+        let defaultStart = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        customDateRangeStart = try c.decodeIfPresent(Date.self, forKey: .customDateRangeStart) ?? defaultStart
+        customDateRangeEnd = try c.decodeIfPresent(Date.self, forKey: .customDateRangeEnd) ?? Date()
     }
 }
 
@@ -825,6 +836,7 @@ struct AppSettingsRecord: Codable {
     let boundaryUmpireGradeMappings: [String: [UUID]]
     let lastStaffSelections: [String: String]
     let draftResumeOpenLiveFlags: [String: Bool]
+    let reportsTemplateOrderData: String
     let speechSetupCustomSectionsData: String
     let speechSetupDetectedWordsData: String
     let legacyGradesBackup: [GradeBackup]
@@ -832,7 +844,7 @@ struct AppSettingsRecord: Codable {
 
     private enum CodingKeys: String, CodingKey {
         case appAppearanceRawValue, clubConfiguration, boundaryUmpireGradeMappings
-        case lastStaffSelections, draftResumeOpenLiveFlags
+        case lastStaffSelections, draftResumeOpenLiveFlags, reportsTemplateOrderData
         case speechSetupCustomSectionsData, speechSetupDetectedWordsData
         case legacyGradesBackup, legacyContactsBackup
     }
@@ -843,6 +855,7 @@ struct AppSettingsRecord: Codable {
         boundaryUmpireGradeMappings: [String: [UUID]],
         lastStaffSelections: [String: String],
         draftResumeOpenLiveFlags: [String: Bool],
+        reportsTemplateOrderData: String,
         speechSetupCustomSectionsData: String,
         speechSetupDetectedWordsData: String,
         legacyGradesBackup: [GradeBackup],
@@ -853,6 +866,7 @@ struct AppSettingsRecord: Codable {
         self.boundaryUmpireGradeMappings = boundaryUmpireGradeMappings
         self.lastStaffSelections = lastStaffSelections
         self.draftResumeOpenLiveFlags = draftResumeOpenLiveFlags
+        self.reportsTemplateOrderData = reportsTemplateOrderData
         self.speechSetupCustomSectionsData = speechSetupCustomSectionsData
         self.speechSetupDetectedWordsData = speechSetupDetectedWordsData
         self.legacyGradesBackup = legacyGradesBackup
@@ -866,6 +880,7 @@ struct AppSettingsRecord: Codable {
         boundaryUmpireGradeMappings = try c.decodeIfPresent([String: [UUID]].self, forKey: .boundaryUmpireGradeMappings) ?? [:]
         lastStaffSelections = try c.decodeIfPresent([String: String].self, forKey: .lastStaffSelections) ?? [:]
         draftResumeOpenLiveFlags = try c.decodeIfPresent([String: Bool].self, forKey: .draftResumeOpenLiveFlags) ?? [:]
+        reportsTemplateOrderData = try c.decodeIfPresent(String.self, forKey: .reportsTemplateOrderData) ?? ""
         speechSetupCustomSectionsData = try c.decodeIfPresent(String.self, forKey: .speechSetupCustomSectionsData) ?? ""
         speechSetupDetectedWordsData = try c.decodeIfPresent(String.self, forKey: .speechSetupDetectedWordsData) ?? ""
         legacyGradesBackup = try c.decodeIfPresent([GradeBackup].self, forKey: .legacyGradesBackup) ?? []
@@ -879,6 +894,7 @@ struct AppSettingsRecord: Codable {
             boundaryUmpireGradeMappings: [:],
             lastStaffSelections: [:],
             draftResumeOpenLiveFlags: [:],
+            reportsTemplateOrderData: "",
             speechSetupCustomSectionsData: "",
             speechSetupDetectedWordsData: "",
             legacyGradesBackup: [],
@@ -1246,7 +1262,10 @@ enum AppBackupService {
                     includePlayersOnly: $0.includePlayersOnly,
                     playersOnlyGradeFilterIDs: $0.playersOnlyGradeFilterIDs,
                     minimumGamesPlayed: $0.minimumGamesPlayed,
-                    groupingModeRawValue: $0.groupingModeRawValue
+                    groupingModeRawValue: $0.groupingModeRawValue,
+                    dateRangeQuickPickRawValue: $0.dateRangeQuickPickRawValue,
+                    customDateRangeStart: $0.customDateRangeStart,
+                    customDateRangeEnd: $0.customDateRangeEnd
                 )
             )
         }
@@ -1352,6 +1371,7 @@ enum AppBackupService {
         settings.draftResumeOpenLiveFlags.forEach {
             UserDefaults.standard.set($0.value, forKey: $0.key)
         }
+        UserDefaults.standard.set(settings.reportsTemplateOrderData, forKey: "reports.templateOrder.v1")
 
         UserDefaults.standard.set(settings.speechSetupCustomSectionsData, forKey: "speech_setup_custom_sections")
         UserDefaults.standard.set(settings.speechSetupDetectedWordsData, forKey: "speech_setup_detected_words")
@@ -1387,6 +1407,7 @@ enum AppBackupService {
             boundaryUmpireGradeMappings: serializedMappings,
             lastStaffSelections: lastStaffSelections,
             draftResumeOpenLiveFlags: draftResumeFlags,
+            reportsTemplateOrderData: defaults.string(forKey: "reports.templateOrder.v1") ?? "",
             speechSetupCustomSectionsData: defaults.string(forKey: "speech_setup_custom_sections") ?? "",
             speechSetupDetectedWordsData: defaults.string(forKey: "speech_setup_detected_words") ?? "",
             legacyGradesBackup: SettingsBackupStore.loadGrades(),
