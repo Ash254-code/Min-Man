@@ -33,6 +33,8 @@ final class Grade {
     var bestPlayersCount: Int
     var asksGuestBestFairestVotesScan: Bool
     var guestBestPlayersCount: Int
+    var bestPlayersVotes: [Int]
+    var guestBestPlayersVotes: [Int]
     var allowsLiveGameView: Bool
     var quarterLengthMinutes: Int
 
@@ -65,6 +67,8 @@ final class Grade {
         bestPlayersCount: Int = 6,
         asksGuestBestFairestVotesScan: Bool = false,
         guestBestPlayersCount: Int = 3,
+        bestPlayersVotes: [Int]? = nil,
+        guestBestPlayersVotes: [Int]? = nil,
         allowsLiveGameView: Bool = true,
         quarterLengthMinutes: Int = 20
     ) {
@@ -96,7 +100,20 @@ final class Grade {
         self.bestPlayersCount = min(max(bestPlayersCount, 0), 10)
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
         self.guestBestPlayersCount = min(max(guestBestPlayersCount, 1), 10)
+        self.bestPlayersVotes = Grade.normalizedVotes(bestPlayersVotes, count: self.bestPlayersCount)
+        self.guestBestPlayersVotes = Grade.normalizedVotes(guestBestPlayersVotes, count: self.guestBestPlayersCount)
         self.allowsLiveGameView = allowsLiveGameView
         self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
+    }
+
+    static func normalizedVotes(_ votes: [Int]?, count: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        let fallback = Array((0..<count).map { max(count - $0 - 1, 0) })
+        guard let votes else { return fallback }
+        var normalized = Array(votes.prefix(count)).map { max($0, 0) }
+        if normalized.count < count {
+            normalized.append(contentsOf: fallback.dropFirst(normalized.count))
+        }
+        return normalized
     }
 }

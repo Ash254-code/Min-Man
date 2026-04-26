@@ -872,9 +872,19 @@ private struct ClubGradesSettingsView: View {
                                 Text("\(count)").tag(count)
                             }
                         }
-                        Toggle("Guest Best & Fairest Votes", isOn: bind(\.asksGuestBestFairestVotesScan))
+                        NavigationLink {
+                            VoteAllocationEditorView(
+                                bestPlayersCount: bind(\.bestPlayersCount),
+                                guestBestPlayersCount: bind(\.guestBestPlayersCount),
+                                bestPlayersVotes: bind(\.bestPlayersVotes),
+                                guestBestPlayersVotes: bind(\.guestBestPlayersVotes)
+                            )
+                        } label: {
+                            Label("Best & Fairest", systemImage: "list.number")
+                        }
+                        Toggle("Guest Best Players", isOn: bind(\.asksGuestBestFairestVotesScan))
                         if editGradeDraft.asksGuestBestFairestVotesScan {
-                            Picker("Guest Best Players", selection: bind(\.guestBestPlayersCount)) {
+                            Picker("Guest Best Players Quantity", selection: bind(\.guestBestPlayersCount)) {
                                 ForEach(1...10, id: \.self) { count in
                                     Text("\(count)").tag(count)
                                 }
@@ -989,6 +999,8 @@ private struct ClubGradesSettingsView: View {
             bestPlayersCount: draft.bestPlayersCount,
             asksGuestBestFairestVotesScan: draft.asksGuestBestFairestVotesScan,
             guestBestPlayersCount: draft.guestBestPlayersCount,
+            bestPlayersVotes: draft.bestPlayersVotes,
+            guestBestPlayersVotes: draft.guestBestPlayersVotes,
             allowsLiveGameView: draft.allowsLiveGameView,
             quarterLengthMinutes: draft.quarterLengthMinutes
         )
@@ -1031,6 +1043,8 @@ private struct ClubGradesSettingsView: View {
         gradeEditing.bestPlayersCount = editGradeDraft.bestPlayersCount
         gradeEditing.asksGuestBestFairestVotesScan = editGradeDraft.asksGuestBestFairestVotesScan
         gradeEditing.guestBestPlayersCount = editGradeDraft.guestBestPlayersCount
+        gradeEditing.bestPlayersVotes = Grade.normalizedVotes(editGradeDraft.bestPlayersVotes, count: editGradeDraft.bestPlayersCount)
+        gradeEditing.guestBestPlayersVotes = Grade.normalizedVotes(editGradeDraft.guestBestPlayersVotes, count: editGradeDraft.guestBestPlayersCount)
         gradeEditing.asksNotes = editGradeDraft.asksNotes
         gradeEditing.allowsLiveGameView = editGradeDraft.allowsLiveGameView
         gradeEditing.quarterLengthMinutes = editGradeDraft.quarterLengthMinutes
@@ -1074,6 +1088,8 @@ private struct ClubGradesSettingsView: View {
             || editGradeDraft.bestPlayersCount != gradeEditing.bestPlayersCount
             || editGradeDraft.asksGuestBestFairestVotesScan != gradeEditing.asksGuestBestFairestVotesScan
             || editGradeDraft.guestBestPlayersCount != gradeEditing.guestBestPlayersCount
+            || Grade.normalizedVotes(editGradeDraft.bestPlayersVotes, count: editGradeDraft.bestPlayersCount) != gradeEditing.bestPlayersVotes
+            || Grade.normalizedVotes(editGradeDraft.guestBestPlayersVotes, count: editGradeDraft.guestBestPlayersCount) != gradeEditing.guestBestPlayersVotes
             || editGradeDraft.asksNotes != gradeEditing.asksNotes
             || editGradeDraft.allowsLiveGameView != gradeEditing.allowsLiveGameView
             || editGradeDraft.quarterLengthMinutes != gradeEditing.quarterLengthMinutes
@@ -1177,6 +1193,8 @@ private struct ClubGradesSettingsView: View {
                             bestPlayersCount: $0.bestPlayersCount,
                             asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                             guestBestPlayersCount: $0.guestBestPlayersCount,
+                            bestPlayersVotes: $0.bestPlayersVotes,
+                            guestBestPlayersVotes: $0.guestBestPlayersVotes,
                             allowsLiveGameView: $0.allowsLiveGameView,
                             quarterLengthMinutes: $0.quarterLengthMinutes
                         )
@@ -1213,6 +1231,8 @@ private struct ClubGradesSettingsView: View {
                                 bestPlayersCount: item.bestPlayersCount,
                                 asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan,
                                 guestBestPlayersCount: item.guestBestPlayersCount,
+                                bestPlayersVotes: item.bestPlayersVotes,
+                                guestBestPlayersVotes: item.guestBestPlayersVotes,
                                 allowsLiveGameView: item.allowsLiveGameView,
                                 quarterLengthMinutes: item.quarterLengthMinutes
                             )
@@ -1264,6 +1284,8 @@ private struct ClubGradesSettingsView: View {
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                     guestBestPlayersCount: $0.guestBestPlayersCount,
+                    bestPlayersVotes: $0.bestPlayersVotes,
+                    guestBestPlayersVotes: $0.guestBestPlayersVotes,
                     allowsLiveGameView: $0.allowsLiveGameView,
                     quarterLengthMinutes: $0.quarterLengthMinutes
                 )
@@ -1292,6 +1314,67 @@ private struct AppAppearanceSettingsView: View {
     }
 }
 
+private struct VoteAllocationEditorView: View {
+    @Binding var bestPlayersCount: Int
+    @Binding var guestBestPlayersCount: Int
+    @Binding var bestPlayersVotes: [Int]
+    @Binding var guestBestPlayersVotes: [Int]
+
+    var body: some View {
+        Form {
+            Section("Best Players Votes") {
+                ForEach(0..<bestPlayersCount, id: \.self) { index in
+                    Stepper("Rank \(index + 1): \(bestVotes(for: index))", value: bestVoteBinding(index), in: 0...20)
+                }
+            }
+            Section("Guest Best Players Votes") {
+                ForEach(0..<guestBestPlayersCount, id: \.self) { index in
+                    Stepper("Rank \(index + 1): \(guestVotes(for: index))", value: guestVoteBinding(index), in: 0...20)
+                }
+            }
+        }
+        .navigationTitle("Best & Fairest")
+        .onAppear(perform: normalizeArrays)
+        .onChange(of: bestPlayersCount) { _, _ in normalizeArrays() }
+        .onChange(of: guestBestPlayersCount) { _, _ in normalizeArrays() }
+    }
+
+    private func normalizeArrays() {
+        bestPlayersVotes = Grade.normalizedVotes(bestPlayersVotes, count: bestPlayersCount)
+        guestBestPlayersVotes = Grade.normalizedVotes(guestBestPlayersVotes, count: guestBestPlayersCount)
+    }
+
+    private func bestVotes(for index: Int) -> Int {
+        Grade.normalizedVotes(bestPlayersVotes, count: bestPlayersCount)[index]
+    }
+
+    private func guestVotes(for index: Int) -> Int {
+        Grade.normalizedVotes(guestBestPlayersVotes, count: guestBestPlayersCount)[index]
+    }
+
+    private func bestVoteBinding(_ index: Int) -> Binding<Int> {
+        Binding(
+            get: { bestVotes(for: index) },
+            set: { newValue in
+                var values = Grade.normalizedVotes(bestPlayersVotes, count: bestPlayersCount)
+                values[index] = max(0, newValue)
+                bestPlayersVotes = values
+            }
+        )
+    }
+
+    private func guestVoteBinding(_ index: Int) -> Binding<Int> {
+        Binding(
+            get: { guestVotes(for: index) },
+            set: { newValue in
+                var values = Grade.normalizedVotes(guestBestPlayersVotes, count: guestBestPlayersCount)
+                values[index] = max(0, newValue)
+                guestBestPlayersVotes = values
+            }
+        )
+    }
+}
+
 private struct EditGradeDraft {
     var name = ""
     var asksHeadCoach = true
@@ -1315,6 +1398,8 @@ private struct EditGradeDraft {
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = false
     var guestBestPlayersCount = 3
+    var bestPlayersVotes = Grade.normalizedVotes(nil, count: 6)
+    var guestBestPlayersVotes = Grade.normalizedVotes(nil, count: 3)
     var asksNotes = true
     var allowsLiveGameView = true
     var quarterLengthMinutes = 20
@@ -1344,6 +1429,8 @@ private struct EditGradeDraft {
         bestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         guestBestPlayersCount = grade.guestBestPlayersCount
+        bestPlayersVotes = Grade.normalizedVotes(grade.bestPlayersVotes, count: grade.bestPlayersCount)
+        guestBestPlayersVotes = Grade.normalizedVotes(grade.guestBestPlayersVotes, count: grade.guestBestPlayersCount)
         asksNotes = grade.asksNotes
         allowsLiveGameView = grade.allowsLiveGameView
         quarterLengthMinutes = grade.quarterLengthMinutes
@@ -1381,6 +1468,8 @@ private struct NewGradeDraft {
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = false
     var guestBestPlayersCount = 3
+    var bestPlayersVotes = Grade.normalizedVotes(nil, count: 6)
+    var guestBestPlayersVotes = Grade.normalizedVotes(nil, count: 3)
     var allowsLiveGameView = true
     var quarterLengthMinutes = 20
 
@@ -1455,9 +1544,19 @@ private struct AddGradeWizardView: View {
                                 Text("\(count)").tag(count)
                             }
                         }
-                        Toggle("Guest B & F Votes", isOn: $draft.asksGuestBestFairestVotesScan)
+                        NavigationLink {
+                            VoteAllocationEditorView(
+                                bestPlayersCount: $draft.bestPlayersCount,
+                                guestBestPlayersCount: $draft.guestBestPlayersCount,
+                                bestPlayersVotes: $draft.bestPlayersVotes,
+                                guestBestPlayersVotes: $draft.guestBestPlayersVotes
+                            )
+                        } label: {
+                            Label("Best & Fairest", systemImage: "list.number")
+                        }
+                        Toggle("Guest Best Players", isOn: $draft.asksGuestBestFairestVotesScan)
                         if draft.asksGuestBestFairestVotesScan {
-                            Picker("Guest Best Players", selection: $draft.guestBestPlayersCount) {
+                            Picker("Guest Best Players Quantity", selection: $draft.guestBestPlayersCount) {
                                 ForEach(1...10, id: \.self) { count in
                                     Text("\(count)").tag(count)
                                 }

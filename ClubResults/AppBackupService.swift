@@ -299,6 +299,8 @@ struct GradeRecord: Codable {
     let bestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
     let guestBestPlayersCount: Int
+    let bestPlayersVotes: [Int]
+    let guestBestPlayersVotes: [Int]
     let allowsLiveGameView: Bool
     let quarterLengthMinutes: Int
 
@@ -310,6 +312,7 @@ struct GradeRecord: Codable {
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
         case bestPlayersCount, guestBestPlayersCount
+        case bestPlayersVotes, guestBestPlayersVotes
         case asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes
     }
 
@@ -342,6 +345,8 @@ struct GradeRecord: Codable {
         bestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         guestBestPlayersCount = grade.guestBestPlayersCount
+        bestPlayersVotes = grade.bestPlayersVotes
+        guestBestPlayersVotes = grade.guestBestPlayersVotes
         allowsLiveGameView = grade.allowsLiveGameView
         quarterLengthMinutes = grade.quarterLengthMinutes
     }
@@ -375,6 +380,8 @@ struct GradeRecord: Codable {
         asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
         bestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) ?? 6
         guestBestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? 3
+        bestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .bestPlayersVotes), count: bestPlayersCount)
+        guestBestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .guestBestPlayersVotes), count: guestBestPlayersCount)
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? false
         quarterLengthMinutes = try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20
@@ -1129,6 +1136,8 @@ enum AppBackupService {
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                     guestBestPlayersCount: $0.guestBestPlayersCount,
+                    bestPlayersVotes: $0.bestPlayersVotes,
+                    guestBestPlayersVotes: $0.guestBestPlayersVotes,
                     allowsLiveGameView: $0.allowsLiveGameView,
                     quarterLengthMinutes: $0.quarterLengthMinutes
                 )

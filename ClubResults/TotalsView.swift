@@ -404,22 +404,32 @@ private extension TotalsView {
         players.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
+    func grade(for id: UUID) -> Grade? {
+        grades.first(where: { $0.id == id })
+    }
+
+    func bestPlayersPoints(for game: Game, rankIndex: Int) -> Int {
+        guard let grade = grade(for: game.gradeID) else {
+            return Grade.normalizedVotes(nil, count: 6)[safe: rankIndex] ?? 0
+        }
+        return grade.bestPlayersVotes[safe: rankIndex] ?? 0
+    }
+
+    func guestBestPlayersPoints(for game: Game, rank: Int) -> Int {
+        guard let grade = grade(for: game.gradeID) else {
+            return Grade.normalizedVotes(nil, count: 3)[safe: rank - 1] ?? 0
+        }
+        return grade.guestBestPlayersVotes[safe: rank - 1] ?? 0
+    }
+
     // Best Player leaderboard:
-    // 1st=3 votes, 2nd=2 votes, 3rd=1 vote per game
     func topBestPlayers(in gradeIDs: Set<UUID>) -> [LeaderRow] {
         var points: [UUID: Int] = [:]
 
         for g in filteredGames(in: gradeIDs) {
-            let ranked = Array(g.bestPlayersRanked.prefix(3))
+            let ranked = Array(g.bestPlayersRanked.prefix(10))
             for (idx, pid) in ranked.enumerated() {
-                let add: Int
-                switch idx {
-                case 0: add = 3
-                case 1: add = 2
-                case 2: add = 1
-                default: add = 0
-                }
-                points[pid, default: 0] += add
+                points[pid, default: 0] += bestPlayersPoints(for: g, rankIndex: idx)
             }
         }
 
@@ -466,20 +476,12 @@ private extension TotalsView {
     }
 
     // Guest Votes leaderboard:
-    // 1st=3 votes, 2nd=2 votes, 3rd=1 vote per game
     func topGuestVotes(in gradeIDs: Set<UUID>) -> [LeaderRow] {
         var points: [UUID: Int] = [:]
 
         for game in filteredGames(in: gradeIDs) {
             for vote in game.guestVotesRanked {
-                let add: Int
-                switch vote.rank {
-                case 1: add = 3
-                case 2: add = 2
-                case 3: add = 1
-                default: add = 0
-                }
-                points[vote.playerID, default: 0] += add
+                points[vote.playerID, default: 0] += guestBestPlayersPoints(for: game, rank: vote.rank)
             }
         }
 
@@ -500,32 +502,18 @@ private extension TotalsView {
     func topBestAndFairest(in gradeIDs: Set<UUID>) -> [LeaderRow] {
         var points: [UUID: Int] = [:]
 
-        // Best Player points (1st=3, 2nd=2, 3rd=1)
+        // Best Player points
         for game in filteredGames(in: gradeIDs) {
-            let ranked = Array(game.bestPlayersRanked.prefix(3))
+            let ranked = Array(game.bestPlayersRanked.prefix(10))
             for (idx, pid) in ranked.enumerated() {
-                let add: Int
-                switch idx {
-                case 0: add = 3
-                case 1: add = 2
-                case 2: add = 1
-                default: add = 0
-                }
-                points[pid, default: 0] += add
+                points[pid, default: 0] += bestPlayersPoints(for: game, rankIndex: idx)
             }
         }
 
-        // Guest Votes points (rank 1=3, 2=2, 3=1)
+        // Guest Votes points
         for game in filteredGames(in: gradeIDs) {
             for vote in game.guestVotesRanked {
-                let add: Int
-                switch vote.rank {
-                case 1: add = 3
-                case 2: add = 2
-                case 3: add = 1
-                default: add = 0
-                }
-                points[vote.playerID, default: 0] += add
+                points[vote.playerID, default: 0] += guestBestPlayersPoints(for: game, rank: vote.rank)
             }
         }
 
@@ -539,6 +527,13 @@ private extension TotalsView {
         return sorted.enumerated().map { i, item in
             LeaderRow(rank: i + 1, name: playerName(for: item.key), valueText: "\(item.value) votes")
         }
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        guard indices.contains(index) else { return nil }
+        return self[index]
     }
 }
 
