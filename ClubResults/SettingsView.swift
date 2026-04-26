@@ -4561,6 +4561,13 @@ func makeTemplatePreviewPDF(
                       columns[0].lowercased() == "goals",
                       columns[1].lowercased() == "player" {
                 colWidths = [width * 0.14, width * 0.86]
+            } else if columns.count == 5,
+                      columns[0].lowercased() == "name",
+                      columns[1].lowercased() == "boundary umpire",
+                      columns[2].lowercased() == "water boy",
+                      columns[3].lowercased() == "field umpire",
+                      columns[4].lowercased() == "total" {
+                colWidths = [width * 0.36, width * 0.16, width * 0.16, width * 0.16, width * 0.16]
             } else {
                 colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
             }
@@ -4735,8 +4742,14 @@ func makeTemplatePreviewPDF(
 
             typealias RoleNameKey = String
             var coachingCounts: [RoleNameKey: Int] = [:]
-            var officialCounts: [RoleNameKey: Int] = [:]
             var trainerCounts: [RoleNameKey: Int] = [:]
+            struct OfficialDutyTally {
+                var boundaryUmpire: Int = 0
+                var waterBoy: Int = 0
+                var fieldUmpire: Int = 0
+                var total: Int { boundaryUmpire + waterBoy + fieldUmpire }
+            }
+            var officialDutyCountsByName: [String: OfficialDutyTally] = [:]
 
             func roleNameKey(role: String, name: String) -> RoleNameKey {
                 "\(role)||\(name)"
@@ -4746,6 +4759,14 @@ func makeTemplatePreviewPDF(
                 let trimmed = normalizedName(name)
                 guard !trimmed.isEmpty, includeName(trimmed) else { return }
                 dictionary[roleNameKey(role: role, name: trimmed), default: 0] += 1
+            }
+
+            func incrementOfficialDuty(name: String, update: (inout OfficialDutyTally) -> Void) {
+                let trimmed = normalizedName(name)
+                guard !trimmed.isEmpty, includeName(trimmed) else { return }
+                var tally = officialDutyCountsByName[trimmed] ?? OfficialDutyTally()
+                update(&tally)
+                officialDutyCountsByName[trimmed] = tally
             }
 
             func makeRoleCountRows(_ countsByRoleName: [RoleNameKey: Int]) -> [[String]] {
@@ -4773,14 +4794,13 @@ func makeTemplatePreviewPDF(
                     increment(&coachingCounts, role: "Runner", name: game.runnerName)
                 }
                 if template.includeOfficials || template.includeUmpires {
-                    increment(&officialCounts, role: "Goal Umpire", name: game.goalUmpireName)
-                    increment(&officialCounts, role: "Field Umpire", name: game.fieldUmpireName)
-                    increment(&officialCounts, role: "Boundary Umpire 1", name: game.boundaryUmpire1Name)
-                    increment(&officialCounts, role: "Boundary Umpire 2", name: game.boundaryUmpire2Name)
-                    increment(&officialCounts, role: "Water Boy 1", name: game.waterBoy1Name)
-                    increment(&officialCounts, role: "Water Boy 2", name: game.waterBoy2Name)
-                    increment(&officialCounts, role: "Water Boy 3", name: game.waterBoy3Name)
-                    increment(&officialCounts, role: "Water Boy 4", name: game.waterBoy4Name)
+                    incrementOfficialDuty(name: game.fieldUmpireName) { $0.fieldUmpire += 1 }
+                    incrementOfficialDuty(name: game.boundaryUmpire1Name) { $0.boundaryUmpire += 1 }
+                    incrementOfficialDuty(name: game.boundaryUmpire2Name) { $0.boundaryUmpire += 1 }
+                    incrementOfficialDuty(name: game.waterBoy1Name) { $0.waterBoy += 1 }
+                    incrementOfficialDuty(name: game.waterBoy2Name) { $0.waterBoy += 1 }
+                    incrementOfficialDuty(name: game.waterBoy3Name) { $0.waterBoy += 1 }
+                    incrementOfficialDuty(name: game.waterBoy4Name) { $0.waterBoy += 1 }
                 }
                 if template.includeTrainers {
                     for trainer in game.trainers {
@@ -4789,9 +4809,29 @@ func makeTemplatePreviewPDF(
                 }
             }
 
+            let officialRows = officialDutyCountsByName
+                .map { (name: $0.key, tally: $0.value) }
+                .sorted { left, right in
+                    if left.tally.total != right.tally.total { return left.tally.total > right.tally.total }
+                    return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+                }
+                .map {
+                    [
+                        $0.name,
+                        String($0.tally.boundaryUmpire),
+                        String($0.tally.waterBoy),
+                        String($0.tally.fieldUmpire),
+                        String($0.tally.total)
+                    ]
+                }
+
             var tables: [String: CompactReportTable] = [:]
             tables["coachingStaff"] = CompactReportTable(title: "Coaching Staff", columns: ["Role", "Name"], rows: makeRoleCountRows(coachingCounts))
-            tables["officials"] = CompactReportTable(title: "Officials", columns: ["Role", "Name"], rows: makeRoleCountRows(officialCounts))
+            tables["officials"] = CompactReportTable(
+                title: "Officials",
+                columns: ["Name", "Boundary Umpire", "Water Boy", "Field Umpire", "Total"],
+                rows: officialRows
+            )
             tables["trainers"] = CompactReportTable(title: "Trainers", columns: ["Role", "Name"], rows: makeRoleCountRows(trainerCounts))
             return tables
         }
