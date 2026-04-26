@@ -4253,6 +4253,7 @@ func makeTemplatePreviewPDF(
             .filter { !$0.isEmpty }
     )
     let gradeLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0.name) })
+    let gradeConfigLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
     let selectedGradeNames = selectedGrades.map(\.name)
     let gradeSummary = selectedGradeNames.isEmpty ? "All grades" : selectedGradeNames.joined(separator: ", ")
     let dateSummary: String = {
@@ -4262,22 +4263,20 @@ func makeTemplatePreviewPDF(
     }()
     var gamesByPlayer: [UUID: Int] = [:]
 
-    func guestVotePoints(for rank: Int) -> Int {
-        switch rank {
-        case 1: return 3
-        case 2: return 2
-        case 3: return 1
-        default: return 0
+    func guestVotePoints(for game: Game, rank: Int) -> Int {
+        guard let grade = gradeConfigLookup[game.gradeID] else {
+            return Grade.normalizedGuestVotes(nil, count: 3)[safe: rank - 1] ?? 0
         }
+        let votes = Grade.normalizedGuestVotes(grade.guestBestPlayersVotes, count: grade.guestBestPlayersCount)
+        return votes[safe: rank - 1] ?? 0
     }
 
-    func bestPlayerPoints(for index: Int) -> Int {
-        switch index {
-        case 0: return 3
-        case 1: return 2
-        case 2: return 1
-        default: return 0
+    func bestPlayerPoints(for game: Game, index: Int) -> Int {
+        guard let grade = gradeConfigLookup[game.gradeID] else {
+            return Grade.normalizedVotes(nil, count: 6)[safe: index] ?? 0
         }
+        let votes = Grade.normalizedVotes(grade.bestPlayersVotes, count: grade.bestPlayersCount)
+        return votes[safe: index] ?? 0
     }
 
     func includePlayerID(_ id: UUID) -> Bool {
@@ -4647,7 +4646,7 @@ func makeTemplatePreviewPDF(
 
                 let bestPlayersByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
                     for (index, playerID) in game.bestPlayersRanked.enumerated() {
-                        partialResult[playerID, default: 0] += bestPlayerPoints(for: index)
+                        partialResult[playerID, default: 0] += bestPlayerPoints(for: game, index: index)
                     }
                 }
                 return bestPlayersByPlayer
@@ -4663,7 +4662,7 @@ func makeTemplatePreviewPDF(
             let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
             let guestVotePointsByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
                 for vote in game.guestVotesRanked {
-                    partialResult[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
+                    partialResult[vote.playerID, default: 0] += guestVotePoints(for: game, rank: vote.rank)
                 }
             }
             let allGuestVoteRows = guestVotePointsByPlayer
@@ -4695,10 +4694,10 @@ func makeTemplatePreviewPDF(
             var bestAndFairestPoints: [UUID: Int] = [:]
             for game in games {
                 for (index, playerID) in game.bestPlayersRanked.enumerated() {
-                    bestAndFairestPoints[playerID, default: 0] += bestPlayerPoints(for: index)
+                    bestAndFairestPoints[playerID, default: 0] += bestPlayerPoints(for: game, index: index)
                 }
                 for vote in game.guestVotesRanked {
-                    bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: vote.rank)
+                    bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: game, rank: vote.rank)
                 }
             }
             let allBestAndFairestRows = bestAndFairestPoints

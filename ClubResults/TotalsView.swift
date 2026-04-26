@@ -412,14 +412,16 @@ private extension TotalsView {
         guard let grade = grade(for: game.gradeID) else {
             return Grade.normalizedVotes(nil, count: 6)[safe: rankIndex] ?? 0
         }
-        return grade.bestPlayersVotes[safe: rankIndex] ?? 0
+        let votes = Grade.normalizedVotes(grade.bestPlayersVotes, count: grade.bestPlayersCount)
+        return votes[safe: rankIndex] ?? 0
     }
 
     func guestBestPlayersPoints(for game: Game, rank: Int) -> Int {
         guard let grade = grade(for: game.gradeID) else {
             return Grade.normalizedGuestVotes(nil, count: 3)[safe: rank - 1] ?? 0
         }
-        return grade.guestBestPlayersVotes[safe: rank - 1] ?? 0
+        let votes = Grade.normalizedGuestVotes(grade.guestBestPlayersVotes, count: grade.guestBestPlayersCount)
+        return votes[safe: rank - 1] ?? 0
     }
 
     // Best Player leaderboard:
