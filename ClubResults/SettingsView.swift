@@ -4124,7 +4124,12 @@ func makeTemplatePreviewPDF(
     }
 
     func bestPlayerPoints(for index: Int) -> Int {
-        max(0, 10 - index)
+        switch index {
+        case 0: return 3
+        case 1: return 2
+        case 2: return 1
+        default: return 0
+        }
     }
 
     func includePlayerID(_ id: UUID) -> Bool {
