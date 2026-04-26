@@ -17,7 +17,7 @@ struct PresView: View {
 
     @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
-    @Query(sort: \Player.name) private var players: [Player]   // ✅ ADD
+    @Query(sort: \Player.name) private var players: [Player]
 
     @State private var selectedPresentationGrade: GradePresentationSection?
     @StateObject private var aiNarrator = AIMCNarrator()
@@ -146,7 +146,7 @@ struct PresView: View {
 
         for section in gradeSections {
             if includeAnnouncements,
-               section.grade.id.uuidString == announcementGradeID {
+               (announcementGradeID.isEmpty || section.grade.id.uuidString == announcementGradeID) {
                 lines.append("Before \(section.grade.name), a quick announcement from the committee.")
             }
 
@@ -312,6 +312,11 @@ struct PresView: View {
                     }
                 }
             }
+            .onChange(of: includeWeather) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: includeKeyPoints) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: includeAnnouncements) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: keyPointsInput) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: announcementGradeID) { _, _ in aiHasApprovedNarration = false }
             .fullScreenCover(item: $selectedPresentationGrade) { selectedGrade in
                 PresentationGradeFullScreenView(
                     sections: gradeSections,

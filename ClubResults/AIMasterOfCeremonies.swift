@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+internal import Combine
 
 enum AIMCStorageKeys {
     static let selectedTemplateID = "aimc.settings.selectedTemplateID"
@@ -116,7 +117,7 @@ struct AIMasterOfCeremoniesSettingsView: View {
 
     var body: some View {
         Form {
-            Section("AI Master of Ceremonies") {
+            Section {
                 Picker("Report", selection: $selectedTemplateID) {
                     Text("None").tag("")
                     ForEach(templates) { template in
@@ -142,6 +143,8 @@ struct AIMasterOfCeremoniesSettingsView: View {
                 Label("Personal Voice selection will be enabled in a future update.", systemImage: "waveform.badge.mic")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            } header: {
+                Text("AI Master of Ceremonies")
             } footer: {
                 Text("Selected report: \(selectedTemplateName). Apple voices are available now.")
             }
