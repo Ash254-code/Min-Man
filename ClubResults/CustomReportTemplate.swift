@@ -54,6 +54,7 @@ final class CustomReportTemplate {
 
     // Filters
     var sendReportOnGameSave: Bool
+    var sendReportTriggerGradeID: UUID?
     var includeOnlyActiveGrades: Bool
     var includePlayersOnly: Bool
     var minimumGamesPlayed: Int
@@ -85,6 +86,7 @@ final class CustomReportTemplate {
         reportColumnCount: Int = 2,
         includeSectionColumnAssignments: [String: Int] = CustomReportTemplate.defaultIncludeSectionColumns,
         sendReportOnGameSave: Bool = false,
+        sendReportTriggerGradeID: UUID? = nil,
         includeOnlyActiveGrades: Bool = true,
         includePlayersOnly: Bool = false,
         minimumGamesPlayed: Int = 0,
@@ -115,6 +117,7 @@ final class CustomReportTemplate {
         self.reportColumnCount = max(1, min(reportColumnCount, 3))
         self.includeSectionColumnAssignmentsData = (try? JSONEncoder().encode(includeSectionColumnAssignments)) ?? Data()
         self.sendReportOnGameSave = sendReportOnGameSave
+        self.sendReportTriggerGradeID = sendReportTriggerGradeID
         self.includeOnlyActiveGrades = includeOnlyActiveGrades
         self.includePlayersOnly = includePlayersOnly
         self.minimumGamesPlayed = max(0, minimumGamesPlayed)

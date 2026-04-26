@@ -3159,6 +3159,7 @@ struct ReportsSettingsView: View {
                 initialName: template.name,
                 initialSelectedGradeIDs: template.gradeIDs,
                 initialSendReportOnGameSave: template.sendReportOnGameSave,
+                initialSendReportTriggerGradeID: template.sendReportTriggerGradeID,
                 initialIncludeScores: template.includeScores,
                 initialIncludeBestPlayers: template.includeBestPlayers,
                 initialBestPlayersLimit: template.bestPlayersLimit,
@@ -3256,6 +3257,7 @@ struct ReportsSettingsView: View {
             reportColumnCount: draft.reportColumnCount,
             includeSectionColumnAssignments: draft.includedDataColumns,
             sendReportOnGameSave: draft.sendReportOnGameSave,
+            sendReportTriggerGradeID: draft.sendReportTriggerGradeID,
             includeOnlyActiveGrades: draft.includeOnlyActiveGrades,
             includePlayersOnly: draft.includePlayersOnly,
             minimumGamesPlayed: draft.minimumGamesPlayed,
@@ -3295,6 +3297,7 @@ struct ReportsSettingsView: View {
         template.name = draft.name
         template.gradeIDs = draft.selectedGradeIDs
         template.sendReportOnGameSave = draft.sendReportOnGameSave
+        template.sendReportTriggerGradeID = draft.sendReportTriggerGradeID
         template.includeScores = draft.includeScores
         template.includeBestPlayers = draft.includeBestPlayers
         template.bestPlayersLimit = draft.bestPlayersLimit
@@ -3477,6 +3480,7 @@ struct ReportsSettingsView: View {
             reportColumnCount: template.normalizedReportColumnCount,
             includeSectionColumnAssignments: template.includeSectionColumnAssignments,
             sendReportOnGameSave: template.sendReportOnGameSave,
+            sendReportTriggerGradeID: template.sendReportTriggerGradeID,
             includeOnlyActiveGrades: template.includeOnlyActiveGrades,
             includePlayersOnly: template.includePlayersOnly,
             minimumGamesPlayed: template.minimumGamesPlayed,
@@ -5095,6 +5099,7 @@ private struct CustomReportTemplateDraft {
     let name: String
     let selectedGradeIDs: [UUID]
     let sendReportOnGameSave: Bool
+    let sendReportTriggerGradeID: UUID?
     let includeScores: Bool
     let includeBestPlayers: Bool
     let bestPlayersLimit: Int
@@ -5135,6 +5140,7 @@ private struct CustomReportEditView: View {
     @State private var name: String
     @State private var selectedGradeIDs: Set<UUID>
     @State private var sendReportOnGameSave: Bool
+    @State private var sendReportTriggerGradeID: UUID?
     @State private var includeScores: Bool
     @State private var includeBestPlayers: Bool
     @State private var bestPlayersLimit: Int
@@ -5175,6 +5181,7 @@ private struct CustomReportEditView: View {
         initialName: String = "",
         initialSelectedGradeIDs: [UUID] = [],
         initialSendReportOnGameSave: Bool = false,
+        initialSendReportTriggerGradeID: UUID? = nil,
         initialIncludeScores: Bool = true,
         initialIncludeBestPlayers: Bool = true,
         initialBestPlayersLimit: Int = 6,
@@ -5212,6 +5219,7 @@ private struct CustomReportEditView: View {
         _name = State(initialValue: initialName)
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
         _sendReportOnGameSave = State(initialValue: initialSendReportOnGameSave)
+        _sendReportTriggerGradeID = State(initialValue: initialSendReportTriggerGradeID)
         _includeScores = State(initialValue: initialIncludeScores)
         _includeBestPlayers = State(initialValue: initialIncludeBestPlayers)
         _bestPlayersLimit = State(initialValue: Self.clampedReportItemLimit(initialBestPlayersLimit, defaultValue: 0))
@@ -5238,6 +5246,14 @@ private struct CustomReportEditView: View {
         _customDateRangeEnd = State(initialValue: initialCustomDateRangeEnd)
         _selectedRecipientSectionKeys = State(initialValue: Set(initialRecipientSectionKeys))
         _selectedRecipientContactIDs = State(initialValue: Set(initialRecipientContactIDs))
+    }
+
+    private var selectedTriggerGradeOptions: [Grade] {
+        grades.filter { selectedGradeIDs.contains($0.id) }
+    }
+
+    private var shouldShowSendTriggerPicker: Bool {
+        sendReportOnGameSave && selectedGradeIDs.count > 1
     }
 
     private var canSave: Bool {
@@ -5619,7 +5635,17 @@ private struct CustomReportEditView: View {
 
                     Divider()
                     Toggle("Send Report on Game Save", isOn: $sendReportOnGameSave)
-                    Text("When multiple grades are selected, the report sends after the last selected grade game is saved.")
+                    if shouldShowSendTriggerPicker {
+                        Picker("Trigger grade", selection: Binding(
+                            get: { sendReportTriggerGradeID ?? selectedTriggerGradeOptions.first?.id },
+                            set: { sendReportTriggerGradeID = $0 }
+                        )) {
+                            ForEach(selectedTriggerGradeOptions) { grade in
+                                Text(grade.name).tag(Optional(grade.id))
+                            }
+                        }
+                    }
+                    Text("When multiple grades are selected, choose which grade triggers the auto-send.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } header: {
@@ -5820,9 +5846,30 @@ private struct CustomReportEditView: View {
             .navigationTitle("Custom Report")
             .onAppear {
                 includeUmpires = includeOfficials
+                if shouldShowSendTriggerPicker,
+                   !selectedTriggerGradeOptions.contains(where: { $0.id == sendReportTriggerGradeID }) {
+                    sendReportTriggerGradeID = selectedTriggerGradeOptions.first?.id
+                }
             }
             .onChange(of: includeOfficials) { _, newValue in
                 includeUmpires = newValue
+            }
+            .onChange(of: sendReportOnGameSave) { _, isOn in
+                if !isOn {
+                    sendReportTriggerGradeID = nil
+                } else if shouldShowSendTriggerPicker,
+                          !selectedTriggerGradeOptions.contains(where: { $0.id == sendReportTriggerGradeID }) {
+                    sendReportTriggerGradeID = selectedTriggerGradeOptions.first?.id
+                }
+            }
+            .onChange(of: selectedGradeIDs) { _, _ in
+                if shouldShowSendTriggerPicker {
+                    if !selectedTriggerGradeOptions.contains(where: { $0.id == sendReportTriggerGradeID }) {
+                        sendReportTriggerGradeID = selectedTriggerGradeOptions.first?.id
+                    }
+                } else {
+                    sendReportTriggerGradeID = nil
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -5835,6 +5882,7 @@ private struct CustomReportEditView: View {
                             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                             selectedGradeIDs: Array(selectedGradeIDs),
                             sendReportOnGameSave: sendReportOnGameSave,
+                            sendReportTriggerGradeID: shouldShowSendTriggerPicker ? sendReportTriggerGradeID : nil,
                             includeScores: includeScores,
                             includeBestPlayers: includeBestPlayers,
                             bestPlayersLimit: bestPlayersLimit,

@@ -577,6 +577,7 @@ struct CustomReportTemplateRecord: Codable {
     let reportColumnCount: Int
     let includeSectionColumnAssignments: [String: Int]
     let sendReportOnGameSave: Bool
+    let sendReportTriggerGradeID: UUID?
     let includeOnlyActiveGrades: Bool
     let includePlayersOnly: Bool
     let minimumGamesPlayed: Int
@@ -605,6 +606,7 @@ struct CustomReportTemplateRecord: Codable {
         reportColumnCount = template.normalizedReportColumnCount
         includeSectionColumnAssignments = template.includeSectionColumnAssignments
         sendReportOnGameSave = template.sendReportOnGameSave
+        sendReportTriggerGradeID = template.sendReportTriggerGradeID
         includeOnlyActiveGrades = template.includeOnlyActiveGrades
         includePlayersOnly = template.includePlayersOnly
         minimumGamesPlayed = template.minimumGamesPlayed
@@ -616,7 +618,7 @@ struct CustomReportTemplateRecord: Codable {
         case includeGoalKickers, goalKickersLimit, includeGuernseyNumbers, includeBestAndFairestVotes
         case bestAndFairestLimit, includeStaffRoles, includeOfficials
         case includeUmpires, includeTrainers, includeMatchNotes, includeSectionOrder, includeOnlyActiveGrades
-        case includePlayersOnly, sendReportOnGameSave, minimumGamesPlayed, groupingModeRawValue
+        case includePlayersOnly, sendReportOnGameSave, sendReportTriggerGradeID, minimumGamesPlayed, groupingModeRawValue
         case reportColumnCount, includeSectionColumnAssignments
     }
 
@@ -644,6 +646,7 @@ struct CustomReportTemplateRecord: Codable {
         reportColumnCount = try c.decodeIfPresent(Int.self, forKey: .reportColumnCount) ?? 2
         includeSectionColumnAssignments = try c.decodeIfPresent([String: Int].self, forKey: .includeSectionColumnAssignments) ?? [:]
         sendReportOnGameSave = try c.decodeIfPresent(Bool.self, forKey: .sendReportOnGameSave) ?? false
+        sendReportTriggerGradeID = try c.decodeIfPresent(UUID.self, forKey: .sendReportTriggerGradeID)
         includeOnlyActiveGrades = try c.decodeIfPresent(Bool.self, forKey: .includeOnlyActiveGrades) ?? true
         includePlayersOnly = try c.decodeIfPresent(Bool.self, forKey: .includePlayersOnly) ?? false
         minimumGamesPlayed = try c.decodeIfPresent(Int.self, forKey: .minimumGamesPlayed) ?? 0
@@ -1235,6 +1238,7 @@ enum AppBackupService {
                     reportColumnCount: $0.reportColumnCount,
                     includeSectionColumnAssignments: $0.includeSectionColumnAssignments,
                     sendReportOnGameSave: $0.sendReportOnGameSave,
+                    sendReportTriggerGradeID: $0.sendReportTriggerGradeID,
                     includeOnlyActiveGrades: $0.includeOnlyActiveGrades,
                     includePlayersOnly: $0.includePlayersOnly,
                     minimumGamesPlayed: $0.minimumGamesPlayed,
