@@ -61,7 +61,7 @@ struct GradeBackup: Codable {
         asksLiveGameView: Bool = true,
         asksGoalKickers: Bool = true,
         bestPlayersCount: Int = 6,
-        asksGuestBestFairestVotesScan: Bool = false,
+        asksGuestBestFairestVotesScan: Bool = true,
         guestBestPlayersCount: Int = 3,
         bestPlayersVotes: [Int]? = nil,
         guestBestPlayersVotes: [Int]? = nil,
@@ -99,7 +99,7 @@ struct GradeBackup: Codable {
         self.asksGuestBestFairestVotesScan = asksGuestBestFairestVotesScan
         self.guestBestPlayersCount = normalizedGuestBestPlayersCount
         self.bestPlayersVotes = Grade.normalizedVotes(bestPlayersVotes, count: normalizedBestPlayersCount)
-        self.guestBestPlayersVotes = Grade.normalizedVotes(guestBestPlayersVotes, count: normalizedGuestBestPlayersCount)
+        self.guestBestPlayersVotes = Grade.normalizedGuestVotes(guestBestPlayersVotes, count: normalizedGuestBestPlayersCount)
         self.allowsLiveGameView = allowsLiveGameView
         self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
     }
@@ -155,7 +155,7 @@ struct GradeBackup: Codable {
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
         guestBestPlayersCount = min(max(try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? 3, 1), 10)
         bestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .bestPlayersVotes), count: bestPlayersCount)
-        guestBestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .guestBestPlayersVotes), count: guestBestPlayersCount)
+        guestBestPlayersVotes = Grade.normalizedGuestVotes(try c.decodeIfPresent([Int].self, forKey: .guestBestPlayersVotes), count: guestBestPlayersCount)
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? true
         quarterLengthMinutes = min(max(try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20, 10), 30)
     }
