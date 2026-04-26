@@ -972,6 +972,13 @@ private struct ClubGradesSettingsView: View {
         )
     }
 
+    private func bind(_ keyPath: WritableKeyPath<EditGradeDraft, [Int]>) -> Binding<[Int]> {
+        Binding(
+            get: { editGradeDraft[keyPath: keyPath] },
+            set: { editGradeDraft[keyPath: keyPath] = $0 }
+        )
+    }
+
     private func addGrade(using draft: NewGradeDraft) -> Bool {
         let name = clean(draft.name)
         guard !name.isEmpty else { return false }
