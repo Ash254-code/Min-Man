@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>NSContactsUsageDescription</key>
+	<string>Min-Man needs access to your contacts so you can invite stat takers by mobile number.</string>
+</dict>
 </plist>

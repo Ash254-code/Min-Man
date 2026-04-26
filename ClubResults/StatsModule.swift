@@ -2,6 +2,8 @@ import SwiftUI
 import SwiftData
 import UIKit
 import PDFKit
+import MessageUI
+import ContactsUI
 
 @Model
 final class StatType {
@@ -361,6 +363,7 @@ struct StatsTypesSettingsView: View {
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
+    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = "https://example.com/min-man/invite"
     @State private var editingInvite: StatsInviteAssignment?
 
     var body: some View {
@@ -480,6 +483,15 @@ struct StatsTypesSettingsView: View {
                 } label: {
                     Label("Speech Setup", systemImage: "waveform.badge.mic")
                 }
+            }
+
+            Section("Invite Link Host") {
+                TextField("https://your-host/invite", text: $statsInviteBaseURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text("Set this to your deployed web invite page URL.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Invited Stat Takers") {
@@ -1276,6 +1288,7 @@ struct LiveStatsView: View {
     @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
+    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = "https://example.com/min-man/invite"
 
     let session: StatsSession
 
@@ -1312,7 +1325,7 @@ struct LiveStatsView: View {
     @State private var showStatsSettings = false
     @State private var showInviteComposer = false
     @State private var composedShareText: String?
-    @State private var selectedInviteContactID: UUID?
+    @State private var selectedInviteContact: PhoneInviteContact?
     @State private var selectedInviteStatTypeIDs: Set<UUID> = []
     @State private var activeInviteWebUI: StatsInviteAssignment?
     @State private var showQuarterChangeReminder = false
@@ -1473,7 +1486,7 @@ struct LiveStatsView: View {
             StatsInviteComposerSheet(
                 contacts: contacts,
                 statTypes: enabledStatTypes,
-                selectedContactID: $selectedInviteContactID,
+                selectedContact: $selectedInviteContact,
                 selectedStatTypeIDs: $selectedInviteStatTypeIDs,
                 onSendInvite: sendInvite
             )
@@ -3894,13 +3907,27 @@ struct LiveStatsView: View {
         feedbackToken = UUID()
     }
 
-    private func sendInvite(contactID: UUID, statTypeIDs: Set<UUID>) {
+    private func sendInvite(contact: PhoneInviteContact, statTypeIDs: Set<UUID>) {
         guard !statTypeIDs.isEmpty else { return }
         let token = UUID().uuidString.lowercased()
-        let linkURL = "https://min-man.app/invite?token=\(token)"
+        let linkURL = inviteURL(token: token)
         let assignment: StatsInviteAssignment
+        let storedContact: Contact
 
-        if let existing = inviteAssignments.first(where: { $0.contactId == contactID }) {
+        if let existing = contacts.first(where: {
+            normalizePhoneNumber($0.mobile) == normalizePhoneNumber(contact.phoneNumber)
+        }) {
+            storedContact = existing
+            if existing.name != contact.name {
+                existing.name = contact.name
+            }
+        } else {
+            let created = Contact(name: contact.name, mobile: contact.phoneNumber, email: "")
+            modelContext.insert(created)
+            storedContact = created
+        }
+
+        if let existing = inviteAssignments.first(where: { $0.contactId == storedContact.id }) {
             assignment = existing
             assignment.inviteLinkToken = token
             assignment.inviteLinkURL = linkURL
@@ -3908,7 +3935,7 @@ struct LiveStatsView: View {
             assignment.setAssignedStatTypeIDs(Array(statTypeIDs))
         } else {
             assignment = StatsInviteAssignment(
-                contactId: contactID,
+                contactId: storedContact.id,
                 assignedStatTypeIDsRaw: Array(statTypeIDs).map(\.uuidString).joined(separator: ","),
                 inviteLinkToken: token,
                 inviteLinkURL: linkURL,
@@ -3921,14 +3948,26 @@ struct LiveStatsView: View {
             .filter { statTypeIDs.contains($0.id) }
             .map(\.name)
             .joined(separator: ", ")
-        let recipientName = contacts.first(where: { $0.id == contactID })?.name ?? "Stat Taker"
+        let recipientName = contact.name
         composedShareText = """
         \(recipientName), use this live stat link:
         \(linkURL)
 
         Your buttons: \(assignedNames)
         """
+        UserDefaults.standard.set(linkURL, forKey: "stats.lastInviteURL")
         try? modelContext.save()
+    }
+
+    private func inviteURL(token: String) -> String {
+        let trimmed = statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "https://example.com/min-man/invite?token=\(token)" }
+        let separator = trimmed.contains("?") ? "&" : "?"
+        return "\(trimmed)\(separator)token=\(token)"
+    }
+
+    private func normalizePhoneNumber(_ value: String) -> String {
+        value.filter(\.isNumber)
     }
 
     private func handleRemoteInviteStatTap(_ statType: StatType) {
@@ -5205,20 +5244,29 @@ private struct StatsTotalsView: View {
 private struct StatsInviteComposerSheet: View {
     let contacts: [Contact]
     let statTypes: [StatType]
-    @Binding var selectedContactID: UUID?
+    @Binding var selectedContact: PhoneInviteContact?
     @Binding var selectedStatTypeIDs: Set<UUID>
     let onSendInvite: (UUID, Set<UUID>) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var showSystemContactPicker = false
+    @State private var smsDraft: SMSDraft?
+    @State private var composedSMSBody = ""
+    @State private var latestInviteURL = "https://example.com/min-man/invite"
+    private var canSendSMS: Bool { MFMessageComposeViewController.canSendText() }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Contact Picker") {
-                    Picker("Invite", selection: Binding(get: { selectedContactID }, set: { selectedContactID = $0 })) {
-                        Text("Select contact").tag(Optional<UUID>.none)
-                        ForEach(contacts) { contact in
-                            Text(contact.name).tag(Optional(contact.id))
-                        }
+                    Button("Pick From iPhone Contacts") {
+                        showSystemContactPicker = true
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    if let selectedContact {
+                        Text("\(selectedContact.name) • \(selectedContact.phoneNumber)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 Section("Assign Stats") {
@@ -5234,6 +5282,13 @@ private struct StatsInviteComposerSheet: View {
                         )
                     }
                 }
+                if !canSendSMS {
+                    Section {
+                        Text("SMS is not available on this device. Run on an iPhone with messaging enabled.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .navigationTitle("Invite Stat Taker")
             .toolbar {
@@ -5242,13 +5297,119 @@ private struct StatsInviteComposerSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Send Link") {
-                        guard let selectedContactID else { return }
-                        onSendInvite(selectedContactID, selectedStatTypeIDs)
-                        dismiss()
+                        guard let selectedContact else { return }
+                        onSendInvite(selectedContact, selectedStatTypeIDs)
+                        latestInviteURL = UserDefaults.standard.string(forKey: "stats.lastInviteURL") ?? latestInviteURL
+                        let assigned = statTypes
+                            .filter { selectedStatTypeIDs.contains($0.id) }
+                            .map(\.name)
+                            .joined(separator: ", ")
+                        composedSMSBody = """
+                        \(selectedContact.name), you're invited as a Min-Man Stat Taker.
+
+                        Assigned stats: \(assigned)
+
+                        Open this link:
+                        \(latestInviteURL)
+                        """
+                        smsDraft = SMSDraft(recipients: [selectedContact.phoneNumber], body: composedSMSBody)
                     }
-                    .disabled(selectedContactID == nil || selectedStatTypeIDs.isEmpty)
+                    .disabled(selectedContact == nil || selectedStatTypeIDs.isEmpty || !canSendSMS)
                 }
             }
+        }
+        .sheet(isPresented: $showSystemContactPicker) {
+            NativeContactPickerSheet { picked in
+                selectedContact = picked
+            }
+        }
+        .sheet(item: $smsDraft, onDismiss: { dismiss() }) { draft in
+            SMSComposerView(recipients: draft.recipients, body: draft.body)
+        }
+    }
+}
+
+private struct PhoneInviteContact: Equatable {
+    let name: String
+    let phoneNumber: String
+}
+
+private struct SMSDraft: Identifiable {
+    let id = UUID()
+    let recipients: [String]
+    let body: String
+}
+
+private struct NativeContactPickerSheet: UIViewControllerRepresentable {
+    let onPicked: (PhoneInviteContact) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> CNContactPickerViewController {
+        let picker = CNContactPickerViewController()
+        picker.delegate = context.coordinator
+        picker.displayedPropertyKeys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey]
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: CNContactPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPicked: onPicked, dismiss: dismiss)
+    }
+
+    final class Coordinator: NSObject, CNContactPickerDelegate {
+        let onPicked: (PhoneInviteContact) -> Void
+        let dismiss: DismissAction
+
+        init(onPicked: @escaping (PhoneInviteContact) -> Void, dismiss: DismissAction) {
+            self.onPicked = onPicked
+            self.dismiss = dismiss
+        }
+
+        func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
+            guard let phone = contact.phoneNumbers.first?.value.stringValue, !phone.isEmpty else {
+                dismiss()
+                return
+            }
+            let fullName = CNContactFormatter.string(from: contact, style: .fullName) ?? "\(contact.givenName) \(contact.familyName)"
+            onPicked(PhoneInviteContact(name: fullName.trimmingCharacters(in: .whitespaces), phoneNumber: phone))
+            dismiss()
+        }
+
+        func contactPickerDidCancel(_ picker: CNContactPickerViewController) {
+            dismiss()
+        }
+    }
+}
+
+private struct SMSComposerView: UIViewControllerRepresentable {
+    let recipients: [String]
+    let body: String
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> MFMessageComposeViewController {
+        let controller = MFMessageComposeViewController()
+        controller.messageComposeDelegate = context.coordinator
+        controller.recipients = recipients
+        controller.body = body
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: MFMessageComposeViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(dismiss: dismiss)
+    }
+
+    final class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
+        let dismiss: DismissAction
+
+        init(dismiss: DismissAction) {
+            self.dismiss = dismiss
+        }
+
+        func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
+            dismiss()
         }
     }
 }
