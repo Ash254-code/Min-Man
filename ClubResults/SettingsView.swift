@@ -3027,6 +3027,7 @@ struct ReportsSettingsView: View {
     @State private var draggingTemplateID: UUID?
     @State private var draggingTranslation: CGSize = .zero
     @State private var draggingStartSlotIndex: Int?
+    @State private var isDiscardMoveChangesAlertPresented = false
     @AppStorage("reports.templateOrder.v1") private var templateOrderData = ""
     var onOpenContactsSettings: (() -> Void)? = nil
 
@@ -3116,15 +3117,20 @@ struct ReportsSettingsView: View {
             if isMoveModeEnabled {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Back") {
-                        cancelMoveMode()
+                        handleMoveModeBackTapped()
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         finishMoveModeAndSave()
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(hasMoveOrderChanges ? Color.blue : Color.gray.opacity(0.4))
+                    .foregroundStyle(.white.opacity(hasMoveOrderChanges ? 1 : 0.7))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .buttonStyle(.plain)
                     .disabled(!hasMoveOrderChanges)
                 }
             }
@@ -3216,6 +3222,14 @@ struct ReportsSettingsView: View {
             }
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
+        .alert("Discard changes?", isPresented: $isDiscardMoveChangesAlertPresented) {
+            Button("Keep Editing", role: .cancel) {}
+            Button("Discard Changes", role: .destructive) {
+                cancelMoveMode()
+            }
+        } message: {
+            Text("You have unsaved report order changes. If you go back now, your changes will be lost.")
         }
     }
 
@@ -3548,6 +3562,14 @@ struct ReportsSettingsView: View {
         draggingTemplateID = nil
         draggingTranslation = .zero
         draggingStartSlotIndex = nil
+    }
+
+    private func handleMoveModeBackTapped() {
+        if hasMoveOrderChanges {
+            isDiscardMoveChangesAlertPresented = true
+        } else {
+            cancelMoveMode()
+        }
     }
 
     private func activeTemplateOrderIDs() -> [UUID] {
