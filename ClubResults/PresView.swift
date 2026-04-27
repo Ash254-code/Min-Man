@@ -29,6 +29,8 @@ struct PresView: View {
     @AppStorage(AIMCStorageKeys.includeWeather) private var includeWeather = true
     @AppStorage(AIMCStorageKeys.includeKeyPoints) private var includeKeyPoints = true
     @AppStorage(AIMCStorageKeys.includeAnnouncements) private var includeAnnouncements = true
+    @AppStorage(AIMCStorageKeys.includeDates) private var includeDates = false
+    @AppStorage(AIMCStorageKeys.includeSectionHeaders) private var includeSectionHeaders = false
     @AppStorage(AIMCStorageKeys.keyPoints) private var keyPointsInput = ""
     @AppStorage(AIMCStorageKeys.announcementGradeID) private var announcementGradeID = ""
 
@@ -147,10 +149,16 @@ struct PresView: View {
         for section in gradeSections {
             if includeAnnouncements,
                (announcementGradeID.isEmpty || section.grade.id.uuidString == announcementGradeID) {
-                lines.append("Before \(section.grade.name), a quick announcement from the committee.")
+                if includeSectionHeaders {
+                    lines.append("Announcements.")
+                }
+                lines.append("A quick announcement from the committee.")
             }
 
-            lines.append("\(section.grade.name): \(section.games.count) game\(section.games.count == 1 ? "" : "s") to report.")
+            if includeSectionHeaders {
+                lines.append("\(section.grade.name).")
+            }
+            lines.append("\(section.games.count) game\(section.games.count == 1 ? "" : "s") to report.")
             for game in section.games {
                 let teamName = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? "Our Team"
@@ -158,7 +166,11 @@ struct PresView: View {
                 let resultLine = shouldShowScore(for: section.grade.id)
                 ? "\(teamName) \(game.ourScore), \(game.opponent) \(game.theirScore)."
                 : "score summary disabled for this grade."
-                lines.append("Played against \(game.opponent) on \(game.date.formatted(date: .abbreviated, time: .omitted)); \(resultLine)")
+                if includeDates {
+                    lines.append("Played against \(game.opponent) on \(game.date.formatted(date: .abbreviated, time: .omitted)); \(resultLine)")
+                } else {
+                    lines.append("Played against \(game.opponent); \(resultLine)")
+                }
 
                 let bestPlayers = bestPlayerItems(for: game).prefix(3).joined(separator: ", ")
                 if !bestPlayers.isEmpty, bestPlayers != "None recorded" {
@@ -182,7 +194,9 @@ struct PresView: View {
     }
 
     private func handleAIButtonTapped() {
-        if aiHasApprovedNarration {
+        if aiNarrator.isSpeaking, aiNarrator.isPaused {
+            aiNarrator.resume()
+        } else if aiHasApprovedNarration {
             aiNarrator.speak(text: aiNarrationPreview, appleVoiceID: selectedAppleVoiceID.isEmpty ? nil : selectedAppleVoiceID)
         } else {
             generateAINarrationPreview()
@@ -223,6 +237,8 @@ struct PresView: View {
 
                     Section("AI Intelligence") {
                         Toggle("Include weather", isOn: $includeWeather)
+                        Toggle("Read dates", isOn: $includeDates)
+                        Toggle("Read section headers", isOn: $includeSectionHeaders)
                         Toggle("Include key points", isOn: $includeKeyPoints)
                         Toggle("Include announcements", isOn: $includeAnnouncements)
 
@@ -248,7 +264,14 @@ struct PresView: View {
                     Button {
                         handleAIButtonTapped()
                     } label: {
-                        Label(aiHasApprovedNarration ? "Play AI" : "AI", systemImage: aiHasApprovedNarration ? "play.circle.fill" : "sparkles")
+                        Label(
+                            aiNarrator.isSpeaking && aiNarrator.isPaused
+                            ? "Resume AI"
+                            : (aiHasApprovedNarration ? "Play AI" : "AI"),
+                            systemImage: aiNarrator.isSpeaking && aiNarrator.isPaused
+                            ? "play.circle.fill"
+                            : (aiHasApprovedNarration ? "play.circle.fill" : "sparkles")
+                        )
                             .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -260,6 +283,22 @@ struct PresView: View {
                     .opacity(gradeSections.isEmpty ? 0.45 : 1.0)
 
                     if aiNarrator.isSpeaking {
+                        Button {
+                            if aiNarrator.isPaused {
+                                aiNarrator.resume()
+                            } else {
+                                aiNarrator.pause()
+                            }
+                        } label: {
+                            Label(aiNarrator.isPaused ? "Resume" : "Pause", systemImage: aiNarrator.isPaused ? "play.circle.fill" : "pause.circle.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .background(Color.orange, in: Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+
                         Button {
                             aiNarrator.stop()
                         } label: {
@@ -316,6 +355,8 @@ struct PresView: View {
                 }
             }
             .onChange(of: includeWeather) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: includeDates) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: includeSectionHeaders) { _, _ in aiHasApprovedNarration = false }
             .onChange(of: includeKeyPoints) { _, _ in aiHasApprovedNarration = false }
             .onChange(of: includeAnnouncements) { _, _ in aiHasApprovedNarration = false }
             .onChange(of: keyPointsInput) { _, _ in aiHasApprovedNarration = false }

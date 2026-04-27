@@ -10,6 +10,8 @@ enum AIMCStorageKeys {
     static let includeWeather = "aimc.pres.includeWeather"
     static let includeKeyPoints = "aimc.pres.includeKeyPoints"
     static let includeAnnouncements = "aimc.pres.includeAnnouncements"
+    static let includeDates = "aimc.pres.includeDates"
+    static let includeSectionHeaders = "aimc.pres.includeSectionHeaders"
     static let keyPoints = "aimc.pres.keyPoints"
     static let announcementGradeID = "aimc.pres.announcementGradeID"
 }
@@ -56,6 +58,7 @@ enum AIMCVoiceLibrary {
 @MainActor
 final class AIMCNarrator: NSObject, ObservableObject {
     @Published var isSpeaking = false
+    @Published var isPaused = false
 
     private let synthesizer = AVSpeechSynthesizer()
 
@@ -69,6 +72,7 @@ final class AIMCNarrator: NSObject, ObservableObject {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        isPaused = false
 
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = 0.5
@@ -87,16 +91,33 @@ final class AIMCNarrator: NSObject, ObservableObject {
         guard synthesizer.isSpeaking else { return }
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = false
+        isPaused = false
+    }
+
+    func pause() {
+        guard synthesizer.isSpeaking, !synthesizer.isPaused else { return }
+        if synthesizer.pauseSpeaking(at: .word) {
+            isPaused = true
+        }
+    }
+
+    func resume() {
+        guard synthesizer.isPaused else { return }
+        if synthesizer.continueSpeaking() {
+            isPaused = false
+        }
     }
 }
 
 extension AIMCNarrator: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
+        isPaused = false
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         isSpeaking = false
+        isPaused = false
     }
 }
 
