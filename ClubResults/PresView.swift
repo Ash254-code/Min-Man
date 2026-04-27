@@ -470,23 +470,24 @@ struct PresView: View {
     private func goalKickersNarration(for kickers: [GoalKickerPresentationItem]) -> String {
         let introLine = "Now to Goal Kickers....."
 
-        let regularLines = kickers
-            .map { "\($0.name), \(goalCountText($0.goals))." }
-            .joined(separator: " ")
-
         let leadingGoalCount = kickers.map(\.goals).max() ?? 0
         let leadingKickers = kickers
             .filter { $0.goals == leadingGoalCount }
             .map(\.name)
 
+        let regularLines = kickers
+            .filter { $0.goals < leadingGoalCount }
+            .map { "\($0.name), \(goalCountText($0.goals))." }
+            .joined(separator: " ")
+
         let leadingLine: String
         if leadingKickers.count > 1 {
             let names = ListFormatter.localizedString(byJoining: leadingKickers)
             let firstNames = ListFormatter.localizedString(byJoining: leadingKickers.map(firstName(from:)))
-            leadingLine = "And the Leading Goal Kickers today were...... \(names), \(goalCountText(leadingGoalCount)). ......... Congratulations \(firstNames). \(fourSecondPauseText)"
+            leadingLine = "And the leading goal kickers today were......... \(names)!! with \(goalCountText(leadingGoalCount)).. Congratulations \(firstNames)!! \(fourSecondPauseText)"
         } else if let name = leadingKickers.first {
             let firstName = firstName(from: name)
-            leadingLine = "And the Leading Goal Kicker today was...... \(name), \(goalCountText(leadingGoalCount)). ......... Congratulations \(firstName). \(fourSecondPauseText)"
+            leadingLine = "And the leading goal kicker today was......... \(name)!! with \(goalCountText(leadingGoalCount)).. Congratulations \(firstName)!! \(fourSecondPauseText)"
         } else {
             leadingLine = ""
         }
