@@ -468,6 +468,8 @@ struct PresView: View {
     }
 
     private func goalKickersNarration(for kickers: [GoalKickerPresentationItem]) -> String {
+        let introLine = "Now to Goal Kickers....."
+
         let regularLines = kickers
             .map { "\($0.name), \(goalCountText($0.goals))." }
             .joined(separator: " ")
@@ -480,14 +482,16 @@ struct PresView: View {
         let leadingLine: String
         if leadingKickers.count > 1 {
             let names = ListFormatter.localizedString(byJoining: leadingKickers)
-            leadingLine = "And our leading goal kickers today are...... \(names)......... Congratulations to \(names). \(fourSecondPauseText)"
+            let firstNames = ListFormatter.localizedString(byJoining: leadingKickers.map(firstName(from:)))
+            leadingLine = "And our leading goal kickers today are...... \(names)......... Congratulations \(firstNames). \(fourSecondPauseText)"
         } else if let name = leadingKickers.first {
-            leadingLine = "And our leading goal kicker today is...... \(name)......... Congratulations to \(name). \(fourSecondPauseText)"
+            let firstName = firstName(from: name)
+            leadingLine = "And our leading goal kicker today is...... \(name)......... Congratulations \(firstName). \(fourSecondPauseText)"
         } else {
             leadingLine = ""
         }
 
-        return [regularLines, leadingLine].filter { !$0.isEmpty }.joined(separator: " ")
+        return [introLine, regularLines, leadingLine].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     private var fourSecondPauseText: String {
