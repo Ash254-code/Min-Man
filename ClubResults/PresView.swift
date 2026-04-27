@@ -27,7 +27,7 @@ struct PresView: View {
         let includeGameNotes: Bool
         let keyPointsInput: String
         let announcementGradeID: String
-        let openingAnnouncement: String
+        let welcomeMessage: String
         let closingAnnouncement: String
         let gradeAnnouncements: [UUID: String]
         let gameMilestones: [UUID: String]
@@ -45,7 +45,7 @@ struct PresView: View {
     @State private var isMissingAPIKeyAlertPresented = false
     @State private var playbackErrorMessage: String?
     @State private var isGeneratingAINarrationAudio = false
-    @State private var openingAnnouncement = ""
+    @State private var welcomeMessage = ""
     @State private var closingAnnouncement = ""
     @State private var gradeAnnouncements: [UUID: String] = [:]
     @State private var gameMilestones: [UUID: String] = [:]
@@ -126,7 +126,7 @@ struct PresView: View {
             includeGameNotes: includeGameNotes,
             keyPointsInput: keyPointsInput,
             announcementGradeID: announcementGradeID,
-            openingAnnouncement: openingAnnouncement,
+            welcomeMessage: welcomeMessage,
             closingAnnouncement: closingAnnouncement,
             gradeAnnouncements: gradeAnnouncements,
             gameMilestones: gameMilestones
@@ -179,7 +179,7 @@ struct PresView: View {
                 Toggle("Include goal kickers", isOn: $includeGoalKickers)
                 Toggle("Include game notes", isOn: $includeGameNotes)
 
-                TextField("General opening announcement", text: $openingAnnouncement, axis: .vertical)
+                TextField("General opening announcement", text: $welcomeMessage, axis: .vertical)
                     .lineLimit(2...4)
 
                 if includeKeyPoints {
@@ -431,7 +431,7 @@ struct PresView: View {
             "Good evening everyone, here is the club report for \(reportDate)."
         ]
 
-        if let openingLine = announcementLine(openingAnnouncement, fallback: includeAnnouncements ? "General announcement: welcome everyone to presentations." : nil) {
+        if let openingLine = announcementLine(welcomeMessage, fallback: includeAnnouncements ? "General announcement: welcome everyone to presentations." : nil) {
             lines.append(openingLine)
         }
 
