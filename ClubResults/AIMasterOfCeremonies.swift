@@ -1,12 +1,12 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import Security
 internal import Combine
 
 enum AIMCStorageKeys {
     static let selectedTemplateID = "aimc.settings.selectedTemplateID"
-    static let selectedAppleVoiceID = "aimc.settings.selectedAppleVoiceID"
-    static let preferredVoiceProvider = "aimc.settings.preferredVoiceProvider"
+    static let elevenLabsVoiceID = "aimc.settings.elevenLabsVoiceID"
     static let includeWeather = "aimc.pres.includeWeather"
     static let includeKeyPoints = "aimc.pres.includeKeyPoints"
     static let includeAnnouncements = "aimc.pres.includeAnnouncements"
@@ -16,106 +16,156 @@ enum AIMCStorageKeys {
     static let announcementGradeID = "aimc.pres.announcementGradeID"
 }
 
-enum AIMCVoiceProvider: String, CaseIterable, Identifiable {
-    case apple
-    case personal
+enum AIMCSecrets {
+    static let elevenLabsAPIKey = "aimc.secrets.elevenlabs.apiKey"
+}
 
-    var id: String { rawValue }
+enum AIMCKeychainStore {
+    static func loadSecret(for key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
 
-    var title: String {
-        switch self {
-        case .apple: return "Apple Voices"
-        case .personal: return "Personal Voice"
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let value = String(data: data, encoding: .utf8) else {
+            return nil
         }
+        return value
+    }
+
+    static func saveSecret(_ value: String, for key: String) {
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.isEmpty {
+            deleteSecret(for: key)
+            return
+        }
+
+        let data = Data(cleaned.utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+        let attributes: [String: Any] = [
+            kSecValueData as String: data
+        ]
+
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var insertQuery = query
+            insertQuery[kSecValueData as String] = data
+            SecItemAdd(insertQuery as CFDictionary, nil)
+        }
+    }
+
+    static func deleteSecret(for key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
 
-struct AIMCAppleVoiceOption: Identifiable {
-    let id: String
-    let displayName: String
-    let locale: String
-}
+struct ElevenLabsTTSService {
+    enum ElevenLabsError: LocalizedError {
+        case invalidResponse
+        case badStatusCode(Int)
 
-enum AIMCVoiceLibrary {
-    static func appleVoices() -> [AIMCAppleVoiceOption] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix("en") }
-            .sorted {
-                let left = "\($0.name) \($0.language)"
-                let right = "\($1.name) \($1.language)"
-                return left.localizedCaseInsensitiveCompare(right) == .orderedAscending
+        var errorDescription: String? {
+            switch self {
+            case .invalidResponse:
+                return "Invalid response from ElevenLabs."
+            case .badStatusCode(let code):
+                return "ElevenLabs returned status code \(code)."
             }
-            .map {
-                AIMCAppleVoiceOption(
-                    id: $0.identifier,
-                    displayName: $0.name,
-                    locale: Locale.current.localizedString(forIdentifier: $0.language) ?? $0.language
-                )
-            }
+        }
+    }
+
+    func requestSpeechAudio(text: String, apiKey: String, voiceID: String) async throws -> Data {
+        let cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedVoiceID = voiceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedText.isEmpty, !cleanedVoiceID.isEmpty else { return Data() }
+
+        guard let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(cleanedVoiceID)") else {
+            throw ElevenLabsError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
+        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        request.httpBody = try JSONEncoder().encode([
+            "text": cleanedText,
+            "model_id": "eleven_multilingual_v2"
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ElevenLabsError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw ElevenLabsError.badStatusCode(httpResponse.statusCode)
+        }
+        return data
     }
 }
 
 @MainActor
-final class AIMCNarrator: NSObject, ObservableObject {
+final class AIMCNarrator: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var isSpeaking = false
     @Published var isPaused = false
 
-    private let synthesizer = AVSpeechSynthesizer()
+    private let ttsService = ElevenLabsTTSService()
+    private var audioPlayer: AVAudioPlayer?
 
-    override init() {
-        super.init()
-        synthesizer.delegate = self
-    }
-
-    func speak(text: String, appleVoiceID: String?) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
+    func speakApprovedReport(text: String, apiKey: String, voiceID: String) async throws {
+        stop()
         isPaused = false
+        let audioData = try await ttsService.requestSpeechAudio(text: text, apiKey: apiKey, voiceID: voiceID)
+        guard !audioData.isEmpty else { return }
 
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = 0.5
-        if let appleVoiceID,
-           let selectedVoice = AVSpeechSynthesisVoice(identifier: appleVoiceID) {
-            utterance.voice = selectedVoice
-        } else {
-            utterance.voice = AVSpeechSynthesisVoice(language: "en-AU") ?? AVSpeechSynthesisVoice(language: "en-US")
-        }
-
+        let player = try AVAudioPlayer(data: audioData)
+        player.delegate = self
+        audioPlayer = player
         isSpeaking = true
-        synthesizer.speak(utterance)
+        player.play()
     }
 
     func stop() {
-        guard synthesizer.isSpeaking else { return }
-        synthesizer.stopSpeaking(at: .immediate)
+        guard let audioPlayer else { return }
+        audioPlayer.stop()
+        self.audioPlayer = nil
         isSpeaking = false
         isPaused = false
     }
 
     func pause() {
-        guard synthesizer.isSpeaking, !synthesizer.isPaused else { return }
-        if synthesizer.pauseSpeaking(at: .word) {
-            isPaused = true
-        }
+        guard let audioPlayer, audioPlayer.isPlaying else { return }
+        audioPlayer.pause()
+        isPaused = true
     }
 
     func resume() {
-        guard synthesizer.isPaused else { return }
-        if synthesizer.continueSpeaking() {
-            isPaused = false
-        }
+        guard let audioPlayer, isPaused else { return }
+        audioPlayer.play()
+        isPaused = false
     }
-}
 
-extension AIMCNarrator: AVSpeechSynthesizerDelegate {
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        audioPlayer = nil
         isSpeaking = false
         isPaused = false
     }
 
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        audioPlayer = nil
         isSpeaking = false
         isPaused = false
     }
@@ -125,15 +175,11 @@ struct AIMasterOfCeremoniesSettingsView: View {
     @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
 
     @AppStorage(AIMCStorageKeys.selectedTemplateID) private var selectedTemplateID = ""
-    @AppStorage(AIMCStorageKeys.selectedAppleVoiceID) private var selectedAppleVoiceID = ""
-    @AppStorage(AIMCStorageKeys.preferredVoiceProvider) private var preferredVoiceProviderRaw = AIMCVoiceProvider.apple.rawValue
+    @AppStorage(AIMCStorageKeys.elevenLabsVoiceID) private var elevenLabsVoiceID = ""
+    @State private var elevenLabsAPIKey = ""
 
     private var selectedTemplateName: String {
         templates.first(where: { $0.id.uuidString == selectedTemplateID })?.name ?? "No report selected"
-    }
-
-    private var appleVoiceOptions: [AIMCAppleVoiceOption] {
-        AIMCVoiceLibrary.appleVoices()
     }
 
     var body: some View {
@@ -145,31 +191,32 @@ struct AIMasterOfCeremoniesSettingsView: View {
                         Text(template.name).tag(template.id.uuidString)
                     }
                 }
-
-                Picker("Voice Provider", selection: $preferredVoiceProviderRaw) {
-                    ForEach(AIMCVoiceProvider.allCases) { provider in
-                        Text(provider.title).tag(provider.rawValue)
-                    }
-                }
-
-                if preferredVoiceProviderRaw == AIMCVoiceProvider.apple.rawValue {
-                    Picker("Apple Voice", selection: $selectedAppleVoiceID) {
-                        Text("System Default").tag("")
-                        ForEach(appleVoiceOptions) { voice in
-                            Text("\(voice.displayName) (\(voice.locale))").tag(voice.id)
-                        }
-                    }
-                }
-
-                Label("Personal Voice selection will be enabled in a future update.", systemImage: "waveform.badge.mic")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             } header: {
                 Text("AI Master of Ceremonies")
             } footer: {
-                Text("Selected report: \(selectedTemplateName). Apple voices are available now.")
+                Text("Selected report: \(selectedTemplateName).")
+            }
+
+            Section {
+                SecureField("API Key", text: $elevenLabsAPIKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onChange(of: elevenLabsAPIKey) { _, newValue in
+                        AIMCKeychainStore.saveSecret(newValue, for: AIMCSecrets.elevenLabsAPIKey)
+                    }
+
+                TextField("Voice ID", text: $elevenLabsVoiceID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("ElevenLabs")
+            } footer: {
+                Text("Your ElevenLabs API key is stored securely in the iOS Keychain.")
             }
         }
         .navigationTitle("AI Master of Ceremonies")
+        .onAppear {
+            elevenLabsAPIKey = AIMCKeychainStore.loadSecret(for: AIMCSecrets.elevenLabsAPIKey) ?? ""
+        }
     }
 }
