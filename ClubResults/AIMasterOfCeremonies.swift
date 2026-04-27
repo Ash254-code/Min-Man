@@ -10,6 +10,10 @@ enum AIMCStorageKeys {
     static let includeAnnouncements = "aimc.pres.includeAnnouncements"
     static let includeDates = "aimc.pres.includeDates"
     static let includeSectionHeaders = "aimc.pres.includeSectionHeaders"
+    static let includeVenue = "aimc.pres.includeVenue"
+    static let includeBestPlayers = "aimc.pres.includeBestPlayers"
+    static let includeGoalKickers = "aimc.pres.includeGoalKickers"
+    static let includeGameNotes = "aimc.pres.includeGameNotes"
     static let keyPoints = "aimc.pres.keyPoints"
     static let announcementGradeID = "aimc.pres.announcementGradeID"
 }
