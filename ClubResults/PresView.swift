@@ -454,7 +454,8 @@ struct PresView: View {
             .map { index, name -> String in
                 let rank = index + 1
                 if rank == 1 {
-                    return "And the Best Player today goes to...... \(name)......... Congratulations to \(name). \(fourSecondPauseText)"
+                    let firstName = firstName(from: name)
+                    return "And the Best Player today goes to...... \(name)......... Congratulations \(firstName). \(fourSecondPauseText)"
                 }
                 return "\(rank)\(ordinalSuffix(for: rank)) Best: \(name)."
             }
@@ -492,6 +493,12 @@ struct PresView: View {
 
     private func goalCountText(_ goals: Int) -> String {
         goals == 1 ? "1 Goal" : "\(goals) Goals"
+    }
+
+    private func firstName(from fullName: String) -> String {
+        let trimmed = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return fullName }
+        return trimmed.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? trimmed
     }
 
     private func handleAIButtonTapped() {
