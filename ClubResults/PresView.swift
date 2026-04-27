@@ -483,10 +483,10 @@ struct PresView: View {
         if leadingKickers.count > 1 {
             let names = ListFormatter.localizedString(byJoining: leadingKickers)
             let firstNames = ListFormatter.localizedString(byJoining: leadingKickers.map(firstName(from:)))
-            leadingLine = "And our leading goal kickers today are...... \(names)......... Congratulations \(firstNames). \(fourSecondPauseText)"
+            leadingLine = "And the Leading Goal Kickers today were...... \(names), \(goalCountText(leadingGoalCount)). ......... Congratulations \(firstNames). \(fourSecondPauseText)"
         } else if let name = leadingKickers.first {
             let firstName = firstName(from: name)
-            leadingLine = "And our leading goal kicker today is...... \(name)......... Congratulations \(firstName). \(fourSecondPauseText)"
+            leadingLine = "And the Leading Goal Kicker today was...... \(name), \(goalCountText(leadingGoalCount)). ......... Congratulations \(firstName). \(fourSecondPauseText)"
         } else {
             leadingLine = ""
         }
