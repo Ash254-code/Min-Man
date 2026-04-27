@@ -44,6 +44,7 @@ struct PresView: View {
     @State private var isPreviewSheetPresented = false
     @State private var isMissingAPIKeyAlertPresented = false
     @State private var playbackErrorMessage: String?
+    @State private var isGeneratingAINarrationAudio = false
     @State private var openingAnnouncement = ""
     @State private var closingAnnouncement = ""
     @State private var gradeAnnouncements: [UUID: String] = [:]
@@ -240,8 +241,8 @@ struct PresView: View {
                     .background(Color.purple, in: Capsule(style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(gradeSections.isEmpty)
-            .opacity(gradeSections.isEmpty ? 0.45 : 1.0)
+            .disabled(gradeSections.isEmpty || isGeneratingAINarrationAudio)
+            .opacity((gradeSections.isEmpty || isGeneratingAINarrationAudio) ? 0.45 : 1.0)
 
             if aiNarrator.isSpeaking {
                 Button {
@@ -532,7 +533,9 @@ struct PresView: View {
                 playbackErrorMessage = "Please set an ElevenLabs Voice ID in Settings → AI Master of Ceremonies."
                 return
             }
+            isGeneratingAINarrationAudio = true
             Task {
+                defer { isGeneratingAINarrationAudio = false }
                 do {
                     try await aiNarrator.speakApprovedReport(
                         text: aiNarrationPreview,
@@ -587,6 +590,40 @@ struct PresView: View {
                     clubConfiguration: clubConfiguration
                 )
             }
+            .overlay {
+                if isGeneratingAINarrationAudio {
+                    GeneratingNarrationOverlayView()
+                }
+            }
+        }
+    }
+}
+
+private struct GeneratingNarrationOverlayView: View {
+    @State private var isSpinning = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.2)
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                Image(systemName: "football.fill")
+                    .font(.system(size: 42))
+                    .foregroundStyle(.orange)
+                    .rotationEffect(.degrees(isSpinning ? 360 : 0))
+                    .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: isSpinning)
+
+                ProgressView("AI is building voice…")
+                    .font(.headline)
+                    .tint(.white)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .onAppear {
+            isSpinning = true
         }
     }
 }
