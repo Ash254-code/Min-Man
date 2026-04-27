@@ -39,6 +39,7 @@ struct PresView: View {
     @State private var isMissingAPIKeyAlertPresented = false
     @State private var playbackErrorMessage: String?
     @State private var isGeneratingAINarrationAudio = false
+    @State private var welcomeMessage = ""
     @State private var openingAnnouncement = ""
     @State private var closingAnnouncement = ""
     @State private var gradeAnnouncements: [UUID: String] = [:]
