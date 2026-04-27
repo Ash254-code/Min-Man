@@ -355,10 +355,12 @@ struct PresView: View {
         var lines: [String] = []
         if let openingLine = announcementLine(welcomeMessage, fallback: "Welcome everyone.") {
             lines.append(openingLine)
+            lines.append(fourSecondPauseText)
         }
 
         if includeWeather {
             lines.append("Weather update: conditions look good for presentations.")
+            lines.append(fourSecondPauseText)
         }
 
         for section in gradeSections {
@@ -398,9 +400,9 @@ struct PresView: View {
                 }
 
                 if includeBestPlayers {
-                    let players = bestPlayerItems(for: game).prefix(5)
+                    let players = bestPlayerItems(for: game)
                     if !players.isEmpty, players.first != "None recorded" {
-                        gameLineParts.append(bestPlayersNarration(for: Array(players)))
+                        gameLineParts.append(bestPlayersNarration(for: players))
                     }
                 }
 
@@ -412,8 +414,7 @@ struct PresView: View {
                                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
                             }
                             return lhs.goals < rhs.goals
-                        }
-                        .prefix(5))
+                        })
                     if !kickers.isEmpty {
                         gameLineParts.append(goalKickersNarration(for: kickers))
                     }
@@ -428,6 +429,7 @@ struct PresView: View {
 
                 lines.append(gameLineParts.joined(separator: " "))
             }
+            lines.append(fourSecondPauseText)
         }
         aiNarrationPreview = lines.joined(separator: "\n\n")
         aiHasApprovedNarration = false
@@ -452,20 +454,44 @@ struct PresView: View {
             .map { index, name -> String in
                 let rank = index + 1
                 if rank == 1 {
-                    return "And the Best Player today goes to...... \(name)!"
+                    return "And the Best Player today goes to...... \(name)......... Congratulations to \(name). \(fourSecondPauseText)"
                 }
                 return "\(rank)\(ordinalSuffix(for: rank)) Best: \(name)."
             }
             .joined(separator: " ")
 
-        return "\(rankedLines) Big applause for all best players.... ...."
+        return rankedLines
     }
 
     private func goalKickersNarration(for kickers: [GoalKickerPresentationItem]) -> String {
-        let regularLines = kickers.dropLast().map { "\($0.name), \($0.goals) goals." }.joined(separator: " ")
-        let finalLine = kickers.last.map { "And our leading goal kicker today: \($0.name) with \($0.goals) goals!" } ?? ""
-        let core = [regularLines, finalLine].filter { !$0.isEmpty }.joined(separator: " ")
-        return "\(core) Big applause for all goal kickers.... ...."
+        let regularLines = kickers
+            .map { "\($0.name), \(goalCountText($0.goals))." }
+            .joined(separator: " ")
+
+        let leadingGoalCount = kickers.map(\.goals).max() ?? 0
+        let leadingKickers = kickers
+            .filter { $0.goals == leadingGoalCount }
+            .map(\.name)
+
+        let leadingLine: String
+        if leadingKickers.count > 1 {
+            let names = ListFormatter.localizedString(byJoining: leadingKickers)
+            leadingLine = "And our leading goal kickers today are...... \(names)......... Congratulations to \(names). \(fourSecondPauseText)"
+        } else if let name = leadingKickers.first {
+            leadingLine = "And our leading goal kicker today is...... \(name)......... Congratulations to \(name). \(fourSecondPauseText)"
+        } else {
+            leadingLine = ""
+        }
+
+        return [regularLines, leadingLine].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    private var fourSecondPauseText: String {
+        "........ ........"
+    }
+
+    private func goalCountText(_ goals: Int) -> String {
+        goals == 1 ? "1 Goal" : "\(goals) Goals"
     }
 
     private func handleAIButtonTapped() {
