@@ -400,24 +400,12 @@ struct PresView: View {
                 if includeBestPlayers {
                     let players = bestPlayerItems(for: game).prefix(5)
                     if !players.isEmpty, players.first != "None recorded" {
-                        let total = players.count
-                        let rankedPlayers = players
-                            .enumerated()
-                            .reversed()
-                            .map { index, name -> String in
-                                let rank = index + 1
-                                let label = rank == 1 ? "Best Player" : "\(rank)\(ordinalSuffix(for: rank)) Best"
-                                return "\(label): \(name)"
-                            }
-                            .joined(separator: ", ")
-                        if total > 0 {
-                            gameLineParts.append(rankedPlayers + ".")
-                        }
+                        gameLineParts.append(bestPlayersNarration(for: Array(players)))
                     }
                 }
 
                 if includeGoalKickers {
-                    let kickers = goalKickerItems(for: game)
+                    let kickers = Array(goalKickerItems(for: game)
                         .filter { $0.goals > 0 }
                         .sorted { lhs, rhs in
                             if lhs.goals == rhs.goals {
@@ -425,11 +413,9 @@ struct PresView: View {
                             }
                             return lhs.goals < rhs.goals
                         }
-                        .prefix(5)
-                        .map { "\($0.name) \($0.goals)" }
-                        .joined(separator: ", ")
+                        .prefix(5))
                     if !kickers.isEmpty {
-                        gameLineParts.append("Goal kickers: \(kickers).")
+                        gameLineParts.append(goalKickersNarration(for: kickers))
                     }
                 }
 
@@ -457,6 +443,29 @@ struct PresView: View {
         case 3: return "rd"
         default: return "th"
         }
+    }
+
+    private func bestPlayersNarration(for players: [String]) -> String {
+        let rankedLines = players
+            .enumerated()
+            .reversed()
+            .map { index, name -> String in
+                let rank = index + 1
+                if rank == 1 {
+                    return "And the Best Player today goes to...... \(name)!"
+                }
+                return "\(rank)\(ordinalSuffix(for: rank)) Best: \(name)."
+            }
+            .joined(separator: " ")
+
+        return "\(rankedLines) Big applause for all best players.... ...."
+    }
+
+    private func goalKickersNarration(for kickers: [GoalKickerPresentationItem]) -> String {
+        let regularLines = kickers.dropLast().map { "\($0.name), \($0.goals) goals." }.joined(separator: " ")
+        let finalLine = kickers.last.map { "And our leading goal kicker today: \($0.name) with \($0.goals) goals!" } ?? ""
+        let core = [regularLines, finalLine].filter { !$0.isEmpty }.joined(separator: " ")
+        return "\(core) Big applause for all goal kickers.... ...."
     }
 
     private func handleAIButtonTapped() {
