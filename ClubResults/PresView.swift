@@ -15,6 +15,24 @@ struct PresView: View {
         var id: UUID { grade.id }
     }
 
+    private struct NarrationApprovalInputs: Equatable {
+        let includeWeather: Bool
+        let includeDates: Bool
+        let includeSectionHeaders: Bool
+        let includeKeyPoints: Bool
+        let includeAnnouncements: Bool
+        let includeVenue: Bool
+        let includeBestPlayers: Bool
+        let includeGoalKickers: Bool
+        let includeGameNotes: Bool
+        let keyPointsInput: String
+        let announcementGradeID: String
+        let openingAnnouncement: String
+        let closingAnnouncement: String
+        let gradeAnnouncements: [UUID: String]
+        let gameMilestones: [UUID: String]
+    }
+
     @Query(sort: [SortDescriptor(\Game.date, order: .reverse)]) private var games: [Game]
     @Query(sort: [SortDescriptor(\Grade.name)]) private var grades: [Grade]
     @Query(sort: \Player.name) private var players: [Player]
@@ -83,6 +101,37 @@ struct PresView: View {
         ClubConfigurationStore.load()
     }
 
+    private var isPlaybackErrorAlertPresented: Binding<Bool> {
+        Binding(
+            get: { playbackErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    playbackErrorMessage = nil
+                }
+            }
+        )
+    }
+
+    private var narrationApprovalInputs: NarrationApprovalInputs {
+        NarrationApprovalInputs(
+            includeWeather: includeWeather,
+            includeDates: includeDates,
+            includeSectionHeaders: includeSectionHeaders,
+            includeKeyPoints: includeKeyPoints,
+            includeAnnouncements: includeAnnouncements,
+            includeVenue: includeVenue,
+            includeBestPlayers: includeBestPlayers,
+            includeGoalKickers: includeGoalKickers,
+            includeGameNotes: includeGameNotes,
+            keyPointsInput: keyPointsInput,
+            announcementGradeID: announcementGradeID,
+            openingAnnouncement: openingAnnouncement,
+            closingAnnouncement: closingAnnouncement,
+            gradeAnnouncements: gradeAnnouncements,
+            gameMilestones: gameMilestones
+        )
+    }
+
     private var gradeSections: [GradePresentationSection] {
         orderedGrades.compactMap { grade in
             let gradeGames = sortedGames
@@ -90,6 +139,190 @@ struct PresView: View {
                 .sorted { $0.date > $1.date }
             guard !gradeGames.isEmpty else { return nil }
             return GradePresentationSection(grade: grade, games: gradeGames)
+        }
+    }
+
+    @ViewBuilder
+    private var presentationList: some View {
+        List {
+            Section("Last 5 Days") {
+                if sortedGames.isEmpty {
+                    ContentUnavailableView(
+                        "No games in the last 5 days",
+                        systemImage: "calendar",
+                        description: Text("Recent games will appear here.")
+                    )
+                } else {
+                    ForEach(gradeSections) { section in
+                        Button {
+                            selectedPresentationGrade = section
+                        } label: {
+                            PresGradeRow(
+                                gradeName: section.grade.name,
+                                gameCount: section.games.count
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Section("AI Intelligence") {
+                Toggle("Include weather", isOn: $includeWeather)
+                Toggle("Read dates", isOn: $includeDates)
+                Toggle("Read section headers", isOn: $includeSectionHeaders)
+                Toggle("Include key points", isOn: $includeKeyPoints)
+                Toggle("Include announcements", isOn: $includeAnnouncements)
+                Toggle("Include venue", isOn: $includeVenue)
+                Toggle("Include best players", isOn: $includeBestPlayers)
+                Toggle("Include goal kickers", isOn: $includeGoalKickers)
+                Toggle("Include game notes", isOn: $includeGameNotes)
+
+                TextField("General opening announcement", text: $openingAnnouncement, axis: .vertical)
+                    .lineLimit(2...4)
+
+                if includeKeyPoints {
+                    TextField("Key points for tonight", text: $keyPointsInput, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+
+                ForEach(gradeSections) { section in
+                    TextField("\(section.grade.name) announcement", text: gradeAnnouncementBinding(for: section.grade.id), axis: .vertical)
+                        .lineLimit(2...4)
+
+                    ForEach(section.games) { game in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Milestone slot: \(section.grade.name) vs \(game.opponent)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            TextField("Milestone / important announcement", text: gameMilestoneBinding(for: game.id), axis: .vertical)
+                                .lineLimit(2...4)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+
+                TextField("General closing announcement", text: $closingAnnouncement, axis: .vertical)
+                    .lineLimit(2...4)
+
+                Picker("Announcement placement", selection: $announcementGradeID) {
+                    Text("Before each grade").tag("")
+                    ForEach(orderedGrades) { grade in
+                        Text("Before \(grade.name)").tag(grade.id.uuidString)
+                    }
+                }
+
+                Text("Announcements will run before \(announcementGradeName).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var aiControls: some View {
+        HStack(spacing: 12) {
+            Button {
+                handleAIButtonTapped()
+            } label: {
+                Label(
+                    aiNarrator.isSpeaking && aiNarrator.isPaused
+                    ? "Resume AI"
+                    : (aiHasApprovedNarration ? "Play AI" : "AI"),
+                    systemImage: aiNarrator.isSpeaking && aiNarrator.isPaused
+                    ? "play.circle.fill"
+                    : (aiHasApprovedNarration ? "play.circle.fill" : "sparkles")
+                )
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.purple, in: Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(gradeSections.isEmpty)
+            .opacity(gradeSections.isEmpty ? 0.45 : 1.0)
+
+            if aiNarrator.isSpeaking {
+                Button {
+                    if aiNarrator.isPaused {
+                        aiNarrator.resume()
+                    } else {
+                        aiNarrator.pause()
+                    }
+                } label: {
+                    Label(aiNarrator.isPaused ? "Resume" : "Pause", systemImage: aiNarrator.isPaused ? "play.circle.fill" : "pause.circle.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(Color.orange, in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    aiNarrator.stop()
+                } label: {
+                    Label("Stop", systemImage: "stop.circle.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(Color.red, in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private var startPresentationsButton: some View {
+        Button {
+            startPresentations()
+        } label: {
+            Text("Start Presentations")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(Color.blue, in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(gradeSections.isEmpty)
+        .opacity(gradeSections.isEmpty ? 0.45 : 1.0)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+    }
+
+    private var contentStack: some View {
+        VStack(spacing: 20) {
+            presentationList
+            aiControls
+            startPresentationsButton
+        }
+    }
+
+    private var aiPreviewSheet: some View {
+        NavigationStack {
+            ScrollView {
+                Text(aiNarrationPreview)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
+            .navigationTitle("AI Preview")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        isPreviewSheetPresented = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Approve") {
+                        aiHasApprovedNarration = true
+                        isPreviewSheetPresented = false
+                    }
+                }
+            }
         }
     }
 
@@ -323,199 +556,20 @@ struct PresView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                List {
-                    Section("Last 5 Days") {
-                        if sortedGames.isEmpty {
-                            ContentUnavailableView(
-                                "No games in the last 5 days",
-                                systemImage: "calendar",
-                                description: Text("Recent games will appear here.")
-                            )
-                        } else {
-                            ForEach(gradeSections) { section in
-                                Button {
-                                    selectedPresentationGrade = section
-                                } label: {
-                                    PresGradeRow(
-                                        gradeName: section.grade.name,
-                                        gameCount: section.games.count
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    Section("AI Intelligence") {
-                        Toggle("Include weather", isOn: $includeWeather)
-                        Toggle("Read dates", isOn: $includeDates)
-                        Toggle("Read section headers", isOn: $includeSectionHeaders)
-                        Toggle("Include key points", isOn: $includeKeyPoints)
-                        Toggle("Include announcements", isOn: $includeAnnouncements)
-                        Toggle("Include venue", isOn: $includeVenue)
-                        Toggle("Include best players", isOn: $includeBestPlayers)
-                        Toggle("Include goal kickers", isOn: $includeGoalKickers)
-                        Toggle("Include game notes", isOn: $includeGameNotes)
-
-                        TextField("General opening announcement", text: $openingAnnouncement, axis: .vertical)
-                            .lineLimit(2...4)
-
-                        if includeKeyPoints {
-                            TextField("Key points for tonight", text: $keyPointsInput, axis: .vertical)
-                                .lineLimit(2...5)
-                        }
-
-                        ForEach(gradeSections) { section in
-                            TextField("\(section.grade.name) announcement", text: gradeAnnouncementBinding(for: section.grade.id), axis: .vertical)
-                                .lineLimit(2...4)
-
-                            ForEach(section.games) { game in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Milestone slot: \(section.grade.name) vs \(game.opponent)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    TextField("Milestone / important announcement", text: gameMilestoneBinding(for: game.id), axis: .vertical)
-                                        .lineLimit(2...4)
-                                }
-                                .padding(.vertical, 6)
-                            }
-                        }
-
-                        TextField("General closing announcement", text: $closingAnnouncement, axis: .vertical)
-                            .lineLimit(2...4)
-
-                        Picker("Announcement placement", selection: $announcementGradeID) {
-                            Text("Before each grade").tag("")
-                            ForEach(orderedGrades) { grade in
-                                Text("Before \(grade.name)").tag(grade.id.uuidString)
-                            }
-                        }
-
-                        Text("Announcements will run before \(announcementGradeName).")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                HStack(spacing: 12) {
-                    Button {
-                        handleAIButtonTapped()
-                    } label: {
-                        Label(
-                            aiNarrator.isSpeaking && aiNarrator.isPaused
-                            ? "Resume AI"
-                            : (aiHasApprovedNarration ? "Play AI" : "AI"),
-                            systemImage: aiNarrator.isSpeaking && aiNarrator.isPaused
-                            ? "play.circle.fill"
-                            : (aiHasApprovedNarration ? "play.circle.fill" : "sparkles")
-                        )
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.purple, in: Capsule(style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(gradeSections.isEmpty)
-                    .opacity(gradeSections.isEmpty ? 0.45 : 1.0)
-
-                    if aiNarrator.isSpeaking {
-                        Button {
-                            if aiNarrator.isPaused {
-                                aiNarrator.resume()
-                            } else {
-                                aiNarrator.pause()
-                            }
-                        } label: {
-                            Label(aiNarrator.isPaused ? "Resume" : "Pause", systemImage: aiNarrator.isPaused ? "play.circle.fill" : "pause.circle.fill")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                                .background(Color.orange, in: Capsule(style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-
-                        Button {
-                            aiNarrator.stop()
-                        } label: {
-                            Label("Stop", systemImage: "stop.circle.fill")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                                .background(Color.red, in: Capsule(style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 20)
-
-                Button {
-                    startPresentations()
-                } label: {
-                    Text("Start Presentations")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.blue, in: Capsule(style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(gradeSections.isEmpty)
-                .opacity(gradeSections.isEmpty ? 0.45 : 1.0)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
-            }
+            contentStack
             .navigationTitle("Pres")
             .sheet(isPresented: $isPreviewSheetPresented) {
-                NavigationStack {
-                    ScrollView {
-                        Text(aiNarrationPreview)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
-                    }
-                    .navigationTitle("AI Preview")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") {
-                                isPreviewSheetPresented = false
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Approve") {
-                                aiHasApprovedNarration = true
-                                isPreviewSheetPresented = false
-                            }
-                        }
-                    }
-                }
+                aiPreviewSheet
             }
-            .onChange(of: includeWeather) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: includeDates) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: includeSectionHeaders) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: includeKeyPoints) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: includeAnnouncements) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: keyPointsInput) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: announcementGradeID) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: includeVenue) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: includeBestPlayers) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: includeGoalKickers) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: includeGameNotes) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: openingAnnouncement) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: closingAnnouncement) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: gradeAnnouncements) { _, _ in aiHasApprovedNarration = false }
-            .onChange(of: gameMilestones) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: narrationApprovalInputs) { _, _ in
+                aiHasApprovedNarration = false
+            }
             .alert("ElevenLabs API Key Required", isPresented: $isMissingAPIKeyAlertPresented) {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text("Please add your ElevenLabs API key in Settings → AI Master of Ceremonies before playback.")
             }
-            .alert("Unable to Play Audio", isPresented: Binding(
-                get: { playbackErrorMessage != nil },
-                set: { if !$0 { playbackErrorMessage = nil } }
-            )) {
+            .alert("Unable to Play Audio", isPresented: isPlaybackErrorAlertPresented) {
                 Button("OK", role: .cancel) {
                     playbackErrorMessage = nil
                 }
