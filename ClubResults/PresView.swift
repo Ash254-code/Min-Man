@@ -26,6 +26,10 @@ struct PresView: View {
     @State private var isPreviewSheetPresented = false
     @State private var isMissingAPIKeyAlertPresented = false
     @State private var playbackErrorMessage: String?
+    @State private var openingAnnouncement = ""
+    @State private var closingAnnouncement = ""
+    @State private var gradeAnnouncements: [UUID: String] = [:]
+    @State private var gameMilestones: [UUID: String] = [:]
 
     @AppStorage(AIMCStorageKeys.elevenLabsVoiceID) private var elevenLabsVoiceID = ""
     @AppStorage(AIMCStorageKeys.includeWeather) private var includeWeather = true
@@ -33,6 +37,10 @@ struct PresView: View {
     @AppStorage(AIMCStorageKeys.includeAnnouncements) private var includeAnnouncements = true
     @AppStorage(AIMCStorageKeys.includeDates) private var includeDates = false
     @AppStorage(AIMCStorageKeys.includeSectionHeaders) private var includeSectionHeaders = false
+    @AppStorage(AIMCStorageKeys.includeVenue) private var includeVenue = true
+    @AppStorage(AIMCStorageKeys.includeBestPlayers) private var includeBestPlayers = true
+    @AppStorage(AIMCStorageKeys.includeGoalKickers) private var includeGoalKickers = true
+    @AppStorage(AIMCStorageKeys.includeGameNotes) private var includeGameNotes = false
     @AppStorage(AIMCStorageKeys.keyPoints) private var keyPointsInput = ""
     @AppStorage(AIMCStorageKeys.announcementGradeID) private var announcementGradeID = ""
 
@@ -122,6 +130,56 @@ struct PresView: View {
         return gradeByID[gradeID]?.asksScore ?? true
     }
 
+    private func setGradeAnnouncement(_ message: String, for gradeID: UUID) {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            gradeAnnouncements.removeValue(forKey: gradeID)
+        } else {
+            gradeAnnouncements[gradeID] = message
+        }
+    }
+
+    private func gradeAnnouncementBinding(for gradeID: UUID) -> Binding<String> {
+        Binding(
+            get: { gradeAnnouncements[gradeID] ?? "" },
+            set: { setGradeAnnouncement($0, for: gradeID) }
+        )
+    }
+
+    private func setGameMilestone(_ message: String, for gameID: UUID) {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            gameMilestones.removeValue(forKey: gameID)
+        } else {
+            gameMilestones[gameID] = message
+        }
+    }
+
+    private func gameMilestoneBinding(for gameID: UUID) -> Binding<String> {
+        Binding(
+            get: { gameMilestones[gameID] ?? "" },
+            set: { setGameMilestone($0, for: gameID) }
+        )
+    }
+
+    private func announcementLine(_ message: String, fallback: String? = nil) -> String? {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        return fallback
+    }
+
+    private func scoreReadLine(for game: Game, teamName: String) -> String {
+        let ourLine = "\(teamName) - \(game.ourGoals) goal \(game.ourBehinds) \(game.ourScore)"
+        let theirLine = "\(game.opponent) \(game.theirGoals) goal \(game.theirBehinds) \(game.theirScore)"
+
+        if game.ourScore > game.theirScore {
+            return "\(ourLine) defeated \(theirLine)."
+        } else if game.ourScore < game.theirScore {
+            return "\(ourLine) lost to \(theirLine)."
+        }
+        return "\(ourLine) drew with \(theirLine)."
+    }
+
     private var announcementGradeName: String {
         guard let grade = orderedGrades.first(where: { $0.id.uuidString == announcementGradeID }) else {
             return "each grade section"
@@ -131,9 +189,17 @@ struct PresView: View {
 
     private func generateAINarrationPreview() {
         let reportDate = Date().formatted(date: .complete, time: .omitted)
+        let teamName = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ? "Our Team"
+        : clubConfiguration.clubTeam.name
+
         var lines: [String] = [
             "Good evening everyone, here is the club report for \(reportDate)."
         ]
+
+        if let openingLine = announcementLine(openingAnnouncement, fallback: includeAnnouncements ? "General announcement: welcome everyone to presentations." : nil) {
+            lines.append(openingLine)
+        }
 
         if includeWeather {
             lines.append("Weather update: conditions look good for presentations.")
@@ -149,45 +215,68 @@ struct PresView: View {
         }
 
         for section in gradeSections {
-            if includeAnnouncements,
-               (announcementGradeID.isEmpty || section.grade.id.uuidString == announcementGradeID) {
-                if includeSectionHeaders {
-                    lines.append("Announcements.")
-                }
-                lines.append("A quick announcement from the committee.")
-            }
-
             if includeSectionHeaders {
                 lines.append("\(section.grade.name).")
+            } else {
+                lines.append("Now to \(section.grade.name).")
             }
+
+            if let gradeLine = announcementLine(gradeAnnouncements[section.grade.id] ?? "", fallback: includeAnnouncements && (announcementGradeID.isEmpty || section.grade.id.uuidString == announcementGradeID) ? "A quick announcement from the committee." : nil) {
+                lines.append(gradeLine)
+            }
+
             lines.append("\(section.games.count) game\(section.games.count == 1 ? "" : "s") to report.")
+
             for game in section.games {
-                let teamName = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "Our Team"
-                : clubConfiguration.clubTeam.name
-                let resultLine = shouldShowScore(for: section.grade.id)
-                ? "\(teamName) \(game.ourScore), \(game.opponent) \(game.theirScore)."
-                : "score summary disabled for this grade."
+                var gameLineParts: [String] = []
+                gameLineParts.append(scoreReadLine(for: game, teamName: teamName))
+
                 if includeDates {
-                    lines.append("Played against \(game.opponent) on \(game.date.formatted(date: .abbreviated, time: .omitted)); \(resultLine)")
-                } else {
-                    lines.append("Played against \(game.opponent); \(resultLine)")
+                    gameLineParts.append("Date: \(game.date.formatted(date: .abbreviated, time: .omitted)).")
                 }
 
-                let bestPlayers = bestPlayerItems(for: game).prefix(3).joined(separator: ", ")
-                if !bestPlayers.isEmpty, bestPlayers != "None recorded" {
-                    lines.append("Best players included \(bestPlayers).")
+                if includeVenue {
+                    let cleanedVenue = game.venue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !cleanedVenue.isEmpty {
+                        gameLineParts.append("Venue: \(cleanedVenue).")
+                    }
                 }
 
-                let kickers = goalKickerItems(for: game)
-                    .filter { $0.goals > 0 }
-                    .prefix(3)
-                    .map { "\($0.name) \($0.goals)" }
-                    .joined(separator: ", ")
-                if !kickers.isEmpty {
-                    lines.append("Goal kickers: \(kickers).")
+                if includeBestPlayers {
+                    let bestPlayers = bestPlayerItems(for: game).prefix(5).joined(separator: ", ")
+                    if !bestPlayers.isEmpty, bestPlayers != "None recorded" {
+                        gameLineParts.append("Best players: \(bestPlayers).")
+                    }
+                }
+
+                if includeGoalKickers {
+                    let kickers = goalKickerItems(for: game)
+                        .filter { $0.goals > 0 }
+                        .prefix(5)
+                        .map { "\($0.name) \($0.goals)" }
+                        .joined(separator: ", ")
+                    if !kickers.isEmpty {
+                        gameLineParts.append("Goal kickers: \(kickers).")
+                    }
+                }
+
+                if includeGameNotes {
+                    let note = game.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !note.isEmpty {
+                        gameLineParts.append("Coach note: \(note).")
+                    }
+                }
+
+                lines.append(gameLineParts.joined(separator: " "))
+
+                if let milestoneLine = announcementLine(gameMilestones[game.id] ?? "") {
+                    lines.append("Milestone: \(milestoneLine)")
                 }
             }
+        }
+
+        if let closingLine = announcementLine(closingAnnouncement, fallback: includeAnnouncements ? "General closing announcement: thanks to players, families, and volunteers." : nil) {
+            lines.append(closingLine)
         }
 
         lines.append("That concludes the AI Master of Ceremonies report.")
@@ -264,11 +353,37 @@ struct PresView: View {
                         Toggle("Read section headers", isOn: $includeSectionHeaders)
                         Toggle("Include key points", isOn: $includeKeyPoints)
                         Toggle("Include announcements", isOn: $includeAnnouncements)
+                        Toggle("Include venue", isOn: $includeVenue)
+                        Toggle("Include best players", isOn: $includeBestPlayers)
+                        Toggle("Include goal kickers", isOn: $includeGoalKickers)
+                        Toggle("Include game notes", isOn: $includeGameNotes)
+
+                        TextField("General opening announcement", text: $openingAnnouncement, axis: .vertical)
+                            .lineLimit(2...4)
 
                         if includeKeyPoints {
                             TextField("Key points for tonight", text: $keyPointsInput, axis: .vertical)
                                 .lineLimit(2...5)
                         }
+
+                        ForEach(gradeSections) { section in
+                            TextField("\(section.grade.name) announcement", text: gradeAnnouncementBinding(for: section.grade.id), axis: .vertical)
+                                .lineLimit(2...4)
+
+                            ForEach(section.games) { game in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Milestone slot: \(section.grade.name) vs \(game.opponent)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    TextField("Milestone / important announcement", text: gameMilestoneBinding(for: game.id), axis: .vertical)
+                                        .lineLimit(2...4)
+                                }
+                                .padding(.vertical, 6)
+                            }
+                        }
+
+                        TextField("General closing announcement", text: $closingAnnouncement, axis: .vertical)
+                            .lineLimit(2...4)
 
                         Picker("Announcement placement", selection: $announcementGradeID) {
                             Text("Before each grade").tag("")
@@ -384,6 +499,14 @@ struct PresView: View {
             .onChange(of: includeAnnouncements) { _, _ in aiHasApprovedNarration = false }
             .onChange(of: keyPointsInput) { _, _ in aiHasApprovedNarration = false }
             .onChange(of: announcementGradeID) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: includeVenue) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: includeBestPlayers) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: includeGoalKickers) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: includeGameNotes) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: openingAnnouncement) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: closingAnnouncement) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: gradeAnnouncements) { _, _ in aiHasApprovedNarration = false }
+            .onChange(of: gameMilestones) { _, _ in aiHasApprovedNarration = false }
             .alert("ElevenLabs API Key Required", isPresented: $isMissingAPIKeyAlertPresented) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -446,6 +569,10 @@ private struct PresentationGradeFullScreenView: View {
     let clubConfiguration: ClubConfiguration
 
     @State private var selectedPageIndex = 0
+    @State private var openingEventAnnouncement = ""
+    @State private var closingEventAnnouncement = ""
+    @State private var gradeAnnouncementSlots: [UUID: String] = [:]
+    @State private var gameAnnouncementSlots: [UUID: String] = [:]
 
     private var selectedSection: PresView.GradePresentationSection? {
         guard sections.indices.contains(selectedPageIndex) else { return nil }
@@ -459,6 +586,20 @@ private struct PresentationGradeFullScreenView: View {
 
     private var scorePillWidth: CGFloat {
         ClubStyle.standardPillWidth(configuration: clubConfiguration, fontTextStyle: .title2)
+    }
+
+    private func gradeAnnouncementBinding(for gradeID: UUID) -> Binding<String> {
+        Binding(
+            get: { gradeAnnouncementSlots[gradeID] ?? "" },
+            set: { gradeAnnouncementSlots[gradeID] = $0 }
+        )
+    }
+
+    private func gameAnnouncementBinding(for gameID: UUID) -> Binding<String> {
+        Binding(
+            get: { gameAnnouncementSlots[gameID] ?? "" },
+            set: { gameAnnouncementSlots[gameID] = $0 }
+        )
     }
 
     var body: some View {
@@ -476,13 +617,43 @@ private struct PresentationGradeFullScreenView: View {
                         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 28) {
-                                    ForEach(section.games) { game in
+                                    announcementEntryCard(
+                                        title: "General opening announcement",
+                                        placeholder: "Add opening event or announcement",
+                                        text: $openingEventAnnouncement,
+                                        width: proxy.size.width
+                                    )
+
+                                    announcementEntryCard(
+                                        title: "\(section.grade.name) announcement",
+                                        placeholder: "Add announcement above this grade",
+                                        text: gradeAnnouncementBinding(for: section.grade.id),
+                                        width: proxy.size.width
+                                    )
+
+                                    ForEach(Array(section.games.enumerated()), id: \.element.id) { gameIndex, game in
                                         presentationGameCard(
                                             game: game,
                                             shouldShowScore: shouldShowScore(section.id),
                                             width: proxy.size.width
                                         )
+
+                                        if gameIndex < section.games.count - 1 {
+                                            announcementEntryCard(
+                                                title: "Milestone announcement slot",
+                                                placeholder: "Add milestone between games",
+                                                text: gameAnnouncementBinding(for: game.id),
+                                                width: proxy.size.width
+                                            )
+                                        }
                                     }
+
+                                    announcementEntryCard(
+                                        title: "General closing announcement",
+                                        placeholder: "Add final event or thank-you",
+                                        text: $closingEventAnnouncement,
+                                        width: proxy.size.width
+                                    )
                                 }
                                 .padding(.bottom, 10)
                             }
@@ -511,6 +682,20 @@ private struct PresentationGradeFullScreenView: View {
                 .padding(.top, 10)
             }
         }
+    }
+
+    @ViewBuilder
+    private func announcementEntryCard(title: String, placeholder: String, text: Binding<String>, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: width > 1000 ? 28 : 22, weight: .heavy))
+            TextField(placeholder, text: text, axis: .vertical)
+                .lineLimit(2...4)
+                .textFieldStyle(.roundedBorder)
+        }
+        .padding(20)
+        .background(Color(.tertiarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     @ViewBuilder
