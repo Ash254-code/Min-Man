@@ -75,14 +75,14 @@ enum AIMCKeychainStore {
 struct ElevenLabsTTSService {
     enum ElevenLabsError: LocalizedError {
         case invalidResponse
-        case badStatusCode(Int)
+        case badStatusCode(Int, String)
 
         var errorDescription: String? {
             switch self {
             case .invalidResponse:
                 return "Invalid response from ElevenLabs."
-            case .badStatusCode(let code):
-                return "ElevenLabs returned status code \(code)."
+            case .badStatusCode(let code, let body):
+                return "ElevenLabs returned status code \(code): \(body)"
             }
         }
     }
@@ -111,7 +111,9 @@ struct ElevenLabsTTSService {
             throw ElevenLabsError.invalidResponse
         }
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw ElevenLabsError.badStatusCode(httpResponse.statusCode)
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unable to decode response body (\(data.count) bytes)."
+            print("❌ ElevenLabs API error. Status: \(httpResponse.statusCode). Body: \(errorBody)")
+            throw ElevenLabsError.badStatusCode(httpResponse.statusCode, errorBody)
         }
         return data
     }
