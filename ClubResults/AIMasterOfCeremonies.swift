@@ -197,7 +197,7 @@ struct AIMasterOfCeremoniesSettingsView: View {
                 Text("Selected report: \(selectedTemplateName).")
             }
 
-            Section("ElevenLabs") {
+            Section {
                 SecureField("API Key", text: $elevenLabsAPIKey)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -208,6 +208,8 @@ struct AIMasterOfCeremoniesSettingsView: View {
                 TextField("Voice ID", text: $elevenLabsVoiceID)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+            } header: {
+                Text("ElevenLabs")
             } footer: {
                 Text("Your ElevenLabs API key is stored securely in the iOS Keychain.")
             }
