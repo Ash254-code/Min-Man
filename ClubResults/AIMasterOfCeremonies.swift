@@ -1,11 +1,9 @@
 import SwiftUI
-import SwiftData
 import AVFoundation
 import Security
 internal import Combine
 
 enum AIMCStorageKeys {
-    static let selectedTemplateID = "aimc.settings.selectedTemplateID"
     static let elevenLabsVoiceID = "aimc.settings.elevenLabsVoiceID"
     static let includeWeather = "aimc.pres.includeWeather"
     static let includeKeyPoints = "aimc.pres.includeKeyPoints"
@@ -174,31 +172,11 @@ final class AIMCNarrator: NSObject, ObservableObject, AVAudioPlayerDelegate {
 }
 
 struct AIMasterOfCeremoniesSettingsView: View {
-    @Query(sort: [SortDescriptor(\CustomReportTemplate.name)]) private var templates: [CustomReportTemplate]
-
-    @AppStorage(AIMCStorageKeys.selectedTemplateID) private var selectedTemplateID = ""
     @AppStorage(AIMCStorageKeys.elevenLabsVoiceID) private var elevenLabsVoiceID = ""
     @State private var elevenLabsAPIKey = ""
 
-    private var selectedTemplateName: String {
-        templates.first(where: { $0.id.uuidString == selectedTemplateID })?.name ?? "No report selected"
-    }
-
     var body: some View {
         Form {
-            Section {
-                Picker("Report", selection: $selectedTemplateID) {
-                    Text("None").tag("")
-                    ForEach(templates) { template in
-                        Text(template.name).tag(template.id.uuidString)
-                    }
-                }
-            } header: {
-                Text("AI Master of Ceremonies")
-            } footer: {
-                Text("Selected report: \(selectedTemplateName).")
-            }
-
             Section {
                 SecureField("API Key", text: $elevenLabsAPIKey)
                     .textInputAutocapitalization(.never)
