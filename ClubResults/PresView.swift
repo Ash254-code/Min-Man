@@ -24,8 +24,10 @@ struct PresView: View {
     @State private var aiNarrationPreview = ""
     @State private var aiHasApprovedNarration = false
     @State private var isPreviewSheetPresented = false
+    @State private var isMissingAPIKeyAlertPresented = false
+    @State private var playbackErrorMessage: String?
 
-    @AppStorage(AIMCStorageKeys.selectedAppleVoiceID) private var selectedAppleVoiceID = ""
+    @AppStorage(AIMCStorageKeys.elevenLabsVoiceID) private var elevenLabsVoiceID = ""
     @AppStorage(AIMCStorageKeys.includeWeather) private var includeWeather = true
     @AppStorage(AIMCStorageKeys.includeKeyPoints) private var includeKeyPoints = true
     @AppStorage(AIMCStorageKeys.includeAnnouncements) private var includeAnnouncements = true
@@ -197,7 +199,28 @@ struct PresView: View {
         if aiNarrator.isSpeaking, aiNarrator.isPaused {
             aiNarrator.resume()
         } else if aiHasApprovedNarration {
-            aiNarrator.speak(text: aiNarrationPreview, appleVoiceID: selectedAppleVoiceID.isEmpty ? nil : selectedAppleVoiceID)
+            let apiKey = AIMCKeychainStore.loadSecret(for: AIMCSecrets.elevenLabsAPIKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let voiceID = elevenLabsVoiceID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !apiKey.isEmpty else {
+                isMissingAPIKeyAlertPresented = true
+                return
+            }
+            guard !voiceID.isEmpty else {
+                playbackErrorMessage = "Please set an ElevenLabs Voice ID in Settings → AI Master of Ceremonies."
+                return
+            }
+            Task {
+                do {
+                    try await aiNarrator.speakApprovedReport(
+                        text: aiNarrationPreview,
+                        apiKey: apiKey,
+                        voiceID: voiceID
+                    )
+                } catch {
+                    playbackErrorMessage = error.localizedDescription
+                }
+            }
         } else {
             generateAINarrationPreview()
             isPreviewSheetPresented = true
@@ -361,6 +384,21 @@ struct PresView: View {
             .onChange(of: includeAnnouncements) { _, _ in aiHasApprovedNarration = false }
             .onChange(of: keyPointsInput) { _, _ in aiHasApprovedNarration = false }
             .onChange(of: announcementGradeID) { _, _ in aiHasApprovedNarration = false }
+            .alert("ElevenLabs API Key Required", isPresented: $isMissingAPIKeyAlertPresented) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Please add your ElevenLabs API key in Settings → AI Master of Ceremonies before playback.")
+            }
+            .alert("Unable to Play Audio", isPresented: Binding(
+                get: { playbackErrorMessage != nil },
+                set: { if !$0 { playbackErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {
+                    playbackErrorMessage = nil
+                }
+            } message: {
+                Text(playbackErrorMessage ?? "Something went wrong while generating narration.")
+            }
             .fullScreenCover(item: $selectedPresentationGrade) { selectedGrade in
                 PresentationGradeFullScreenView(
                     sections: gradeSections,
