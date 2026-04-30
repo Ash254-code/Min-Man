@@ -788,7 +788,12 @@ struct StatsSessionRecord: Codable {
     let opposition: String
     let date: Date
     let venue: String
+    let usesLiveGameScoreSync: Bool
     let createdAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionId, gradeId, opposition, date, venue, usesLiveGameScoreSync, createdAt
+    }
 
     init(_ item: StatsSession) {
         sessionId = item.sessionId
@@ -796,7 +801,19 @@ struct StatsSessionRecord: Codable {
         opposition = item.opposition
         date = item.date
         venue = item.venue
+        usesLiveGameScoreSync = item.usesLiveGameScoreSync
         createdAt = item.createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try container.decode(UUID.self, forKey: .sessionId)
+        gradeId = try container.decode(UUID.self, forKey: .gradeId)
+        opposition = try container.decode(String.self, forKey: .opposition)
+        date = try container.decode(Date.self, forKey: .date)
+        venue = try container.decode(String.self, forKey: .venue)
+        usesLiveGameScoreSync = try container.decodeIfPresent(Bool.self, forKey: .usesLiveGameScoreSync) ?? false
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 }
 
@@ -915,6 +932,13 @@ struct FullBackupImportResult {
     let itemCounts: AppBackupItemCounts
 }
 
+struct ImportDebugCounts {
+    let afterInsertPlayers: Int
+    let afterInsertGames: Int
+    let afterSavePlayers: Int
+    let afterSaveGames: Int
+}
+
 enum AppBackupExportError: LocalizedError {
     case failedToReadFileSize
 
@@ -930,6 +954,7 @@ enum AppBackupImportError: LocalizedError {
     case invalidFileType
     case unsupportedBackupFormat(version: Int)
     case unsupportedSchema(version: Int)
+    case restoreVerificationFailed(expected: AppBackupItemCounts, actual: AppBackupItemCounts, debug: ImportDebugCounts)
 
     var errorDescription: String? {
         switch self {
@@ -939,6 +964,16 @@ enum AppBackupImportError: LocalizedError {
             return "This backup format (\(version)) is not supported by this app version."
         case let .unsupportedSchema(version):
             return "This backup schema (\(version)) is not supported by this app version."
+        case let .restoreVerificationFailed(expected, actual, debug):
+            return """
+            Backup import did not fully restore the saved data.
+
+            Expected \(expected.players) players and \(expected.games) games, but the database now contains \(actual.players) players and \(actual.games) games.
+
+            Import context counts:
+            After insert: \(debug.afterInsertPlayers) players, \(debug.afterInsertGames) games
+            After save fetch: \(debug.afterSavePlayers) players, \(debug.afterSaveGames) games
+            """
         }
     }
 }
@@ -1053,13 +1088,34 @@ enum AppBackupService {
     @MainActor
     static func importFullBackupFile(url: URL, modelContext: ModelContext) throws -> FullBackupImportResult {
         let envelope = try previewBackupFile(url: url)
+        let deleteContext = ModelContext(modelContext.container)
 
-        clearExistingData(modelContext: modelContext)
-        importPayload(envelope.payload, into: modelContext)
+        try clearExistingData(modelContext: deleteContext)
+        let importContext = ModelContext(modelContext.container)
+        importPayload(envelope.payload, into: importContext)
+        let countsAfterInsert = try persistedItemCounts(modelContext: importContext)
         applySettings(envelope.payload.appSettings)
-        try modelContext.save()
+        try importContext.save()
+        let countsAfterSaveInImportContext = try persistedItemCounts(modelContext: importContext)
 
-        return FullBackupImportResult(importedAt: Date(), itemCounts: envelope.itemCounts)
+        let verificationContext = ModelContext(modelContext.container)
+        let persistedCounts = try persistedItemCounts(modelContext: verificationContext)
+        guard persistedCounts.players == envelope.itemCounts.players,
+              persistedCounts.games == envelope.itemCounts.games,
+              persistedCounts.grades == envelope.itemCounts.grades else {
+            throw AppBackupImportError.restoreVerificationFailed(
+                expected: envelope.itemCounts,
+                actual: persistedCounts,
+                debug: ImportDebugCounts(
+                    afterInsertPlayers: countsAfterInsert.players,
+                    afterInsertGames: countsAfterInsert.games,
+                    afterSavePlayers: countsAfterSaveInImportContext.players,
+                    afterSaveGames: countsAfterSaveInImportContext.games
+                )
+            )
+        }
+
+        return FullBackupImportResult(importedAt: Date(), itemCounts: persistedCounts)
     }
 
     private static func validateEnvelope(_ envelope: AppBackupEnvelope) throws {
@@ -1072,7 +1128,7 @@ enum AppBackupService {
     }
 
     @MainActor
-    private static func clearExistingData(modelContext: ModelContext) {
+    private static func clearExistingData(modelContext: ModelContext) throws {
         let grades = (try? modelContext.fetch(FetchDescriptor<Grade>())) ?? []
         grades.forEach { modelContext.delete($0) }
 
@@ -1123,6 +1179,10 @@ enum AppBackupService {
 
         let statEvents = (try? modelContext.fetch(FetchDescriptor<StatEvent>())) ?? []
         statEvents.forEach { modelContext.delete($0) }
+
+        // Persist deletions first so unique identifiers from the backup can be
+        // reinserted cleanly in the same import operation.
+        try modelContext.save()
     }
 
     @MainActor
@@ -1324,6 +1384,7 @@ enum AppBackupService {
                     opposition: $0.opposition,
                     date: $0.date,
                     venue: $0.venue,
+                    usesLiveGameScoreSync: $0.usesLiveGameScoreSync,
                     createdAt: $0.createdAt
                 )
             )
@@ -1413,6 +1474,31 @@ enum AppBackupService {
             legacyGradesBackup: SettingsBackupStore.loadGrades(),
             legacyContactsBackup: SettingsBackupStore.loadContacts()
         )
+    }
+
+    @MainActor
+    private static func persistedItemCounts(modelContext: ModelContext) throws -> AppBackupItemCounts {
+        let payload = AppBackupPayload(
+            grades: try modelContext.fetch(FetchDescriptor<Grade>()).map { GradeRecord($0) },
+            players: try modelContext.fetch(FetchDescriptor<Player>()).map { PlayerRecord($0) },
+            games: try modelContext.fetch(FetchDescriptor<Game>()).map { GameRecord($0) },
+            contacts: try modelContext.fetch(FetchDescriptor<Contact>()).map { ContactRecord($0) },
+            reportRecipients: try modelContext.fetch(FetchDescriptor<ReportRecipient>()).map { ReportRecipientRecord($0) },
+            customReportTemplates: try modelContext.fetch(FetchDescriptor<CustomReportTemplate>()).map { CustomReportTemplateRecord($0) },
+            staffMembers: try modelContext.fetch(FetchDescriptor<StaffMember>()).map { StaffMemberRecord($0) },
+            staffDefaults: try modelContext.fetch(FetchDescriptor<StaffDefault>()).map { StaffDefaultRecord($0) },
+            contactGroups: try modelContext.fetch(FetchDescriptor<ContactGroup>()).map { ContactGroupRecord($0) },
+            contactGroupMemberships: try modelContext.fetch(FetchDescriptor<ContactGroupMembership>()).map { ContactGroupMembershipRecord($0) },
+            contactSectionMemberships: try modelContext.fetch(FetchDescriptor<ContactSectionMembership>()).map { ContactSectionMembershipRecord($0) },
+            reportRecipientGroups: try modelContext.fetch(FetchDescriptor<ReportRecipientGroup>()).map { ReportRecipientGroupRecord($0) },
+            customReportRecipientSections: try modelContext.fetch(FetchDescriptor<CustomReportRecipientSection>()).map { CustomReportRecipientSectionRecord($0) },
+            customReportRecipientGroups: try modelContext.fetch(FetchDescriptor<CustomReportRecipientGroup>()).map { CustomReportRecipientGroupRecord($0) },
+            customReportRecipientContacts: try modelContext.fetch(FetchDescriptor<CustomReportRecipientContact>()).map { CustomReportRecipientContactRecord($0) },
+            statsSessions: try modelContext.fetch(FetchDescriptor<StatsSession>()).map { StatsSessionRecord($0) },
+            statEvents: try modelContext.fetch(FetchDescriptor<StatEvent>()).map { StatEventRecord($0) },
+            appSettings: exportSettings()
+        )
+        return AppBackupItemCounts.fromPayload(payload)
     }
 
     private static var appName: String {
