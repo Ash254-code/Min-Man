@@ -3,6 +3,7 @@ import SwiftData
 
 struct GamesView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var navigationState: AppNavigationState
 
     private struct RoundGroup: Identifiable {
         let id: String
@@ -123,9 +124,17 @@ struct GamesView: View {
     }
 
     private var filteredGames: [Game] {
-        let base = games.sorted { $0.date > $1.date }
+        let base = visibleGames.sorted { $0.date > $1.date }
         guard let gid = selectedGradeID else { return base }
         return base.filter { $0.gradeID == gid }
+    }
+
+    private var visibleGames: [Game] {
+        if navigationState.currentRole.canEditGames {
+            return games
+        }
+
+        return games.filter { !$0.isDraft }
     }
 
     private var gradeByID: [UUID: Grade] {
@@ -358,19 +367,21 @@ struct GamesView: View {
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button {
-                requestProtectedAction(.delete, for: game)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            .tint(.red)
+            if navigationState.currentRole.canEditGames {
+                Button {
+                    requestProtectedAction(.delete, for: game)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .tint(.red)
 
-            Button {
-                requestProtectedAction(.edit, for: game)
-            } label: {
-                Label("Edit", systemImage: "pencil")
+                Button {
+                    requestProtectedAction(.edit, for: game)
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .tint(.orange)
             }
-            .tint(.orange)
         }
     }
 
@@ -451,14 +462,16 @@ struct GamesView: View {
                     .padding(.horizontal)
                     .padding(.top, 6)
 
-                    NewGameQuickStartSection(
-                        grades: orderedGrades,
-                        availableWidth: geometry.size.width,
-                        minHeight: geometry.size.height * 0.33,
-                        statusForGrade: gradeStatus(for:),
-                        onStartNewGame: startNewGame(for:)
-                    )
-                    .padding(.horizontal)
+                    if navigationState.currentRole.canStartGames {
+                        NewGameQuickStartSection(
+                            grades: orderedGrades,
+                            availableWidth: geometry.size.width,
+                            minHeight: geometry.size.height * 0.33,
+                            statusForGrade: gradeStatus(for:),
+                            onStartNewGame: startNewGame(for:)
+                        )
+                        .padding(.horizontal)
+                    }
 
                     GamesListSection(
                         minHeight: geometry.size.height * 0.33,
@@ -499,7 +512,8 @@ struct GamesView: View {
                     reopenLiveViewOnAppear: presentation.reopenLiveView,
                     onBackToHomeFromLive: { gradeID in
                         DraftResumeStore.setShouldOpenLive(true, for: gradeID)
-                    }
+                    },
+                    handoffLiveGameToDedicatedTab: true
                 )
             }
             .navigationDestination(item: $selectedGameForSummary) { game in
@@ -539,11 +553,15 @@ struct GamesView: View {
     private func startNewGame(for gradeID: UUID) {
         if let draft = latestDraft(for: gradeID) {
             let reopenLive = DraftResumeStore.shouldOpenLive(for: gradeID)
-            newGameWizardPresentation = NewGameWizardPresentation(
-                initialGradeID: gradeID,
-                draftGameID: draft.id,
-                reopenLiveView: reopenLive
-            )
+            if reopenLive {
+                navigationState.openLiveGameTab(draftGameID: draft.id, gradeID: gradeID)
+            } else {
+                newGameWizardPresentation = NewGameWizardPresentation(
+                    initialGradeID: gradeID,
+                    draftGameID: draft.id,
+                    reopenLiveView: false
+                )
+            }
             DraftResumeStore.setShouldOpenLive(false, for: gradeID)
         } else {
             newGameWizardPresentation = NewGameWizardPresentation(
@@ -588,7 +606,7 @@ struct GamesView: View {
     }
 }
 
-private struct NewGameQuickStartSection: View {
+struct NewGameQuickStartSection: View {
     typealias GradeStatus = GamesView.QuickStartGradeStatus
 
     let grades: [Grade]

@@ -24,6 +24,7 @@ struct PresView: View {
         let includeGoalKickers: Bool
         let includeGameNotes: Bool
         let welcomeMessage: String
+        let closingMessage: String
         let gradeAnnouncements: [UUID: String]
     }
 
@@ -38,10 +39,11 @@ struct PresView: View {
     @State private var isPreviewSheetPresented = false
     @State private var isMissingAPIKeyAlertPresented = false
     @State private var playbackErrorMessage: String?
+    @FocusState private var isAINarrationPreviewFocused: Bool
     @State private var isGeneratingAINarrationAudio = false
-    @State private var welcomeMessage = ""
+    @State private var welcomeMessage = "Alright, if i can grab your attention for a bit we will nget presentations under way........Welome everyone. Its great to see so many here. I hope youve enjopyed your day and can stick around for a while longer tonight. We will start with the Netball firest so i will now hand you over to Courtney....................Thanks. Well done to all the netball winners......"
     @State private var openingAnnouncement = ""
-    @State private var closingAnnouncement = ""
+    @State private var closingAnnouncement = "Thats a wrap for presentations, thanks again for sticking around, I hope you enjoy your night and safe travels home. Thank you!"
     @State private var gradeAnnouncements: [UUID: String] = [:]
 
     @AppStorage(AIMCStorageKeys.elevenLabsVoiceID) private var elevenLabsVoiceID = ""
@@ -113,6 +115,7 @@ struct PresView: View {
             includeGoalKickers: includeGoalKickers,
             includeGameNotes: includeGameNotes,
             welcomeMessage: welcomeMessage,
+            closingMessage: closingAnnouncement,
             gradeAnnouncements: gradeAnnouncements
         )
     }
@@ -152,15 +155,7 @@ struct PresView: View {
                 }
             }
 
-            Section("AI Intelligence") {
-                Toggle("Include weather", isOn: $includeWeather)
-                Toggle("Read dates", isOn: $includeDates)
-                Toggle("Read section headers", isOn: $includeSectionHeaders)
-                Toggle("Include venue", isOn: $includeVenue)
-                Toggle("Include best players", isOn: $includeBestPlayers)
-                Toggle("Include goal kickers", isOn: $includeGoalKickers)
-                Toggle("Include game notes", isOn: $includeGameNotes)
-
+            Section("Announcements") {
                 TextField("Welcome message", text: $welcomeMessage, axis: .vertical)
                     .lineLimit(2...4)
 
@@ -168,6 +163,9 @@ struct PresView: View {
                     TextField("\(section.grade.name) announcement", text: gradeAnnouncementBinding(for: section.grade.id), axis: .vertical)
                         .lineLimit(2...4)
                 }
+
+                TextField("Closing Message", text: $closingAnnouncement, axis: .vertical)
+                    .lineLimit(2...4)
             }
         }
     }
@@ -258,9 +256,14 @@ struct PresView: View {
     private var aiPreviewSheet: some View {
         NavigationStack {
             ScrollView {
-                Text(aiNarrationPreview)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                TextEditor(text: $aiNarrationPreview)
+                    .focused($isAINarrationPreviewFocused)
+                    .frame(maxWidth: .infinity, minHeight: 320, alignment: .leading)
                     .padding()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        isAINarrationPreviewFocused = true
+                    }
             }
             .navigationTitle("AI Preview")
             .toolbar {
@@ -339,8 +342,8 @@ struct PresView: View {
     }
 
     private func scoreReadLine(for game: Game, teamName: String) -> String {
-        let ourLine = "\(teamName) - \(game.ourGoals) goal \(game.ourBehinds) \(game.ourScore)"
-        let theirLine = "\(game.opponent) \(game.theirGoals) goal \(game.theirBehinds) \(game.theirScore)"
+        let ourLine = "\(teamName) - \(scoreReadout(goals: game.ourGoals, behinds: game.ourBehinds, total: game.ourScore))"
+        let theirLine = "\(game.opponent) \(scoreReadout(goals: game.theirGoals, behinds: game.theirBehinds, total: game.theirScore))"
 
         if game.ourScore > game.theirScore {
             return "\(ourLine) defeated \(theirLine)."
@@ -434,6 +437,11 @@ struct PresView: View {
             }
             lines.append(fourSecondPauseText)
         }
+
+        if let closingLine = announcementLine(closingAnnouncement) {
+            lines.append(closingLine)
+        }
+
         aiNarrationPreview = lines.joined(separator: "\n\n")
         aiHasApprovedNarration = false
     }
@@ -458,7 +466,7 @@ struct PresView: View {
                 let rank = index + 1
                 if rank == 1 {
                     let firstName = firstName(from: name)
-                    return "And the Best Player today goes to...... \(name)......... Congratulations \(firstName). \(fourSecondPauseText)"
+                    return "And the Best Player today goes to...... \(dramaticAnnouncementName(name))......... Congratulations \(firstName). \(fourSecondPauseText)"
                 }
                 return "\(rank)\(ordinalSuffix(for: rank)) Best: \(name)."
             }
@@ -482,12 +490,12 @@ struct PresView: View {
 
         let leadingLine: String
         if leadingKickers.count > 1 {
-            let names = ListFormatter.localizedString(byJoining: leadingKickers)
+            let names = ListFormatter.localizedString(byJoining: leadingKickers.map(dramaticAnnouncementName))
             let firstNames = ListFormatter.localizedString(byJoining: leadingKickers.map(firstName(from:)))
-            leadingLine = "And the leading goal kickers today were......... \(names)!! with \(goalCountText(leadingGoalCount)).. Congratulations \(firstNames)!! \(fourSecondPauseText)"
+            leadingLine = "And the leading goal kickers today were......... \(names) with \(goalCountText(leadingGoalCount)).. Congratulations \(firstNames)!! \(fourSecondPauseText)"
         } else if let name = leadingKickers.first {
             let firstName = firstName(from: name)
-            leadingLine = "And the leading goal kicker today was......... \(name)!! with \(goalCountText(leadingGoalCount)).. Congratulations \(firstName)!! \(fourSecondPauseText)"
+            leadingLine = "And the leading goal kicker today was......... \(dramaticAnnouncementName(name)) with \(goalCountText(leadingGoalCount)).. Congratulations \(firstName)!! \(fourSecondPauseText)"
         } else {
             leadingLine = ""
         }
@@ -507,6 +515,17 @@ struct PresView: View {
         let trimmed = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return fullName }
         return trimmed.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? trimmed
+    }
+
+    private func dramaticAnnouncementName(_ fullName: String) -> String {
+        let trimmed = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return fullName.uppercased() }
+        return trimmed.uppercased() + "!!"
+    }
+
+    private func scoreReadout(goals: Int, behinds: Int, total: Int) -> String {
+        let goalWord = goals == 1 ? "goal" : "goals"
+        return "\(goals) \(goalWord) \(behinds).. \(total)"
     }
 
     private func handleAIButtonTapped() {
@@ -699,43 +718,13 @@ private struct PresentationGradeFullScreenView: View {
                         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 28) {
-                                    announcementEntryCard(
-                                        title: "General opening announcement",
-                                        placeholder: "Add opening event or announcement",
-                                        text: $openingEventAnnouncement,
-                                        width: proxy.size.width
-                                    )
-
-                                    announcementEntryCard(
-                                        title: "\(section.grade.name) announcement",
-                                        placeholder: "Add announcement above this grade",
-                                        text: gradeAnnouncementBinding(for: section.grade.id),
-                                        width: proxy.size.width
-                                    )
-
-                                    ForEach(Array(section.games.enumerated()), id: \.element.id) { gameIndex, game in
+                                    ForEach(Array(section.games.enumerated()), id: \.element.id) { _, game in
                                         presentationGameCard(
                                             game: game,
                                             shouldShowScore: shouldShowScore(section.id),
                                             width: proxy.size.width
                                         )
-
-                                        if gameIndex < section.games.count - 1 {
-                                            announcementEntryCard(
-                                                title: "Milestone announcement slot",
-                                                placeholder: "Add milestone between games",
-                                                text: gameAnnouncementBinding(for: game.id),
-                                                width: proxy.size.width
-                                            )
-                                        }
                                     }
-
-                                    announcementEntryCard(
-                                        title: "General closing announcement",
-                                        placeholder: "Add final event or thank-you",
-                                        text: $closingEventAnnouncement,
-                                        width: proxy.size.width
-                                    )
                                 }
                                 .padding(.bottom, 10)
                             }

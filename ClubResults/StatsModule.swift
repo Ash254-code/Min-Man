@@ -120,15 +120,48 @@ final class StatsSession {
     var opposition: String
     var date: Date
     var venue: String
+    var enabledStatTypeIDsRaw: String
+    var usesLiveGameScoreSync: Bool
     var createdAt: Date
+    var isSaved: Bool
+    var savedAt: Date?
 
-    init(sessionId: UUID = UUID(), gradeId: UUID, opposition: String, date: Date, venue: String, createdAt: Date = Date()) {
+    init(
+        sessionId: UUID = UUID(),
+        gradeId: UUID,
+        opposition: String,
+        date: Date,
+        venue: String,
+        enabledStatTypeIDsRaw: String = "",
+        usesLiveGameScoreSync: Bool = false,
+        createdAt: Date = Date(),
+        isSaved: Bool = false,
+        savedAt: Date? = nil
+    ) {
         self.sessionId = sessionId
         self.gradeId = gradeId
         self.opposition = opposition
         self.date = date
         self.venue = venue
+        self.enabledStatTypeIDsRaw = enabledStatTypeIDsRaw
+        self.usesLiveGameScoreSync = usesLiveGameScoreSync
         self.createdAt = createdAt
+        self.isSaved = isSaved
+        self.savedAt = savedAt
+    }
+}
+
+extension StatsSession {
+    var enabledStatTypeIDs: Set<UUID> {
+        Set(
+            enabledStatTypeIDsRaw
+                .split(separator: ",")
+                .compactMap { UUID(uuidString: String($0)) }
+        )
+    }
+
+    func setEnabledStatTypeIDs(_ ids: [UUID]) {
+        enabledStatTypeIDsRaw = ids.map(\.uuidString).joined(separator: ",")
     }
 }
 
@@ -215,14 +248,114 @@ final class StatsInviteAssignment {
 }
 
 extension StatsInviteAssignment {
-    var assignedStatTypeIDs: [UUID] {
+    fileprivate var assignedSelections: [StatsInviteSelection] {
         assignedStatTypeIDsRaw
             .split(separator: ",")
-            .compactMap { UUID(uuidString: String($0)) }
+            .compactMap { StatsInviteSelection(rawValue: String($0)) }
+    }
+
+    var assignedStatTypeIDs: [UUID] {
+        Array(Set(assignedSelections.map(\.statTypeID)))
     }
 
     func setAssignedStatTypeIDs(_ ids: [UUID]) {
-        assignedStatTypeIDsRaw = ids.map(\.uuidString).joined(separator: ",")
+        setAssignedSelections(ids.map { StatsInviteSelection(statTypeID: $0, side: .ourClub) })
+    }
+
+    fileprivate func setAssignedSelections(_ selections: [StatsInviteSelection]) {
+        assignedStatTypeIDsRaw = selections.map(\.rawValue).joined(separator: ",")
+    }
+}
+
+private enum StatsInviteTeamSide: String, CaseIterable, Hashable {
+    case ourClub
+    case opposition
+
+    var title: String {
+        switch self {
+        case .ourClub:
+            return "Us"
+        case .opposition:
+            return "Opposition"
+        }
+    }
+
+    var selectionPrefix: String {
+        switch self {
+        case .ourClub:
+            return "Our"
+        case .opposition:
+            return "Their"
+        }
+    }
+}
+
+private struct StatsInviteSelection: Hashable, Identifiable {
+    let statTypeID: UUID
+    let side: StatsInviteTeamSide
+
+    init(statTypeID: UUID, side: StatsInviteTeamSide) {
+        self.statTypeID = statTypeID
+        self.side = side
+    }
+
+    init?(rawValue: String) {
+        let parts = rawValue.split(separator: "|", maxSplits: 1).map(String.init)
+        if parts.count == 1, let statTypeID = UUID(uuidString: parts[0]) {
+            self.init(statTypeID: statTypeID, side: .ourClub)
+            return
+        }
+        guard
+            parts.count == 2,
+            let statTypeID = UUID(uuidString: parts[0]),
+            let side = StatsInviteTeamSide(rawValue: parts[1])
+        else {
+            return nil
+        }
+        self.init(statTypeID: statTypeID, side: side)
+    }
+
+    var id: String { rawValue }
+
+    var rawValue: String {
+        "\(statTypeID.uuidString)|\(side.rawValue)"
+    }
+}
+
+private func statsInviteSelectionNames(
+    for selections: [StatsInviteSelection],
+    statTypes: [StatType]
+) -> [String] {
+    let typeNames = Dictionary(uniqueKeysWithValues: statTypes.map { ($0.id, $0.name) })
+    return selections.compactMap { selection in
+        guard let name = typeNames[selection.statTypeID] else { return nil }
+        return "\(selection.side.selectionPrefix) \(name)"
+    }
+}
+
+private enum StatsInviteDraftStore {
+    static let selectionKey = "statsInviteDraftSelections"
+
+    static func loadSelections() -> Set<StatsInviteSelection> {
+        let raw = UserDefaults.standard.string(forKey: selectionKey) ?? ""
+        let selections = raw
+            .split(separator: ",")
+            .compactMap { StatsInviteSelection(rawValue: String($0)) }
+        return Set(selections)
+    }
+
+    static func saveSelections(_ selections: Set<StatsInviteSelection>) {
+        let raw = selections.map(\.rawValue).joined(separator: ",")
+        UserDefaults.standard.set(raw, forKey: selectionKey)
+    }
+}
+
+private extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0 else { return [self] }
+        return stride(from: 0, to: count, by: size).map { index in
+            Array(self[index..<Swift.min(index + size, count)])
+        }
     }
 }
 
@@ -279,17 +412,23 @@ private enum StatsDefaults {
 
 struct StatsRootView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var navigationState: AppNavigationState
     @Query(sort: \StatsSession.createdAt, order: .reverse) private var sessions: [StatsSession]
     @Query(sort: \Grade.displayOrder) private var grades: [Grade]
+    @State private var showNewSession = false
+    @State private var selectedSession: StatsSession?
+    @State private var showUnsavedSessionAlert = false
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    NavigationLink {
-                        StatsSessionSetupView()
-                    } label: {
-                        Label("New Stats Session", systemImage: "plus.circle.fill")
+                if navigationState.currentRole.canStartStatsSessions {
+                    Section {
+                        Button {
+                            openNewSessionIfAllowed()
+                        } label: {
+                            Label("New Stats Session", systemImage: "plus.circle.fill")
+                        }
                     }
                 }
 
@@ -300,29 +439,80 @@ struct StatsRootView: View {
                     }
 
                     ForEach(sessions) { session in
-                        NavigationLink {
-                            LiveStatsView(session: session)
+                        Button {
+                            selectedSession = session
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(gradeName(for: session.gradeId))
-                                    .font(.headline)
-                                Text("vs \(session.opposition) • \(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                            HStack(alignment: .center, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(gradeName(for: session.gradeId))
+                                        .font(.headline)
+                                    Text("vs \(session.opposition) • \(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(sessionStatusText(for: session))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(session.isSaved ? .green : .orange)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(session.isSaved ? Color.green.opacity(0.14) : Color.orange.opacity(0.14))
+                                    .clipShape(Capsule())
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
             .navigationTitle("Stats")
+            .navigationDestination(isPresented: $showNewSession) {
+                StatsSessionSetupView()
+            }
+            .navigationDestination(item: $selectedSession) { session in
+                LiveStatsView(session: session)
+            }
             .task {
                 seedDefaultStatTypesIfNeeded()
+            }
+            .onChange(of: navigationState.startNewStatsSessionToken) { _, _ in
+                openNewSessionIfAllowed()
+            }
+            .alert("Save Current Session First", isPresented: $showUnsavedSessionAlert) {
+                Button("Open In Progress Session") {
+                    if let latestUnsavedSession {
+                        selectedSession = latestUnsavedSession
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let latestUnsavedSession {
+                    Text("The most recent stats session for \(gradeName(for: latestUnsavedSession.gradeId)) vs \(latestUnsavedSession.opposition) is still in progress. Save it before starting another one.")
+                } else {
+                    Text("The most recent stats session is still in progress. Save it before starting another one.")
+                }
             }
         }
     }
 
+    private var latestUnsavedSession: StatsSession? {
+        sessions.first(where: { !$0.isSaved })
+    }
+
     private func gradeName(for id: UUID) -> String {
         grades.first(where: { $0.id == id })?.name ?? "Unknown Grade"
+    }
+
+    private func sessionStatusText(for session: StatsSession) -> String {
+        session.isSaved ? "Saved" : "In Progress"
+    }
+
+    private func openNewSessionIfAllowed() {
+        guard navigationState.currentRole.canStartStatsSessions else { return }
+        if latestUnsavedSession != nil {
+            showUnsavedSessionAlert = true
+        } else {
+            showNewSession = true
+        }
     }
 
     private func seedDefaultStatTypesIfNeeded() {
@@ -338,132 +528,30 @@ struct StatsRootView: View {
 }
 
 struct StatsTypesSettingsView: View {
-    private enum StatsSide {
-        case ourClub
-        case opposition
-    }
-
     private enum StatsLayoutOption: String, CaseIterable, Identifiable {
         case standard = "Standard"
         case edge = "Edge"
-        case centre = "Centre"
+        case simple = "Simple"
 
         var id: String { rawValue }
     }
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StatType.sortOrder) private var statTypes: [StatType]
-    @Query(sort: \Contact.name) private var contacts: [Contact]
-    @Query(sort: \StatsInviteAssignment.lastInvitedAt, order: .reverse) private var inviteAssignments: [StatsInviteAssignment]
-    @State private var newName = ""
-    @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
-    @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
-    @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
-    @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
-    @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
-    @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
     @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
-    @State private var editingInvite: StatsInviteAssignment?
 
     var body: some View {
-        GeometryReader { geometry in
-            let paneWidth = max((geometry.size.width - 16) / 2, 0)
-
-            VStack(alignment: .leading, spacing: 16) {
-                sharedControlsPane
-
-                HStack(alignment: .top, spacing: 16) {
-                    statsPane(title: "Our Club", side: .ourClub)
-                        .frame(width: paneWidth)
-                    statsPane(title: "Opposition", side: .opposition)
-                        .frame(width: paneWidth)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.bottom)
-            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
-        }
+        sharedControlsPane
+            .padding()
         .navigationTitle("Stats")
-        .toolbar {
-            EditButton()
-        }
         .task {
             seedDefaultStatTypesIfNeeded()
             ensureAlwaysOnStatTypesIfNeeded()
             ensureRequiredTeamComparisonStatTypesIfNeeded()
             removeDeprecatedStatTypesIfNeeded()
             ensureGoalAndBehindStatTypesIfNeeded()
-            enforceOppositionTrackingDependency()
         }
-    }
-
-    @ViewBuilder
-    private func statsPane(title: String, side: StatsSide) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-                .padding(.horizontal, 8)
-
-            List {
-                Section("Tracking") {
-                    if side == .ourClub {
-                        Toggle("Individual Tracking", isOn: trackingBinding(for: side, type: .individualTracking))
-                        Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
-                        Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
-                    } else {
-                        Toggle("Track Possesions", isOn: trackingBinding(for: side, type: .oppositionPossessions))
-                        Toggle("Track Disposal Efficiency", isOn: trackingBinding(for: side, type: .disposalEfficiency))
-                            .disabled(!oppositionTrackPossessions)
-                        Toggle("Track Contested Possessions", isOn: trackingBinding(for: side, type: .contestedPossessions))
-                            .disabled(!oppositionTrackPossessions)
-                    }
-                }
-
-                Section("Add Stat Type") {
-                    TextField("Stat name", text: $newName)
-                    Button("Add") {
-                        addStatType()
-                    }
-                    .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-
-                if side == .ourClub {
-                    Section("Stat Types") {
-                        ForEach(configurableStatTypes(), id: \.id) { type in
-                            HStack {
-                                TextField("Name", text: Binding(
-                                    get: { type.name },
-                                    set: {
-                                        type.name = $0
-                                        save()
-                                    }
-                                ))
-
-                                Toggle("Enabled", isOn: statTypeEnabledBinding(for: type, side: side))
-                                    .labelsHidden()
-                            }
-                            .swipeActions {
-                                Button(role: .destructive) {
-                                    modelContext.delete(type)
-                                    resequence()
-                                    save()
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            .moveDisabled(false)
-                        }
-                        .onMove(perform: moveConfigurable)
-                    }
-                }
-
-            }
-            .frame(maxWidth: .infinity, minHeight: 560)
-            .listStyle(.insetGrouped)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var sharedControlsPane: some View {
@@ -485,83 +573,18 @@ struct StatsTypesSettingsView: View {
                 }
             }
 
-            Section("Invite Link Host") {
+            Section("Stat Taker Invite Link") {
                 TextField("https://your-host/invite", text: $statsInviteBaseURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                Text("Set this to your deployed web invite page URL.")
+                Text("Set the web invite page URL used by the New Stats Session wizard when sending stat taker invites.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
-            Section("Invited Stat Takers") {
-                if inviteAssignments.isEmpty {
-                    Text("No invited users yet. Invite from Live Stats.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(inviteAssignments) { assignment in
-                    let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Unknown Contact"
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Circle()
-                                .fill(assignment.isConnected ? Color.green : Color.gray.opacity(0.4))
-                                .frame(width: 8, height: 8)
-                            Text(contactName)
-                                .font(.headline)
-                            Spacer()
-                            Button("Manage") {
-                                editingInvite = assignment
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        Text("Assigned: \(assignedStatNames(for: assignment))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
         }
-        .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 220)
+        .frame(maxWidth: .infinity)
         .listStyle(.insetGrouped)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .sheet(item: $editingInvite) { assignment in
-            StatsInviteManagementSheet(
-                assignment: assignment,
-                allStatTypes: statTypes.sorted(by: { $0.sortOrder < $1.sortOrder }),
-                onSave: {
-                    save()
-                },
-                onReinvite: {
-                    assignment.lastInvitedAt = Date()
-                    save()
-                }
-            )
-        }
-    }
-
-    private func assignedStatNames(for assignment: StatsInviteAssignment) -> String {
-        let names = statTypes
-            .filter { assignment.assignedStatTypeIDs.contains($0.id) }
-            .sorted(by: { $0.sortOrder < $1.sortOrder })
-            .map(\.name)
-        return names.isEmpty ? "None" : names.joined(separator: ", ")
-    }
-
-    private func addStatType() {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        modelContext.insert(StatType(name: trimmed, isEnabled: true, sortOrder: statTypes.count))
-        newName = ""
-        save()
-    }
-
-    private func move(from source: IndexSet, to destination: Int) {
-        var arranged = statTypes
-        arranged.move(fromOffsets: source, toOffset: destination)
-        for (index, type) in arranged.enumerated() {
-            type.sortOrder = index
-        }
-        save()
     }
 
     private func resequence() {
@@ -579,91 +602,6 @@ struct StatsTypesSettingsView: View {
         guard existing.isEmpty else { return }
         for (index, name) in StatsDefaults.statNames.enumerated() {
             modelContext.insert(StatType(name: name, isEnabled: true, sortOrder: index))
-        }
-        save()
-    }
-
-    private enum TrackingType {
-        case disposalEfficiency
-        case contestedPossessions
-        case individualTracking
-        case oppositionPossessions
-    }
-
-    private func trackingBinding(for side: StatsSide, type: TrackingType) -> Binding<Bool> {
-        Binding(
-            get: {
-                switch (side, type) {
-                case (.ourClub, .disposalEfficiency): return trackDisposalEfficiency
-                case (.ourClub, .contestedPossessions): return trackContestedPossessions
-                case (.ourClub, .individualTracking): return trackIndividualTracking
-                case (.ourClub, .oppositionPossessions): return trackContestedPossessions
-                case (.opposition, .disposalEfficiency): return oppositionTrackPossessions ? oppositionTrackDisposalEfficiency : false
-                case (.opposition, .contestedPossessions): return oppositionTrackPossessions ? oppositionTrackContestedPossessions : false
-                case (.opposition, .individualTracking): return oppositionTrackPossessions
-                case (.opposition, .oppositionPossessions): return oppositionTrackPossessions
-                }
-            },
-            set: { newValue in
-                switch (side, type) {
-                case (.ourClub, .disposalEfficiency): trackDisposalEfficiency = newValue
-                case (.ourClub, .contestedPossessions): trackContestedPossessions = newValue
-                case (.ourClub, .individualTracking): trackIndividualTracking = newValue
-                case (.ourClub, .oppositionPossessions): trackContestedPossessions = newValue
-                case (.opposition, .disposalEfficiency):
-                    oppositionTrackDisposalEfficiency = oppositionTrackPossessions ? newValue : false
-                case (.opposition, .contestedPossessions):
-                    oppositionTrackContestedPossessions = oppositionTrackPossessions ? newValue : false
-                case (.opposition, .individualTracking): oppositionTrackPossessions = newValue
-                case (.opposition, .oppositionPossessions):
-                    oppositionTrackPossessions = newValue
-                    if !newValue {
-                        oppositionTrackDisposalEfficiency = false
-                        oppositionTrackContestedPossessions = false
-                    }
-                }
-            }
-        )
-    }
-
-    private func enforceOppositionTrackingDependency() {
-        guard !oppositionTrackPossessions else { return }
-        oppositionTrackDisposalEfficiency = false
-        oppositionTrackContestedPossessions = false
-    }
-
-    private func statTypeEnabledBinding(for type: StatType, side: StatsSide) -> Binding<Bool> {
-        Binding(
-            get: {
-                if side == .ourClub { return type.isEnabled }
-                return true
-            },
-            set: { newValue in
-                if side == .ourClub {
-                    type.isEnabled = newValue
-                    save()
-                }
-            }
-        )
-    }
-
-    private func configurableStatTypes() -> [StatType] {
-        statTypes
-            .sorted(by: { $0.sortOrder < $1.sortOrder })
-            .filter { !isAlwaysOnHiddenStatType($0.name) }
-    }
-
-    private func moveConfigurable(from source: IndexSet, to destination: Int) {
-        var configurable = configurableStatTypes()
-        configurable.move(fromOffsets: source, toOffset: destination)
-
-        let alwaysOn = statTypes
-            .sorted(by: { $0.sortOrder < $1.sortOrder })
-            .filter { isAlwaysOnHiddenStatType($0.name) }
-
-        let reordered = configurable + alwaysOn
-        for (index, type) in reordered.enumerated() {
-            type.sortOrder = index
         }
         save()
     }
@@ -708,10 +646,6 @@ struct StatsTypesSettingsView: View {
             resequence()
             save()
         }
-    }
-
-    private func isAlwaysOnHiddenStatType(_ name: String) -> Bool {
-        ["inside 50"].contains(name.lowercased())
     }
 
     private func removeDeprecatedStatTypesIfNeeded() {
@@ -1058,120 +992,239 @@ private struct SpeechSection: Identifiable {
 }
 
 struct StatsSessionSetupView: View {
-    @Environment(\.dismiss) private var dismiss
+    private enum Step: Int, CaseIterable {
+        case details
+        case statCollection
+        case oppositionStatCollection
+        case comparisonStats
+        case inviteUsers
+    }
+
+    private enum StatsCollectionMode: String, CaseIterable, Identifiable {
+        case team = "Team"
+        case individual = "Individual"
+
+        var id: String { rawValue }
+    }
+
+    private enum MatchEventDeliveryMode: String, CaseIterable, Identifiable {
+        case liveGame = "Live Game"
+        case invite = "Invite"
+
+        var id: String { rawValue }
+    }
+
+    private struct StatsCollectionOption: Identifiable {
+        let id: String
+        let title: String
+        var isEnabled: Bool
+        var mode: StatsCollectionMode
+        var matchEventDeliveryMode: MatchEventDeliveryMode
+
+        init(
+            title: String,
+            isEnabled: Bool = true,
+            mode: StatsCollectionMode,
+            matchEventDeliveryMode: MatchEventDeliveryMode = .liveGame
+        ) {
+            self.id = title
+            self.title = title
+            self.isEnabled = isEnabled
+            self.mode = mode
+            self.matchEventDeliveryMode = matchEventDeliveryMode
+        }
+    }
+
+    fileprivate struct WizardInviteAssignment: Identifiable, Equatable {
+        let id: UUID
+        let contact: PhoneInviteContact
+        var selectionRawValues: [String]
+    }
+
+    fileprivate struct WizardInviteDispatchItem: Identifiable, Equatable {
+        let id: UUID
+        let contact: PhoneInviteContact
+        let selections: [StatsInviteSelection]
+        let smsBody: String?
+    }
+
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @EnvironmentObject private var navigationState: AppNavigationState
     @Query(sort: \Grade.displayOrder) private var grades: [Grade]
+    @Query(sort: \Contact.name) private var contacts: [Contact]
+    @Query(sort: \StatsInviteAssignment.lastInvitedAt, order: .reverse) private var inviteAssignments: [StatsInviteAssignment]
 
     @State private var selectedGradeId: UUID?
     @State private var opposition = ""
     @State private var date = Date()
     @State private var venue = ""
-    @State private var createdSession: StatsSession?
-    @State private var showLiveStats = false
     @State private var clubConfiguration = ClubConfigurationStore.load()
+    @State private var step: Step = .details
+    @State private var statOptions: [StatsCollectionOption] = [
+        StatsCollectionOption(title: "Kick", mode: .individual),
+        StatsCollectionOption(title: "Handball", mode: .individual),
+        StatsCollectionOption(title: "Mark", mode: .individual),
+        StatsCollectionOption(title: "Tackle", mode: .individual),
+        StatsCollectionOption(title: "Hit Out", mode: .individual),
+        StatsCollectionOption(title: "Clearance", mode: .team),
+        StatsCollectionOption(title: "Inside 50", mode: .team),
+        StatsCollectionOption(title: "Free Kick", mode: .team),
+        StatsCollectionOption(title: "Turnover", mode: .team),
+        StatsCollectionOption(title: "Intercept", mode: .team)
+    ]
+    @State private var oppositionStatOptions: [StatsCollectionOption] = [
+        StatsCollectionOption(title: "Kick", mode: .team),
+        StatsCollectionOption(title: "Handball", mode: .team),
+        StatsCollectionOption(title: "Mark", mode: .team),
+        StatsCollectionOption(title: "Tackle", mode: .team),
+        StatsCollectionOption(title: "Hit Out", mode: .team),
+        StatsCollectionOption(title: "Clearance", mode: .team),
+        StatsCollectionOption(title: "Inside 50", mode: .team),
+        StatsCollectionOption(title: "Free Kick", mode: .team),
+        StatsCollectionOption(title: "Turnover", mode: .team),
+        StatsCollectionOption(title: "Intercept", mode: .team)
+    ]
+    @State private var comparisonStatOptions: [StatsCollectionOption] = [
+        StatsCollectionOption(title: "Disposal Efficiency", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Contested Possession", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Goal", mode: .individual),
+        StatsCollectionOption(title: "Behind", mode: .individual)
+    ]
+    @State private var oppositionComparisonStatOptions: [StatsCollectionOption] = [
+        StatsCollectionOption(title: "Disposal Efficiency", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Contested Possession", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Goal", mode: .team),
+        StatsCollectionOption(title: "Behind", mode: .team)
+    ]
+    @State private var wizardInviteAssignments: [WizardInviteAssignment] = []
+    @State private var draftInviteName = ""
+    @State private var draftInvitePhone = ""
+    @State private var draftInviteSelectionRawValues: Set<String> = []
+    @State private var showWizardContactPicker = false
+    @State private var showWizardStatPicker = false
+    @State private var previewInviteAssignment: WizardInviteAssignment?
+    @State private var editingWizardInviteAssignment: WizardInviteAssignment?
+    @State private var startedSession: StatsSession?
+    @State private var showLiveStats = false
+    @State private var inviteDispatchItems: [WizardInviteDispatchItem] = []
+    @State private var showInviteDispatchSheet = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                setupCard(title: "Session Setup", systemImage: "sportscourt") {
-                    HStack(spacing: 12) {
-                        rowLabel("Grade")
-                        Spacer()
-                        Menu {
-                            Button("Select…") { selectedGradeId = nil }
-                            ForEach(grades.filter { $0.isActive }) { grade in
-                                Button(grade.name) {
-                                    selectedGradeId = grade.id
-                                }
-                            }
-                        } label: {
-                            setupMenuLabel(title: selectedGradeName ?? "Select…")
-                        }
+        VStack(spacing: 0) {
+            wizardHeader
+
+            ProgressView(value: Double(step.rawValue), total: Double(max(Step.allCases.count - 1, 1)))
+                .padding(.horizontal)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+
+            TabView(selection: $step) {
+                detailsStep
+                    .tag(Step.details)
+
+                statsCollectionStep
+                    .tag(Step.statCollection)
+
+                oppositionStatsCollectionStep
+                    .tag(Step.oppositionStatCollection)
+
+                comparisonStatsStep
+                    .tag(Step.comparisonStats)
+
+                inviteUsersStep
+                    .tag(Step.inviteUsers)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            HStack {
+                if step == .details {
+                    Button("Cancel") {
+                        dismiss()
                     }
-
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
-                        .font(.body)
-
-                    HStack(spacing: 12) {
-                        rowLabel("Opponent")
-                        Spacer()
-                        Menu {
-                            Button("Select…") {
-                                opposition = ""
-                                if !venueOptions.contains(venue) {
-                                    venue = ""
-                                }
-                            }
-                            ForEach(oppositionNames, id: \.self) { name in
-                                Button(name) {
-                                    opposition = name
-                                    if !venueOptions.contains(venue) {
-                                        venue = ""
-                                    }
-                                }
-                            }
-                        } label: {
-                            setupMenuLabel(title: opposition.isEmpty ? "Select…" : opposition)
-                        }
-                    }
-
-                    HStack(spacing: 12) {
-                        rowLabel("Venue")
-                        Spacer()
-                        Menu {
-                            Button("Select…") { venue = "" }
-                            ForEach(venueOptions, id: \.self) { name in
-                                Button(name) {
-                                    venue = name
-                                }
-                            }
-                        } label: {
-                            setupMenuLabel(title: venue.isEmpty ? "Select…" : venue)
-                        }
-                        .disabled(venueOptions.isEmpty)
+                } else {
+                    Button("Back") {
+                        back()
                     }
                 }
+
+                Spacer()
+
+                Button(primaryActionTitle) {
+                    performPrimaryAction()
+                }
+                .disabled(!canProceed)
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 28)
+            .font(.system(size: isCompactLayout ? 24 : 28, weight: .semibold))
+            .controlSize(isCompactLayout ? .large : .extraLarge)
+            .padding(.horizontal, isCompactLayout ? 18 : 26)
+            .padding(.vertical, isCompactLayout ? 14 : 18)
+            .background(.ultraThinMaterial)
         }
         .background(Color(.systemGroupedBackground))
-        .safeAreaInset(edge: .bottom) {
-            Button {
-                startSession()
-            } label: {
-                Text("Start Session")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $showLiveStats) {
+            if let startedSession {
+                LiveStatsView(session: startedSession)
             }
-            .buttonStyle(.plain)
-            .background(canStart ? Color.accentColor : Color.gray.opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 10)
-            .disabled(!canStart)
         }
-        .navigationTitle("New Stats Session")
         .onAppear {
             clubConfiguration = ClubConfigurationStore.load()
-        }
-        .navigationDestination(isPresented: $showLiveStats) {
-            if let createdSession {
-                LiveStatsView(session: createdSession)
+            if selectedGradeId == nil, activeGrades.count == 1 {
+                selectedGradeId = activeGrades.first?.id
             }
         }
+        .sheet(isPresented: $showInviteDispatchSheet, onDismiss: {
+            if startedSession != nil, !showLiveStats {
+                showLiveStats = true
+            }
+        }) {
+            WizardInviteDispatchSheet(
+                items: inviteDispatchItems,
+                clubConfiguration: clubConfiguration,
+                clubName: ourTeamName,
+                gradeTitle: selectedGradeName,
+                oppositionName: oppositionTeamName,
+                statTypes: wizardPreviewStatTypes,
+                onFinished: {
+                    showInviteDispatchSheet = false
+                    showLiveStats = true
+                }
+            )
+        }
     }
 
-    private var canStart: Bool {
-        selectedGradeId != nil && !opposition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var isCompactLayout: Bool {
+        horizontalSizeClass == .compact
     }
 
-    private var selectedGradeName: String? {
-        grades.first(where: { $0.id == selectedGradeId })?.name
+    private var wizardPrimaryTitleFont: Font {
+        .system(size: isCompactLayout ? 40 : 52, weight: .bold)
+    }
+
+    private var wizardSecondaryTitleFont: Font {
+        .system(size: isCompactLayout ? 22 : 30, weight: .semibold)
+    }
+
+    private var wizardStepSubtitleFont: Font {
+        .system(size: isCompactLayout ? 16 : 20, weight: .semibold)
+    }
+
+    private var wizardBodyFont: Font {
+        .system(size: isCompactLayout ? 20 : 24, weight: .regular)
+    }
+
+    private var activeGrades: [Grade] {
+        grades.filter(\.isActive)
+    }
+
+    private var selectedGradeName: String {
+        grades.first(where: { $0.id == selectedGradeId })?.name ?? "Select Grade"
     }
 
     private var oppositionNames: [String] {
@@ -1184,61 +1237,1402 @@ struct StatsSessionSetupView: View {
 
     private var venueOptions: [String] {
         let combined = clubConfiguration.clubTeam.sanitizedVenues + (selectedOpposition?.sanitizedVenues ?? [])
-        return Array(Set(combined)).sorted()
+        var seen = Set<String>()
+        return combined.filter { seen.insert($0).inserted }
     }
 
-    private func rowLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.primary)
+    private var ourTeamName: String {
+        let trimmed = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Our Team" : trimmed
     }
 
-    private func setupMenuLabel(title: String) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.body)
-                .lineLimit(1)
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.caption2.weight(.semibold))
+    private var ourTeamStyle: ClubStyle.Style {
+        ClubStyle.style(for: ourTeamName, configuration: clubConfiguration)
+    }
+
+    private var oppositionTeamName: String {
+        let trimmed = opposition.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Opposition" : trimmed
+    }
+
+    private var oppositionTeamStyle: ClubStyle.Style {
+        ClubStyle.style(for: oppositionTeamName, configuration: clubConfiguration)
+    }
+
+    private var canProceed: Bool {
+        switch step {
+        case .details:
+            selectedGradeId != nil &&
+            !opposition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !venue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .statCollection:
+            canProceedFromStatCollection
+        case .oppositionStatCollection:
+            canProceedFromOppositionStatCollection
+        case .comparisonStats:
+            canProceedFromComparisonStats
+        case .inviteUsers:
+            canProceedFromInviteUsers
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private func setupCard<Content: View>(
-        title: String,
-        systemImage: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-            VStack(alignment: .leading, spacing: 12) {
-                content()
+    private var canProceedFromStatCollection: Bool {
+        statOptions.contains(where: \.isEnabled)
+    }
+
+    private var canProceedFromOppositionStatCollection: Bool {
+        oppositionStatOptions.contains(where: \.isEnabled)
+    }
+
+    private var canProceedFromComparisonStats: Bool {
+        comparisonStatOptions.contains(where: \.isEnabled) &&
+        oppositionComparisonStatOptions.contains(where: \.isEnabled)
+    }
+
+    private var canProceedFromInviteUsers: Bool {
+        !wizardInviteAssignments.isEmpty && availableWizardInviteSelections.isEmpty
+    }
+
+    private var primaryActionTitle: String {
+        step == .inviteUsers ? "Start" : "Next"
+    }
+
+    private var wizardHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: isCompactLayout ? 2 : 4) {
+                Text("New Stats Session")
+                    .font(wizardPrimaryTitleFont)
+
+                Text(stepSubtitle)
+                    .font(wizardStepSubtitleFont)
+                    .foregroundStyle(.secondary)
             }
+            Spacer()
+            Text(selectedGradeName)
+                .font(wizardSecondaryTitleFont)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, isCompactLayout ? 20 : 28)
+        .padding(.top, isCompactLayout ? 8 : 14)
+        .padding(.bottom, isCompactLayout ? 12 : 16)
+    }
+
+    private var stepSubtitle: String {
+        switch step {
+        case .details:
+            return "Game Details"
+        case .statCollection:
+            return "Stats To Collect"
+        case .oppositionStatCollection:
+            return "Opposition Stats"
+        case .comparisonStats:
+            return "Match Events"
+        case .inviteUsers:
+            return "Invite Stat Takers"
+        }
+    }
+
+    private var detailsStep: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                StatsWizardCard(title: "Game Details", systemImage: "calendar") {
+                    if activeGrades.count != 1 {
+                        HStack(spacing: 12) {
+                            rowLabel("Grade")
+                            Spacer()
+                            setupMenuButton(title: selectedGradeId == nil ? "Select…" : selectedGradeName) {
+                                Button("Select…") {
+                                    selectedGradeId = nil
+                                }
+                                ForEach(activeGrades) { grade in
+                                    Button(grade.name) {
+                                        selectedGradeId = grade.id
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    DatePicker("Date & Time", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                        .font(wizardBodyFont)
+
+                    HStack(spacing: 12) {
+                        rowLabel("Opponent")
+                        Spacer()
+                        setupMenuButton(title: opposition.isEmpty ? "Select…" : opposition) {
+                            Button("Select…") {
+                                opposition = ""
+                                venue = ""
+                            }
+                            ForEach(oppositionNames, id: \.self) { name in
+                                Button(name) {
+                                    opposition = name
+                                    if !venueOptions.contains(venue) {
+                                        venue = ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        rowLabel("Venue")
+                        Spacer()
+                        setupMenuButton(
+                            title: venue.isEmpty ? "Select…" : venue,
+                            isDisabled: venueOptions.isEmpty
+                        ) {
+                            Button("Select…") {
+                                venue = ""
+                            }
+                            ForEach(venueOptions, id: \.self) { name in
+                                Button(name) {
+                                    venue = name
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .dynamicTypeSize(.large ... .accessibility2)
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private var statsCollectionStep: some View {
+        statsCollectionStepContent(
+            title: "Stats To Collect",
+            pillTitle: ourTeamName,
+            pillStyle: ourTeamStyle,
+            options: $statOptions
+        )
+    }
+
+    private var oppositionStatsCollectionStep: some View {
+        statsCollectionStepContent(
+            title: "Opposition Stats",
+            pillTitle: oppositionTeamName,
+            pillStyle: oppositionTeamStyle,
+            options: $oppositionStatOptions
+        )
+    }
+
+    private var comparisonStatsStep: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                StatsWizardCard(title: "Match Events", systemImage: "square.split.2x1") {
+                    LazyVGrid(columns: statsSelectionColumns, spacing: 16) {
+                        comparisonStatsColumn(
+                            pillTitle: ourTeamName,
+                            pillStyle: ourTeamStyle,
+                            options: $comparisonStatOptions
+                        )
+
+                        comparisonStatsColumn(
+                            pillTitle: oppositionTeamName,
+                            pillStyle: oppositionTeamStyle,
+                            options: $oppositionComparisonStatOptions
+                        )
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .dynamicTypeSize(.large ... .accessibility2)
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private var inviteUsersStep: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                StatsWizardCard(title: "Invite Stat Takers", systemImage: "person.badge.plus") {
+                    Text("Assign the remaining enabled stats to people collecting data. Each stat can only be allocated once.")
+                        .font(wizardBodyFont)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Stats yet to be assigned: \(unassignedWizardSelectionCount)")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(unassignedWizardSelectionCount == 0 ? .green : .primary)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            Button("Pick From iPhone Contacts") {
+                                showWizardContactPicker = true
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            if !draftInviteName.isEmpty || !draftInvitePhone.isEmpty {
+                                Button("Clear") {
+                                    clearDraftInvite()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+
+                        TextField("Contact name", text: $draftInviteName)
+                            .textInputAutocapitalization(.words)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(.secondarySystemBackground))
+                            )
+
+                        TextField("Mobile phone", text: $draftInvitePhone)
+                            .keyboardType(.phonePad)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(.secondarySystemBackground))
+                            )
+
+                        Button {
+                            showWizardStatPicker = true
+                        } label: {
+                            HStack {
+                                Text(draftInviteSelectionRawValues.isEmpty ? "Choose stats" : "Chosen stats: \(draftInviteSelectionRawValues.count)")
+                                    .font(wizardBodyFont)
+                                    .foregroundStyle(draftInviteSelectionRawValues.isEmpty ? .secondary : .primary)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: isCompactLayout ? 13 : 16, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(.secondarySystemBackground))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(availableWizardInviteSelections.isEmpty)
+
+                        if !draftInviteSelectionRawValues.isEmpty {
+                            wizardSelectionTagWrap(selections: draftInviteSelections)
+                        } else if availableWizardInviteSelections.isEmpty {
+                            Text("All enabled stats have already been allocated.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Button("Add Contact") {
+                            addWizardInviteAssignment()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canAddDraftInvite)
+                    }
+
+                    if wizardInviteAssignments.isEmpty {
+                        ContentUnavailableView(
+                            "No Stat Takers Added",
+                            systemImage: "person.crop.circle.badge.plus",
+                            description: Text("Add a contact and allocate one or more available stats.")
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 16)
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(wizardInviteAssignments) { assignment in
+                                wizardInviteAssignmentCard(assignment)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .dynamicTypeSize(.large ... .accessibility2)
+        .background(Color(.systemGroupedBackground))
+        .sheet(isPresented: $showWizardContactPicker) {
+            NativeContactPickerSheet { picked in
+                draftInviteName = picked.name
+                draftInvitePhone = picked.phoneNumber
+            }
+        }
+        .sheet(isPresented: $showWizardStatPicker) {
+            NavigationStack {
+                List {
+                    if availableWizardInviteSelections.isEmpty {
+                        Text("No unallocated stats remain.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(availableWizardInviteSelections, id: \.id) { selection in
+                            Button {
+                                toggleDraftInviteSelection(selection)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(wizardSelectionDisplayName(selection))
+                                            .foregroundStyle(.primary)
+                                        Text(selection.side == .ourClub ? ourTeamName : oppositionTeamName)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if draftInviteSelectionRawValues.contains(selection.rawValue) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.blue)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .navigationTitle("Choose Stats")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            showWizardStatPicker = false
+                        }
+                    }
+                }
+            }
+        }
+        .fullScreenCover(item: $previewInviteAssignment) { assignment in
+            NavigationStack {
+                StatsInviteLivePreviewView(
+                    clubConfiguration: clubConfiguration,
+                    clubName: ourTeamName,
+                    gradeTitle: selectedGradeName,
+                    oppositionName: oppositionTeamName,
+                    selections: wizardSelections(for: assignment),
+                    statTypes: wizardPreviewStatTypes
+                )
+            }
+        }
+        .sheet(item: $editingWizardInviteAssignment) { assignment in
+            WizardInviteEditorSheet(
+                assignment: assignment,
+                availableSelections: availableWizardInviteSelections(for: assignment),
+                teamNameForSelection: { selection in
+                    selection.side == StatsInviteTeamSide.ourClub ? ourTeamName : oppositionTeamName
+                },
+                selectionDisplayName: { selection in
+                    wizardSelectionDisplayName(selection)
+                },
+                previewSelections: { editedAssignment in
+                    wizardSelections(for: editedAssignment)
+                },
+                previewStatTypes: wizardPreviewStatTypes,
+                clubConfiguration: clubConfiguration,
+                clubName: ourTeamName,
+                gradeTitle: selectedGradeName,
+                oppositionName: oppositionTeamName,
+                onSave: { updated in
+                    updateWizardInviteAssignment(updated)
+                }
+            )
+        }
+    }
+
+    private func statsCollectionStepContent(
+        title: String,
+        pillTitle: String,
+        pillStyle: ClubStyle.Style,
+        options: Binding<[StatsCollectionOption]>
+    ) -> some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                StatsWizardCard(title: title, systemImage: "chart.bar") {
+                    HStack {
+                        wizardTeamPill(pillTitle, style: pillStyle)
+                        Spacer()
+                    }
+
+                    Text("Choose which stats to collect. For each enabled stat, select whether it is tracked at team level or allocated to an individual player.")
+                        .font(wizardBodyFont)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    LazyVGrid(columns: statsSelectionColumns, spacing: 12) {
+                        ForEach(options) { $option in
+                            VStack(alignment: .leading, spacing: 12) {
+                                Toggle(isOn: $option.isEnabled) {
+                                    Text(option.title)
+                                        .font(wizardBodyFont)
+                                }
+                                .toggleStyle(.switch)
+
+                                if option.isEnabled {
+                                    HStack(spacing: 8) {
+                                        ForEach(standardStatsCollectionModes) { mode in
+                                            setupChoiceButton(
+                                                title: mode.rawValue,
+                                                isSelected: option.mode == mode
+                                            ) {
+                                                option.mode = mode
+                                            }
+                                        }
+                                    }
+                                    .padding(.leading, 4)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color(.secondarySystemBackground))
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .dynamicTypeSize(.large ... .accessibility2)
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private var enabledWizardInviteSelections: [StatsInviteSelection] {
+        var selections: [StatsInviteSelection] = []
+
+        for option in statOptions where option.isEnabled {
+            selections.append(wizardInviteSelection(title: option.title, side: .ourClub))
+        }
+        for option in oppositionStatOptions where option.isEnabled {
+            selections.append(wizardInviteSelection(title: option.title, side: .opposition))
+        }
+        for option in comparisonStatOptions where shouldIncludeComparisonOptionInInviteSelections(option) {
+            selections.append(wizardInviteSelection(title: option.title, side: .ourClub))
+        }
+        for option in oppositionComparisonStatOptions where shouldIncludeComparisonOptionInInviteSelections(option) {
+            selections.append(wizardInviteSelection(title: option.title, side: .opposition))
+        }
+
+        var seen = Set<String>()
+        return selections.filter { seen.insert($0.id).inserted }
+    }
+
+    private var allocatedWizardSelectionRawValues: Set<String> {
+        Set(wizardInviteAssignments.flatMap(\.selectionRawValues))
+    }
+
+    private var availableWizardInviteSelections: [StatsInviteSelection] {
+        enabledWizardInviteSelections.filter { !allocatedWizardSelectionRawValues.contains($0.rawValue) || draftInviteSelectionRawValues.contains($0.rawValue) }
+    }
+
+    private var unassignedWizardSelectionCount: Int {
+        enabledWizardInviteSelections.count - allocatedWizardSelectionRawValues.count
+    }
+
+    private var draftInviteSelections: [StatsInviteSelection] {
+        enabledWizardInviteSelections.filter { draftInviteSelectionRawValues.contains($0.rawValue) }
+    }
+
+    private var usesLiveGameScoreSyncForMatchEvents: Bool {
+        let matchEventOptions = (comparisonStatOptions + oppositionComparisonStatOptions)
+            .filter { option in
+                option.isEnabled && ["goal", "behind"].contains(option.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            }
+        guard !matchEventOptions.isEmpty else { return false }
+        return matchEventOptions.allSatisfy { $0.matchEventDeliveryMode == .liveGame }
+    }
+
+    private func shouldIncludeComparisonOptionInInviteSelections(_ option: StatsCollectionOption) -> Bool {
+        guard option.isEnabled else { return false }
+        let normalizedTitle = option.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalizedTitle == "goal" || normalizedTitle == "behind" else { return true }
+        return option.matchEventDeliveryMode == .invite
+    }
+
+    private var canAddDraftInvite: Bool {
+        !draftInviteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !normalizedPhoneNumber(draftInvitePhone).isEmpty &&
+        !draftInviteSelectionRawValues.isEmpty
+    }
+
+    private var wizardPreviewStatTypes: [StatType] {
+        let enabledTitles = Array(Set(enabledWizardInviteSelections.map { wizardStatTitle(for: $0.statTypeID) })).sorted()
+        return enabledTitles.enumerated().map { index, title in
+            StatType(id: wizardStatTypeID(for: title), name: title, isEnabled: true, sortOrder: index)
+        }
+    }
+
+    private var standardStatsCollectionModes: [StatsCollectionMode] {
+        [.team, .individual]
+    }
+
+    private var matchEventDeliveryModes: [MatchEventDeliveryMode] {
+        [.liveGame, .invite]
+    }
+
+    @ViewBuilder
+    private func comparisonStatsColumn(
+        pillTitle: String,
+        pillStyle: ClubStyle.Style,
+        options: Binding<[StatsCollectionOption]>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                wizardTeamPill(pillTitle, style: pillStyle)
+                Spacer()
+            }
+
+            ForEach(options) { $option in
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(isOn: $option.isEnabled) {
+                        Text(option.title)
+                            .font(wizardBodyFont)
+                    }
+                    .toggleStyle(.switch)
+
+                    if option.isEnabled {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                ForEach(standardStatsCollectionModes) { mode in
+                                    setupChoiceButton(
+                                        title: mode.rawValue,
+                                        isSelected: option.mode == mode
+                                    ) {
+                                        option.mode = mode
+                                    }
+                                }
+                            }
+
+                            HStack(spacing: 8) {
+                                ForEach(matchEventDeliveryModes) { mode in
+                                    setupChoiceButton(
+                                        title: mode.rawValue,
+                                        isSelected: option.matchEventDeliveryMode == mode
+                                    ) {
+                                        option.matchEventDeliveryMode = mode
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.leading, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func wizardSelectionTagWrap(selections: [StatsInviteSelection]) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 8)], spacing: 8) {
+            ForEach(selections, id: \.id) { selection in
+                Text(wizardSelectionDisplayName(selection))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(.secondarySystemBackground))
+                    )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func wizardInviteAssignmentCard(_ assignment: WizardInviteAssignment) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(assignment.contact.name)
+                        .font(.headline.weight(.bold))
+                    Text(assignment.contact.phoneNumber)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Preview") {
+                    previewInviteAssignment = assignment
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+
+                Button("Edit") {
+                    editingWizardInviteAssignment = assignment
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+
+                Button(role: .destructive) {
+                    removeWizardInviteAssignment(assignment)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            wizardSelectionTagWrap(selections: wizardSelections(for: assignment))
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
+                .fill(Color(.secondarySystemBackground))
         )
     }
 
-    private func startSession() {
+    private var statsSelectionColumns: [GridItem] {
+        [
+            GridItem(.flexible(), spacing: 12, alignment: .top),
+            GridItem(.flexible(), spacing: 12, alignment: .top)
+        ]
+    }
+
+    private func wizardTeamPill(_ title: String, style: ClubStyle.Style) -> some View {
+        Text(title)
+            .font(.system(size: isCompactLayout ? 30 : 40, weight: .black))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .foregroundStyle(style.text)
+            .padding(.horizontal, isCompactLayout ? 42 : 54)
+            .padding(.vertical, isCompactLayout ? 18 : 24)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(style.background)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(style.border.opacity(0.95), lineWidth: 2.5)
+            )
+            .accessibilityLabel(Text(title))
+    }
+
+    private func rowLabel(_ title: String) -> some View {
+        Text(title)
+            .font(wizardBodyFont)
+    }
+
+    private func wizardInviteSelection(title: String, side: StatsInviteTeamSide) -> StatsInviteSelection {
+        StatsInviteSelection(statTypeID: wizardStatTypeID(for: title), side: side)
+    }
+
+    private func wizardStatTypeID(for title: String) -> UUID {
+        switch title {
+        case "Kick":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000001") ?? UUID()
+        case "Handball":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000002") ?? UUID()
+        case "Mark":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000003") ?? UUID()
+        case "Tackle":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000004") ?? UUID()
+        case "Hit Out":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000005") ?? UUID()
+        case "Clearance":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000006") ?? UUID()
+        case "Inside 50":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000007") ?? UUID()
+        case "Free Kick":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000008") ?? UUID()
+        case "Turnover":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000009") ?? UUID()
+        case "Intercept":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000010") ?? UUID()
+        case "Disposal Efficiency":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000011") ?? UUID()
+        case "Contested Possession":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000012") ?? UUID()
+        case "Goal":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000013") ?? UUID()
+        case "Behind":
+            UUID(uuidString: "10000000-0000-0000-0000-000000000014") ?? UUID()
+        default:
+            UUID()
+        }
+    }
+
+    private func statTitle(for selection: StatsInviteSelection) -> String {
+        wizardStatTitle(for: selection.statTypeID)
+    }
+
+    private func wizardSelectionDisplayName(_ selection: StatsInviteSelection) -> String {
+        let prefix = selection.side == .ourClub ? ourTeamName : oppositionTeamName
+        return "\(prefix) • \(statTitle(for: selection))"
+    }
+
+    private func wizardStatTitle(for statTypeID: UUID) -> String {
+        switch statTypeID.uuidString {
+        case "10000000-0000-0000-0000-000000000001":
+            return "Kick"
+        case "10000000-0000-0000-0000-000000000002":
+            return "Handball"
+        case "10000000-0000-0000-0000-000000000003":
+            return "Mark"
+        case "10000000-0000-0000-0000-000000000004":
+            return "Tackle"
+        case "10000000-0000-0000-0000-000000000005":
+            return "Hit Out"
+        case "10000000-0000-0000-0000-000000000006":
+            return "Clearance"
+        case "10000000-0000-0000-0000-000000000007":
+            return "Inside 50"
+        case "10000000-0000-0000-0000-000000000008":
+            return "Free Kick"
+        case "10000000-0000-0000-0000-000000000009":
+            return "Turnover"
+        case "10000000-0000-0000-0000-000000000010":
+            return "Intercept"
+        case "10000000-0000-0000-0000-000000000011":
+            return "Disposal Efficiency"
+        case "10000000-0000-0000-0000-000000000012":
+            return "Contested Possession"
+        case "10000000-0000-0000-0000-000000000013":
+            return "Goal"
+        case "10000000-0000-0000-0000-000000000014":
+            return "Behind"
+        default:
+            return "Stat"
+        }
+    }
+
+    private func normalizedPhoneNumber(_ value: String) -> String {
+        value.filter(\.isNumber)
+    }
+
+    private func toggleDraftInviteSelection(_ selection: StatsInviteSelection) {
+        if draftInviteSelectionRawValues.contains(selection.rawValue) {
+            draftInviteSelectionRawValues.remove(selection.rawValue)
+        } else {
+            draftInviteSelectionRawValues.insert(selection.rawValue)
+        }
+    }
+
+    private func addWizardInviteAssignment() {
+        guard canAddDraftInvite else { return }
+        let assignment = WizardInviteAssignment(
+            id: UUID(),
+            contact: PhoneInviteContact(
+                name: draftInviteName.trimmingCharacters(in: .whitespacesAndNewlines),
+                phoneNumber: draftInvitePhone.trimmingCharacters(in: .whitespacesAndNewlines)
+            ),
+            selectionRawValues: draftInviteSelectionRawValues.sorted()
+        )
+        wizardInviteAssignments.append(assignment)
+        clearDraftInvite()
+    }
+
+    private func availableWizardInviteSelections(for assignment: WizardInviteAssignment) -> [StatsInviteSelection] {
+        let reserved = Set(
+            wizardInviteAssignments
+                .filter { $0.id != assignment.id }
+                .flatMap(\.selectionRawValues)
+        )
+        let current = Set(assignment.selectionRawValues)
+        return enabledWizardInviteSelections.filter {
+            !reserved.contains($0.rawValue) || current.contains($0.rawValue)
+        }
+    }
+
+    private func clearDraftInvite() {
+        draftInviteName = ""
+        draftInvitePhone = ""
+        draftInviteSelectionRawValues = []
+    }
+
+    private func removeWizardInviteAssignment(_ assignment: WizardInviteAssignment) {
+        wizardInviteAssignments.removeAll { $0.id == assignment.id }
+        if previewInviteAssignment?.id == assignment.id {
+            previewInviteAssignment = nil
+        }
+        if editingWizardInviteAssignment?.id == assignment.id {
+            editingWizardInviteAssignment = nil
+        }
+    }
+
+    private func updateWizardInviteAssignment(_ updated: WizardInviteAssignment) {
+        guard let index = wizardInviteAssignments.firstIndex(where: { $0.id == updated.id }) else { return }
+        wizardInviteAssignments[index] = updated
+        editingWizardInviteAssignment = nil
+    }
+
+    private func performPrimaryAction() {
+        if step == .inviteUsers {
+            startWizardSession()
+        } else {
+            next()
+        }
+    }
+
+    private func startWizardSession() {
         guard let selectedGradeId else { return }
+        let enabledStatTypeIDs = Array(Set(enabledWizardInviteSelections.map(\.statTypeID))).sorted {
+            wizardStatTitle(for: $0) < wizardStatTitle(for: $1)
+        }
+        UserDefaults.standard.set("Simple", forKey: "statsLayout")
+
         let session = StatsSession(
             gradeId: selectedGradeId,
             opposition: opposition.trimmingCharacters(in: .whitespacesAndNewlines),
             date: date,
-            venue: venue.trimmingCharacters(in: .whitespacesAndNewlines)
+            venue: venue.trimmingCharacters(in: .whitespacesAndNewlines),
+            enabledStatTypeIDsRaw: enabledStatTypeIDs.map(\.uuidString).joined(separator: ","),
+            usesLiveGameScoreSync: usesLiveGameScoreSyncForMatchEvents
         )
         modelContext.insert(session)
         try? modelContext.save()
-        createdSession = session
-        showLiveStats = true
+        navigationState.activateStatsSession(id: session.sessionId)
+        startedSession = session
+
+        inviteDispatchItems = persistWizardInviteAssignmentsAndBuildDispatchItems(session: session)
+        if inviteDispatchItems.isEmpty {
+            showLiveStats = true
+        } else {
+            showInviteDispatchSheet = true
+        }
+    }
+
+    private func persistWizardInviteAssignmentsAndBuildDispatchItems(session: StatsSession) -> [WizardInviteDispatchItem] {
+        let sessionLine = "\(selectedGradeName) vs \(session.opposition) • \(session.date.formatted(date: .abbreviated, time: .omitted))"
+        let statTypes = wizardPreviewStatTypes
+
+        let items = wizardInviteAssignments.compactMap { assignment -> WizardInviteDispatchItem? in
+            let selections = wizardSelections(for: assignment)
+            guard !selections.isEmpty else { return nil }
+
+            let token = UUID().uuidString.lowercased()
+            let linkURL = inviteURL(token: token)
+            let storedContact: Contact
+
+            if let existing = contacts.first(where: {
+                normalizedPhoneNumber($0.mobile) == normalizedPhoneNumber(assignment.contact.phoneNumber)
+            }) {
+                storedContact = existing
+                if existing.name != assignment.contact.name {
+                    existing.name = assignment.contact.name
+                }
+            } else {
+                let created = Contact(name: assignment.contact.name, mobile: assignment.contact.phoneNumber, email: "")
+                modelContext.insert(created)
+                storedContact = created
+            }
+
+            if let existing = inviteAssignments.first(where: { $0.contactId == storedContact.id }) {
+                existing.inviteLinkToken = token
+                existing.inviteLinkURL = linkURL ?? ""
+                existing.lastInvitedAt = Date()
+                existing.setAssignedSelections(selections)
+            } else {
+                let persisted = StatsInviteAssignment(
+                    contactId: storedContact.id,
+                    assignedStatTypeIDsRaw: selections.map(\.rawValue).joined(separator: ","),
+                    inviteLinkToken: token,
+                    inviteLinkURL: linkURL ?? "",
+                    lastInvitedAt: Date()
+                )
+                modelContext.insert(persisted)
+            }
+
+            let assignedNames = statsInviteSelectionNames(
+                for: selections.sorted {
+                    if $0.side != $1.side {
+                        return $0.side == .ourClub
+                    }
+                    return wizardStatTitle(for: $0.statTypeID) < wizardStatTitle(for: $1.statTypeID)
+                },
+                statTypes: statTypes
+            ).joined(separator: ", ")
+
+            let body = linkURL.map { url in
+                """
+                \(assignment.contact.name), you're invited as a Min-Man Stat Taker.
+
+                Session: \(sessionLine)
+
+                Assigned stats: \(assignedNames)
+
+                Open this link:
+                \(url)
+                """
+            }
+
+            return WizardInviteDispatchItem(
+                id: assignment.id,
+                contact: assignment.contact,
+                selections: selections,
+                smsBody: body
+            )
+        }
+
+        try? modelContext.save()
+        return items
+    }
+
+    private func inviteURL(token: String) -> String? {
+        let trimmed = UserDefaults.standard.string(forKey: "statsInviteBaseURL")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        let separator = trimmed.contains("?") ? "&" : "?"
+        return "\(trimmed)\(separator)token=\(token)"
+    }
+
+    @MainActor
+    private func wizardSelections(for assignment: WizardInviteAssignment) -> [StatsInviteSelection] {
+        assignment.selectionRawValues.compactMap(StatsInviteSelection.init(rawValue:))
+    }
+
+    @ViewBuilder
+    private func setupMenuButton<Content: View>(
+        title: String,
+        isDisabled: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Menu {
+            content()
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(wizardBodyFont)
+                    .foregroundStyle(title == "Select…" ? .secondary : .primary)
+                    .lineLimit(1)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: isCompactLayout ? 13 : 16, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, isCompactLayout ? 14 : 18)
+            .padding(.vertical, isCompactLayout ? 10 : 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+
+    private func setupChoiceButton(
+        title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(wizardBodyFont)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .padding(.horizontal, isCompactLayout ? 12 : 14)
+                .padding(.vertical, isCompactLayout ? 8 : 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func back() {
+        switch step {
+        case .details:
+            break
+        case .statCollection:
+            step = .details
+        case .oppositionStatCollection:
+            step = .statCollection
+        case .comparisonStats:
+            step = .oppositionStatCollection
+        case .inviteUsers:
+            step = .comparisonStats
+        }
+    }
+
+    private func next() {
+        switch step {
+        case .details:
+            step = .statCollection
+        case .statCollection:
+            step = .oppositionStatCollection
+        case .oppositionStatCollection:
+            step = .comparisonStats
+        case .comparisonStats:
+            step = .inviteUsers
+        case .inviteUsers:
+            break
+        }
+    }
+}
+
+private struct StatsWizardCard<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                Text(title.uppercased())
+                    .font(.system(size: 14, weight: .bold))
+                    .tracking(0.9)
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 16) {
+                content
+            }
+            .padding(16)
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+            )
+        }
+    }
+}
+
+private struct WizardInviteEditorSheet: View {
+    let assignment: StatsSessionSetupView.WizardInviteAssignment
+    let availableSelections: [StatsInviteSelection]
+    let teamNameForSelection: (StatsInviteSelection) -> String
+    let selectionDisplayName: (StatsInviteSelection) -> String
+    let previewSelections: (StatsSessionSetupView.WizardInviteAssignment) -> [StatsInviteSelection]
+    let previewStatTypes: [StatType]
+    let clubConfiguration: ClubConfiguration
+    let clubName: String
+    let gradeTitle: String
+    let oppositionName: String
+    let onSave: (StatsSessionSetupView.WizardInviteAssignment) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var phone: String
+    @State private var selectionRawValues: Set<String>
+    @State private var showContactPicker = false
+    @State private var showStatPicker = false
+    @State private var showPreview = false
+
+    init(
+        assignment: StatsSessionSetupView.WizardInviteAssignment,
+        availableSelections: [StatsInviteSelection],
+        teamNameForSelection: @escaping (StatsInviteSelection) -> String,
+        selectionDisplayName: @escaping (StatsInviteSelection) -> String,
+        previewSelections: @escaping (StatsSessionSetupView.WizardInviteAssignment) -> [StatsInviteSelection],
+        previewStatTypes: [StatType],
+        clubConfiguration: ClubConfiguration,
+        clubName: String,
+        gradeTitle: String,
+        oppositionName: String,
+        onSave: @escaping (StatsSessionSetupView.WizardInviteAssignment) -> Void
+    ) {
+        self.assignment = assignment
+        self.availableSelections = availableSelections
+        self.teamNameForSelection = teamNameForSelection
+        self.selectionDisplayName = selectionDisplayName
+        self.previewSelections = previewSelections
+        self.previewStatTypes = previewStatTypes
+        self.clubConfiguration = clubConfiguration
+        self.clubName = clubName
+        self.gradeTitle = gradeTitle
+        self.oppositionName = oppositionName
+        self.onSave = onSave
+        _name = State(initialValue: assignment.contact.name)
+        _phone = State(initialValue: assignment.contact.phoneNumber)
+        _selectionRawValues = State(initialValue: Set(assignment.selectionRawValues))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Button("Pick From iPhone Contacts") {
+                            showContactPicker = true
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("Preview") {
+                            showPreview = true
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    TextField("Contact name", text: $name)
+                        .textInputAutocapitalization(.words)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.secondarySystemBackground))
+                        )
+
+                    TextField("Mobile phone", text: $phone)
+                        .keyboardType(.phonePad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.secondarySystemBackground))
+                        )
+
+                    Button {
+                        showStatPicker = true
+                    } label: {
+                        HStack {
+                            Text(selectionRawValues.isEmpty ? "Choose stats" : "Chosen stats: \(selectionRawValues.count)")
+                                .foregroundStyle(selectionRawValues.isEmpty ? .secondary : .primary)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.secondarySystemBackground))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    if currentSelections.isEmpty {
+                        Text("No stats selected.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 8)], spacing: 8) {
+                            ForEach(currentSelections, id: \.id) { selection in
+                                Text(selectionDisplayName(selection))
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color(.secondarySystemBackground))
+                                    )
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Edit Stat Taker")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let updated = StatsSessionSetupView.WizardInviteAssignment(
+                            id: assignment.id,
+                            contact: PhoneInviteContact(
+                                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                phoneNumber: phone.trimmingCharacters(in: .whitespacesAndNewlines)
+                            ),
+                            selectionRawValues: selectionRawValues.sorted()
+                        )
+                        onSave(updated)
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+        .sheet(isPresented: $showContactPicker) {
+            NativeContactPickerSheet { picked in
+                name = picked.name
+                phone = picked.phoneNumber
+            }
+        }
+        .sheet(isPresented: $showStatPicker) {
+            NavigationStack {
+                List {
+                    if availableSelections.isEmpty {
+                        Text("No stats available.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(availableSelections, id: \.id) { selection in
+                            Button {
+                                toggleSelection(selection)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(selectionDisplayName(selection))
+                                            .foregroundStyle(.primary)
+                                        Text(teamNameForSelection(selection))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if selectionRawValues.contains(selection.rawValue) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.blue)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .navigationTitle("Choose Stats")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            showStatPicker = false
+                        }
+                    }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showPreview) {
+            NavigationStack {
+                StatsInviteLivePreviewView(
+                    clubConfiguration: clubConfiguration,
+                    clubName: clubName,
+                    gradeTitle: gradeTitle,
+                    oppositionName: oppositionName,
+                    selections: previewSelections(previewAssignment),
+                    statTypes: previewStatTypes
+                )
+            }
+        }
+    }
+
+    private var currentSelections: [StatsInviteSelection] {
+        availableSelections.filter { selectionRawValues.contains($0.rawValue) }
+    }
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !phone.filter(\.isNumber).isEmpty &&
+        !selectionRawValues.isEmpty
+    }
+
+    private var previewAssignment: StatsSessionSetupView.WizardInviteAssignment {
+        StatsSessionSetupView.WizardInviteAssignment(
+            id: assignment.id,
+            contact: PhoneInviteContact(
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                phoneNumber: phone.trimmingCharacters(in: .whitespacesAndNewlines)
+            ),
+            selectionRawValues: selectionRawValues.sorted()
+        )
+    }
+
+    private func toggleSelection(_ selection: StatsInviteSelection) {
+        if selectionRawValues.contains(selection.rawValue) {
+            selectionRawValues.remove(selection.rawValue)
+        } else {
+            selectionRawValues.insert(selection.rawValue)
+        }
+    }
+}
+
+private struct WizardInviteDispatchSheet: View {
+    let items: [StatsSessionSetupView.WizardInviteDispatchItem]
+    let clubConfiguration: ClubConfiguration
+    let clubName: String
+    let gradeTitle: String
+    let oppositionName: String
+    let statTypes: [StatType]
+    let onFinished: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var sentIDs: Set<UUID> = []
+    @State private var draft: SMSDraft?
+
+    private var canSendSMS: Bool { MFMessageComposeViewController.canSendText() }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Send Invites") {
+                    ForEach(items) { item in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.contact.name)
+                                        .font(.headline)
+                                    Text(item.contact.phoneNumber)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if sentIDs.contains(item.id) {
+                                    Label("Sent", systemImage: "checkmark.circle.fill")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.green)
+                                } else {
+                                    Button("Send") {
+                                        guard let body = item.smsBody else { return }
+                                        draft = SMSDraft(recipients: [item.contact.phoneNumber], body: body)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(!canSendSMS || item.smsBody == nil)
+                                }
+                            }
+
+                            Text(statsInviteSelectionNames(for: item.selections, statTypes: statTypes).joined(separator: ", "))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            if item.smsBody == nil {
+                                Text("Invite link host is not set. Add it in Settings > Stats Settings to send SMS invites.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            } else if !canSendSMS {
+                                Text("SMS is not available on this device.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .navigationTitle("Send Invites")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(sentIDs.count == items.count ? "Open Stats" : "Skip") {
+                        dismiss()
+                        onFinished()
+                    }
+                }
+            }
+        }
+        .sheet(item: $draft, onDismiss: {
+            guard let draft else { return }
+            if let item = items.first(where: { $0.contact.phoneNumber == draft.recipients.first }) {
+                sentIDs.insert(item.id)
+                if sentIDs.count == items.count {
+                    dismiss()
+                    onFinished()
+                }
+            }
+        }) { draft in
+            SMSComposerView(recipients: draft.recipients, body: draft.body)
+        }
     }
 }
 
@@ -1276,11 +2670,12 @@ struct LiveStatsView: View {
     private enum StatsLayoutOption: String {
         case standard = "Standard"
         case edge = "Edge"
-        case centre = "Centre"
+        case simple = "Simple"
     }
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigationState: AppNavigationState
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
     @AppStorage("trackIndividualTracking") private var trackIndividualTracking = true
@@ -1326,10 +2721,12 @@ struct LiveStatsView: View {
     @State private var showStatTakers = false
     @State private var composedShareText: String?
     @State private var selectedInviteContact: PhoneInviteContact?
-    @State private var selectedInviteStatTypeIDs: Set<UUID> = []
+    @State private var selectedInviteSelections: Set<StatsInviteSelection> = []
     @State private var showQuarterChangeReminder = false
     @State private var showQuarterPickerDialog = false
     @State private var showTimerModeEditor = false
+    @State private var showLiveGameSyncPrompt = false
+    @State private var promptedForLiveGameSyncSessionID: UUID?
     @State private var customQuarterMinutes = 20
     @State private var activeEfficiencyButtonKey: String?
     @State private var activeEfficiencyHoverVote: EfficiencyVote?
@@ -1355,6 +2752,14 @@ struct LiveStatsView: View {
     private let longPressHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let stepHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let playerQuickStatsLongPressDuration: Double = 0.45
+    
+    private var isSessionActive: Bool {
+        navigationState.activeStatsSessionID == session.sessionId && !session.isSaved
+    }
+
+    private var isReadOnlyMode: Bool {
+        !navigationState.currentRole.canModifyStatsSessions
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -1366,10 +2771,12 @@ struct LiveStatsView: View {
             Group {
                 if isEdgeLayoutActive {
                     edgeLayoutContent(proxy: proxy)
+                } else if isSimpleLayoutActive {
+                    simpleLayoutContent
                 } else {
                     VStack(spacing: 12) {
                         headerBannerArea
-                            .frame(height: 76)
+                            .frame(height: 102)
                         combinedScoreAndActionsPanel
                             .frame(height: topPanelHeight)
 
@@ -1393,6 +2800,7 @@ struct LiveStatsView: View {
                     }
                 }
             }
+            .allowsHitTesting(!isReadOnlyMode)
             .task(id: proxy.size.width) {
                 interfaceScreenWidth = max(proxy.size.width, 1)
             }
@@ -1408,18 +2816,35 @@ struct LiveStatsView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    dismiss()
+                    saveSessionAndReturnHome()
                 } label: {
                     Image(systemName: "chevron.left")
                 }
             }
+            if !isReadOnlyMode {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    statsSyncStatusButton
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(isSessionActive ? "Save" : "Resume") {
+                        if isSessionActive {
+                            saveSession()
+                        } else {
+                            resumeSession()
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button("Settings") {
-                        showStatsSettings = true
-                    }
-                    Button("Stat Takers") {
-                        showStatTakers = true
+                    if !isReadOnlyMode {
+                        Button("Settings") {
+                            showStatsSettings = true
+                        }
+                        Button("Stat Takers") {
+                            showStatTakers = true
+                        }
                     }
                     Button("Generate Report") {
                         generateReport()
@@ -1429,6 +2854,13 @@ struct LiveStatsView: View {
                 }
                 .accessibilityLabel("More")
             }
+        }
+        .onAppear {
+            if !session.isSaved && !isReadOnlyMode {
+                navigationState.activateStatsSession(id: session.sessionId)
+            }
+            maybePromptToSyncWithLiveGame()
+            applySyncedLiveGameStateIfNeeded()
         }
         .sheet(item: $showEditEvent) { event in
             EditStatEventView(event: event, players: playersForGrade, statTypes: enabledStatTypes)
@@ -1478,9 +2910,18 @@ struct LiveStatsView: View {
                 contacts: contacts,
                 inviteAssignments: inviteAssignments,
                 statTypes: enabledStatTypes,
+                activeSession: session,
+                activeSessionGradeName: gradeName,
                 selectedContact: $selectedInviteContact,
-                selectedStatTypeIDs: $selectedInviteStatTypeIDs,
-                onSendInvite: sendInvite
+                selectedSelections: $selectedInviteSelections,
+                onSendInvite: sendInvite,
+                onSaveAssignments: {
+                    try? modelContext.save()
+                },
+                onReinviteAssignment: { assignment in
+                    assignment.lastInvitedAt = Date()
+                    try? modelContext.save()
+                }
             )
         }
         .sheet(isPresented: $showPlayerVisibilityEditor) {
@@ -1497,6 +2938,7 @@ struct LiveStatsView: View {
                     if let selectedPlayerId, !updatedSelection.contains(selectedPlayerId) {
                         self.selectedPlayerId = nil
                     }
+                    ensureSimpleLayoutSelection()
                 }
             )
         }
@@ -1505,11 +2947,22 @@ struct LiveStatsView: View {
                 efficiencyRatingPrompt
             }
         }
-        .overlay(alignment: .bottom) {
-            sideSpeakButtonsOverlay
+        .overlay(alignment: .topTrailing) {
+            if isReadOnlyMode {
+                Text("View Only")
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 8)
+                    .padding(.trailing, 12)
+            }
+        }
+        .overlay(alignment: .top) {
+            EmptyView()
         }
         .overlay {
-            if shouldShowSideSpeakMicOverlay {
+            if shouldShowSideSpeakMicOverlay && !isReadOnlyMode {
                 sideSpeakMicOverlay
             }
         }
@@ -1520,6 +2973,14 @@ struct LiveStatsView: View {
             }
         } message: {
             Text("Current: \(selectedQuarter). Move to the next quarter now?")
+        }
+        .alert("Sync Live Game View with Live Stats View?", isPresented: $showLiveGameSyncPrompt) {
+            Button("Not now", role: .cancel) {}
+            Button("Sync") {
+                acceptLiveGameSync()
+            }
+        } message: {
+            Text("Use Live Game View as the source of truth for score, timer and quarter in this Live Stats session.")
         }
         .onDisappear {
             statusBannerTask?.cancel()
@@ -1540,9 +3001,35 @@ struct LiveStatsView: View {
             showAllPlayers = false
             customQuarterMinutes = max(1, configuredQuarterLengthSeconds / 60)
             configureQuarterTimer(reset: true)
+            ensureSimpleLayoutSelection()
+            maybePromptToSyncWithLiveGame()
+            applySyncedLiveGameStateIfNeeded()
+        }
+        .onChange(of: navigationState.activeLiveGameSnapshot) { _, _ in
+            maybePromptToSyncWithLiveGame()
+            applySyncedLiveGameStateIfNeeded()
+        }
+        .onChange(of: navigationState.selectedTab) { _, newTab in
+            guard newTab == .stats else { return }
+            maybePromptToSyncWithLiveGame()
+            applySyncedLiveGameStateIfNeeded()
+        }
+        .task(id: liveGameTimerRefreshToken) {
+            guard syncedLiveGameSnapshot?.isTimerRunning == true else { return }
+            while !Task.isCancelled && syncedLiveGameSnapshot?.isTimerRunning == true {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    applySyncedLiveGameStateIfNeeded()
+                }
+            }
         }
         .onChange(of: selectedQuarter) { _, _ in
+            guard !isLiveGameControllingMatchState else { return }
             configureQuarterTimer(reset: true)
+        }
+        .onChange(of: statsLayout) { _, _ in
+            ensureSimpleLayoutSelection()
         }
         .onChange(of: feedbackToken) { _, _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
@@ -1553,6 +3040,42 @@ struct LiveStatsView: View {
                 }
             }
         }
+    }
+
+    private func saveSession() {
+        guard !isReadOnlyMode else { return }
+        session.isSaved = true
+        session.savedAt = Date()
+        if navigationState.activeStatsSessionID == session.sessionId {
+            navigationState.clearActiveStatsSession()
+        }
+        try? modelContext.save()
+        dismiss()
+    }
+
+    private func saveSessionAndReturnHome() {
+        guard !isReadOnlyMode else {
+            navigationState.selectedTab = .games
+            dismiss()
+            return
+        }
+        session.isSaved = true
+        session.savedAt = Date()
+        if navigationState.activeStatsSessionID == session.sessionId {
+            navigationState.clearActiveStatsSession()
+        }
+        navigationState.selectedTab = .games
+        try? modelContext.save()
+        dismiss()
+    }
+
+    private func resumeSession() {
+        guard !isReadOnlyMode else { return }
+        session.isSaved = false
+        session.savedAt = nil
+        navigationState.activateStatsSession(id: session.sessionId)
+        try? modelContext.save()
+        showStatusBanner(text: "STATS SESSION RESUMED", isSuccess: true)
     }
 
     private var playersForGrade: [Player] {
@@ -1597,11 +3120,43 @@ struct LiveStatsView: View {
     }
 
     private var enabledStatTypes: [StatType] {
-        allStatTypes.filter { $0.isEnabled }.sorted(by: { $0.sortOrder < $1.sortOrder })
+        let allowedIDs = session.enabledStatTypeIDs
+        return allStatTypes
+            .filter { type in
+                guard type.isEnabled else { return false }
+                return allowedIDs.isEmpty || allowedIDs.contains(type.id)
+            }
+            .sorted(by: { $0.sortOrder < $1.sortOrder })
     }
 
     private var connectedInviteAssignments: [StatsInviteAssignment] {
         inviteAssignments.filter(\.isConnected)
+    }
+
+    private var connectedInviteSelectionIDs: Set<String> {
+        Set(connectedInviteAssignments.flatMap { $0.assignedSelections.map(\.id) })
+    }
+
+    private func isConnectedAssignedStat(statTypeID: UUID, side: StatsInviteTeamSide) -> Bool {
+        connectedInviteSelectionIDs.contains(StatsInviteSelection(statTypeID: statTypeID, side: side).id)
+    }
+
+    private struct TeamStatEntry: Identifiable {
+        let title: String
+        let name: String
+        let fallback: String?
+
+        var id: String { "\(title)|\(name)|\(fallback ?? "")" }
+    }
+
+    private func availableTeamStatEntries(_ entries: [TeamStatEntry]) -> [TeamStatEntry] {
+        entries.filter { entry in
+            statType(
+                named: entry.name,
+                fallbackName: entry.fallback,
+                extraFallbackNames: ["Scores"]
+            ) != nil
+        }
     }
 
     private func ensureRequiredTeamComparisonStatTypesIfNeeded() {
@@ -1681,11 +3236,164 @@ struct LiveStatsView: View {
     }
 
     private var ourScoreSummary: (goals: Int, behinds: Int, points: Int) {
-        scoreSummary { $0.playerId != oppositionTeamStatPlayerID }
+        if let snapshot = syncedLiveGameSnapshot {
+            return (snapshot.ourGoals, snapshot.ourBehinds, snapshot.ourPoints)
+        }
+        return scoreSummary { $0.playerId != oppositionTeamStatPlayerID }
     }
 
     private var oppositionScoreSummary: (goals: Int, behinds: Int, points: Int) {
-        scoreSummary { $0.playerId == oppositionTeamStatPlayerID }
+        if let snapshot = syncedLiveGameSnapshot {
+            return (snapshot.theirGoals, snapshot.theirBehinds, snapshot.theirPoints)
+        }
+        return scoreSummary { $0.playerId == oppositionTeamStatPlayerID }
+    }
+
+    private var syncedLiveGameSnapshot: LiveGameSyncSnapshot? {
+        guard navigationState.syncedStatsSessionID == session.sessionId,
+              let snapshot = navigationState.activeLiveGameSnapshot,
+              canSync(with: snapshot) else { return nil }
+        return snapshot
+    }
+
+    private var isLiveGameControllingMatchState: Bool {
+        syncedLiveGameSnapshot != nil
+    }
+
+    private var liveGameTimerRefreshToken: String {
+        guard let snapshot = syncedLiveGameSnapshot else { return "no-live-game-sync" }
+        return [
+            snapshot.gradeID.uuidString,
+            snapshot.currentQuarter,
+            String(snapshot.remainingSeconds),
+            snapshot.isTimerRunning ? "running" : "paused",
+            snapshot.timerAnchorDate?.description ?? "no-anchor",
+            String(snapshot.timerAnchorSecondsRemaining ?? snapshot.remainingSeconds)
+        ].joined(separator: "|")
+    }
+
+    private var syncedLiveGoalKickers: [(name: String, goals: Int)] {
+        guard let snapshot = syncedLiveGameSnapshot else { return [] }
+        return snapshot.goalKickers
+            .compactMap { entry in
+                guard let player = playersForGrade.first(where: { $0.id == entry.playerID }) else { return nil }
+                return (name: player.name, goals: entry.goals)
+            }
+            .sorted { lhs, rhs in
+                if lhs.goals != rhs.goals { return lhs.goals > rhs.goals }
+                return lhs.name < rhs.name
+            }
+    }
+
+    private var syncableLiveGameSnapshot: LiveGameSyncSnapshot? {
+        guard let snapshot = navigationState.activeLiveGameSnapshot,
+              canSync(with: snapshot) else { return nil }
+        return snapshot
+    }
+
+    private var isStatsSyncedToLiveGame: Bool {
+        syncedLiveGameSnapshot != nil
+    }
+
+    private var statsSyncStatusIconName: String {
+        if isStatsSyncedToLiveGame {
+            return "arrow.triangle.2.circlepath.circle.fill"
+        }
+        if syncableLiveGameSnapshot != nil {
+            return "arrow.triangle.2.circlepath.circle"
+        }
+        return "arrow.triangle.2.circlepath.circle.slash"
+    }
+
+    private var statsSyncStatusTint: Color {
+        if isStatsSyncedToLiveGame {
+            return .green
+        }
+        if syncableLiveGameSnapshot != nil {
+            return .secondary
+        }
+        return Color.secondary.opacity(0.45)
+    }
+
+    private var statsSyncAccessibilityLabel: String {
+        if isStatsSyncedToLiveGame {
+            return "Live Stats synced with Live Game"
+        }
+        if syncableLiveGameSnapshot != nil {
+            return "Live Stats sync available"
+        }
+        return "Live Stats sync unavailable"
+    }
+
+    @ViewBuilder
+    private var statsSyncStatusButton: some View {
+        Button {
+            guard syncableLiveGameSnapshot != nil, !isStatsSyncedToLiveGame else { return }
+            acceptLiveGameSync()
+        } label: {
+            Image(systemName: statsSyncStatusIconName)
+                .imageScale(.large)
+                .foregroundStyle(statsSyncStatusTint)
+                .opacity(syncableLiveGameSnapshot == nil ? 0.55 : 1)
+        }
+        .disabled(syncableLiveGameSnapshot == nil)
+        .accessibilityLabel(statsSyncAccessibilityLabel)
+    }
+
+    private func maybePromptToSyncWithLiveGame() {
+        if attemptAutomaticLiveGameSyncIfNeeded() {
+            return
+        }
+        guard !isReadOnlyMode,
+              let snapshot = navigationState.activeLiveGameSnapshot,
+              canSync(with: snapshot),
+              !session.usesLiveGameScoreSync,
+              navigationState.syncedStatsSessionID == nil,
+              promptedForLiveGameSyncSessionID != session.sessionId else { return }
+        promptedForLiveGameSyncSessionID = session.sessionId
+        showLiveGameSyncPrompt = true
+    }
+
+    private func acceptLiveGameSync() {
+        navigationState.syncActiveLiveGame(toStatsSessionID: session.sessionId)
+        applySyncedLiveGameStateIfNeeded()
+    }
+
+    @discardableResult
+    private func attemptAutomaticLiveGameSyncIfNeeded() -> Bool {
+        guard session.usesLiveGameScoreSync,
+              let snapshot = navigationState.activeLiveGameSnapshot,
+              canSync(with: snapshot) else { return false }
+        if navigationState.syncedStatsSessionID != session.sessionId {
+            navigationState.syncActiveLiveGame(toStatsSessionID: session.sessionId)
+        }
+        showLiveGameSyncPrompt = false
+        promptedForLiveGameSyncSessionID = session.sessionId
+        applySyncedLiveGameStateIfNeeded()
+        return true
+    }
+
+    private func isScoreStatLockedToLiveGame(_ normalizedName: String) -> Bool {
+        syncedLiveGameSnapshot != nil && (normalizedName == "goal" || normalizedName == "behind")
+    }
+
+    private func applySyncedLiveGameStateIfNeeded() {
+        guard let snapshot = syncedLiveGameSnapshot else { return }
+        stopQuarterTimer()
+        quarterCountsUp = false
+        customQuarterMinutes = max(1, snapshot.periodMinutes)
+        selectedQuarter = snapshot.currentQuarter
+        remainingQuarterSeconds = snapshot.syncedRemainingSeconds()
+        isQuarterTimerRunning = snapshot.isTimerActive()
+        showQuarterPickerDialog = false
+        showQuarterChangeReminder = false
+        showTimerModeEditor = false
+    }
+
+    private func canSync(with snapshot: LiveGameSyncSnapshot) -> Bool {
+        snapshot.gradeID == session.gradeId
+            && Calendar.current.isDate(snapshot.date, inSameDayAs: session.date)
+            && snapshot.opposition.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(session.opposition.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
     }
 
     private var ourTeamName: String {
@@ -1710,6 +3418,10 @@ struct LiveStatsView: View {
         statsLayout == StatsLayoutOption.edge.rawValue
     }
 
+    private var isSimpleLayoutActive: Bool {
+        statsLayout == StatsLayoutOption.simple.rawValue
+    }
+
     private var topPanelHeight: CGFloat {
         oppositionTrackPossessions ? 472 : 168
     }
@@ -1730,29 +3442,35 @@ struct LiveStatsView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.thinMaterial)
-            HStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 14) {
                 timerBadge
 
-                Spacer(minLength: 0)
+                VStack(spacing: 8) {
+                    HStack(spacing: 10) {
+                        Text(gradeName)
+                            .font(.title.weight(.black))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                        Text("•")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(session.date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
 
-                HStack(spacing: 10) {
-                    Text(gradeName)
-                        .font(.title.weight(.black))
-                        .lineLimit(1)
-                    Text("•")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                    Text(session.date.formatted(date: .abbreviated, time: .omitted))
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                VStack(alignment: .trailing, spacing: 6) {
-                    quarterBadge
-                    if !connectedInviteAssignments.isEmpty {
+                    if syncedLiveGameSnapshot != nil {
+                        Text("Live Game controls score, timer and quarter")
+                            .font(.caption.weight(.bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.green.opacity(0.18), in: Capsule())
+                    } else if !connectedInviteAssignments.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(connectedInviteAssignments.prefix(3)) { assignment in
                                 HStack(spacing: 4) {
@@ -1768,8 +3486,12 @@ struct LiveStatsView: View {
                                 .background(Color.green.opacity(0.12), in: Capsule())
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
+                .frame(maxWidth: .infinity)
+
+                quarterBadge
             }
             .padding(.horizontal, 18)
 
@@ -1869,14 +3591,29 @@ struct LiveStatsView: View {
                 .padding(.horizontal, 4)
             }
 
+            if !isOppositionTeam, !syncedLiveGoalKickers.isEmpty {
+                syncedLiveGoalKickersPanel
+            }
+
             if oppositionTrackPossessions {
                 teamStatsExpandedGrid(style: style, isOpposition: isOppositionTeam)
             } else {
+                let entries = availableTeamStatEntries([
+                    TeamStatEntry(title: "Goal", name: "Goal", fallback: nil),
+                    TeamStatEntry(title: "Behind", name: "Behind", fallback: nil),
+                    TeamStatEntry(title: "Clearance", name: "Clearance", fallback: "Clearances"),
+                    TeamStatEntry(title: "Inside 50", name: "Inside 50", fallback: "Inside 50s")
+                ])
                 HStack(spacing: 8) {
-                    teamStatButton("Goal", name: "Goal", style: style, isOpposition: isOppositionTeam)
-                    teamStatButton("Behind", name: "Behind", style: style, isOpposition: isOppositionTeam)
-                    teamStatButton("Clearance", name: "Clearance", style: style, isOpposition: isOppositionTeam, fallbackName: "Clearances")
-                    teamStatButton("Inside 50", name: "Inside 50", style: style, isOpposition: isOppositionTeam, fallbackName: "Inside 50s")
+                    ForEach(entries) { entry in
+                        teamStatButton(
+                            entry.title,
+                            name: entry.name,
+                            style: style,
+                            isOpposition: isOppositionTeam,
+                            fallbackName: entry.fallback
+                        )
+                    }
                 }
             }
         }
@@ -1900,11 +3637,37 @@ struct LiveStatsView: View {
         }
     }
 
+    private var syncedLiveGoalKickersPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Goal kickers")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+            ForEach(Array(syncedLiveGoalKickers.prefix(5).enumerated()), id: \.offset) { _, scorer in
+                HStack(spacing: 8) {
+                    Text(scorer.name)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text("\(scorer.goals)")
+                        .font(.subheadline.weight(.black))
+                        .monospacedDigit()
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
     private func teamStatsExpandedGrid(style: ClubStyle.Style, isOpposition: Bool) -> some View {
-        let fixedEntries: [(title: String, name: String, fallback: String?)] = [
-            ("Goal", "Goal", nil), ("Behind", "Behind", nil), ("Clearance", "Clearance", "Clearances"), ("Inside 50", "Inside 50", "Inside 50s"),
-            ("Kick", "Kick", nil), ("Handball", "Handball", nil), ("Mark", "Mark", nil), ("Tackle", "Tackle", nil)
-        ]
+        let fixedEntries = availableTeamStatEntries([
+            TeamStatEntry(title: "Goal", name: "Goal", fallback: nil),
+            TeamStatEntry(title: "Behind", name: "Behind", fallback: nil),
+            TeamStatEntry(title: "Clearance", name: "Clearance", fallback: "Clearances"),
+            TeamStatEntry(title: "Inside 50", name: "Inside 50", fallback: "Inside 50s"),
+            TeamStatEntry(title: "Kick", name: "Kick", fallback: nil),
+            TeamStatEntry(title: "Handball", name: "Handball", fallback: nil),
+            TeamStatEntry(title: "Mark", name: "Mark", fallback: nil),
+            TeamStatEntry(title: "Tackle", name: "Tackle", fallback: nil)
+        ])
         let fixedNames = Set(fixedEntries.map { normalizedStatName($0.name) })
         let excludedThirdRowNames: Set<String> = fixedNames.union([
             "scores",
@@ -1920,7 +3683,7 @@ struct LiveStatsView: View {
 
         return VStack(spacing: 6) {
             LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(Array(fixedEntries.enumerated()), id: \.offset) { _, entry in
+                ForEach(fixedEntries) { entry in
                     teamStatButton(entry.title, name: entry.name, style: style, isOpposition: isOpposition, fallbackName: entry.fallback)
                 }
             }
@@ -2277,6 +4040,7 @@ struct LiveStatsView: View {
         .background(timerBackgroundColor.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .onTapGesture {
+            guard !isLiveGameControllingMatchState else { return }
             if isQuarterTimerRunning {
                 stopQuarterTimer()
             } else {
@@ -2284,6 +4048,7 @@ struct LiveStatsView: View {
             }
         }
         .onLongPressGesture {
+            guard !isLiveGameControllingMatchState else { return }
             showTimerModeEditor = true
         }
         .popover(isPresented: $showTimerModeEditor, attachmentAnchor: .point(.bottomLeading), arrowEdge: .top) {
@@ -2315,6 +4080,7 @@ struct LiveStatsView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))
             .onLongPressGesture {
+                guard !isLiveGameControllingMatchState else { return }
                 showQuarterChangeReminder = true
             }
     }
@@ -2483,6 +4249,26 @@ struct LiveStatsView: View {
         .padding(12)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var simpleLayoutContent: some View {
+        VStack(spacing: 12) {
+            headerBannerArea
+                .frame(height: 76)
+
+            if oppositionTrackPossessions {
+                edgeScoreSummaryPanel
+                edgeComparisonMetricsPanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else {
+                combinedScoreAndActionsPanel
+                    .frame(height: topPanelHeight)
+
+                statButtonsPanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func edgeLayoutContent(proxy: GeometryProxy) -> some View {
@@ -2706,6 +4492,7 @@ struct LiveStatsView: View {
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
                 ForEach(playerStatTypes) { type in
+                    let isConnectedAssignment = isConnectedAssignedStat(statTypeID: type.id, side: .ourClub)
                     Button {
                         addManualEvent(statTypeId: type.id)
                     } label: {
@@ -2716,6 +4503,10 @@ struct LiveStatsView: View {
                             .background(
                                 selectedPlayerId == nil ? Color.accentColor.opacity(0.16) : Color.blue,
                                 in: RoundedRectangle(cornerRadius: 10)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(isConnectedAssignment ? Color.blue : Color.clear, lineWidth: 3)
                             )
                     }
                     .buttonStyle(.plain)
@@ -2742,6 +4533,7 @@ struct LiveStatsView: View {
         )
         let normalizedName = normalizedStatName(name)
         let scoreKind: String? = (normalizedName == "goal" || normalizedName == "behind") ? normalizedName : nil
+        let isLockedToLiveGame = isScoreStatLockedToLiveGame(normalizedName)
         let teamOnlyStats = Set([
             "inside 50",
             "inside50",
@@ -2765,11 +4557,18 @@ struct LiveStatsView: View {
         let supportsEfficiencyLongPress = supportsEfficiencyLongPress(for: normalizedName, isOpposition: isOpposition)
         let showEfficiencyVote = trackDisposalEfficiency && statRequiresEfficiencyVote(normalizedName)
         let showContestedVote = trackContestedPossessions && statSupportsContestedVote(normalizedName)
+        let isConnectedAssignment = statType.map {
+            isConnectedAssignedStat(
+                statTypeID: $0.id,
+                side: isOpposition ? .opposition : .ourClub
+            )
+        } ?? false
         let baseButton = Button {
             if suppressTapForButtonKey == buttonKey {
                 suppressTapForButtonKey = nil
                 return
             }
+            guard !isLockedToLiveGame else { return }
             guard let statType else { return }
             handleTeamStatAction(
                 statTypeId: statType.id,
@@ -2785,9 +4584,14 @@ struct LiveStatsView: View {
                 .frame(maxWidth: .infinity, minHeight: 72)
                 .background(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(style.background.opacity(statType == nil ? 0.35 : 1))
+                        .fill(style.background.opacity(statType == nil ? 0.35 : (isLockedToLiveGame ? 0.45 : 1)))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(isConnectedAssignment ? Color.blue : Color.clear, lineWidth: 3)
                 )
         }
+        .disabled(isLockedToLiveGame)
         .overlay(alignment: .top) {
             GeometryReader { proxy in
                 if activeEfficiencyButtonKey == buttonKey {
@@ -2816,6 +4620,16 @@ struct LiveStatsView: View {
                 }
             }
             .allowsHitTesting(false)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isLockedToLiveGame {
+                Text("Live")
+                    .font(.caption2.weight(.black))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(6)
+            }
         }
         .buttonStyle(.plain)
         .disabled(statType == nil)
@@ -3223,6 +5037,11 @@ struct LiveStatsView: View {
         return enabledStatTypes.filter { !teamOnly.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
     }
 
+    private func ensureSimpleLayoutSelection() {
+        guard isSimpleLayoutActive, !oppositionTrackPossessions, selectedPlayerId == nil else { return }
+        selectedPlayerId = displayedPlayers.first?.id
+    }
+
     private func statType(named name: String, fallbackName: String? = nil, extraFallbackNames: [String] = []) -> StatType? {
         let target = normalizedStatName(name)
         if let primary = enabledStatTypes.first(where: { normalizedStatName($0.name) == target }) {
@@ -3324,6 +5143,7 @@ struct LiveStatsView: View {
                 statType: statType(named: "Behind", fallbackName: "Scores", extraFallbackNames: ["Goal"])
             )
         ]
+        .filter { $0.statType != nil }
     }
 
     private func playerQuickStatsFan(cardSize: CGSize, globalMidX: CGFloat) -> some View {
@@ -3339,6 +5159,9 @@ struct LiveStatsView: View {
         return ZStack {
             ForEach(Array(playerQuickStatOptions.enumerated()), id: \.element.id) { index, option in
                 let isHovered = hoveredPlayerQuickStatName == option.id
+                let isConnectedAssignment = option.statType.map {
+                    isConnectedAssignedStat(statTypeID: $0.id, side: .ourClub)
+                } ?? false
                 let segment = quickStatSegmentAngles(index: index, total: playerQuickStatOptions.count, spanStart: layout.startAngle, spanEnd: layout.endAngle)
                 let midAngle = (segment.start + segment.end) / 2
                 let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
@@ -3348,7 +5171,10 @@ struct LiveStatsView: View {
                     .fill(isHovered ? Color.blue : (option.statType == nil ? Color.gray.opacity(0.32) : Color.gray.opacity(0.56)))
                     .overlay {
                         QuickStatPieSlice(startAngle: segment.start, endAngle: segment.end, innerRadius: layout.innerRadius, outerRadius: layout.outerRadius)
-                            .stroke(Color.white.opacity(isHovered ? 0.8 : 0.45), lineWidth: isHovered ? 2.5 : 1.2)
+                            .stroke(
+                                isConnectedAssignment ? Color.blue : Color.white.opacity(isHovered ? 0.8 : 0.45),
+                                lineWidth: isConnectedAssignment ? 3 : (isHovered ? 2.5 : 1.2)
+                            )
                     }
                     .overlay {
                         sliceLabel(
@@ -3843,7 +5669,9 @@ struct LiveStatsView: View {
         try? modelContext.save()
 
         let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event, preselectedVote: efficiencyVote)
-        selectedPlayerId = nil
+        if !isSimpleLayoutActive {
+            selectedPlayerId = nil
+        }
 
         lastMessage = "Added: \(statName(for: statTypeId)) — \(playerLabel(for: currentSelectedPlayerId)) — \(selectedQuarter)"
         if !shouldDelaySuccessBanner {
@@ -3884,11 +5712,11 @@ struct LiveStatsView: View {
         feedbackToken = UUID()
     }
 
-    private func sendInvite(contact: PhoneInviteContact, statTypeIDs: Set<UUID>) {
-        guard !statTypeIDs.isEmpty else { return }
+    private func sendInvite(contact: PhoneInviteContact, selections: Set<StatsInviteSelection>) {
+        guard !selections.isEmpty else { return }
         let token = UUID().uuidString.lowercased()
         guard let linkURL = inviteURL(token: token) else {
-            showStatusBanner(text: "INVITE LINK HOST REQUIRED • Set invite URL in Stat Takers before sending", isSuccess: false)
+            showStatusBanner(text: "INVITE LINK HOST REQUIRED • Set invite URL in Stats Settings before sending", isSuccess: false)
             return
         }
         let assignment: StatsInviteAssignment
@@ -3912,11 +5740,11 @@ struct LiveStatsView: View {
             assignment.inviteLinkToken = token
             assignment.inviteLinkURL = linkURL
             assignment.lastInvitedAt = Date()
-            assignment.setAssignedStatTypeIDs(Array(statTypeIDs))
+            assignment.setAssignedSelections(Array(selections))
         } else {
             assignment = StatsInviteAssignment(
                 contactId: storedContact.id,
-                assignedStatTypeIDsRaw: Array(statTypeIDs).map(\.uuidString).joined(separator: ","),
+                assignedStatTypeIDsRaw: Array(selections).map(\.rawValue).joined(separator: ","),
                 inviteLinkToken: token,
                 inviteLinkURL: linkURL,
                 lastInvitedAt: Date()
@@ -3924,10 +5752,15 @@ struct LiveStatsView: View {
             modelContext.insert(assignment)
         }
 
-        let assignedNames = enabledStatTypes
-            .filter { statTypeIDs.contains($0.id) }
-            .map(\.name)
-            .joined(separator: ", ")
+        let assignedNames = statsInviteSelectionNames(
+            for: Array(selections).sorted {
+                if $0.side != $1.side {
+                    return $0.side == .ourClub
+                }
+                return statName(for: $0.statTypeID) < statName(for: $1.statTypeID)
+            },
+            statTypes: enabledStatTypes
+        ).joined(separator: ", ")
         let recipientName = contact.name
         composedShareText = """
         \(recipientName), use this live stat link:
@@ -4233,23 +6066,6 @@ struct LiveStatsView: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-    }
-
-    private var sideSpeakButtonsOverlay: some View {
-        Group {
-            if isEdgeLayoutActive {
-                EmptyView()
-            } else {
-                HStack {
-                    speakButton(isOpposition: false)
-                    Spacer()
-                    speakButton(isOpposition: true)
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-                .allowsHitTesting(true)
-            }
-        }
     }
 
     private func parseFailureMessage(_ result: VoiceParseResult) -> String {
@@ -5211,101 +7027,31 @@ private struct StatsStatTakersView: View {
     let contacts: [Contact]
     let inviteAssignments: [StatsInviteAssignment]
     let statTypes: [StatType]
+    let activeSession: StatsSession?
+    let activeSessionGradeName: String
     @Binding var selectedContact: PhoneInviteContact?
-    @Binding var selectedStatTypeIDs: Set<UUID>
-    let onSendInvite: (PhoneInviteContact, Set<UUID>) -> Void
+    @Binding var selectedSelections: Set<StatsInviteSelection>
+    let onSendInvite: (PhoneInviteContact, Set<StatsInviteSelection>) -> Void
+    let onSaveAssignments: () -> Void
+    let onReinviteAssignment: (StatsInviteAssignment) -> Void
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
-    @State private var showSystemContactPicker = false
-    @State private var smsDraft: SMSDraft?
-    @State private var composedSMSBody = ""
-    @State private var latestInviteURL = ""
-    private var canSendSMS: Bool { MFMessageComposeViewController.canSendText() }
-    private var sortedStatTypes: [StatType] {
-        statTypes.sorted(by: { $0.sortOrder < $1.sortOrder })
-    }
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("Invite Stat Taker") {
-                    TextField("https://your-host/invite", text: $statsInviteBaseURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Text("Set your deployed invite page URL here before sending SMS invites.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Button("Pick From iPhone Contacts") {
-                        showSystemContactPicker = true
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    if let selectedContact {
-                        Text("\(selectedContact.name) • \(selectedContact.phoneNumber)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    ForEach(sortedStatTypes) { type in
-                        Toggle(
-                            type.name,
-                            isOn: Binding(
-                                get: { selectedStatTypeIDs.contains(type.id) },
-                                set: { isOn in
-                                    if isOn { selectedStatTypeIDs.insert(type.id) } else { selectedStatTypeIDs.remove(type.id) }
-                                }
-                            )
-                        )
-                    }
-                    Button("Send Invite Link") {
-                        guard let selectedContact else { return }
-                        onSendInvite(selectedContact, selectedStatTypeIDs)
-                        latestInviteURL = UserDefaults.standard.string(forKey: "stats.lastInviteURL") ?? latestInviteURL
-                        let assigned = sortedStatTypes
-                            .filter { selectedStatTypeIDs.contains($0.id) }
-                            .map(\.name)
-                            .joined(separator: ", ")
-                        composedSMSBody = """
-                        \(selectedContact.name), you're invited as a Min-Man Stat Taker.
-
-                        Assigned stats: \(assigned)
-
-                        Open this link:
-                        \(latestInviteURL)
-                        """
-                        smsDraft = SMSDraft(recipients: [selectedContact.phoneNumber], body: composedSMSBody)
-                    }
-                    .disabled(
-                        selectedContact == nil ||
-                        selectedStatTypeIDs.isEmpty ||
-                        !canSendSMS ||
-                        statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-
-                    if !canSendSMS {
-                        Text("SMS is not available on this device. Run on an iPhone with messaging enabled.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text("Invite link host is required.")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
-
-                Section("Invited Users") {
-                    if inviteAssignments.isEmpty {
-                        Text("No invited users yet.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(inviteAssignments) { assignment in
-                            invitedUserRow(assignment)
-                        }
-                    }
-                }
-            }
+            StatsInviteComposerContent(
+                contacts: contacts,
+                inviteAssignments: inviteAssignments,
+                statTypes: statTypes,
+                activeSession: activeSession,
+                activeSessionGradeName: activeSessionGradeName,
+                selectedContact: $selectedContact,
+                selectedSelections: $selectedSelections,
+                onSendInvite: onSendInvite,
+                onSaveAssignments: onSaveAssignments,
+                onReinviteAssignment: onReinviteAssignment,
+                dismissAfterSMS: true,
+                onSMSDismiss: { dismiss() }
+            )
             .navigationTitle("Stat Takers")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -5313,24 +7059,400 @@ private struct StatsStatTakersView: View {
                 }
             }
         }
+    }
+}
+
+private struct StatsInviteComposerContent: View {
+    let contacts: [Contact]
+    let inviteAssignments: [StatsInviteAssignment]
+    let statTypes: [StatType]
+    let activeSession: StatsSession?
+    let activeSessionGradeName: String
+    @Binding var selectedContact: PhoneInviteContact?
+    @Binding var selectedSelections: Set<StatsInviteSelection>
+    let onSendInvite: (PhoneInviteContact, Set<StatsInviteSelection>) -> Void
+    var onStartSessionRequested: () -> Void = {}
+    var onSaveAssignments: () -> Void = {}
+    var onReinviteAssignment: (StatsInviteAssignment) -> Void = { _ in }
+    var dismissAfterSMS = false
+    var onSMSDismiss: () -> Void = {}
+
+    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
+    @State private var showSystemContactPicker = false
+    @State private var smsDraft: SMSDraft?
+    @State private var latestInviteURL = ""
+    @State private var editingInvite: StatsInviteAssignment?
+    @State private var showPreview = false
+
+    private var canSendSMS: Bool { MFMessageComposeViewController.canSendText() }
+
+    private var sortedStatTypes: [StatType] {
+        statTypes.sorted(by: { $0.sortOrder < $1.sortOrder })
+    }
+
+    private var hasActiveSession: Bool {
+        activeSession != nil
+    }
+
+    private var clubConfiguration: ClubConfiguration {
+        ClubConfigurationStore.load()
+    }
+
+    private var clubName: String {
+        let trimmed = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Min Man" : trimmed
+    }
+
+    private var oppositionName: String {
+        let trimmed = activeSession?.opposition.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Opposition" : trimmed
+    }
+
+    private var ourTeamStyle: ClubStyle.Style {
+        ClubStyle.style(for: clubName, configuration: clubConfiguration)
+    }
+
+    private var oppositionStyle: ClubStyle.Style {
+        ClubStyle.style(for: oppositionName, configuration: clubConfiguration)
+    }
+
+    private var lockedSelectionOwners: [String: String] {
+        var result: [String: String] = [:]
+        for assignment in inviteAssignments {
+            let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Unknown Contact"
+            for selection in assignment.assignedSelections {
+                result[selection.id] = contactName
+            }
+        }
+        return result
+    }
+
+    var body: some View {
+        List {
+            Section("Active Stats Session") {
+                if let activeSession {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(activeSessionGradeName)
+                            .font(.headline)
+                        HStack(spacing: 10) {
+                            ScorePill(clubName, style: ourTeamStyle)
+                            ScorePill(oppositionName, style: oppositionStyle)
+                        }
+                        Text("\(activeSession.date.formatted(date: .abbreviated, time: .omitted)) • \(activeSession.venue)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("No active Stats session, please start a stats session to proceed")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Button("Start Session") {
+                            onStartSessionRequested()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 10)
+                }
+            }
+
+            Section("Invite Stat Taker") {
+                TextField("https://your-host/invite", text: $statsInviteBaseURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text("Set your deployed invite page URL here before sending SMS invites.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button("Pick From iPhone Contacts") {
+                    showSystemContactPicker = true
+                }
+                .buttonStyle(.borderedProminent)
+
+                if let selectedContact {
+                    Text("\(selectedContact.name) • \(selectedContact.phoneNumber)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Preview") {
+                    showPreview = true
+                }
+                .buttonStyle(.bordered)
+            }
+            .disabled(!hasActiveSession)
+            .opacity(hasActiveSession ? 1 : 0.4)
+
+            Section("Choose Stats To Collect") {
+                if sortedStatTypes.isEmpty {
+                    Text("No enabled stat types available.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(alignment: .top, spacing: 12) {
+                            Text("Stat")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 110, alignment: .leading)
+                            teamPillHeader(title: clubName, style: ourTeamStyle)
+                            teamPillHeader(title: oppositionName, style: oppositionStyle)
+                        }
+
+                        ForEach(sortedStatTypes) { type in
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(type.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(width: 110, alignment: .leading)
+                                    .padding(.top, 10)
+                                selectionCell(for: type, side: .ourClub)
+                                selectionCell(for: type, side: .opposition)
+                            }
+                        }
+                    }
+                }
+            }
+            .disabled(!hasActiveSession)
+            .opacity(hasActiveSession ? 1 : 0.4)
+
+            Section {
+                Button("Send Invite Link") {
+                    sendInviteLink()
+                }
+                .disabled(
+                    selectedContact == nil ||
+                    selectedSelections.isEmpty ||
+                    !canSendSMS ||
+                    statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+
+                if !selectedSelections.isEmpty {
+                    Text("Assigned: \(selectedSelectionSummary)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !canSendSMS {
+                    Text("SMS is not available on this device. Run on an iPhone with messaging enabled.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Invite link host is required.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .disabled(!hasActiveSession)
+            .opacity(hasActiveSession ? 1 : 0.4)
+
+            Section("Invited Users") {
+                if inviteAssignments.isEmpty {
+                    Text("No invited users yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(inviteAssignments) { assignment in
+                        invitedUserRow(assignment)
+                    }
+                }
+            }
+            .disabled(!hasActiveSession)
+            .opacity(hasActiveSession ? 1 : 0.4)
+        }
         .sheet(isPresented: $showSystemContactPicker) {
             NativeContactPickerSheet { picked in
                 selectedContact = picked
             }
         }
-        .sheet(item: $smsDraft, onDismiss: { dismiss() }) { draft in
+        .sheet(item: $smsDraft, onDismiss: {
+            if dismissAfterSMS {
+                onSMSDismiss()
+            }
+        }) { draft in
             SMSComposerView(recipients: draft.recipients, body: draft.body)
         }
+        .sheet(item: $editingInvite) { assignment in
+            StatsInviteManagementSheet(
+                assignment: assignment,
+                allStatTypes: sortedStatTypes,
+                onSave: onSaveAssignments,
+                onReinvite: {
+                    onReinviteAssignment(assignment)
+                }
+            )
+        }
+        .fullScreenCover(isPresented: $showPreview) {
+            NavigationStack {
+                StatsInviteLivePreviewView(
+                    clubConfiguration: clubConfiguration,
+                    clubName: clubName,
+                    gradeTitle: activeSessionGradeName,
+                    oppositionName: oppositionName,
+                    selections: orderedSelections,
+                    statTypes: sortedStatTypes
+                )
+            }
+        }
+        .onAppear {
+            loadDraftSelectionsIfNeeded()
+        }
+        .onChange(of: selectedSelections) { _, newValue in
+            StatsInviteDraftStore.saveSelections(newValue)
+        }
+    }
+
+    private var orderedSelections: [StatsInviteSelection] {
+        let sortOrderByID = Dictionary(uniqueKeysWithValues: sortedStatTypes.map { ($0.id, $0.sortOrder) })
+        return selectedSelections.sorted {
+            let leftIndex = sortOrderByID[$0.statTypeID] ?? 0
+            let rightIndex = sortOrderByID[$1.statTypeID] ?? 0
+            if leftIndex != rightIndex {
+                return leftIndex < rightIndex
+            }
+            if $0.side != $1.side {
+                return $0.side == .ourClub
+            }
+            return false
+        }
+    }
+
+    private var selectedSelectionSummary: String {
+        let names = statsInviteSelectionNames(for: orderedSelections, statTypes: sortedStatTypes)
+        return names.isEmpty ? "None" : names.joined(separator: ", ")
+    }
+
+    private func loadDraftSelectionsIfNeeded() {
+        guard selectedSelections.isEmpty else { return }
+        selectedSelections = Set(
+            StatsInviteDraftStore.loadSelections().filter { !isLocked($0) }
+        )
+    }
+
+    private func selectionFor(_ type: StatType, side: StatsInviteTeamSide) -> StatsInviteSelection {
+        StatsInviteSelection(statTypeID: type.id, side: side)
+    }
+
+    private func isLocked(_ selection: StatsInviteSelection) -> Bool {
+        lockedSelectionOwners[selection.id] != nil
+    }
+
+    private func lockedOwnerName(for selection: StatsInviteSelection) -> String? {
+        lockedSelectionOwners[selection.id]
+    }
+
+    @ViewBuilder
+    private func teamPillHeader(title: String, style: ClubStyle.Style) -> some View {
+        ScorePill(title, style: style)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func selectionCell(for type: StatType, side: StatsInviteTeamSide) -> some View {
+        let selection = selectionFor(type, side: side)
+        let isSelected = selectedSelections.contains(selection)
+        let lockedOwner = lockedOwnerName(for: selection)
+        let locked = lockedOwner != nil
+
+        Button {
+            toggleSelection(selection)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                if let lockedOwner {
+                    Label(lockedOwner, systemImage: "lock.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("Assigned")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if isSelected {
+                    Label("Ready to invite", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                    Text("Selected")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("Available", systemImage: "plus.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("Tap to assign")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(selectionBackground(isSelected: isSelected, locked: locked))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(selectionBorderColor(isSelected: isSelected, locked: locked), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(locked)
+    }
+
+    private func toggleSelection(_ selection: StatsInviteSelection) {
+        guard !isLocked(selection) else { return }
+        if selectedSelections.contains(selection) {
+            selectedSelections.remove(selection)
+        } else {
+            selectedSelections.insert(selection)
+        }
+    }
+
+    private func selectionBackground(isSelected: Bool, locked: Bool) -> Color {
+        if locked {
+            return Color(.tertiarySystemFill)
+        }
+        if isSelected {
+            return Color.green.opacity(0.15)
+        }
+        return Color(.secondarySystemBackground)
+    }
+
+    private func selectionBorderColor(isSelected: Bool, locked: Bool) -> Color {
+        if locked {
+            return Color.gray.opacity(0.35)
+        }
+        if isSelected {
+            return .green.opacity(0.7)
+        }
+        return Color.gray.opacity(0.2)
+    }
+
+    private func sendInviteLink() {
+        guard let selectedContact, let activeSession else { return }
+        let assigned = selectedSelectionSummary
+        onSendInvite(selectedContact, selectedSelections)
+        latestInviteURL = UserDefaults.standard.string(forKey: "stats.lastInviteURL") ?? latestInviteURL
+        selectedSelections.removeAll()
+        let sessionLine = "\(activeSessionGradeName) vs \(activeSession.opposition) • \(activeSession.date.formatted(date: .abbreviated, time: .omitted))"
+        let body = """
+        \(selectedContact.name), you're invited as a Min-Man Stat Taker.
+
+        Session: \(sessionLine)
+
+        Assigned stats: \(assigned)
+
+        Open this link:
+        \(latestInviteURL)
+        """
+        smsDraft = SMSDraft(recipients: [selectedContact.phoneNumber], body: body)
     }
 
     @ViewBuilder
     private func invitedUserRow(_ assignment: StatsInviteAssignment) -> some View {
         let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Unknown Contact"
         let statusText = assignment.isConnected ? "Connected" : "Waiting"
-        let statNames = sortedStatTypes
-            .filter { assignment.assignedStatTypeIDs.contains($0.id) }
-            .map(\.name)
-            .joined(separator: ", ")
+        let assignedNames = statsInviteSelectionNames(
+            for: assignment.assignedSelections,
+            statTypes: sortedStatTypes
+        ).joined(separator: ", ")
+
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Circle()
@@ -5339,15 +7461,538 @@ private struct StatsStatTakersView: View {
                 Text(contactName)
                     .font(.headline)
                 Spacer()
-                Text(statusText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(assignment.isConnected ? .green : .secondary)
+                Button("Manage") {
+                    editingInvite = assignment
+                }
+                .buttonStyle(.bordered)
             }
-            Text("Collecting: \(statNames.isEmpty ? "None" : statNames)")
+            Text(statusText)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(assignment.isConnected ? .green : .secondary)
+            Text("Collecting: \(assignedNames.isEmpty ? "None" : assignedNames)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct StatsInviteLivePreviewView: View {
+    let clubConfiguration: ClubConfiguration
+    let clubName: String
+    let gradeTitle: String
+    let oppositionName: String
+    let selections: [StatsInviteSelection]
+    let statTypes: [StatType]
+    var showsDoneButton: Bool = true
+    @Environment(\.dismiss) private var dismiss
+    @State private var countsBySelectionID: [String: Int] = [:]
+
+    private var ourSelections: [StatsInviteSelection] {
+        selections.filter { $0.side == .ourClub }
+    }
+
+    private var oppositionSelections: [StatsInviteSelection] {
+        selections.filter { $0.side == .opposition }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Invited User Preview")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+
+                        Text("\(clubName) vs \(oppositionName)")
+                            .font(.system(size: 34, weight: .black, design: .rounded))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.75)
+
+                        HStack(spacing: 10) {
+                            Label(gradeTitle, systemImage: "person.3.fill")
+                            Label("Live Stats", systemImage: "dot.radiowaves.left.and.right")
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+
+                    if selections.isEmpty {
+                        ContentUnavailableView(
+                            "No Stats Selected",
+                            systemImage: "rectangle.grid.2x2",
+                            description: Text("Choose some stats first to preview the invite screen.")
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 48)
+                    } else {
+                        if !ourSelections.isEmpty {
+                            previewStatsSection(
+                                title: clubName,
+                                selections: ourSelections,
+                                availableWidth: proxy.size.width
+                            )
+                        }
+                        if !oppositionSelections.isEmpty {
+                            previewStatsSection(
+                                title: oppositionName,
+                                selections: oppositionSelections,
+                                availableWidth: proxy.size.width
+                            )
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(hex: clubConfiguration.clubTeam.primaryColorHex, fallback: .blue).opacity(0.16),
+                        Color(.systemBackground),
+                        Color(.secondarySystemBackground)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        }
+        .navigationTitle("Invite Preview")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if showsDoneButton {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func previewStatsSection(title: String, selections: [StatsInviteSelection], availableWidth: CGFloat) -> some View {
+        let groups = selections.chunked(into: 4)
+        return VStack(alignment: .leading, spacing: 16) {
+            ScorePill(title, style: style(for: title))
+
+            ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+                previewButtonGroupCard(
+                    selections: group,
+                    availableWidth: availableWidth,
+                    sectionTitle: groups.count > 1 ? "Section \(index + 1)" : nil
+                )
+            }
+        }
+    }
+
+    private func previewButtonGroupCard(
+        selections: [StatsInviteSelection],
+        availableWidth: CGFloat,
+        sectionTitle: String?
+    ) -> some View {
+        let columnCount = availableWidth > 900 ? 3 : 2
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 14), count: max(1, min(columnCount, selections.count)))
+
+        return VStack(alignment: .leading, spacing: 14) {
+            if let sectionTitle {
+                Text(sectionTitle)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: columns, spacing: 14) {
+                ForEach(selections) { selection in
+                    previewButton(for: selection)
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func previewButton(for selection: StatsInviteSelection) -> some View {
+        let count = countsBySelectionID[selection.id, default: 0]
+        return Button {
+            countsBySelectionID[selection.id, default: 0] += 1
+        } label: {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(selection.side.title.uppercased())
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.secondary)
+
+                Text(statName(for: selection))
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+
+                Text("\(count)")
+                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
+            .background(buttonBackground(for: selection), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func style(for title: String) -> ClubStyle.Style {
+        ClubStyle.style(for: title, configuration: clubConfiguration)
+    }
+
+    private func buttonBackground(for selection: StatsInviteSelection) -> LinearGradient {
+        switch selection.side {
+        case .ourClub:
+            let primary = Color(hex: clubConfiguration.clubTeam.primaryColorHex, fallback: .blue)
+            let secondary = Color(hex: clubConfiguration.clubTeam.secondaryColorHex ?? clubConfiguration.clubTeam.primaryColorHex, fallback: .blue)
+            return LinearGradient(colors: [primary, secondary], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .opposition:
+            let style = ClubStyle.style(for: oppositionName, configuration: clubConfiguration)
+            return LinearGradient(colors: [style.background, style.border], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+
+    private func statName(for selection: StatsInviteSelection) -> String {
+        statTypes.first(where: { $0.id == selection.statTypeID })?.name ?? "Stat"
+    }
+}
+
+struct StatTakerStatsView: View {
+    @Query(sort: \Grade.displayOrder) private var grades: [Grade]
+    @Query(sort: \StatType.sortOrder) private var allStatTypes: [StatType]
+
+    @AppStorage("statsInvitePreviewGradeID") private var previewGradeIDRaw = ""
+    @AppStorage("statsInvitePreviewOpponentName") private var previewOpponentName = "Opposition"
+
+    private var clubConfiguration: ClubConfiguration {
+        ClubConfigurationStore.load()
+    }
+
+    private var clubName: String {
+        let trimmed = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Min Man" : trimmed
+    }
+
+    private var enabledStatTypes: [StatType] {
+        allStatTypes.filter(\.isEnabled).sorted(by: { $0.sortOrder < $1.sortOrder })
+    }
+
+    private var assignedSelections: [StatsInviteSelection] {
+        let sortOrderByID = Dictionary(uniqueKeysWithValues: enabledStatTypes.map { ($0.id, $0.sortOrder) })
+        return StatsInviteDraftStore.loadSelections().sorted {
+            let leftOrder = sortOrderByID[$0.statTypeID] ?? 0
+            let rightOrder = sortOrderByID[$1.statTypeID] ?? 0
+            if leftOrder != rightOrder {
+                return leftOrder < rightOrder
+            }
+            if $0.side != $1.side {
+                return $0.side == .ourClub
+            }
+            return false
+        }
+    }
+
+    private var selectedGrade: Grade? {
+        guard let id = UUID(uuidString: previewGradeIDRaw) else {
+            return grades.first
+        }
+        return grades.first(where: { $0.id == id }) ?? grades.first
+    }
+
+    private var gradeTitle: String {
+        selectedGrade?.name ?? "Grade"
+    }
+
+    private var oppositionName: String {
+        let trimmed = previewOpponentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Opposition" : trimmed
+    }
+
+    var body: some View {
+        NavigationStack {
+            if assignedSelections.isEmpty {
+                ContentUnavailableView(
+                    "Waiting for stats invite",
+                    systemImage: "rectangle.grid.2x2",
+                    description: Text("Assigned stats will appear here when a stats session invite is received.")
+                )
+                .navigationTitle("Stats View")
+            } else {
+                StatsInviteLivePreviewView(
+                    clubConfiguration: clubConfiguration,
+                    clubName: clubName,
+                    gradeTitle: gradeTitle,
+                    oppositionName: oppositionName,
+                    selections: assignedSelections,
+                    statTypes: enabledStatTypes,
+                    showsDoneButton: false
+                )
+            }
+        }
+        .onAppear {
+            if previewGradeIDRaw.isEmpty, let firstGrade = grades.first {
+                previewGradeIDRaw = firstGrade.id.uuidString
+            }
+            if previewOpponentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                previewOpponentName = clubConfiguration.sortedOppositions.first?.name ?? "Opposition"
+            }
+        }
+    }
+}
+
+struct StatsInvitePreviewSettingsView: View {
+    @Query(sort: \Grade.displayOrder) private var grades: [Grade]
+    @Query(sort: \StatType.sortOrder) private var allStatTypes: [StatType]
+
+    @AppStorage("statsInvitePreviewGradeID") private var previewGradeIDRaw = ""
+    @AppStorage("statsInvitePreviewOpponentName") private var previewOpponentName = "Opposition"
+
+    @State private var countsBySelectionID: [String: Int] = [:]
+
+    private var clubConfiguration: ClubConfiguration {
+        ClubConfigurationStore.load()
+    }
+
+    private var clubName: String {
+        let trimmed = clubConfiguration.clubTeam.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Min Man" : trimmed
+    }
+
+    private var enabledStatTypes: [StatType] {
+        allStatTypes.filter(\.isEnabled).sorted(by: { $0.sortOrder < $1.sortOrder })
+    }
+
+    private var draftSelections: [StatsInviteSelection] {
+        let sortOrderByID = Dictionary(uniqueKeysWithValues: enabledStatTypes.map { ($0.id, $0.sortOrder) })
+        return StatsInviteDraftStore.loadSelections().sorted {
+            let leftOrder = sortOrderByID[$0.statTypeID] ?? 0
+            let rightOrder = sortOrderByID[$1.statTypeID] ?? 0
+            if leftOrder != rightOrder {
+                return leftOrder < rightOrder
+            }
+            if $0.side != $1.side {
+                return $0.side == .ourClub
+            }
+            return false
+        }
+    }
+
+    private var selectedGrade: Grade? {
+        guard let id = UUID(uuidString: previewGradeIDRaw) else {
+            return grades.first
+        }
+        return grades.first(where: { $0.id == id }) ?? grades.first
+    }
+
+    private var gradeTitle: String {
+        selectedGrade?.name ?? "Grade"
+    }
+
+    private var oppositionName: String {
+        let trimmed = previewOpponentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Opposition" : trimmed
+    }
+
+    private var ourSelections: [StatsInviteSelection] {
+        draftSelections.filter { $0.side == .ourClub }
+    }
+
+    private var oppositionSelections: [StatsInviteSelection] {
+        draftSelections.filter { $0.side == .opposition }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    previewHeader
+                    previewControls
+
+                    if draftSelections.isEmpty {
+                        ContentUnavailableView(
+                            "No Stats Selected",
+                            systemImage: "rectangle.grid.2x2",
+                            description: Text("Start a New Stats Session and turn stats on in the wizard to populate this preview.")
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 48)
+                    } else {
+                        if !ourSelections.isEmpty {
+                            statsSection(
+                                title: clubName,
+                                selections: ourSelections,
+                                availableWidth: proxy.size.width
+                            )
+                        }
+                        if !oppositionSelections.isEmpty {
+                            statsSection(
+                                title: oppositionName,
+                                selections: oppositionSelections,
+                                availableWidth: proxy.size.width
+                            )
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(hex: clubConfiguration.clubTeam.primaryColorHex, fallback: .blue).opacity(0.16),
+                        Color(.systemBackground),
+                        Color(.secondarySystemBackground)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        }
+        .navigationTitle("Stats View")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if previewGradeIDRaw.isEmpty, let firstGrade = grades.first {
+                previewGradeIDRaw = firstGrade.id.uuidString
+            }
+            if previewOpponentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                previewOpponentName = clubConfiguration.sortedOppositions.first?.name ?? "Opposition"
+            }
+        }
+    }
+
+    private var previewHeader: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Invited User Preview")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Text("\(clubName) vs \(oppositionName)")
+                .font(.system(size: 34, weight: .black, design: .rounded))
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+
+            HStack(spacing: 10) {
+                Label(gradeTitle, systemImage: "person.3.fill")
+                Label("Live Stats", systemImage: "dot.radiowaves.left.and.right")
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    private var previewControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Preview Setup")
+                .font(.headline)
+
+            if !grades.isEmpty {
+                Picker("Grade", selection: $previewGradeIDRaw) {
+                    ForEach(grades) { grade in
+                        Text(grade.name).tag(grade.id.uuidString)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            TextField("Opposition", text: $previewOpponentName)
+                .textFieldStyle(.roundedBorder)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func statsSection(title: String, selections: [StatsInviteSelection], availableWidth: CGFloat) -> some View {
+        let groups = selections.chunked(into: 4)
+        return VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.title2.weight(.black))
+
+            ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+                buttonGroupCard(
+                    selections: group,
+                    availableWidth: availableWidth,
+                    sectionTitle: groups.count > 1 ? "Section \(index + 1)" : nil
+                )
+            }
+        }
+    }
+
+    private func buttonGroupCard(
+        selections: [StatsInviteSelection],
+        availableWidth: CGFloat,
+        sectionTitle: String?
+    ) -> some View {
+        let columnCount = availableWidth > 900 ? 3 : 2
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 14), count: max(1, min(columnCount, selections.count)))
+
+        return VStack(alignment: .leading, spacing: 14) {
+            if let sectionTitle {
+                Text(sectionTitle)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: columns, spacing: 14) {
+                ForEach(selections) { selection in
+                    previewButton(for: selection)
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func previewButton(for selection: StatsInviteSelection) -> some View {
+        let count = countsBySelectionID[selection.id, default: 0]
+        return Button {
+            countsBySelectionID[selection.id, default: 0] += 1
+        } label: {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(selection.side.title.uppercased())
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.secondary)
+
+                Text(statName(for: selection))
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+
+                Text("\(count)")
+                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
+            .background(buttonBackground(for: selection), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func buttonBackground(for selection: StatsInviteSelection) -> LinearGradient {
+        switch selection.side {
+        case .ourClub:
+            let primary = Color(hex: clubConfiguration.clubTeam.primaryColorHex, fallback: .blue)
+            let secondary = Color(hex: clubConfiguration.clubTeam.secondaryColorHex ?? clubConfiguration.clubTeam.primaryColorHex, fallback: .blue)
+            return LinearGradient(colors: [primary, secondary], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .opposition:
+            return LinearGradient(colors: [Color(red: 0.58, green: 0.14, blue: 0.14), Color(red: 0.87, green: 0.36, blue: 0.23)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+
+    private func statName(for selection: StatsInviteSelection) -> String {
+        enabledStatTypes.first(where: { $0.id == selection.statTypeID })?.name ?? "Stat"
     }
 }
 
@@ -5442,21 +8087,22 @@ private struct StatsInviteManagementSheet: View {
     let onSave: () -> Void
     let onReinvite: () -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedIDs: Set<UUID> = []
+    @State private var selectedSelections: Set<StatsInviteSelection> = []
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Assigned Stat Types") {
                     ForEach(allStatTypes) { type in
-                        Toggle(type.name, isOn: Binding(
-                            get: { selectedIDs.contains(type.id) },
-                            set: { isOn in
-                                if isOn { selectedIDs.insert(type.id) } else { selectedIDs.remove(type.id) }
-                                assignment.setAssignedStatTypeIDs(Array(selectedIDs))
-                                onSave()
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(type.name)
+                                .font(.headline)
+                            HStack(spacing: 12) {
+                                Toggle("Us", isOn: selectionBinding(for: type, side: .ourClub))
+                                Toggle("Opposition", isOn: selectionBinding(for: type, side: .opposition))
                             }
-                        ))
+                        }
+                        .padding(.vertical, 4)
                     }
                 }
                 Section("Actions") {
@@ -5472,9 +8118,25 @@ private struct StatsInviteManagementSheet: View {
                 }
             }
             .onAppear {
-                selectedIDs = Set(assignment.assignedStatTypeIDs)
+                selectedSelections = Set(assignment.assignedSelections)
             }
         }
+    }
+
+    private func selectionBinding(for type: StatType, side: StatsInviteTeamSide) -> Binding<Bool> {
+        let selection = StatsInviteSelection(statTypeID: type.id, side: side)
+        return Binding(
+            get: { selectedSelections.contains(selection) },
+            set: { isOn in
+                if isOn {
+                    selectedSelections.insert(selection)
+                } else {
+                    selectedSelections.remove(selection)
+                }
+                assignment.setAssignedSelections(Array(selectedSelections))
+                onSave()
+            }
+        )
     }
 }
 
@@ -5482,12 +8144,23 @@ private struct InviteStatWebInterfaceView: View {
     let assignment: StatsInviteAssignment
     let statTypes: [StatType]
     let contactName: String
-    let onRecord: (StatType) -> Void
+    let onRecord: (StatsInviteSelection) -> Void
     let onConnectionChanged: (Bool) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    private var assignedTypes: [StatType] {
-        statTypes.filter { assignment.assignedStatTypeIDs.contains($0.id) }
+    private var assignedSelections: [StatsInviteSelection] {
+        let sortOrderByID = Dictionary(uniqueKeysWithValues: statTypes.map { ($0.id, $0.sortOrder) })
+        return assignment.assignedSelections.sorted {
+            let leftOrder = sortOrderByID[$0.statTypeID] ?? 0
+            let rightOrder = sortOrderByID[$1.statTypeID] ?? 0
+            if leftOrder != rightOrder {
+                return leftOrder < rightOrder
+            }
+            if $0.side != $1.side {
+                return $0.side == .ourClub
+            }
+            return false
+        }
     }
 
     var body: some View {
@@ -5499,9 +8172,9 @@ private struct InviteStatWebInterfaceView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12)], spacing: 12) {
-                    ForEach(assignedTypes) { type in
-                        Button(type.name) {
-                            onRecord(type)
+                    ForEach(assignedSelections) { selection in
+                        Button(selectionName(for: selection)) {
+                            onRecord(selection)
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -5521,5 +8194,10 @@ private struct InviteStatWebInterfaceView: View {
             }
             .onAppear { onConnectionChanged(true) }
         }
+    }
+
+    private func selectionName(for selection: StatsInviteSelection) -> String {
+        let statName = statTypes.first(where: { $0.id == selection.statTypeID })?.name ?? "Stat"
+        return "\(selection.side.selectionPrefix) \(statName)"
     }
 }

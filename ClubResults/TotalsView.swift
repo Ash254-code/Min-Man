@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct TotalsView: View {
+    @EnvironmentObject private var navigationState: AppNavigationState
     @Query private var grades: [Grade]
     @Query(sort: \Player.name) private var players: [Player]
     @Query(sort: \Game.date) private var games: [Game]
@@ -50,7 +51,7 @@ struct TotalsView: View {
     }
 
     private var displayGroups: [LeaderboardGroup] {
-        let allSections = ["Best Player", "Guest Votes", "Best & Fairest", "Goal Kickers"]
+        let allSections = visibleSections
 
         if combineAllGrades || effectiveGradeIDs.count <= 1 {
             let selectedName: String
@@ -63,21 +64,26 @@ struct TotalsView: View {
                 selectedName = "Leaderboards"
             }
 
-            let sections = allSections.map { section in
-                (title: section, rows: rows(for: section, gradeIDs: effectiveGradeIDs))
-            }
-            return [LeaderboardGroup(title: selectedName, sections: sections)]
+            let sections = leaderboardSections(for: effectiveGradeIDs, sectionTitles: allSections)
+            return sections.isEmpty ? [] : [LeaderboardGroup(title: selectedName, sections: sections)]
         }
 
         return orderedGrades
             .filter { effectiveGradeIDs.contains($0.id) }
-            .map { grade in
+            .compactMap { grade in
                 let gradeIDs: Set<UUID> = [grade.id]
-                let sections = allSections.map { section in
-                    (title: section, rows: rows(for: section, gradeIDs: gradeIDs))
-                }
+                let sections = leaderboardSections(for: gradeIDs, sectionTitles: allSections)
+                guard !sections.isEmpty else { return nil }
                 return LeaderboardGroup(title: "\(grade.name) Leaderboards", sections: sections)
             }
+    }
+
+    private var visibleSections: [String] {
+        if !navigationState.currentRole.canViewVoteDetails {
+            return ["Best Player", "Goal Kickers"]
+        }
+
+        return ["Best Player", "Guest Votes", "Best & Fairest", "Goal Kickers"]
     }
 
     private struct LeaderboardGroup: Identifiable {
@@ -101,12 +107,20 @@ struct TotalsView: View {
         return games.filter { gradeIDs.contains($0.gradeID) }
     }
 
-    private func constrained(_ rows: [LeaderRow], sectionTitle: String) -> [LeaderRow] {
-        if sectionTitle == "Goal Kickers" {
-            return Array(rows.prefix(5))
-        }
+    private func constrained(_ rows: [LeaderRow]) -> [LeaderRow] {
         guard let limit = topCount.limit else { return rows }
         return Array(rows.prefix(limit))
+    }
+
+    private func leaderboardSections(
+        for gradeIDs: Set<UUID>,
+        sectionTitles: [String]
+    ) -> [(title: String, rows: [LeaderRow])] {
+        sectionTitles.compactMap { section in
+            let visibleRows = constrained(rows(for: section, gradeIDs: gradeIDs))
+            guard !visibleRows.isEmpty else { return nil }
+            return (title: section, rows: visibleRows)
+        }
     }
 
     private func toggleGradeSelection(_ gradeID: UUID) {
@@ -134,26 +148,36 @@ struct TotalsView: View {
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 2 : 1)
 
                 ScrollView {
-                    LazyVStack(spacing: 18) {
-                        ForEach(displayGroups) { group in
-                            VStack(alignment: .leading, spacing: 14) {
-                                HStack {
-                                    Spacer()
-                                    ClubPill(text: group.title, bg: ClubTheme.navy, fg: ClubTheme.yellow)
-                                    Spacer()
-                                }
+                    if displayGroups.isEmpty {
+                        ContentUnavailableView(
+                            "No leaderboard data",
+                            systemImage: "list.bullet.rectangle",
+                            description: Text("Leaderboards will appear here once results have been recorded.")
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.top, 40)
+                    } else {
+                        LazyVStack(spacing: 18) {
+                            ForEach(displayGroups) { group in
+                                VStack(alignment: .leading, spacing: 14) {
+                                    HStack {
+                                        Spacer()
+                                        ClubPill(text: group.title, bg: ClubTheme.navy, fg: ClubTheme.yellow)
+                                        Spacer()
+                                    }
 
-                                LazyVGrid(columns: columns, spacing: 12) {
-                                    ForEach(Array(group.sections.enumerated()), id: \.offset) { _, section in
-                                        leaderboardCard(title: section.title, rows: section.rows)
+                                    LazyVGrid(columns: columns, spacing: 12) {
+                                        ForEach(Array(group.sections.enumerated()), id: \.offset) { _, section in
+                                            leaderboardCard(title: section.title, rows: section.rows)
+                                        }
                                     }
                                 }
+                                .padding(.vertical, 2)
                             }
-                            .padding(.vertical, 2)
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
                 }
             }
             .background(Color.clear)
@@ -367,32 +391,24 @@ private extension TotalsView {
 
             bigPillHeader(title)
 
-            let visibleRows = constrained(rows, sectionTitle: title)
+            ForEach(rows) { row in
+                HStack(spacing: 10) {
+                    Text(medal(for: row.rank))
+                        .frame(width: 28, alignment: .leading)
 
-            if visibleRows.isEmpty {
-                Text("No data yet.")
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 6)
-            } else {
-                ForEach(visibleRows) { row in
-                    HStack(spacing: 10) {
-                        Text(medal(for: row.rank))
-                            .frame(width: 28, alignment: .leading)
+                    Text(row.name)
+                        .lineLimit(1)
 
-                        Text(row.name)
-                            .lineLimit(1)
+                    Spacer()
 
-                        Spacer()
+                    Text(row.valueText)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                .padding(.vertical, 4)
 
-                        Text(row.valueText)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    .padding(.vertical, 4)
-
-                    if row.id != visibleRows.last?.id {
-                        Divider().opacity(0.25)
-                    }
+                if row.id != rows.last?.id {
+                    Divider().opacity(0.25)
                 }
             }
         }

@@ -23,7 +23,13 @@ enum ExportService {
         goals * 6 + behinds
     }
 
-    static func gameSummaryText(game: ExportableGame, gradeName: String, includeScore: Bool = true, playerName: (UUID) -> String) -> String {
+    static func gameSummaryText(
+        game: ExportableGame,
+        gradeName: String,
+        includeScore: Bool = true,
+        includeRestrictedVotes: Bool = true,
+        playerName: (UUID) -> String
+    ) -> String {
         let ourTotal = points(goals: game.ourGoals, behinds: game.ourBehinds)
         let theirTotal = points(goals: game.theirGoals, behinds: game.theirBehinds)
 
@@ -53,7 +59,7 @@ enum ExportService {
             lines.append("")
         }
 
-        if !game.guestVotesRanked.isEmpty {
+        if includeRestrictedVotes, !game.guestVotesRanked.isEmpty {
             lines.append("Guest Votes Ranking:")
             for vote in game.guestVotesRanked.sorted(by: { $0.rank < $1.rank }) {
                 lines.append("\(vote.rank). \(playerName(vote.playerID))")
@@ -67,7 +73,7 @@ enum ExportService {
             lines.append(trimmedNotes)
         }
 
-        if game.guestBestFairestVotesScanPDF != nil {
+        if includeRestrictedVotes, game.guestBestFairestVotesScanPDF != nil {
             lines.append("")
             lines.append("Guest Best & Fairest votes scan: attached")
         }
@@ -76,7 +82,12 @@ enum ExportService {
     }
 
     /// Creates a CSV file for a single game and returns its file URL for sharing/saving.
-    static func makeGameCSV(game: ExportableGame, gradeName: String, playerName: (UUID) -> String) throws -> URL {
+    static func makeGameCSV(
+        game: ExportableGame,
+        gradeName: String,
+        includeRestrictedVotes: Bool = true,
+        playerName: (UUID) -> String
+    ) throws -> URL {
         let ourTotal = points(goals: game.ourGoals, behinds: game.ourBehinds)
         let theirTotal = points(goals: game.theirGoals, behinds: game.theirBehinds)
 
@@ -84,10 +95,12 @@ enum ExportService {
         let best = game.bestPlayersRanked.enumerated()
             .map { "\($0.offset + 1):\(playerName($0.element))" }
             .joined(separator: "; ")
-        let guestVotes = game.guestVotesRanked
-            .sorted(by: { $0.rank < $1.rank })
-            .map { "\($0.rank):\(playerName($0.playerID))" }
-            .joined(separator: "; ")
+        let guestVotes = includeRestrictedVotes
+            ? game.guestVotesRanked
+                .sorted(by: { $0.rank < $1.rank })
+                .map { "\($0.rank):\(playerName($0.playerID))" }
+                .joined(separator: "; ")
+            : ""
 
         let kickers = game.goalKickers
             .map { "\(playerName($0.playerID!))=\($0.goals)" }
@@ -130,16 +143,40 @@ enum ExportService {
         return url
     }
 
-    static func makeGameSummaryTextFile(game: ExportableGame, gradeName: String, includeScore: Bool = true, playerName: (UUID) -> String) throws -> URL {
-        let text = gameSummaryText(game: game, gradeName: gradeName, includeScore: includeScore, playerName: playerName)
+    static func makeGameSummaryTextFile(
+        game: ExportableGame,
+        gradeName: String,
+        includeScore: Bool = true,
+        includeRestrictedVotes: Bool = true,
+        playerName: (UUID) -> String
+    ) throws -> URL {
+        let text = gameSummaryText(
+            game: game,
+            gradeName: gradeName,
+            includeScore: includeScore,
+            includeRestrictedVotes: includeRestrictedVotes,
+            playerName: playerName
+        )
         let filename = fileSafe("\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted))_vs_\(game.opponent).txt")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         try text.write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 
-    static func makeGameSummaryPDF(game: ExportableGame, gradeName: String, includeScore: Bool = true, playerName: (UUID) -> String) throws -> URL {
-        let summary = gameSummaryText(game: game, gradeName: gradeName, includeScore: includeScore, playerName: playerName)
+    static func makeGameSummaryPDF(
+        game: ExportableGame,
+        gradeName: String,
+        includeScore: Bool = true,
+        includeRestrictedVotes: Bool = true,
+        playerName: (UUID) -> String
+    ) throws -> URL {
+        let summary = gameSummaryText(
+            game: game,
+            gradeName: gradeName,
+            includeScore: includeScore,
+            includeRestrictedVotes: includeRestrictedVotes,
+            playerName: playerName
+        )
         let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter at 72 dpi
         let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
 

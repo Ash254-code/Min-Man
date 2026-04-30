@@ -7,20 +7,42 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+    @EnvironmentObject private var navigationState: AppNavigationState
+    @EnvironmentObject private var authCoordinator: AuthenticationCoordinator
     @AppStorage("settings.open.contacts") private var shouldOpenContacts = false
     @State private var saveErrorMessage: String?
     @State private var showContactsSettings = false
+    @State private var showProfileSheet = false
     var resetToken: UUID = UUID()
 
     var body: some View {
         NavigationStack {
             List {
                 settingsSection
-                adminSection
+                if !navigationState.currentRole.showsSupporterSettingsOnly &&
+                    !navigationState.currentRole.showsTeamManagerSettingsOnly &&
+                    !navigationState.currentRole.showsCoachSettingsOnly {
+                    adminSection
+                }
             }
             .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    profileButton
+                }
+                if navigationState.canPreviewRoles {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        viewAsMenu
+                    }
+                }
+            }
             .navigationDestination(isPresented: $showContactsSettings) {
                 ContactsSettingsView()
+            }
+            .sheet(isPresented: $showProfileSheet) {
+                NavigationStack {
+                    ProfileSheetView()
+                }
             }
             .task {
                 seedInitialGradesIfNeeded()
@@ -51,24 +73,60 @@ struct SettingsView: View {
 
     private var settingsSection: some View {
         Section("Settings") {
-            settingsLink("Club Grades", icon: "person.3.fill", destination: AnyView(ClubGradesSettingsView()))
-            settingsLink("Players", icon: "person.3", destination: AnyView(PlayersView()))
-            settingsLink("Stats", icon: "chart.xyaxis.line", destination: AnyView(StatsTypesSettingsView()))
-            settingsLink("Umpires", icon: "flag.pattern.checkered", destination: AnyView(UmpiresSettingsView()))
-            settingsLink("App Appearance", icon: "circle.lefthalf.filled", destination: AnyView(AppAppearanceSettingsView()))
-            settingsLink("Teams & Venues", icon: "flag.2.crossed", destination: AnyView(TeamsAndVenuesSettingsView()))
-            settingsLink("Contacts", icon: "person.crop.circle.badge.checkmark", destination: AnyView(ContactsSettingsView()))
-            settingsLink("Groups", icon: "person.3.sequence", destination: AnyView(GroupsSettingsView()))
-            settingsLink("AI Master of Ceremonies", icon: "waveform.badge.mic", destination: AnyView(AIMasterOfCeremoniesSettingsView()))
+            if navigationState.currentRole.showsSupporterSettingsOnly {
+                settingsLink("App Appearance", icon: "circle.lefthalf.filled", destination: AnyView(AppAppearanceSettingsView()))
+            } else if navigationState.currentRole.showsTeamManagerSettingsOnly {
+                settingsLink("Players", icon: "person.3", destination: AnyView(PlayersView()))
+                settingsLink("App Appearance", icon: "circle.lefthalf.filled", destination: AnyView(AppAppearanceSettingsView()))
+            } else if navigationState.currentRole.showsCoachSettingsOnly {
+                settingsLink("App Appearance", icon: "circle.lefthalf.filled", destination: AnyView(AppAppearanceSettingsView()))
+            } else {
+                settingsLink("Club Grades", icon: "person.3.fill", destination: AnyView(ClubGradesSettingsView()))
+                settingsLink("Players", icon: "person.3", destination: AnyView(PlayersView()))
+                if !navigationState.currentRole.hasRestrictedAdminSettings {
+                    settingsLink("Stats Settings", icon: "chart.xyaxis.line", destination: AnyView(StatsTypesSettingsView()))
+                }
+                settingsLink("Stats View", icon: "rectangle.grid.2x2.fill", destination: AnyView(StatsInvitePreviewSettingsView()))
+                settingsLink("Umpires", icon: "flag.pattern.checkered", destination: AnyView(UmpiresSettingsView()))
+                settingsLink("App Appearance", icon: "circle.lefthalf.filled", destination: AnyView(AppAppearanceSettingsView()))
+                settingsLink("Teams & Venues", icon: "flag.2.crossed", destination: AnyView(TeamsAndVenuesSettingsView()))
+                settingsLink("Contacts", icon: "person.crop.circle.badge.checkmark", destination: AnyView(ContactsSettingsView()))
+                settingsLink("Groups", icon: "person.3.sequence", destination: AnyView(GroupsSettingsView()))
+                settingsLink(
+                    "Reports",
+                    icon: "doc.text",
+                    destination: AnyView(ReportsSettingsView {
+                        shouldOpenContacts = true
+                    })
+                )
+                if !navigationState.currentRole.hasRestrictedAdminSettings {
+                    settingsLink("AI Master of Ceremonies", icon: "waveform.badge.mic", destination: AnyView(AIMasterOfCeremoniesSettingsView()))
+                }
+            }
         }
     }
 
     private var adminSection: some View {
         Section("Admin") {
-            settingsLink("Clear Saved Picker Names", icon: "trash", destination: AnyView(AdminNameResetView()))
-            settingsLink("Backup & Restore", icon: "externaldrive.badge.icloud", destination: AnyView(BackupAndRestoreSettingsView()))
-            settingsLink("PIN Code", icon: "number.square", destination: AnyView(PinCodeSettingsView()))
+            settingsLink("Roles", icon: "person.crop.rectangle.stack.fill", destination: AnyView(RolesSettingsView()))
+            if navigationState.currentRole.canManageInvites {
+                settingsLink("User Invites", icon: "person.badge.plus", destination: AnyView(UserInviteSettingsView()))
+            }
+            if !navigationState.currentRole.hasRestrictedAdminSettings {
+                settingsLink("Clear Saved Picker Names", icon: "trash", destination: AnyView(AdminNameResetView()))
+                settingsLink("Backup & Restore", icon: "externaldrive.badge.icloud", destination: AnyView(BackupAndRestoreSettingsView()))
+                settingsLink("PIN Code", icon: "number.square", destination: AnyView(PinCodeSettingsView()))
+            }
         }
+    }
+
+    private var profileButton: some View {
+        Button {
+            showProfileSheet = true
+        } label: {
+            Image(systemName: "person.crop.circle")
+        }
+        .accessibilityLabel("Profile")
     }
 
     private func settingsLink(
@@ -92,6 +150,25 @@ struct SettingsView: View {
                 .foregroundStyle(.tint)
                 .frame(width: settingsIconColumnWidth, alignment: .leading)
             Text(title)
+        }
+    }
+
+    private var viewAsMenu: some View {
+        Menu {
+            ForEach(AppRole.allCases) { role in
+                Button {
+                    navigationState.setPreviewRole(role)
+                } label: {
+                    if role == navigationState.currentRole {
+                        Label(role.title, systemImage: "checkmark")
+                    } else {
+                        Text(role.title)
+                    }
+                }
+            }
+        } label: {
+            Label(navigationState.currentRole.title, systemImage: navigationState.currentRole.icon)
+                .labelStyle(.titleAndIcon)
         }
     }
 
@@ -131,6 +208,94 @@ struct SettingsView: View {
         } catch {
             saveErrorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct ProfileSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigationState: AppNavigationState
+    @EnvironmentObject private var authCoordinator: AuthenticationCoordinator
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Signed In") {
+                    Text(authCoordinator.emailAddress ?? "No")
+                        .foregroundStyle(.secondary)
+                }
+
+                if let role = authCoordinator.currentRole {
+                    LabeledContent("Role") {
+                        Text(role.title)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if authCoordinator.isAuthenticated {
+                    Button("Sign Out", role: .destructive) {
+                        authCoordinator.signOut(navigationState: navigationState)
+                        dismiss()
+                    }
+                }
+            } header: {
+                Text("Access")
+            } footer: {
+                Text("Invites must use the same email address returned by Sign in with Apple.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Profile")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") {
+                    dismiss()
+                }
+            }
+        }
+    }
+}
+
+private struct RolesSettingsView: View {
+    @EnvironmentObject private var navigationState: AppNavigationState
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(AppRole.allCases) { role in
+                    Button {
+                        navigationState.setPreviewRole(role)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: role.icon)
+                                .foregroundStyle(.tint)
+                                .frame(width: 28)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(role.title)
+                                Text(role.summary)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            if role == navigationState.currentRole {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                Text("View As")
+            } footer: {
+                Text("Use this to preview the app as each role.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Roles")
     }
 }
 
@@ -3853,6 +4018,7 @@ func buildDateRange(
 
 private struct CustomReportPreviewView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigationState: AppNavigationState
 
     let template: CustomReportTemplate
     let grades: [Grade]
@@ -3936,7 +4102,8 @@ private struct CustomReportPreviewView: View {
                         grades: grades,
                         games: games,
                         players: players,
-                        dateRange: selectedDateRange
+                        dateRange: selectedDateRange,
+                        canViewVoteDetails: navigationState.currentRole.canViewVoteDetails
                     )
                 } catch {
                     errorMessage = "Could not generate preview PDF."
@@ -3992,6 +4159,7 @@ private struct ReportMailComposeView: UIViewControllerRepresentable {
 
 private struct CustomReportShareView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigationState: AppNavigationState
 
     let template: CustomReportTemplate
     let grades: [Grade]
@@ -4041,7 +4209,14 @@ private struct CustomReportShareView: View {
     private var shareMessage: String {
         var lines: [String] = []
         lines.append("Custom report: \(template.name)")
-        lines.append(buildTemplateDetails(for: template, grades: grades, dateRange: selectedDateRange))
+        lines.append(
+            buildTemplateDetails(
+                for: template,
+                grades: grades,
+                dateRange: selectedDateRange,
+                canViewVoteDetails: navigationState.currentRole.canViewVoteDetails
+            )
+        )
         lines.append(selectedContacts.isEmpty ? "Selected contacts: none" : "Selected contacts: \(selectedContacts.map(\.name).joined(separator: ", "))")
         lines.append(selectedGroups.isEmpty ? "Selected groups: none" : "Selected groups: \(selectedGroups.map(\.name).joined(separator: ", "))")
         return lines.joined(separator: "\n")
@@ -4177,7 +4352,12 @@ private struct CustomReportShareView: View {
     }
 }
 
-private func buildTemplateDetails(for template: CustomReportTemplate, grades: [Grade], dateRange: ReportDateRange) -> String {
+private func buildTemplateDetails(
+    for template: CustomReportTemplate,
+    grades: [Grade],
+    dateRange: ReportDateRange,
+    canViewVoteDetails: Bool
+) -> String {
     let orderedGrades = orderedGradesForDisplay(grades, includeInactive: true)
     let gradeNames = orderedGrades
         .filter { !template.includeOnlyActiveGrades || $0.isActive }
@@ -4191,11 +4371,11 @@ private func buildTemplateDetails(for template: CustomReportTemplate, grades: [G
         case "bestPlayers":
             return template.includeBestPlayers ? "Best players" : nil
         case "guestVotes":
-            return template.includePlayerGrades ? "Guest Votes" : nil
+            return template.includePlayerGrades && canViewVoteDetails ? "Guest Votes" : nil
         case "goalKickers":
             return template.includeGoalKickers ? "Goal kickers" : nil
         case "bestAndFairest":
-            return template.includeBestAndFairestVotes ? "B&F votes" : nil
+            return template.includeBestAndFairestVotes && canViewVoteDetails ? "B&F votes" : nil
         case "coachingStaff":
             return template.includeStaffRoles ? "Coaching Staff" : nil
         case "officials":
@@ -4299,7 +4479,8 @@ func makeTemplatePreviewPDF(
     grades: [Grade],
     games: [Game],
     players: [Player],
-    dateRange: ReportDateRange
+    dateRange: ReportDateRange,
+    canViewVoteDetails: Bool = true
 ) throws -> URL {
     let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
     let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
@@ -4424,7 +4605,7 @@ func makeTemplatePreviewPDF(
                 seenPlayerIDs.insert(playerID)
             }
         }
-        if template.includePlayerGrades || template.includeBestAndFairestVotes {
+        if canViewVoteDetails, (template.includePlayerGrades || template.includeBestAndFairestVotes) {
             for vote in game.guestVotesRanked {
                 seenPlayerIDs.insert(vote.playerID)
             }
@@ -4749,6 +4930,7 @@ func makeTemplatePreviewPDF(
             }()
             let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
             let guestVotePointsByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
+                guard canViewVoteDetails else { return }
                 for vote in game.guestVotesRanked {
                     partialResult[vote.playerID, default: 0] += guestVotePoints(for: game, rank: vote.rank)
                 }
@@ -4784,8 +4966,10 @@ func makeTemplatePreviewPDF(
                 for (index, playerID) in game.bestPlayersRanked.enumerated() {
                     bestAndFairestPoints[playerID, default: 0] += bestPlayerPoints(for: game, index: index)
                 }
-                for vote in game.guestVotesRanked {
-                    bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: game, rank: vote.rank)
+                if canViewVoteDetails {
+                    for vote in game.guestVotesRanked {
+                        bestAndFairestPoints[vote.playerID, default: 0] += guestVotePoints(for: game, rank: vote.rank)
+                    }
                 }
             }
             let allBestAndFairestRows = bestAndFairestPoints
@@ -5057,7 +5241,7 @@ func makeTemplatePreviewPDF(
                         pendingCompactTables.append((key: "bestPlayers", table: CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers)))
                     }
                 case "guestVotes":
-                    if template.includePlayerGrades {
+                    if template.includePlayerGrades, canViewVoteDetails {
                         pendingCompactTables.append((key: "guestVotes", table: CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes)))
                     }
                 case "goalKickers":
@@ -5069,7 +5253,7 @@ func makeTemplatePreviewPDF(
                         pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Goals", "Player"], rows: goalKickerRows)))
                     }
                 case "bestAndFairest":
-                    if template.includeBestAndFairestVotes {
+                    if template.includeBestAndFairestVotes, canViewVoteDetails {
                         pendingCompactTables.append((key: "bestAndFairest", table: CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest)))
                     }
                 case "coachingStaff", "officials", "trainers":
@@ -5133,7 +5317,7 @@ func makeTemplatePreviewPDF(
                         pendingCompactTables.append((key: "bestPlayers", table: CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers)))
                     }
                 case "guestVotes":
-                    if template.includePlayerGrades {
+                    if template.includePlayerGrades, canViewVoteDetails {
                         pendingCompactTables.append((key: "guestVotes", table: CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes)))
                     }
                 case "goalKickers":
@@ -5145,7 +5329,7 @@ func makeTemplatePreviewPDF(
                         pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Goals", "Player"], rows: goalKickerRows)))
                     }
                 case "bestAndFairest":
-                    if template.includeBestAndFairestVotes {
+                    if template.includeBestAndFairestVotes, canViewVoteDetails {
                         pendingCompactTables.append((key: "bestAndFairest", table: CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest)))
                     }
                 case "coachingStaff", "officials", "trainers":
@@ -5254,6 +5438,7 @@ private struct CustomReportTemplateDraft {
 
 private struct CustomReportEditView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigationState: AppNavigationState
 
     let grades: [Grade]
     let contacts: [Contact]
@@ -5585,11 +5770,15 @@ private struct CustomReportEditView: View {
         case "bestPlayers":
             toggleWithLimitPicker(title: "Best players", isOn: $includeBestPlayers, limit: $bestPlayersLimit, defaultLimitWhenEnabled: 0)
         case "guestVotes":
-            toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit, defaultLimitWhenEnabled: 0)
+            if navigationState.currentRole.canViewVoteDetails {
+                toggleWithLimitPicker(title: "Guest Votes", isOn: $includeGuestVotes, limit: $guestVotesLimit, defaultLimitWhenEnabled: 0)
+            }
         case "goalKickers":
             toggleWithLimitPicker(title: "Goal Kickers", isOn: $includeGoalKickers, limit: $goalKickersLimit, defaultLimitWhenEnabled: 0)
         case "bestAndFairest":
-            toggleWithLimitPicker(title: "Best and Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit, defaultLimitWhenEnabled: 5)
+            if navigationState.currentRole.canViewVoteDetails {
+                toggleWithLimitPicker(title: "Best and Fairest votes", isOn: $includeBestAndFairestVotes, limit: $bestAndFairestLimit, defaultLimitWhenEnabled: 5)
+            }
         case "coachingStaff":
             Toggle("Coaching Staff", isOn: $includeStaffRoles)
         case "officials":
@@ -5632,12 +5821,14 @@ private struct CustomReportEditView: View {
                 defaultLimitWhenEnabled: 0
             )
         case "guestVotes":
-            includedDataCardToggleWithLimitPicker(
-                title: "Guest Votes",
-                isOn: $includeGuestVotes,
-                limit: $guestVotesLimit,
-                defaultLimitWhenEnabled: 0
-            )
+            if navigationState.currentRole.canViewVoteDetails {
+                includedDataCardToggleWithLimitPicker(
+                    title: "Guest Votes",
+                    isOn: $includeGuestVotes,
+                    limit: $guestVotesLimit,
+                    defaultLimitWhenEnabled: 0
+                )
+            }
         case "goalKickers":
             includedDataCardToggleWithLimitPicker(
                 title: "Goal Kickers",
@@ -5646,12 +5837,14 @@ private struct CustomReportEditView: View {
                 defaultLimitWhenEnabled: 0
             )
         case "bestAndFairest":
-            includedDataCardToggleWithLimitPicker(
-                title: "Best and Fairest votes",
-                isOn: $includeBestAndFairestVotes,
-                limit: $bestAndFairestLimit,
-                defaultLimitWhenEnabled: 5
-            )
+            if navigationState.currentRole.canViewVoteDetails {
+                includedDataCardToggleWithLimitPicker(
+                    title: "Best and Fairest votes",
+                    isOn: $includeBestAndFairestVotes,
+                    limit: $bestAndFairestLimit,
+                    defaultLimitWhenEnabled: 5
+                )
+            }
         case "coachingStaff":
             includedDataCardToggle(title: "Coaching Staff", isOn: $includeStaffRoles)
         case "officials":
@@ -6034,6 +6227,7 @@ private struct CustomReportEditView: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        let canViewVoteDetails = navigationState.currentRole.canViewVoteDetails
                         let draft = CustomReportTemplateDraft(
                             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                             selectedGradeIDs: Array(selectedGradeIDs),
@@ -6042,11 +6236,11 @@ private struct CustomReportEditView: View {
                             includeScores: includeScores,
                             includeBestPlayers: includeBestPlayers,
                             bestPlayersLimit: bestPlayersLimit,
-                            includeGuestVotes: includeGuestVotes,
+                            includeGuestVotes: canViewVoteDetails ? includeGuestVotes : false,
                             guestVotesLimit: guestVotesLimit,
                             includeGoalKickers: includeGoalKickers,
                             goalKickersLimit: goalKickersLimit,
-                            includeBestAndFairestVotes: includeBestAndFairestVotes,
+                            includeBestAndFairestVotes: canViewVoteDetails ? includeBestAndFairestVotes : false,
                             bestAndFairestLimit: bestAndFairestLimit,
                             includeStaffRoles: includeStaffRoles,
                             includeOfficials: includeOfficials,

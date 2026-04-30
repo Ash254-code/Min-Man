@@ -5,7 +5,78 @@ import SwiftData
 struct ClubResultsApp: App {
 
     @State private var showSplash = true
+    @StateObject private var navigationState = AppNavigationState()
+    @StateObject private var authCoordinator = AuthenticationCoordinator()
     @AppStorage("appAppearance") private var appAppearance = AppAppearance.system.rawValue
+    private let modelContainer: ModelContainer = {
+        let schema = Schema([
+            Player.self,
+            Game.self,
+            Grade.self,
+            Contact.self,
+            ReportRecipient.self,
+            CustomReportTemplate.self,
+            ContactSectionMembership.self,
+            CustomReportRecipientSection.self,
+            CustomReportRecipientGroup.self,
+            CustomReportRecipientContact.self,
+            ContactGroup.self,
+            ContactGroupMembership.self,
+            ReportRecipientGroup.self,
+            StaffMember.self,
+            StaffDefault.self,
+            StatType.self,
+            StatsSession.self,
+            StatEvent.self,
+            StatsInviteAssignment.self
+        ])
+        return makeModelContainer(schema: schema)
+    }()
+
+    private static func makeModelContainer(schema: Schema) -> ModelContainer {
+        let storeURL = modelStoreURL()
+        let configuration = ModelConfiguration(url: storeURL, cloudKitDatabase: .none)
+
+        do {
+            return try ModelContainer(for: schema, configurations: configuration)
+        } catch {
+            do {
+                try removeStoreFiles(at: storeURL)
+                return try ModelContainer(for: schema, configurations: configuration)
+            } catch {
+                fatalError("Failed to create local SwiftData container: \(error)")
+            }
+        }
+    }
+
+    private static func modelStoreURL() -> URL {
+        let applicationSupportURL = URL.applicationSupportDirectory
+        do {
+            try FileManager.default.createDirectory(
+                at: applicationSupportURL,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            fatalError("Failed to prepare app support directory: \(error)")
+        }
+        return applicationSupportURL.appending(path: "ClubResults.store")
+    }
+
+    private static func removeStoreFiles(at storeURL: URL) throws {
+        let fileManager = FileManager.default
+        let auxiliaryExtensions = ["-shm", "-wal"]
+
+        if fileManager.fileExists(atPath: storeURL.path()) {
+            try fileManager.removeItem(at: storeURL)
+        }
+
+        for suffix in auxiliaryExtensions {
+            let auxiliaryURL = URL(fileURLWithPath: storeURL.path() + suffix)
+            if fileManager.fileExists(atPath: auxiliaryURL.path()) {
+                try fileManager.removeItem(at: auxiliaryURL)
+            }
+        }
+    }
 
     private var preferredScheme: ColorScheme? {
         switch AppAppearance(rawValue: appAppearance) ?? .system {
@@ -41,7 +112,9 @@ struct ClubResultsApp: App {
 
                 // Your app content
                 ZStack {
-                    ContentView()
+                    AuthenticationGateView {
+                        ContentView()
+                    }
                         .opacity(showSplash ? 0 : 1)
 
                     if showSplash {
@@ -50,6 +123,8 @@ struct ClubResultsApp: App {
                     }
                 }
             }
+            .environmentObject(authCoordinator)
+            .environmentObject(navigationState)
             .preferredColorScheme(preferredScheme)
             .tint(.appleBlue)
             .onAppear {
@@ -60,26 +135,6 @@ struct ClubResultsApp: App {
                 }
             }
         }
-        .modelContainer(for: [
-            Player.self,
-            Game.self,
-            Grade.self,
-            Contact.self,
-            ReportRecipient.self,
-            CustomReportTemplate.self,
-            ContactSectionMembership.self,
-            CustomReportRecipientSection.self,
-            CustomReportRecipientGroup.self,
-            CustomReportRecipientContact.self,
-            ContactGroup.self,
-            ContactGroupMembership.self,
-            ReportRecipientGroup.self,
-            StaffMember.self,   // ✅ Staff list for pickers
-            StaffDefault.self,   // ✅ Default per grade + role
-            StatType.self,
-            StatsSession.self,
-            StatEvent.self,
-            StatsInviteAssignment.self
-        ])
+        .modelContainer(modelContainer)
     }
 }

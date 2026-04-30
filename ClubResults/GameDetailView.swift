@@ -4,6 +4,7 @@ import SwiftData
 struct GameDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var navigationState: AppNavigationState
 
     let game: Game
     let grades: [Grade]
@@ -161,7 +162,7 @@ struct GameDetailView: View {
                     }
                 }
 
-                if !game.guestVotesRanked.isEmpty {
+                if navigationState.currentRole.canViewVoteDetails && !game.guestVotesRanked.isEmpty {
                     Section(header: Text("Guest Votes Ranking")) {
                         ForEach(game.guestVotesRanked.sorted(by: { $0.rank < $1.rank })) { vote in
                             HStack {
@@ -180,7 +181,7 @@ struct GameDetailView: View {
                     }
                 }
 
-                if game.guestBestFairestVotesScanPDF != nil {
+                if navigationState.currentRole.canViewVoteDetails && game.guestBestFairestVotesScanPDF != nil {
                     Section(header: Text("Guest Best & Fairest Votes")) {
                         Label("Votes scan attached", systemImage: "doc.richtext")
                             .foregroundStyle(.secondary)
@@ -206,16 +207,18 @@ struct GameDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") {
-                    requestProtectedAction(.edit)
+            if navigationState.currentRole.canEditGames {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit") {
+                        requestProtectedAction(.edit)
+                    }
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    requestProtectedAction(.delete)
-                } label: {
-                    Image(systemName: "trash")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) {
+                        requestProtectedAction(.delete)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
                 }
             }
         }
@@ -318,16 +321,32 @@ struct GameDetailView: View {
 
     private func prepareShareReport() {
         let gradeName = grades.first(where: { $0.id == game.gradeID })?.name ?? "Unknown Grade"
+        let includeRestrictedVotes = navigationState.currentRole.canViewVoteDetails
         let playerLookup: (UUID) -> String = { pid in
             players.first(where: { $0.id == pid })?.name ?? "Unknown"
         }
 
         do {
             var items: [Any] = []
-            items.append(try ExportService.makeGameSummaryTextFile(game: game, gradeName: gradeName, includeScore: shouldShowScoreInSummary, playerName: playerLookup))
-            items.append(try ExportService.makeGameCSV(game: game, gradeName: gradeName, playerName: playerLookup))
+            items.append(
+                try ExportService.makeGameSummaryTextFile(
+                    game: game,
+                    gradeName: gradeName,
+                    includeScore: shouldShowScoreInSummary,
+                    includeRestrictedVotes: includeRestrictedVotes,
+                    playerName: playerLookup
+                )
+            )
+            items.append(
+                try ExportService.makeGameCSV(
+                    game: game,
+                    gradeName: gradeName,
+                    includeRestrictedVotes: includeRestrictedVotes,
+                    playerName: playerLookup
+                )
+            )
 
-            if let scanData = game.guestBestFairestVotesScanPDF {
+            if includeRestrictedVotes, let scanData = game.guestBestFairestVotesScanPDF {
                 let pdfName = "GuestVotes_\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted)).pdf"
                 let pdfURL = FileManager.default.temporaryDirectory.appendingPathComponent(pdfName.replacingOccurrences(of: "/", with: "-"))
                 try scanData.write(to: pdfURL, options: Data.WritingOptions.atomic)
@@ -337,7 +356,15 @@ struct GameDetailView: View {
             shareItems = items
             showShareSheet = true
         } catch {
-            shareItems = [ExportService.gameSummaryText(game: game, gradeName: gradeName, includeScore: shouldShowScoreInSummary, playerName: playerLookup)]
+            shareItems = [
+                ExportService.gameSummaryText(
+                    game: game,
+                    gradeName: gradeName,
+                    includeScore: shouldShowScoreInSummary,
+                    includeRestrictedVotes: includeRestrictedVotes,
+                    playerName: playerLookup
+                )
+            ]
             showShareSheet = true
         }
     }

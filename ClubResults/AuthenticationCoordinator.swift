@@ -1,11 +1,26 @@
 import SwiftUI
 import AuthenticationServices
 import CloudKit
+internal import Combine
 
 struct CloudUserProfile {
     let email: String
     let role: AppRole
     let displayName: String
+    let lastSignedInAt: Date?
+}
+
+struct InvitedUserAccount: Identifiable {
+    let email: String
+    let role: AppRole
+    let displayName: String
+    let lastSignedInAt: Date?
+
+    var id: String { email }
+
+    var hasSignedIn: Bool {
+        lastSignedInAt != nil
+    }
 }
 
 enum CloudUserAccessError: LocalizedError {
@@ -23,6 +38,19 @@ enum CloudUserAccessError: LocalizedError {
 }
 
 actor CloudKitUserAccessService {
+    private enum StorageKeys {
+        static let bootstrapAdminAssigned = "cloudkit.bootstrapAdminAssigned"
+    }
+
+    private enum RecordNames {
+        static let invitedUserDirectory = "user-directory"
+    }
+
+    private enum DirectoryValues {
+        static let email = "__invited-user-directory__@clubresults.local"
+        static let role = AppRole.supporter
+    }
+
     static let shared = CloudKitUserAccessService()
 
     private let container = CKContainer(identifier: "iCloud.MINMAN.ClubResults")
@@ -35,34 +63,29 @@ actor CloudKitUserAccessService {
         let normalizedEmail = normalized(email)
 
         if let record = try await fetchUserRecord(email: normalizedEmail) {
-            let role = try role(from: record)
             let existingDisplayName = (record["displayName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let resolvedDisplayName = displayName.isEmpty ? existingDisplayName : displayName
-
-            if !resolvedDisplayName.isEmpty, existingDisplayName != resolvedDisplayName {
+            let now = Date()
+            if !resolvedDisplayName.isEmpty && existingDisplayName != resolvedDisplayName {
                 record["displayName"] = resolvedDisplayName as CKRecordValue
-                _ = try await save(record)
             }
-
-            return CloudUserProfile(
-                email: normalizedEmail,
-                role: role,
-                displayName: resolvedDisplayName
-            )
+            record["lastSignedInAt"] = now as CKRecordValue
+            let savedRecord = try await save(record)
+            try await addEmailToDirectory(normalizedEmail)
+            return try profile(from: savedRecord)
         }
 
-        let bootstrapRole: AppRole = try await hasAnyUserRecords() ? .supporter : .admin
+        let bootstrapRole: AppRole = bootstrapRoleForNewUser()
         let newRecord = CKRecord(recordType: "User", recordID: CKRecord.ID(recordName: recordName(for: normalizedEmail)))
         newRecord["email"] = normalizedEmail as CKRecordValue
         newRecord["role"] = bootstrapRole.rawValue as CKRecordValue
         newRecord["displayName"] = displayName as CKRecordValue
-        _ = try await save(newRecord)
+        newRecord["lastSignedInAt"] = Date() as CKRecordValue
+        let savedRecord = try await save(newRecord)
+        try await addEmailToDirectory(normalizedEmail)
+        markBootstrapAdminAssignedIfNeeded(for: bootstrapRole)
 
-        return CloudUserProfile(
-            email: normalizedEmail,
-            role: bootstrapRole,
-            displayName: displayName
-        )
+        return try profile(from: savedRecord)
     }
 
     func inviteUser(email: String, role: AppRole) async throws -> CloudUserProfile {
@@ -78,11 +101,39 @@ actor CloudKitUserAccessService {
         record["displayName"] = (existingDisplayName.isEmpty ? pendingDisplayName(for: normalizedEmail) : existingDisplayName) as CKRecordValue
 
         let savedRecord = try await save(record)
-        return CloudUserProfile(
-            email: normalizedEmail,
-            role: try self.role(from: savedRecord),
-            displayName: (savedRecord["displayName"] as? String) ?? ""
-        )
+        try await addEmailToDirectory(normalizedEmail)
+        return try profile(from: savedRecord)
+    }
+
+    func fetchInvitedUsers() async throws -> [InvitedUserAccount] {
+        let emails = try await fetchInvitedUserEmails()
+        let records = try await fetchUserRecords(emails: emails)
+        return try records
+            .compactMap { record in
+                let email = (record["email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !email.isEmpty else { return nil }
+                return try invitedUserAccount(from: record)
+            }
+            .sorted { lhs, rhs in
+                lhs.email.localizedCaseInsensitiveCompare(rhs.email) == .orderedAscending
+            }
+    }
+
+    func updateUserRole(email: String, role: AppRole) async throws -> InvitedUserAccount {
+        let normalizedEmail = normalized(email)
+        guard let record = try await fetchUserRecord(email: normalizedEmail) else {
+            throw CKError(.unknownItem)
+        }
+
+        record["role"] = role.rawValue as CKRecordValue
+        let savedRecord = try await save(record)
+        return try invitedUserAccount(from: savedRecord)
+    }
+
+    func removeUser(email: String) async throws {
+        let normalizedEmail = normalized(email)
+        try await delete(recordID: CKRecord.ID(recordName: recordName(for: normalizedEmail)))
+        try await removeEmailFromDirectory(normalizedEmail)
     }
 
     private func role(from record: CKRecord) throws -> AppRole {
@@ -93,50 +144,31 @@ actor CloudKitUserAccessService {
         return role
     }
 
-    private func hasAnyUserRecords() async throws -> Bool {
-        let query = CKQuery(recordType: "User", predicate: NSPredicate(value: true))
-        let records = try await performQuery(query, resultsLimit: 1)
-        return !records.isEmpty
-    }
-
     private func fetchUserRecord(email: String) async throws -> CKRecord? {
-        let query = CKQuery(recordType: "User", predicate: NSPredicate(format: "email == %@", email))
-        let records = try await performQuery(query, resultsLimit: 1)
-        return records.first
+        let recordID = CKRecord.ID(recordName: recordName(for: email))
+
+        do {
+            return try await fetch(recordID: recordID)
+        } catch let error as CKError where error.code == .unknownItem {
+            return nil
+        }
     }
 
-    private func performQuery(_ query: CKQuery, resultsLimit: Int) async throws -> [CKRecord] {
+    private func fetch(recordID: CKRecord.ID) async throws -> CKRecord {
         try await withCheckedThrowingContinuation { continuation in
-            let operation = CKQueryOperation(query: query)
-            operation.resultsLimit = resultsLimit
-            var records: [CKRecord] = []
-            var didResume = false
-
-            func resume(_ result: Result<[CKRecord], Error>) {
-                guard !didResume else { return }
-                didResume = true
-                continuation.resume(with: result)
-            }
-
-            operation.recordMatchedBlock = { _, result in
-                switch result {
-                case let .success(record):
-                    records.append(record)
-                case let .failure(error):
-                    resume(.failure(error))
+            database.fetch(withRecordID: recordID) { record, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
                 }
-            }
 
-            operation.queryResultBlock = { result in
-                switch result {
-                case .success:
-                    resume(.success(records))
-                case let .failure(error):
-                    resume(.failure(error))
+                guard let record else {
+                    continuation.resume(throwing: CKError(.unknownItem))
+                    return
                 }
-            }
 
-            database.add(operation)
+                continuation.resume(returning: record)
+            }
         }
     }
 
@@ -158,6 +190,92 @@ actor CloudKitUserAccessService {
         }
     }
 
+    private func delete(recordID: CKRecord.ID) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            database.delete(withRecordID: recordID) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                continuation.resume(returning: ())
+            }
+        }
+    }
+
+    private func fetchUserRecords(emails: [String]) async throws -> [CKRecord] {
+        var records: [CKRecord] = []
+        for email in emails {
+            if let record = try await fetchUserRecord(email: email) {
+                records.append(record)
+            }
+        }
+        return records
+    }
+
+    private func fetchInvitedUserEmails() async throws -> [String] {
+        let record = try await fetchInvitedUserDirectoryRecord()
+        return directoryEmails(from: record)
+    }
+
+    private func fetchInvitedUserDirectoryRecord() async throws -> CKRecord {
+        let recordID = CKRecord.ID(recordName: RecordNames.invitedUserDirectory)
+
+        do {
+            return try await fetch(recordID: recordID)
+        } catch let error as CKError where error.code == .unknownItem {
+            let record = CKRecord(recordType: "User", recordID: recordID)
+            record["email"] = DirectoryValues.email as CKRecordValue
+            record["role"] = DirectoryValues.role.rawValue as CKRecordValue
+            record["displayName"] = "" as CKRecordValue
+            return try await save(record)
+        }
+    }
+
+    private func addEmailToDirectory(_ email: String) async throws {
+        let normalizedEmail = normalized(email)
+        guard !normalizedEmail.isEmpty else { return }
+
+        let record = try await fetchInvitedUserDirectoryRecord()
+        var emails = directoryEmails(from: record)
+        if !emails.contains(normalizedEmail) {
+            emails.append(normalizedEmail)
+            record["displayName"] = serializeDirectoryEmails(emails) as CKRecordValue
+            _ = try await save(record)
+        }
+    }
+
+    private func removeEmailFromDirectory(_ email: String) async throws {
+        let normalizedEmail = normalized(email)
+        let record = try await fetchInvitedUserDirectoryRecord()
+        let currentEmails = directoryEmails(from: record)
+        let updatedEmails = currentEmails.filter { $0 != normalizedEmail }
+        guard updatedEmails != currentEmails else { return }
+        record["displayName"] = serializeDirectoryEmails(updatedEmails) as CKRecordValue
+        _ = try await save(record)
+    }
+
+    private func directoryEmails(from record: CKRecord) -> [String] {
+        ((record["displayName"] as? String) ?? "")
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .map(normalized)
+            .filter { !$0.isEmpty }
+            .sorted { lhs, rhs in
+                lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+            }
+    }
+
+    private func serializeDirectoryEmails(_ emails: [String]) -> String {
+        emails
+            .map(normalized)
+            .filter { !$0.isEmpty }
+            .sorted { lhs, rhs in
+                lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+            }
+            .joined(separator: "\n")
+    }
+
     private func normalized(_ email: String) -> String {
         email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -176,6 +294,34 @@ actor CloudKitUserAccessService {
         let localPart = email.split(separator: "@").first.map(String.init) ?? email
         return localPart.replacingOccurrences(of: ".", with: " ").capitalized
     }
+
+    private func profile(from record: CKRecord) throws -> CloudUserProfile {
+        CloudUserProfile(
+            email: (record["email"] as? String) ?? "",
+            role: try role(from: record),
+            displayName: (record["displayName"] as? String) ?? "",
+            lastSignedInAt: record["lastSignedInAt"] as? Date
+        )
+    }
+
+    private func invitedUserAccount(from record: CKRecord) throws -> InvitedUserAccount {
+        InvitedUserAccount(
+            email: (record["email"] as? String) ?? "",
+            role: try role(from: record),
+            displayName: (record["displayName"] as? String) ?? "",
+            lastSignedInAt: record["lastSignedInAt"] as? Date
+        )
+    }
+
+    private func bootstrapRoleForNewUser() -> AppRole {
+        let hasAssignedBootstrapAdmin = UserDefaults.standard.bool(forKey: StorageKeys.bootstrapAdminAssigned)
+        return hasAssignedBootstrapAdmin ? .supporter : .admin
+    }
+
+    private func markBootstrapAdminAssignedIfNeeded(for role: AppRole) {
+        guard role == .admin else { return }
+        UserDefaults.standard.set(true, forKey: StorageKeys.bootstrapAdminAssigned)
+    }
 }
 
 @MainActor
@@ -188,10 +334,14 @@ final class AuthenticationCoordinator: ObservableObject {
 
     @Published private(set) var isAuthenticated = false
     @Published private(set) var isRestoringSession = false
+    @Published private(set) var isSigningIn = false
     @Published private(set) var emailAddress: String?
     @Published private(set) var displayName = ""
     @Published private(set) var currentRole: AppRole?
     @Published var errorMessage: String?
+    @Published var pendingAppleUserID: String?
+    @Published var pendingDisplayName = ""
+    @Published var requiresManualEmailEntry = false
 
     private var hasAttemptedRestore = false
 
@@ -206,16 +356,16 @@ final class AuthenticationCoordinator: ObservableObject {
             return
         }
 
-        let credentialState: ASAuthorizationAppleIDProvider.CredentialState
+        let storedCredentialState: ASAuthorizationAppleIDProvider.CredentialState
         do {
-            credentialState = try await credentialState(for: appleUserID)
+            storedCredentialState = try await credentialState(for: appleUserID)
         } catch {
             errorMessage = error.localizedDescription
             navigationState.clearAuthenticatedRole()
             return
         }
 
-        guard credentialState == .authorized else {
+        guard storedCredentialState == .authorized else {
             signOut(navigationState: navigationState)
             return
         }
@@ -255,13 +405,23 @@ final class AuthenticationCoordinator: ObservableObject {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .nonEmpty(or: UserDefaults.standard.string(forKey: StorageKeys.displayName) ?? "")
 
+            guard !resolvedEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                pendingAppleUserID = credential.user
+                pendingDisplayName = resolvedDisplayName
+                requiresManualEmailEntry = true
+                errorMessage = "Apple did not provide an email on this sign-in. Enter the invited email address to continue."
+                return
+            }
+
             Task {
+                isSigningIn = true
                 await applyAuthenticatedUser(
                     appleUserID: credential.user,
                     email: resolvedEmail,
                     displayName: resolvedDisplayName,
                     navigationState: navigationState
                 )
+                isSigningIn = false
             }
         }
     }
@@ -270,18 +430,56 @@ final class AuthenticationCoordinator: ObservableObject {
         try await CloudKitUserAccessService.shared.inviteUser(email: email, role: role)
     }
 
+    func fetchInvitedUsers() async throws -> [InvitedUserAccount] {
+        try await CloudKitUserAccessService.shared.fetchInvitedUsers()
+    }
+
+    func updateInvitedUserRole(email: String, role: AppRole) async throws -> InvitedUserAccount {
+        try await CloudKitUserAccessService.shared.updateUserRole(email: email, role: role)
+    }
+
+    func removeInvitedUser(email: String) async throws {
+        try await CloudKitUserAccessService.shared.removeUser(email: email)
+    }
+
     func signOut(navigationState: AppNavigationState) {
         UserDefaults.standard.removeObject(forKey: StorageKeys.appleUserID)
         UserDefaults.standard.removeObject(forKey: StorageKeys.email)
         UserDefaults.standard.removeObject(forKey: StorageKeys.displayName)
 
         isAuthenticated = false
+        isSigningIn = false
         emailAddress = nil
         displayName = ""
         currentRole = nil
         errorMessage = nil
+        pendingAppleUserID = nil
+        pendingDisplayName = ""
+        requiresManualEmailEntry = false
 
         navigationState.clearAuthenticatedRole()
+    }
+
+    func continueWithManualEmail(_ email: String, navigationState: AppNavigationState) {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let pendingAppleUserID, !normalizedEmail.isEmpty else {
+            errorMessage = CloudUserAccessError.missingEmail.errorDescription
+            return
+        }
+
+        requiresManualEmailEntry = false
+        errorMessage = nil
+
+        Task {
+            isSigningIn = true
+            await applyAuthenticatedUser(
+                appleUserID: pendingAppleUserID,
+                email: normalizedEmail,
+                displayName: pendingDisplayName,
+                navigationState: navigationState
+            )
+            isSigningIn = false
+        }
     }
 
     private func applyAuthenticatedUser(
@@ -311,6 +509,9 @@ final class AuthenticationCoordinator: ObservableObject {
             self.displayName = profile.displayName
             currentRole = profile.role
             errorMessage = nil
+            pendingAppleUserID = nil
+            pendingDisplayName = ""
+            requiresManualEmailEntry = false
 
             navigationState.setAuthenticatedRole(profile.role)
         } catch {
@@ -335,6 +536,7 @@ final class AuthenticationCoordinator: ObservableObject {
 struct AuthenticationGateView<Content: View>: View {
     @EnvironmentObject private var authCoordinator: AuthenticationCoordinator
     @EnvironmentObject private var navigationState: AppNavigationState
+    @State private var manualEmail = ""
 
     let content: () -> Content
 
@@ -368,6 +570,8 @@ struct AuthenticationGateView<Content: View>: View {
 
                 if authCoordinator.isRestoringSession {
                     ProgressView("Checking your access…")
+                } else if authCoordinator.isSigningIn {
+                    ProgressView("Signing you in…")
                 } else {
                     SignInWithAppleButton(.continue) { request in
                         authCoordinator.prepare(request)
@@ -376,6 +580,24 @@ struct AuthenticationGateView<Content: View>: View {
                     }
                     .signInWithAppleButtonStyle(.black)
                     .frame(height: 50)
+                }
+
+                if authCoordinator.requiresManualEmailEntry {
+                    VStack(spacing: 12) {
+                        TextField("Invited email address", text: $manualEmail)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .autocorrectionDisabled()
+                            .padding(.horizontal, 12)
+                            .frame(height: 44)
+                            .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                        Button("Continue With Email") {
+                            authCoordinator.continueWithManualEmail(manualEmail, navigationState: navigationState)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(manualEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
 
                 if let errorMessage = authCoordinator.errorMessage {

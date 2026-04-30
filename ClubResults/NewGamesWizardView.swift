@@ -152,6 +152,9 @@ struct NewGameWizardView: View {
     let draftGameID: UUID?
     let reopenLiveViewOnAppear: Bool
     let onBackToHomeFromLive: ((UUID) -> Void)?
+    let handoffLiveGameToDedicatedTab: Bool
+    let isEmbeddedInGameTab: Bool
+    let onEmbeddedFlowFinished: (() -> Void)?
     var previewStep: NewGameWizardStep? = nil
     var previewVenue: String? = nil
     var previewOpposition: String? = nil
@@ -167,6 +170,9 @@ struct NewGameWizardView: View {
         draftGameID: UUID? = nil,
         reopenLiveViewOnAppear: Bool = false,
         onBackToHomeFromLive: ((UUID) -> Void)? = nil,
+        handoffLiveGameToDedicatedTab: Bool = false,
+        isEmbeddedInGameTab: Bool = false,
+        onEmbeddedFlowFinished: (() -> Void)? = nil,
         previewStep: NewGameWizardStep? = nil,
         previewVenue: String? = nil,
         previewOpposition: String? = nil,
@@ -181,6 +187,9 @@ struct NewGameWizardView: View {
         self.draftGameID = draftGameID
         self.reopenLiveViewOnAppear = reopenLiveViewOnAppear
         self.onBackToHomeFromLive = onBackToHomeFromLive
+        self.handoffLiveGameToDedicatedTab = handoffLiveGameToDedicatedTab
+        self.isEmbeddedInGameTab = isEmbeddedInGameTab
+        self.onEmbeddedFlowFinished = onEmbeddedFlowFinished
         self.previewStep = previewStep
         self.previewVenue = previewVenue
         self.previewOpposition = previewOpposition
@@ -199,11 +208,14 @@ struct NewGameWizardView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @Environment(\.dismiss) private var dismiss   // ✅ allow Cancel / dismiss sheet
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var navigationState: AppNavigationState
 
     @Query private var grades: [Grade]
     @Query private var games: [Game]
     @Query(sort: \Player.name) private var players: [Player]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
+    @Query private var statsSessions: [StatsSession]
     @Query private var reportRecipients: [ReportRecipient]
     @Query private var reportRecipientGroups: [ReportRecipientGroup]
     @Query private var contactGroupMemberships: [ContactGroupMembership]
@@ -327,6 +339,8 @@ struct NewGameWizardView: View {
     @State private var showGuestVotesScanPrompt = false
     @State private var scannerErrorMessage: String?
     @State private var hasAutoPromptedVotesScanner = false
+    @State private var showLiveStatsSyncPrompt = false
+    @State private var promptedStatsSessionIDForLiveGame: UUID?
 
     private enum LiveDraftResumeStore {
         private static let statePrefix = "liveDraft.state."
@@ -334,11 +348,14 @@ struct NewGameWizardView: View {
         private struct StoredState: Codable {
             var periodMinutes: Int
             var secondsRemaining: Int
+            var isTimerRunning: Bool?
             var pointScorers: [UUID: Int]
             var rushedPoints: Int
             var periodSnapshots: [StoredSnapshot]
             var scoreEvents: [StoredScoreEvent]?
             var backgroundCountdownStart: Date?
+            var timerAnchorDate: Date?
+            var timerAnchorSecondsRemaining: Int?
         }
 
         private struct StoredScoreEvent: Codable {
@@ -355,9 +372,12 @@ struct NewGameWizardView: View {
         }
 
         static func save(_ session: LiveGameSessionState, for gameID: UUID, continueCountdownInBackground: Bool) {
+            var session = session
+            session.syncTimer()
             let state = StoredState(
                 periodMinutes: session.periodMinutes,
                 secondsRemaining: session.secondsRemaining,
+                isTimerRunning: session.isTimerRunning,
                 pointScorers: session.pointScorers,
                 rushedPoints: session.rushedPoints,
                 periodSnapshots: session.periodSnapshots.map {
@@ -372,7 +392,9 @@ struct NewGameWizardView: View {
                 scoreEvents: session.scoreEvents.map {
                     StoredScoreEvent(x: $0.x, margin: $0.margin)
                 },
-                backgroundCountdownStart: continueCountdownInBackground ? Date() : nil
+                backgroundCountdownStart: continueCountdownInBackground && session.isTimerRunning ? Date() : nil,
+                timerAnchorDate: session.timerAnchorDate,
+                timerAnchorSecondsRemaining: session.timerAnchorSecondsRemaining
             )
             guard let data = try? JSONEncoder().encode(state) else { return }
             UserDefaults.standard.set(data, forKey: statePrefix + gameID.uuidString)
@@ -388,6 +410,7 @@ struct NewGameWizardView: View {
             var session = LiveGameSessionState()
             session.periodMinutes = stored.periodMinutes
             session.secondsRemaining = stored.secondsRemaining
+            session.isTimerRunning = stored.isTimerRunning ?? false
             session.pointScorers = stored.pointScorers
             session.rushedPoints = stored.rushedPoints
             session.periodSnapshots = stored.periodSnapshots.map {
@@ -403,11 +426,21 @@ struct NewGameWizardView: View {
                 ScoreEvent(x: $0.x, margin: $0.margin)
             }
             session.isInitialized = true
+            session.timerAnchorDate = stored.timerAnchorDate
+            session.timerAnchorSecondsRemaining = stored.timerAnchorSecondsRemaining ?? session.secondsRemaining
 
             if let start = stored.backgroundCountdownStart {
                 let elapsed = Int(Date().timeIntervalSince(start))
-                session.secondsRemaining -= max(0, elapsed)
-                session.shouldAutoResumeTimer = true
+                session.secondsRemaining = max(0, session.secondsRemaining - max(0, elapsed))
+                if session.secondsRemaining > 0 {
+                    session.isTimerRunning = true
+                    session.timerAnchorDate = Date()
+                    session.timerAnchorSecondsRemaining = session.secondsRemaining
+                } else {
+                    session.isTimerRunning = false
+                    session.timerAnchorDate = nil
+                    session.timerAnchorSecondsRemaining = nil
+                }
             }
 
             clear(for: gameID)
@@ -907,6 +940,171 @@ struct NewGameWizardView: View {
         return .setup
     }
 
+    private var isLiveGameScreenActive: Bool {
+        entryMode == .live && currentStep == .score
+    }
+
+    private var currentLiveQuarterLabel: String {
+        switch min(liveGameSession.periodSnapshots.count, 3) {
+        case 0: return "Q1"
+        case 1: return "Q2"
+        case 2: return "Q3"
+        default: return "Q4"
+        }
+    }
+
+    private var liveGameSyncSnapshot: LiveGameSyncSnapshot? {
+        guard isLiveGameScreenActive, let gradeID else { return nil }
+        return LiveGameSyncSnapshot(
+            gradeID: gradeID,
+            date: date,
+            opposition: finalOpponent,
+            currentQuarter: currentLiveQuarterLabel,
+            periodMinutes: liveGameSession.periodMinutes,
+            remainingSeconds: liveGameSession.secondsRemaining,
+            isTimerRunning: liveGameSession.isTimerRunning,
+            timerAnchorDate: liveGameSession.timerAnchorDate,
+            timerAnchorSecondsRemaining: liveGameSession.timerAnchorSecondsRemaining,
+            ourGoals: ourGoals,
+            ourBehinds: ourBehinds,
+            theirGoals: theirGoals,
+            theirBehinds: theirBehinds,
+            goalKickers: goalKickers.compactMap { entry in
+                guard let playerID = entry.playerID, entry.goals > 0 else { return nil }
+                return LiveGameSyncGoalKicker(playerID: playerID, goals: entry.goals)
+            }
+        )
+    }
+
+    private func refreshLiveGameSyncSnapshot() {
+        guard let snapshot = liveGameSyncSnapshot else {
+            navigationState.clearActiveLiveGameSnapshot()
+            promptedStatsSessionIDForLiveGame = nil
+            showLiveStatsSyncPrompt = false
+            return
+        }
+
+        navigationState.updateLiveGameSnapshot(snapshot)
+        maybePromptToSyncLiveGameWithStats()
+    }
+
+    private func maybePromptToSyncLiveGameWithStats() {
+        guard isLiveGameScreenActive,
+              let activeStatsSessionID = navigationState.activeStatsSessionID,
+              let activeStatsSession = statsSessions.first(where: { $0.sessionId == activeStatsSessionID }),
+              canSyncLiveGame(with: activeStatsSession),
+              promptedStatsSessionIDForLiveGame != activeStatsSessionID else { return }
+        if activeStatsSession.usesLiveGameScoreSync {
+            promptedStatsSessionIDForLiveGame = activeStatsSessionID
+            showLiveStatsSyncPrompt = false
+            if navigationState.syncedStatsSessionID != activeStatsSessionID {
+                navigationState.syncActiveLiveGame(toStatsSessionID: activeStatsSessionID)
+            }
+            return
+        }
+        guard navigationState.syncedStatsSessionID == nil else { return }
+        promptedStatsSessionIDForLiveGame = activeStatsSessionID
+        showLiveStatsSyncPrompt = true
+    }
+
+    private func acceptLiveStatsSync() {
+        guard let activeStatsSessionID = navigationState.activeStatsSessionID else { return }
+        navigationState.syncActiveLiveGame(toStatsSessionID: activeStatsSessionID)
+        refreshLiveGameSyncSnapshot()
+    }
+
+    private var liveGameSyncRefreshToken: String {
+        let kickerToken = goalKickers
+            .map { "\($0.playerID?.uuidString ?? "nil"):\($0.goals)" }
+            .joined(separator: "|")
+        return [
+            String(step.rawValue),
+            entryMode == .live ? "live" : "post",
+            gradeID?.uuidString ?? "no-grade",
+            String(date.timeIntervalSinceReferenceDate),
+            String(ourGoals),
+            String(ourBehinds),
+            String(theirGoals),
+            String(theirBehinds),
+            currentLiveQuarterLabel,
+            String(liveGameSession.periodMinutes),
+            String(liveGameSession.secondsRemaining),
+            liveGameSession.isTimerRunning ? "running" : "paused",
+            opponentName,
+            kickerToken
+        ].joined(separator: "||")
+    }
+
+    private var sendStatusAlertBinding: Binding<Bool> {
+        Binding(
+            get: { sendStatusMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    sendStatusMessage = nil
+                }
+            }
+        )
+    }
+
+    private var scannerErrorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { scannerErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    scannerErrorMessage = nil
+                }
+            }
+        )
+    }
+
+    private var activeSyncableStatsSession: StatsSession? {
+        guard let activeStatsSessionID = navigationState.activeStatsSessionID else { return nil }
+        guard let session = statsSessions.first(where: { $0.sessionId == activeStatsSessionID }) else { return nil }
+        return canSyncLiveGame(with: session) ? session : nil
+    }
+
+    private var isLiveGameSyncedToStats: Bool {
+        guard let session = activeSyncableStatsSession else { return false }
+        return navigationState.syncedStatsSessionID == session.sessionId
+    }
+
+    private var liveGameSyncStatusIconName: String {
+        if isLiveGameSyncedToStats {
+            return "arrow.triangle.2.circlepath.circle.fill"
+        }
+        if activeSyncableStatsSession != nil {
+            return "arrow.triangle.2.circlepath.circle"
+        }
+        return "arrow.triangle.2.circlepath.circle.slash"
+    }
+
+    private var liveGameSyncStatusTint: Color {
+        if isLiveGameSyncedToStats {
+            return .green
+        }
+        if activeSyncableStatsSession != nil {
+            return .secondary
+        }
+        return Color.secondary.opacity(0.45)
+    }
+
+    private var liveGameSyncAccessibilityLabel: String {
+        if isLiveGameSyncedToStats {
+            return "Live Game synced with Live Stats"
+        }
+        if activeSyncableStatsSession != nil {
+            return "Live Game sync available"
+        }
+        return "Live Game sync unavailable"
+    }
+
+    private func canSyncLiveGame(with session: StatsSession) -> Bool {
+        guard let gradeID else { return false }
+        return gradeID == session.gradeId
+            && Calendar.current.isDate(date, inSameDayAs: session.date)
+            && finalOpponent.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(session.opposition.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+    }
+
     // MARK: - Uniform row styling
     private func rowLabel(_ title: String) -> some View {
         Text(title)
@@ -1143,6 +1341,30 @@ struct NewGameWizardView: View {
         }
     }
 
+    private func handoffLiveGameToGameTabIfNeeded() -> Bool {
+        guard handoffLiveGameToDedicatedTab,
+              entryMode == .live,
+              step == entryModeTriggerStep,
+              let gid = gradeID else { return false }
+
+        startLiveSessionIfNeeded()
+
+        guard let savedGame = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false) else {
+            return false
+        }
+
+        LiveDraftResumeStore.save(liveGameSession, for: savedGame.id, continueCountdownInBackground: false)
+        DraftWizardProgressStore.save(
+            step: .score,
+            entryMode: .live,
+            gameCountSelection: gameCountSelection,
+            for: savedGame.id
+        )
+        navigationState.openLiveGameTab(draftGameID: savedGame.id, gradeID: gid)
+        dismiss()
+        return true
+    }
+
     private func recipientEmails(for template: CustomReportTemplate) -> [String] {
         let sectionKeys = Set(
             customReportRecipientSections
@@ -1299,6 +1521,7 @@ struct NewGameWizardView: View {
             }
             applyDefaults(for: gradeID)
             applyPreviewStateIfNeeded()
+            refreshLiveGameSyncSnapshot()
         }
         // ✅ When user changes grade, auto-fill defaults from last selected values (or seeded defaults)
         .onChange(of: gradeID) { _, newGrade in
@@ -1332,6 +1555,28 @@ struct NewGameWizardView: View {
             }
             applyPreviewStateIfNeeded()
             restoreDraftIfNeeded()
+            refreshLiveGameSyncSnapshot()
+        }
+        .task(id: liveGameSyncRefreshToken) {
+            refreshLiveGameSyncSnapshot()
+        }
+        .task(id: navigationState.activeStatsSessionID) {
+            maybePromptToSyncLiveGameWithStats()
+        }
+        .task(id: navigationState.selectedTab) {
+            guard navigationState.selectedTab == .game else { return }
+            maybePromptToSyncLiveGameWithStats()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            handleScenePhaseChange(newPhase)
+        }
+        .alert("Sync Live Game View with Live Stats View?", isPresented: $showLiveStatsSyncPrompt) {
+            Button("Not now", role: .cancel) {}
+            Button("Sync") {
+                acceptLiveStatsSync()
+            }
+        } message: {
+            Text("Use Live Game View as the source of truth for score, timer and quarter in the active Live Stats session.")
         }
         .sheet(isPresented: $showMailComposer) {
             if let attachmentURL = reportAttachmentURL {
@@ -1374,14 +1619,7 @@ struct NewGameWizardView: View {
                 }
             }
         }
-        .alert("Scanner unavailable", isPresented: Binding(
-            get: { scannerErrorMessage != nil },
-            set: { isPresented in
-                if !isPresented {
-                    scannerErrorMessage = nil
-                }
-            }
-        )) {
+        .alert("Scanner unavailable", isPresented: scannerErrorAlertBinding) {
             Button("OK", role: .cancel) {
                 scannerErrorMessage = nil
                 hasAutoPromptedVotesScanner = true
@@ -1406,15 +1644,18 @@ struct NewGameWizardView: View {
         }
         .alert(
             "Report status",
-            isPresented: Binding(
-                get: { sendStatusMessage != nil },
-                set: { if !$0 { sendStatusMessage = nil } }
-            )
+            isPresented: sendStatusAlertBinding
         ) {
             Button("OK", role: .cancel) {
                 let shouldDismiss = sendStatusMessage?.contains("Game saved") == true
                 sendStatusMessage = nil
-                if shouldDismiss { dismiss() }
+                if shouldDismiss {
+                    if isEmbeddedInGameTab {
+                        onEmbeddedFlowFinished?()
+                    } else {
+                        dismiss()
+                    }
+                }
             }
         } message: {
             Text(sendStatusMessage ?? "")
@@ -1423,7 +1664,11 @@ struct NewGameWizardView: View {
 
     private func pauseAndSaveLiveDraftThenReturnHome() {
         guard let gid = gradeID else {
-            dismiss()
+            if isEmbeddedInGameTab {
+                onEmbeddedFlowFinished?()
+            } else {
+                dismiss()
+            }
             return
         }
 
@@ -1438,7 +1683,11 @@ struct NewGameWizardView: View {
             )
         }
         onBackToHomeFromLive?(gid)
-        dismiss()
+        if isEmbeddedInGameTab {
+            onEmbeddedFlowFinished?()
+        } else {
+            dismiss()
+        }
     }
 
     private func saveDraftAndReturnHome() {
@@ -1454,12 +1703,45 @@ struct NewGameWizardView: View {
             gameCountSelection: gameCountSelection,
             for: savedGame.id
         )
-        dismiss()
+        if isEmbeddedInGameTab {
+            onEmbeddedFlowFinished?()
+        } else {
+            dismiss()
+        }
+    }
+
+    private func handleScenePhaseChange(_ newPhase: ScenePhase) {
+        guard entryMode == .live else { return }
+        switch newPhase {
+        case .active:
+            if let liveDraftID = editingGame?.id ?? draftGameID,
+               let restored = LiveDraftResumeStore.load(for: liveDraftID) {
+                liveGameSession = restored
+            } else {
+                liveGameSession.syncTimer()
+            }
+            refreshLiveGameSyncSnapshot()
+        case .inactive, .background:
+            persistLiveGameStateForBackgroundIfNeeded()
+        @unknown default:
+            break
+        }
+    }
+
+    private func persistLiveGameStateForBackgroundIfNeeded() {
+        liveGameSession.syncTimer()
+        guard let savedGame = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false) else { return }
+        LiveDraftResumeStore.save(liveGameSession, for: savedGame.id, continueCountdownInBackground: liveGameSession.isTimerRunning)
+        refreshLiveGameSyncSnapshot()
     }
 
     private func discardLiveDraftThenReturnHome() {
         guard let gid = gradeID else {
-            dismiss()
+            if isEmbeddedInGameTab {
+                onEmbeddedFlowFinished?()
+            } else {
+                dismiss()
+            }
             return
         }
 
@@ -1490,7 +1772,11 @@ struct NewGameWizardView: View {
         }
 
         onBackToHomeFromLive?(gid)
-        dismiss()
+        if isEmbeddedInGameTab {
+            onEmbeddedFlowFinished?()
+        } else {
+            dismiss()
+        }
     }
 
     private func next() {
@@ -1509,6 +1795,9 @@ struct NewGameWizardView: View {
         }
 
         if shouldAskForEntryMode && step == entryModeTriggerStep && entryMode == .live {
+            if handoffLiveGameToGameTabIfNeeded() {
+                return
+            }
             startLiveSessionIfNeeded()
         }
 
@@ -2086,6 +2375,14 @@ struct NewGameWizardView: View {
             playerName: { playerID in
                 players.first(where: { $0.id == playerID })?.name ?? "Unknown"
             },
+            syncStatusIconName: liveGameSyncStatusIconName,
+            syncStatusTint: liveGameSyncStatusTint,
+            syncStatusAccessibilityLabel: liveGameSyncAccessibilityLabel,
+            isSyncStatusDisabled: activeSyncableStatsSession == nil,
+            onSyncStatusTapped: {
+                guard activeSyncableStatsSession != nil, !isLiveGameSyncedToStats else { return }
+                acceptLiveStatsSync()
+            },
             onSaveAndContinue: {
                 _ = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
                 proceedAfterLiveSave()
@@ -2093,11 +2390,11 @@ struct NewGameWizardView: View {
             onBackToHome: {
                 pauseAndSaveLiveDraftThenReturnHome()
             },
-            onCancelAndDiscard: {
+            onDeleteDraft: {
                 discardLiveDraftThenReturnHome()
             },
-            onCollapse: {
-                pauseAndSaveLiveDraftThenReturnHome()
+            onCancelAndDiscard: {
+                discardLiveDraftThenReturnHome()
             }
         )
     }
@@ -3224,7 +3521,11 @@ struct NewGameWizardView: View {
         }
 
         if dismissOnSuccess {
-            dismiss()
+            if isEmbeddedInGameTab {
+                onEmbeddedFlowFinished?()
+            } else {
+                dismiss()
+            }
         }
 
         return game
@@ -3371,6 +3672,9 @@ struct NewGameWizardView: View {
     private struct LiveGameSessionState {
         var periodMinutes: Int = 20
         var secondsRemaining: Int = 20 * 60
+        var isTimerRunning: Bool = false
+        var timerAnchorDate: Date?
+        var timerAnchorSecondsRemaining: Int?
         var pointScorers: [UUID: Int] = [:]
         var rushedPoints: Int = 0
         var ourClearances: Int = 0
@@ -3380,13 +3684,15 @@ struct NewGameWizardView: View {
         var periodSnapshots: [PeriodSnapshot] = []
         var scoreEvents: [ScoreEvent] = []
         var isInitialized = false
-        var shouldAutoResumeTimer = false
 
         mutating func configureIfNeeded(initialPeriodMinutes: Int) {
             guard !isInitialized else { return }
             let bounded = min(max(initialPeriodMinutes, 1), 30)
             periodMinutes = bounded
             secondsRemaining = bounded * 60
+            isTimerRunning = false
+            timerAnchorDate = nil
+            timerAnchorSecondsRemaining = secondsRemaining
             pointScorers = [:]
             rushedPoints = 0
             ourClearances = 0
@@ -3396,6 +3702,38 @@ struct NewGameWizardView: View {
             periodSnapshots = []
             scoreEvents = []
             isInitialized = true
+        }
+
+        @discardableResult
+        mutating func syncTimer(at date: Date = Date()) -> Bool {
+            guard isTimerRunning,
+                  let timerAnchorDate,
+                  let timerAnchorSecondsRemaining else { return false }
+            let elapsed = max(0, Int(date.timeIntervalSince(timerAnchorDate)))
+            let updatedSeconds = max(0, timerAnchorSecondsRemaining - elapsed)
+            let crossedZero = secondsRemaining > 0 && updatedSeconds == 0
+            secondsRemaining = updatedSeconds
+            if updatedSeconds == 0 {
+                isTimerRunning = false
+                self.timerAnchorDate = nil
+                self.timerAnchorSecondsRemaining = nil
+            }
+            return crossedZero
+        }
+
+        mutating func startTimer(at date: Date = Date()) {
+            syncTimer(at: date)
+            guard !isTimerRunning, secondsRemaining > 0 else { return }
+            isTimerRunning = true
+            timerAnchorDate = date
+            timerAnchorSecondsRemaining = secondsRemaining
+        }
+
+        mutating func pauseTimer(at date: Date = Date()) {
+            syncTimer(at: date)
+            isTimerRunning = false
+            timerAnchorDate = nil
+            timerAnchorSecondsRemaining = nil
         }
     }
 
@@ -3418,13 +3756,16 @@ struct NewGameWizardView: View {
         let oppStyle: ClubStyle.Style
         let eligiblePlayers: [Player]
         let playerName: (UUID) -> String
+        let syncStatusIconName: String
+        let syncStatusTint: Color
+        let syncStatusAccessibilityLabel: String
+        let isSyncStatusDisabled: Bool
+        let onSyncStatusTapped: () -> Void
         let onSaveAndContinue: () -> Void
         let onBackToHome: () -> Void
+        let onDeleteDraft: () -> Void
         let onCancelAndDiscard: () -> Void
-        let onCollapse: () -> Void
 
-        @State private var timerRunning = false
-        @State private var timerTask: Task<Void, Never>?
         @State private var showPlayerPicker = false
         @State private var showPointPicker = false
         @State private var showTimerAdjuster = false
@@ -3438,6 +3779,10 @@ struct NewGameWizardView: View {
         @State private var opponentPointUndoCount = 0
         @State private var pendingUndoAction: UndoAction?
         @State private var showUndoConfirmation = false
+        @State private var showDeleteDraftConfirmation = false
+        @State private var showDeleteCodePrompt = false
+        @State private var deleteCodePromptValue = ""
+        @State private var showWrongDeleteCodeAlert = false
 
         init(
             date: Binding<Date>,
@@ -3456,10 +3801,15 @@ struct NewGameWizardView: View {
             oppStyle: ClubStyle.Style,
             eligiblePlayers: [Player],
             playerName: @escaping (UUID) -> String,
+            syncStatusIconName: String,
+            syncStatusTint: Color,
+            syncStatusAccessibilityLabel: String,
+            isSyncStatusDisabled: Bool,
+            onSyncStatusTapped: @escaping () -> Void,
             onSaveAndContinue: @escaping () -> Void,
             onBackToHome: @escaping () -> Void,
-            onCancelAndDiscard: @escaping () -> Void,
-            onCollapse: @escaping () -> Void
+            onDeleteDraft: @escaping () -> Void,
+            onCancelAndDiscard: @escaping () -> Void
         ) {
             _date = date
             _ourGoals = ourGoals
@@ -3480,10 +3830,15 @@ struct NewGameWizardView: View {
             self.oppStyle = oppStyle
             self.eligiblePlayers = eligiblePlayers
             self.playerName = playerName
+            self.syncStatusIconName = syncStatusIconName
+            self.syncStatusTint = syncStatusTint
+            self.syncStatusAccessibilityLabel = syncStatusAccessibilityLabel
+            self.isSyncStatusDisabled = isSyncStatusDisabled
+            self.onSyncStatusTapped = onSyncStatusTapped
             self.onSaveAndContinue = onSaveAndContinue
             self.onBackToHome = onBackToHome
+            self.onDeleteDraft = onDeleteDraft
             self.onCancelAndDiscard = onCancelAndDiscard
-            self.onCollapse = onCollapse
         }
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
@@ -3579,149 +3934,38 @@ struct NewGameWizardView: View {
 
         var body: some View {
             VStack(spacing: 0) {
-                pullDownHandle
-                    .padding(.top, 8)
-                    .padding(.bottom, 8)
-
                 GeometryReader { proxy in
-                        let compact = proxy.size.width < 980
-                        let cardSpacing: CGFloat = compact ? 14 : 18
-                        let availableWidth = proxy.size.width
-                        let teamCardWidth = max(280, min(availableWidth * 0.35, (availableWidth - (cardSpacing * 2) - 300) / 2))
-                        let timerWidth = max(260, availableWidth - (teamCardWidth * 2) - (cardSpacing * 2))
-                        let sharedCardHeight = max(368, proxy.size.height * 0.46)
-                        let secondaryRowCardHeight: CGFloat = 250
-                        let scoreWormWidth = availableWidth
+                    let compact = proxy.size.width < 980
+                    let cardSpacing: CGFloat = compact ? 14 : 18
+                    let availableWidth = proxy.size.width
+                    let preferredTeamCardWidth: CGFloat = availableWidth * 0.35
+                    let reservedCenterWidth: CGFloat = 300
+                    let remainingWidthForTeams: CGFloat = (availableWidth - (cardSpacing * 2) - reservedCenterWidth) / 2
+                    let clampedTeamCardWidth = min(preferredTeamCardWidth, remainingWidthForTeams)
+                    let teamCardWidth = max(280, clampedTeamCardWidth)
+                    let timerWidth = max(260, availableWidth - (teamCardWidth * 2) - (cardSpacing * 2))
+                    let sharedCardHeight = max(368, proxy.size.height * 0.46)
+                    let secondaryRowCardHeight: CGFloat = 250
 
-                        ScrollView {
-                            VStack(spacing: cardSpacing) {
-                                if compact {
-                                    teamScoreCard(
-                                        title: ourTeamName,
-                                        style: ourStyle,
-                                        goals: $ourGoals,
-                                        behinds: $ourBehinds,
-                                        score: ourScore,
-                                        goalAction: { showPlayerPicker = true },
-                                        pointAction: { showPointPicker = true },
-                                        showUndoButtons: true,
-                                        showManualAdjusters: false,
-                                        goalUndoAction: { confirmUndoGoal() },
-                                        pointUndoAction: { confirmUndoPoint() },
-                                        canUndoGoal: canUndoGoal,
-                                        canUndoPoint: canUndoPoint,
-                                        minHeight: sharedCardHeight
-                                    )
-                                    teamPressureCard(
-                                        style: ourStyle,
-                                        clearances: liveSession.ourClearances,
-                                        inside50s: liveSession.ourInside50s,
-                                        clearanceAction: { liveSession.ourClearances += 1 },
-                                        inside50Action: { liveSession.ourInside50s += 1 },
-                                        height: secondaryRowCardHeight,
-                                        width: proxy.size.width
-                                    )
-                                    timerCard(height: max(280, sharedCardHeight * 0.66), width: proxy.size.width)
-                                    goalKickerSummaryCard(width: proxy.size.width, height: secondaryRowCardHeight)
-                                    teamScoreCard(
-                                        title: oppTeamName,
-                                        style: oppStyle,
-                                        goals: $theirGoals,
-                                        behinds: $theirBehinds,
-                                        score: theirScore,
-                                        goalAction: { recordOpponentGoal() },
-                                        pointAction: { recordOpponentPoint() },
-                                        showUndoButtons: true,
-                                        showManualAdjusters: false,
-                                        goalUndoAction: { confirmUndoOpponentGoal() },
-                                        pointUndoAction: { confirmUndoOpponentPoint() },
-                                        canUndoGoal: canUndoOpponentGoal,
-                                        canUndoPoint: canUndoOpponentPoint,
-                                        minHeight: sharedCardHeight
-                                    )
-                                    teamPressureCard(
-                                        style: oppStyle,
-                                        clearances: liveSession.theirClearances,
-                                        inside50s: liveSession.theirInside50s,
-                                        clearanceAction: { liveSession.theirClearances += 1 },
-                                        inside50Action: { liveSession.theirInside50s += 1 },
-                                        height: secondaryRowCardHeight,
-                                        width: proxy.size.width
-                                    )
-                                    scoreWormCard(width: proxy.size.width)
-                                } else {
-                                    VStack(spacing: 0) {
-                                        HStack(alignment: .top, spacing: cardSpacing) {
-                                            VStack(spacing: cardSpacing) {
-                                                teamScoreCard(
-                                                    title: ourTeamName,
-                                                    style: ourStyle,
-                                                    goals: $ourGoals,
-                                                    behinds: $ourBehinds,
-                                                    score: ourScore,
-                                                    goalAction: { showPlayerPicker = true },
-                                                    pointAction: { showPointPicker = true },
-                                                    showUndoButtons: true,
-                                                    showManualAdjusters: false,
-                                                    goalUndoAction: { confirmUndoGoal() },
-                                                    pointUndoAction: { confirmUndoPoint() },
-                                                    canUndoGoal: canUndoGoal,
-                                                    canUndoPoint: canUndoPoint,
-                                                    minHeight: sharedCardHeight
-                                                )
-                                                teamPressureCard(
-                                                    style: ourStyle,
-                                                    clearances: liveSession.ourClearances,
-                                                    inside50s: liveSession.ourInside50s,
-                                                    clearanceAction: { liveSession.ourClearances += 1 },
-                                                    inside50Action: { liveSession.ourInside50s += 1 },
-                                                    height: secondaryRowCardHeight,
-                                                    width: teamCardWidth
-                                                )
-                                            }
-                                            .frame(width: teamCardWidth, alignment: .topLeading)
-
-                                            VStack(spacing: cardSpacing) {
-                                                timerCard(height: sharedCardHeight, width: timerWidth)
-                                                goalKickerSummaryCard(width: timerWidth, height: secondaryRowCardHeight)
-                                            }
-                                            .frame(width: timerWidth, alignment: .top)
-
-                                            VStack(spacing: cardSpacing) {
-                                                teamScoreCard(
-                                                    title: oppTeamName,
-                                                    style: oppStyle,
-                                                    goals: $theirGoals,
-                                                    behinds: $theirBehinds,
-                                                    score: theirScore,
-                                                    goalAction: { recordOpponentGoal() },
-                                                    pointAction: { recordOpponentPoint() },
-                                                    showUndoButtons: true,
-                                                    showManualAdjusters: false,
-                                                    goalUndoAction: { confirmUndoOpponentGoal() },
-                                                    pointUndoAction: { confirmUndoOpponentPoint() },
-                                                    canUndoGoal: canUndoOpponentGoal,
-                                                    canUndoPoint: canUndoOpponentPoint,
-                                                    minHeight: sharedCardHeight
-                                                )
-                                                teamPressureCard(
-                                                    style: oppStyle,
-                                                    clearances: liveSession.theirClearances,
-                                                    inside50s: liveSession.theirInside50s,
-                                                    clearanceAction: { liveSession.theirClearances += 1 },
-                                                    inside50Action: { liveSession.theirInside50s += 1 },
-                                                    height: secondaryRowCardHeight,
-                                                    width: teamCardWidth
-                                                )
-                                            }
-                                            .frame(width: teamCardWidth, alignment: .topTrailing)
-                                        }
-                                        scoreWormCard(width: scoreWormWidth)
-                                            .padding(.top, cardSpacing)
-                                    }
-                                }
-                            }
+                    ScrollView {
+                        if compact {
+                            self.compactScoreboardLayout(
+                                width: proxy.size.width,
+                                cardSpacing: cardSpacing,
+                                sharedCardHeight: sharedCardHeight,
+                                secondaryRowCardHeight: secondaryRowCardHeight
+                            )
+                        } else {
+                            self.regularScoreboardLayout(
+                                cardSpacing: cardSpacing,
+                                teamCardWidth: teamCardWidth,
+                                timerWidth: timerWidth,
+                                sharedCardHeight: sharedCardHeight,
+                                secondaryRowCardHeight: secondaryRowCardHeight,
+                                scoreWormWidth: availableWidth
+                            )
                         }
+                    }
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 8)
@@ -3729,26 +3973,71 @@ struct NewGameWizardView: View {
             }
             .background(Color(.systemGroupedBackground))
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
-                        pauseTimer()
-                        showCancelConfirmation = true
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        liveSession.syncTimer()
+                        onBackToHome()
+                    } label: {
+                        Image(systemName: "chevron.left")
                     }
                 }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button("Save as Draft") {
-                        pauseTimer()
-                        onBackToHome()
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: onSyncStatusTapped) {
+                        Image(systemName: syncStatusIconName)
+                            .imageScale(.large)
+                            .foregroundStyle(syncStatusTint)
+                            .opacity(isSyncStatusDisabled ? 0.55 : 1)
                     }
-                    .buttonStyle(.bordered)
-
-                    Button("Next") {
+                    .disabled(isSyncStatusDisabled)
+                    .accessibilityLabel(syncStatusAccessibilityLabel)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
                         pauseTimer()
                         onSaveAndContinue()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .font(.subheadline.weight(.semibold))
                     .saveButtonBehavior(isEnabled: canSaveAndContinue)
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button("Save draft") {
+                            liveSession.syncTimer()
+                            onBackToHome()
+                        }
+                        Button("Delete", role: .destructive) {
+                            showDeleteDraftConfirmation = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("More")
+                }
+            }
+            .alert("Delete draft?", isPresented: $showDeleteDraftConfirmation) {
+                Button("Delete", role: .destructive) {
+                    deleteCodePromptValue = ""
+                    showDeleteCodePrompt = true
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Delete this live game draft permanently? This cannot be undone.")
+            }
+            .alert("Enter code", isPresented: $showDeleteCodePrompt) {
+                SecureField("Code", text: $deleteCodePromptValue)
+                Button("Cancel", role: .cancel) {
+                    deleteCodePromptValue = ""
+                }
+                Button("Continue") {
+                    submitDeleteCode()
+                }
+            } message: {
+                Text("Deleting a live game draft is protected.")
+            }
+            .alert("Wrong code", isPresented: $showWrongDeleteCodeAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("That code is incorrect.")
             }
             .alert("If you proceed, all current data for this game will be lost", isPresented: $showCancelConfirmation) {
                 Button("Continue", role: .destructive) {
@@ -3757,8 +4046,9 @@ struct NewGameWizardView: View {
                 Button("Cancel", role: .cancel) {}
             }
             .onChange(of: liveSession.periodMinutes) { _, newValue in
-                if !timerRunning {
+                if !liveSession.isTimerRunning {
                     liveSession.secondsRemaining = max(1, newValue) * 60
+                    liveSession.timerAnchorSecondsRemaining = liveSession.secondsRemaining
                 }
             }
             .onChange(of: ourScore) { oldValue, newValue in
@@ -3769,13 +4059,20 @@ struct NewGameWizardView: View {
             }
             .onAppear {
                 applyConfiguredInitialPeriod()
-                if liveSession.shouldAutoResumeTimer {
-                    liveSession.shouldAutoResumeTimer = false
-                    startTimer()
-                }
+                handleTimerTick()
             }
             .onChange(of: initialPeriodMinutes) { _, _ in
                 applyConfiguredInitialPeriod()
+            }
+            .task(id: liveSession.timerAnchorDate) {
+                guard liveSession.isTimerRunning else { return }
+                while !Task.isCancelled && liveSession.isTimerRunning {
+                    try? await Task.sleep(for: .seconds(1))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        handleTimerTick()
+                    }
+                }
             }
             .sheet(isPresented: $showPlayerPicker) {
                 NavigationStack {
@@ -3835,7 +4132,7 @@ struct NewGameWizardView: View {
             .onDisappear {
                 let isPresentingOverlaySheet = showPlayerPicker || showPointPicker || showGoalKickerEditor
                 guard !isPresentingOverlaySheet else { return }
-                pauseTimer()
+                liveSession.syncTimer()
             }
             .alert("Save and reset?", isPresented: $showManualSavePrompt) {
                 Button("Back", role: .cancel) {}
@@ -3855,22 +4152,6 @@ struct NewGameWizardView: View {
             } message: {
                 Text(undoConfirmationMessage)
             }
-        }
-
-        private var pullDownHandle: some View {
-            Capsule(style: .continuous)
-                .fill(Color.secondary.opacity(0.45))
-                .frame(width: 52, height: 6)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 12)
-                        .onEnded { value in
-                            guard value.translation.height > 70 else { return }
-                            pauseTimer()
-                            onCollapse()
-                        }
-                )
-                .accessibilityLabel("Swipe down to hide live game view")
         }
 
         private func timerCard(height: CGFloat, width: CGFloat) -> some View {
@@ -3924,7 +4205,7 @@ struct NewGameWizardView: View {
                         }
                         .accessibilityLabel("Start")
                         .buttonStyle(.borderedProminent)
-                        .disabled(timerRunning)
+                        .disabled(liveSession.isTimerRunning)
 
                         Button {
                             pauseTimer()
@@ -3934,7 +4215,7 @@ struct NewGameWizardView: View {
                         }
                         .accessibilityLabel("Pause")
                         .buttonStyle(.bordered)
-                        .disabled(!timerRunning)
+                        .disabled(!liveSession.isTimerRunning)
                     }
 
                     Button {
@@ -3981,6 +4262,150 @@ struct NewGameWizardView: View {
                     }
                 }
 
+            }
+        }
+
+        @ViewBuilder
+        private func compactScoreboardLayout(
+            width: CGFloat,
+            cardSpacing: CGFloat,
+            sharedCardHeight: CGFloat,
+            secondaryRowCardHeight: CGFloat
+        ) -> some View {
+            VStack(spacing: cardSpacing) {
+                teamScoreCard(
+                    title: ourTeamName,
+                    style: ourStyle,
+                    goals: $ourGoals,
+                    behinds: $ourBehinds,
+                    score: ourScore,
+                    goalAction: { showPlayerPicker = true },
+                    pointAction: { showPointPicker = true },
+                    showUndoButtons: true,
+                    showManualAdjusters: false,
+                    goalUndoAction: { confirmUndoGoal() },
+                    pointUndoAction: { confirmUndoPoint() },
+                    canUndoGoal: canUndoGoal,
+                    canUndoPoint: canUndoPoint,
+                    minHeight: sharedCardHeight
+                )
+                teamPressureCard(
+                    style: ourStyle,
+                    clearances: liveSession.ourClearances,
+                    inside50s: liveSession.ourInside50s,
+                    clearanceAction: { liveSession.ourClearances += 1 },
+                    inside50Action: { liveSession.ourInside50s += 1 },
+                    height: secondaryRowCardHeight,
+                    width: width
+                )
+                timerCard(height: max(280, sharedCardHeight * 0.66), width: width)
+                goalKickerSummaryCard(width: width, height: secondaryRowCardHeight)
+                teamScoreCard(
+                    title: oppTeamName,
+                    style: oppStyle,
+                    goals: $theirGoals,
+                    behinds: $theirBehinds,
+                    score: theirScore,
+                    goalAction: { recordOpponentGoal() },
+                    pointAction: { recordOpponentPoint() },
+                    showUndoButtons: true,
+                    showManualAdjusters: false,
+                    goalUndoAction: { confirmUndoOpponentGoal() },
+                    pointUndoAction: { confirmUndoOpponentPoint() },
+                    canUndoGoal: canUndoOpponentGoal,
+                    canUndoPoint: canUndoOpponentPoint,
+                    minHeight: sharedCardHeight
+                )
+                teamPressureCard(
+                    style: oppStyle,
+                    clearances: liveSession.theirClearances,
+                    inside50s: liveSession.theirInside50s,
+                    clearanceAction: { liveSession.theirClearances += 1 },
+                    inside50Action: { liveSession.theirInside50s += 1 },
+                    height: secondaryRowCardHeight,
+                    width: width
+                )
+                scoreWormCard(width: width)
+            }
+        }
+
+        @ViewBuilder
+        private func regularScoreboardLayout(
+            cardSpacing: CGFloat,
+            teamCardWidth: CGFloat,
+            timerWidth: CGFloat,
+            sharedCardHeight: CGFloat,
+            secondaryRowCardHeight: CGFloat,
+            scoreWormWidth: CGFloat
+        ) -> some View {
+            VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: cardSpacing) {
+                    VStack(spacing: cardSpacing) {
+                        teamScoreCard(
+                            title: ourTeamName,
+                            style: ourStyle,
+                            goals: $ourGoals,
+                            behinds: $ourBehinds,
+                            score: ourScore,
+                            goalAction: { showPlayerPicker = true },
+                            pointAction: { showPointPicker = true },
+                            showUndoButtons: true,
+                            showManualAdjusters: false,
+                            goalUndoAction: { confirmUndoGoal() },
+                            pointUndoAction: { confirmUndoPoint() },
+                            canUndoGoal: canUndoGoal,
+                            canUndoPoint: canUndoPoint,
+                            minHeight: sharedCardHeight
+                        )
+                        teamPressureCard(
+                            style: ourStyle,
+                            clearances: liveSession.ourClearances,
+                            inside50s: liveSession.ourInside50s,
+                            clearanceAction: { liveSession.ourClearances += 1 },
+                            inside50Action: { liveSession.ourInside50s += 1 },
+                            height: secondaryRowCardHeight,
+                            width: teamCardWidth
+                        )
+                    }
+                    .frame(width: teamCardWidth, alignment: .topLeading)
+
+                    VStack(spacing: cardSpacing) {
+                        timerCard(height: sharedCardHeight, width: timerWidth)
+                        goalKickerSummaryCard(width: timerWidth, height: secondaryRowCardHeight)
+                    }
+                    .frame(width: timerWidth, alignment: .top)
+
+                    VStack(spacing: cardSpacing) {
+                        teamScoreCard(
+                            title: oppTeamName,
+                            style: oppStyle,
+                            goals: $theirGoals,
+                            behinds: $theirBehinds,
+                            score: theirScore,
+                            goalAction: { recordOpponentGoal() },
+                            pointAction: { recordOpponentPoint() },
+                            showUndoButtons: true,
+                            showManualAdjusters: false,
+                            goalUndoAction: { confirmUndoOpponentGoal() },
+                            pointUndoAction: { confirmUndoOpponentPoint() },
+                            canUndoGoal: canUndoOpponentGoal,
+                            canUndoPoint: canUndoOpponentPoint,
+                            minHeight: sharedCardHeight
+                        )
+                        teamPressureCard(
+                            style: oppStyle,
+                            clearances: liveSession.theirClearances,
+                            inside50s: liveSession.theirInside50s,
+                            clearanceAction: { liveSession.theirClearances += 1 },
+                            inside50Action: { liveSession.theirInside50s += 1 },
+                            height: secondaryRowCardHeight,
+                            width: teamCardWidth
+                        )
+                    }
+                    .frame(width: teamCardWidth, alignment: .topTrailing)
+                }
+                scoreWormCard(width: scoreWormWidth)
+                    .padding(.top, cardSpacing)
             }
         }
 
@@ -4665,31 +5090,12 @@ struct NewGameWizardView: View {
         }
 
         private func startTimer() {
-            guard !timerRunning else { return }
-            timerRunning = true
-            timerTask?.cancel()
-            timerTask = Task {
-                while !Task.isCancelled && timerRunning {
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        guard timerRunning else { return }
-                        let previousSeconds = liveSession.secondsRemaining
-                        liveSession.secondsRemaining -= 1
-                        if previousSeconds > 0 && liveSession.secondsRemaining == 0 {
-                            pendingAutoAdvanceSave = true
-                            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
-                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                        }
-                    }
-                }
-            }
+            liveSession.startTimer()
+            handleTimerTick()
         }
 
         private func pauseTimer() {
-            timerRunning = false
-            timerTask?.cancel()
-            timerTask = nil
+            liveSession.pauseTimer()
         }
 
         private func saveAndResetPeriod() {
@@ -4723,9 +5129,29 @@ struct NewGameWizardView: View {
         }
 
         private func applyConfiguredInitialPeriod() {
-            guard !timerRunning, !liveSession.isInitialized, liveSession.periodSnapshots.isEmpty else { return }
+            guard !liveSession.isTimerRunning, !liveSession.isInitialized, liveSession.periodSnapshots.isEmpty else { return }
             liveSession.periodMinutes = initialPeriodMinutes
             liveSession.secondsRemaining = initialPeriodMinutes * 60
+            liveSession.timerAnchorSecondsRemaining = liveSession.secondsRemaining
+        }
+
+        private func handleTimerTick() {
+            let crossedZero = liveSession.syncTimer()
+            if crossedZero {
+                pendingAutoAdvanceSave = true
+                AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            }
+        }
+
+        private func submitDeleteCode() {
+            let trimmed = deleteCodePromptValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard DeleteCodeStore.verify(trimmed) else {
+                showWrongDeleteCodeAlert = true
+                return
+            }
+            deleteCodePromptValue = ""
+            onDeleteDraft()
         }
     }
 
