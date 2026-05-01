@@ -1,10 +1,15 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct TabsView: View {
     @Environment(\.modelContext) private var dataContext: ModelContext
     @EnvironmentObject private var navigationState: AppNavigationState
     @State private var settingsResetToken = UUID()
+
+    private var hidesPresentationTabForIPhoneAdmin: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone && navigationState.currentRole == .admin
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -35,7 +40,7 @@ struct TabsView: View {
                         .tabItem { tabItemLabel(for: .totals, isPortrait: isPortrait) }
                 }
 
-                if navigationState.canAccess(tab: .pres) {
+                if navigationState.canAccess(tab: .pres) && !hidesPresentationTabForIPhoneAdmin {
                     PresView()
                         .tag(AppTab.pres)
                         .tabItem { tabItemLabel(for: .pres, isPortrait: isPortrait) }

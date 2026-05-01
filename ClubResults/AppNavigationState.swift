@@ -64,14 +64,16 @@ enum AppRole: String, CaseIterable, Identifiable {
 
     var visibleTabs: [AppTab] {
         switch self {
-        case .teamManager, .coach:
-            return [.games, .game, .stats, .totals, .settings]
-        case .statTaker:
-            return [.games, .game, .stats, .totals, .settings]
-        case .supporter:
-            return [.games, .game, .totals, .settings]
-        default:
+        case .admin, .restrictedAdmin:
             return [.games, .game, .stats, .totals, .pres, .settings]
+        case .teamManager:
+            return [.games, .game, .stats, .totals, .settings]
+        case .coach:
+            return [.games, .stats, .totals, .settings]
+        case .statTaker:
+            return [.games, .stats, .totals, .settings]
+        case .supporter:
+            return [.games, .totals, .settings]
         }
     }
 
@@ -157,7 +159,7 @@ enum AppTab: Hashable {
     var title: String {
         switch self {
         case .games: return "Home"
-        case .game: return "Game"
+        case .game: return "Live"
         case .totals: return "Totals"
         case .stats: return "Stats"
         case .pres: return "Pres"
@@ -222,6 +224,7 @@ final class AppNavigationState: ObservableObject {
 
     @Published var selectedTab: AppTab = .games
     @Published var activeStatsSessionID: UUID?
+    @Published private(set) var pendingStatsInviteSessionID: UUID?
     @Published var startNewStatsSessionToken = UUID()
     @Published private(set) var activeLiveGameDraftID: UUID?
     @Published private(set) var activeLiveGameGradeID: UUID?
@@ -290,6 +293,7 @@ final class AppNavigationState: ObservableObject {
     }
 
     func openLiveGameTab(draftGameID: UUID, gradeID: UUID) {
+        guard currentRole.visibleTabs.contains(.game) else { return }
         activeLiveGameDraftID = draftGameID
         activeLiveGameGradeID = gradeID
         selectedTab = .game
@@ -324,9 +328,22 @@ final class AppNavigationState: ObservableObject {
         startNewStatsSessionToken = UUID()
     }
 
+    func openStatsInvite(sessionID: UUID) {
+        pendingStatsInviteSessionID = sessionID
+        if currentRole.visibleTabs.contains(.stats) {
+            selectedTab = .stats
+        }
+    }
+
+    func clearPendingStatsInvite() {
+        pendingStatsInviteSessionID = nil
+    }
+
     private func apply(role: AppRole) {
         currentRole = role
-        if !role.visibleTabs.contains(selectedTab) {
+        if pendingStatsInviteSessionID != nil, role.visibleTabs.contains(.stats) {
+            selectedTab = .stats
+        } else if !role.visibleTabs.contains(selectedTab) {
             selectedTab = role.visibleTabs.first ?? .games
         }
     }

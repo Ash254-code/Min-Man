@@ -3,6 +3,8 @@ import SwiftData
 
 @main
 struct ClubResultsApp: App {
+    private static let modelStoreDirectoryName = "ClubResultsSwiftData"
+    private static let modelStoreFileName = "ClubResults.store"
 
     @State private var showSplash = true
     @StateObject private var navigationState = AppNavigationState()
@@ -36,21 +38,28 @@ struct ClubResultsApp: App {
     private static func makeModelContainer(schema: Schema) -> ModelContainer {
         let storeURL = modelStoreURL()
         let configuration = ModelConfiguration(url: storeURL, cloudKitDatabase: .none)
+        let inMemoryConfiguration = ModelConfiguration(isStoredInMemoryOnly: true)
 
         do {
             return try ModelContainer(for: schema, configurations: configuration)
         } catch {
             do {
-                try removeStoreFiles(at: storeURL)
+                try resetStoreDirectory(for: storeURL)
                 return try ModelContainer(for: schema, configurations: configuration)
             } catch {
-                fatalError("Failed to create local SwiftData container: \(error)")
+                do {
+                    assertionFailure("SwiftData disk container failed. Falling back to in-memory store. Error: \(error)")
+                    return try ModelContainer(for: schema, configurations: inMemoryConfiguration)
+                } catch {
+                    fatalError("Failed to create any SwiftData container: \(error)")
+                }
             }
         }
     }
 
     private static func modelStoreURL() -> URL {
         let applicationSupportURL = URL.applicationSupportDirectory
+            .appending(path: modelStoreDirectoryName, directoryHint: .isDirectory)
         do {
             try FileManager.default.createDirectory(
                 at: applicationSupportURL,
@@ -59,23 +68,27 @@ struct ClubResultsApp: App {
         } catch {
             fatalError("Failed to prepare app support directory: \(error)")
         }
-        return applicationSupportURL.appending(path: "ClubResults.store")
+        return applicationSupportURL.appending(path: modelStoreFileName)
     }
 
-    private static func removeStoreFiles(at storeURL: URL) throws {
+    private static func resetStoreDirectory(for storeURL: URL) throws {
         let fileManager = FileManager.default
-        let auxiliaryExtensions = ["-shm", "-wal"]
+        let storeDirectoryURL = storeURL.deletingLastPathComponent()
 
-        if fileManager.fileExists(atPath: storeURL.path()) {
-            try fileManager.removeItem(at: storeURL)
-        }
-
-        for suffix in auxiliaryExtensions {
-            let auxiliaryURL = URL(fileURLWithPath: storeURL.path() + suffix)
-            if fileManager.fileExists(atPath: auxiliaryURL.path()) {
-                try fileManager.removeItem(at: auxiliaryURL)
+        if fileManager.fileExists(atPath: storeDirectoryURL.path()) {
+            let contents = try fileManager.contentsOfDirectory(
+                at: storeDirectoryURL,
+                includingPropertiesForKeys: nil
+            )
+            for url in contents {
+                try fileManager.removeItem(at: url)
             }
         }
+
+        try fileManager.createDirectory(
+            at: storeDirectoryURL,
+            withIntermediateDirectories: true
+        )
     }
 
     private var preferredScheme: ColorScheme? {
@@ -127,6 +140,10 @@ struct ClubResultsApp: App {
             .environmentObject(navigationState)
             .preferredColorScheme(preferredScheme)
             .tint(.appleBlue)
+            .onOpenURL { url in
+                guard let invite = StatsInviteLinking.parse(url) else { return }
+                navigationState.openStatsInvite(sessionID: invite.sessionID)
+            }
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     withAnimation(.easeOut(duration: 0.5)) {

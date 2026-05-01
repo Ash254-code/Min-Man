@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct GamesView: View {
     @Environment(\.modelContext) private var modelContext
@@ -100,10 +101,15 @@ struct GamesView: View {
     @State private var showWrongCodeAlert = false
     @State private var showDeleteConfirmAlert = false
     @State private var pendingProtectedAction: ProtectedGameAction?
+    @State private var showPresentationView = false
 
     private enum ProtectedGameAction {
         case edit
         case delete
+    }
+
+    private var isIPhoneAdminLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone && navigationState.currentRole == .admin
     }
 
 
@@ -442,22 +448,37 @@ struct GamesView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
 
-                    // Header like your screenshot: "Games" + small "All" pill
+                    // Header like your screenshot: "Home" + small "All" pill
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("Games")
+                        Text("Home")
                             .font(.system(size: 44, weight: .bold))
 
-                        Text(selectedGradeName)
-                            .font(.system(size: 16, weight: .semibold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(.ultraThinMaterial)
-                            )
-                            .foregroundStyle(.secondary)
+                        if !(isIPhoneAdminLayout && selectedGradeID == nil) {
+                            Text(selectedGradeName)
+                                .font(.system(size: 16, weight: .semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(.ultraThinMaterial)
+                                )
+                                .foregroundStyle(.secondary)
+                        }
 
                         Spacer()
+
+                        if isIPhoneAdminLayout {
+                            Button {
+                                showPresentationView = true
+                            } label: {
+                                Image(systemName: "rectangle.stack.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.primary)
+                            .accessibilityLabel("Presentation")
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.top, 6)
@@ -504,6 +525,9 @@ struct GamesView: View {
             }
             .onChange(of: selectedGradeID) { _, _ in
                 selectedRoundID = nil
+            }
+            .fullScreenCover(isPresented: $showPresentationView) {
+                PresView()
             }
             .fullScreenCover(item: $newGameWizardPresentation) { presentation in
                 NewGameWizardView(
@@ -652,13 +676,18 @@ struct NewGameQuickStartSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
+            if horizontalSizeClass == .compact {
                 Text("Start New Game")
-                    .font(.system(size: 34, weight: .bold))
+                    .font(.system(size: 28, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    Text("Start New Game")
+                        .font(.system(size: 34, weight: .bold))
 
-                Spacer(minLength: 8)
-
-                statusLegend
+                    Spacer(minLength: 8)
+                }
             }
 
             if grades.isEmpty {
@@ -719,26 +748,6 @@ struct NewGameQuickStartSection: View {
         )
     }
 
-    private var statusLegend: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
-                legendItem(status: .noGameSaved, text: "No Game Saved")
-                legendItem(status: .liveInProgress, text: "Game in Progress")
-                legendItem(status: .gameSaved, text: "Game Saved")
-            }
-        }
-        .font(.system(size: horizontalSizeClass == .compact ? 11 : 13, weight: .semibold))
-        .foregroundStyle(.secondary)
-    }
-
-    private func legendItem(status: GradeStatus, text: String) -> some View {
-        HStack(spacing: 6) {
-            statusDot(status, size: 12)
-            Text(text)
-                .lineLimit(1)
-        }
-    }
-
     @ViewBuilder
     private func statusDot(_ status: GradeStatus, size: CGFloat = 14) -> some View {
         switch status {
@@ -766,6 +775,7 @@ private struct GamesListSection<Content: View>: View {
     let minHeight: CGFloat
     let outcomeGradeHeaders: [String]
     let content: Content
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     init(minHeight: CGFloat, outcomeGradeHeaders: [String], @ViewBuilder content: () -> Content) {
         self.minHeight = minHeight
@@ -775,14 +785,23 @@ private struct GamesListSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .bottom, spacing: 12) {
-                Text("Games")
-                    .font(.system(size: 34, weight: .bold))
+            if horizontalSizeClass == .compact {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Previous Games")
+                        .font(.system(size: 28, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+            } else {
+                HStack(alignment: .bottom, spacing: 12) {
+                    Text("Previous Games")
+                        .font(.system(size: 34, weight: .bold))
 
-                Spacer(minLength: 10)
+                    Spacer(minLength: 10)
 
-                if !outcomeGradeHeaders.isEmpty {
-                    RoundOutcomeColumnHeaders(gradeNames: outcomeGradeHeaders)
+                    if !outcomeGradeHeaders.isEmpty {
+                        RoundOutcomeColumnHeaders(gradeNames: outcomeGradeHeaders)
+                    }
                 }
             }
 
@@ -835,30 +854,61 @@ private struct GameCardRow: View {
     let opponentWidth: CGFloat
     let showScore: Bool
     let hasTwoGames: Bool
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    private var didWin: Bool { game.ourScore >= game.theirScore }
+    private var outcome: GamesView.RoundOutcome {
+        if game.ourScore > game.theirScore {
+            return .win
+        } else if game.ourScore < game.theirScore {
+            return .loss
+        } else {
+            return .draw
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth)
+        Group {
+            if horizontalSizeClass == .compact {
+                HStack(spacing: 12) {
+                    if hasTwoGames {
+                        Text("Two games")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
 
-            if hasTwoGames {
-                Text("Two games")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    if showScore {
+                        Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
+                            .font(.system(size: 22, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+
+                    Spacer(minLength: 8)
+                    CompactGameOutcomePill(outcome: outcome)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    OpponentBadge(opponent: game.opponent, fixedWidth: opponentWidth)
+
+                    if hasTwoGames {
+                        Text("Two games")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 10)
+
+                    if showScore {
+                        Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
+                            .font(.system(size: 24, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+
+                    Spacer(minLength: 10)
+                    ResultPill(win: outcome == .win)
+                }
             }
-
-            Spacer(minLength: 10)
-
-            if showScore {
-                Text("\(game.ourGoals).\(game.ourBehinds) - \(game.theirGoals).\(game.theirBehinds)")
-                    .font(.system(size: 24, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-
-            Spacer(minLength: 10)
-            ResultPill(win: didWin)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -879,6 +929,38 @@ private struct GameCardRow: View {
                     .allowsHitTesting(false)
             }
         }
+    }
+}
+
+private struct CompactGameOutcomePill: View {
+    let outcome: GamesView.RoundOutcome
+
+    private var backgroundColor: Color {
+        switch outcome {
+        case .win: return Color.green.opacity(0.2)
+        case .draw: return Color.orange.opacity(0.2)
+        case .loss: return Color.red.opacity(0.2)
+        }
+    }
+
+    private var foregroundColor: Color {
+        switch outcome {
+        case .win: return .green
+        case .draw: return .orange
+        case .loss: return .red
+        }
+    }
+
+    var body: some View {
+        Text(outcome.label)
+            .font(.system(size: 12, weight: .bold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(backgroundColor)
+            )
+            .foregroundStyle(foregroundColor)
     }
 }
 
@@ -914,8 +996,12 @@ private enum RoundOutcomeLayout {
 
 private struct RoundOutcomeColumnHeaders: View {
     let gradeNames: [String]
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
+        if horizontalSizeClass == .compact {
+            EmptyView()
+        } else {
         GeometryReader { proxy in
             let useCompactLayout = RoundOutcomeLayout.useCompactLayout(for: proxy.size.width)
             let columnWidth = RoundOutcomeLayout.columnWidth(forCompactLayout: useCompactLayout)
@@ -937,6 +1023,7 @@ private struct RoundOutcomeColumnHeaders: View {
             .offset(x: RoundOutcomeLayout.headerAlignmentNudge)
         }
         .frame(height: 24)
+        }
     }
 }
 
@@ -956,42 +1043,64 @@ private struct RoundTitleLine: View {
             let columnSpacing = RoundOutcomeLayout.columnSpacing(forCompactLayout: useCompactLayout)
             let pillSize: CGFloat = useCompactLayout ? 38 : 44
 
-            HStack(spacing: useCompactLayout ? 8 : 10) {
-                Text("ROUND \(roundNumber) - \(dateLabel)")
-                    .font(.system(size: useCompactLayout ? 19 : 22, weight: .bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .frame(width: roundDateColumnWidth, alignment: .leading)
+            if horizontalSizeClass == .compact {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .center, spacing: 8) {
+                        Text("ROUND \(roundNumber) - \(dateLabel)")
+                            .font(.system(size: 19, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .layoutPriority(3)
+
+                        Spacer(minLength: 4)
+
+                        if showsChevron {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    OpponentBadge(opponent: opponent)
+                }
+            } else {
+                HStack(spacing: useCompactLayout ? 8 : 10) {
+                    Text("ROUND \(roundNumber) - \(dateLabel)")
+                        .font(.system(size: useCompactLayout ? 19 : 22, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(width: roundDateColumnWidth, alignment: .leading)
+                        .layoutPriority(3)
+
+                    Text("V")
+                        .font(.system(size: useCompactLayout ? 19 : 22, weight: .semibold))
+                        .lineLimit(1)
+
+                    OpponentBadge(opponent: opponent)
+                        .layoutPriority(1)
+
+                    Spacer(minLength: useCompactLayout ? 8 : 16)
+
+                    HStack(spacing: columnSpacing) {
+                        ForEach(outcomePills) { item in
+                            CompactRoundOutcomePill(item: item, pillSize: pillSize)
+                                .frame(width: columnWidth)
+                        }
+                    }
+                    .frame(width: RoundOutcomeLayout.contentWidth(for: outcomePills.count, compact: useCompactLayout), alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                     .layoutPriority(3)
 
-                Text("V")
-                    .font(.system(size: useCompactLayout ? 19 : 22, weight: .semibold))
-                    .lineLimit(1)
-
-                OpponentBadge(opponent: opponent)
-                    .layoutPriority(1)
-
-                Spacer(minLength: useCompactLayout ? 8 : 16)
-
-                HStack(spacing: columnSpacing) {
-                    ForEach(outcomePills) { item in
-                        CompactRoundOutcomePill(item: item, pillSize: pillSize)
-                            .frame(width: columnWidth)
+                    if showsChevron {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: RoundOutcomeLayout.chevronReserveWidth, alignment: .trailing)
                     }
-                }
-                .frame(width: RoundOutcomeLayout.contentWidth(for: outcomePills.count, compact: useCompactLayout), alignment: .center)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .layoutPriority(3)
-
-                if showsChevron {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: RoundOutcomeLayout.chevronReserveWidth, alignment: .trailing)
                 }
             }
         }
-        .frame(height: 52)
+        .frame(height: horizontalSizeClass == .compact ? nil : 52)
     }
 }
 
@@ -1000,6 +1109,7 @@ private struct RoundCardRow: View {
     let dateLabel: String
     let opponent: String
     let outcomePills: [GamesView.RoundOutcomePillItem]
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         RoundTitleLine(
@@ -1011,7 +1121,11 @@ private struct RoundCardRow: View {
         )
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: horizontalSizeClass == .compact ? 110 : nil,
+            alignment: .topLeading
+        )
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(.regularMaterial)
@@ -1028,6 +1142,7 @@ private struct RoundDetailHeaderCard: View {
     let dateLabel: String
     let opponent: String
     let outcomePills: [GamesView.RoundOutcomePillItem]
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         RoundTitleLine(
@@ -1039,7 +1154,11 @@ private struct RoundDetailHeaderCard: View {
         )
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: horizontalSizeClass == .compact ? 110 : nil,
+            alignment: .topLeading
+        )
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(.regularMaterial)

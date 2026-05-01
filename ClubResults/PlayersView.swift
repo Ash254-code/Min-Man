@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct PlayersView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Player.name) private var queriedPlayers: [Player]
     @Query private var grades: [Grade]
     @State private var playersForDisplay: [Player] = []
@@ -96,8 +97,8 @@ struct PlayersView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
 
             // ✅ We provide our own title row (Players + grade pill)
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle(horizontalSizeClass == .compact ? "Players" : "")
+            .navigationBarTitleDisplayMode(horizontalSizeClass == .compact ? .inline : .large)
 
             .toolbar { playersToolbar }
 
@@ -269,17 +270,19 @@ struct PlayersView: View {
     @ToolbarContentBuilder
     private var playersToolbar: some ToolbarContent {
         // ✅ Title + grade pill (left side, large-title area)
-        ToolbarItem(placement: .principal) {
-            HStack(spacing: 10) {
-                Text("Players")
-                    .font(.largeTitle.weight(.bold))
+        if horizontalSizeClass != .compact {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 10) {
+                    Text("Players")
+                        .font(.largeTitle.weight(.bold))
 
-                FilteredGradeTitle(
-                    selectedGradeID: selectedGradeID,
-                    grades: activeGrades
-                )
+                    FilteredGradeTitle(
+                        selectedGradeID: selectedGradeID,
+                        grades: activeGrades
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
 
         // ✅ Actions on the right
@@ -529,6 +532,7 @@ private struct PlayerRowAFL: View {
     let number: Int?
     let gradeNames: [String]
     let isActive: Bool
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         HStack(spacing: 12) {
@@ -548,12 +552,17 @@ private struct PlayerRowAFL: View {
 
             Spacer()
 
-            HStack(spacing: 6) {
-                ForEach(gradeNames.prefix(2), id: \.self) { g in
-                    GradePill(text: g)
+            if horizontalSizeClass == .compact && displayedGradePills.count > 1 {
+                VStack(alignment: .trailing, spacing: 6) {
+                    ForEach(displayedGradePills, id: \.self) { gradeText in
+                        GradePill(text: gradeText)
+                    }
                 }
-                if gradeNames.count > 2 {
-                    GradePill(text: "+\(gradeNames.count - 2)")
+            } else {
+                HStack(spacing: 6) {
+                    ForEach(displayedGradePills, id: \.self) { gradeText in
+                        GradePill(text: gradeText)
+                    }
                 }
             }
         }
@@ -574,6 +583,18 @@ private struct PlayerRowAFL: View {
 
     private var numberTextColor: Color {
         isActive ? ClubTheme.navy : Color.white.opacity(0.9)
+    }
+
+    private var displayedGradePills: [String] {
+        if horizontalSizeClass == .compact, gradeNames.count >= 3 {
+            return [gradeNames[0], "+\(gradeNames.count - 1)"]
+        }
+
+        var pills = Array(gradeNames.prefix(2))
+        if gradeNames.count > 2 {
+            pills.append("+\(gradeNames.count - 2)")
+        }
+        return pills
     }
 }
 

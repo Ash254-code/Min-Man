@@ -330,6 +330,7 @@ final class AuthenticationCoordinator: ObservableObject {
         static let appleUserID = "auth.appleUserID"
         static let email = "auth.email"
         static let displayName = "auth.displayName"
+        static let forceAdminOnNextSignIn = "auth.forceAdminOnNextSignIn"
     }
 
     @Published private(set) var isAuthenticated = false
@@ -344,6 +345,10 @@ final class AuthenticationCoordinator: ObservableObject {
     @Published var requiresManualEmailEntry = false
 
     private var hasAttemptedRestore = false
+
+    init() {
+        UserDefaults.standard.register(defaults: [StorageKeys.forceAdminOnNextSignIn: true])
+    }
 
     func restoreSessionIfNeeded(navigationState: AppNavigationState) async {
         guard !hasAttemptedRestore else { return }
@@ -495,10 +500,29 @@ final class AuthenticationCoordinator: ObservableObject {
         }
 
         do {
-            let profile = try await CloudKitUserAccessService.shared.resolveProfile(
+            let resolvedProfile = try await CloudKitUserAccessService.shared.resolveProfile(
                 email: normalizedEmail,
                 displayName: displayName
             )
+            let shouldForceAdmin = UserDefaults.standard.bool(forKey: StorageKeys.forceAdminOnNextSignIn)
+            let profile: CloudUserProfile
+            if shouldForceAdmin, resolvedProfile.role != .admin {
+                let updatedUser = try await CloudKitUserAccessService.shared.updateUserRole(
+                    email: normalizedEmail,
+                    role: .admin
+                )
+                profile = CloudUserProfile(
+                    email: updatedUser.email,
+                    role: updatedUser.role,
+                    displayName: updatedUser.displayName,
+                    lastSignedInAt: updatedUser.lastSignedInAt
+                )
+            } else {
+                profile = resolvedProfile
+            }
+            if shouldForceAdmin {
+                UserDefaults.standard.set(false, forKey: StorageKeys.forceAdminOnNextSignIn)
+            }
 
             UserDefaults.standard.set(appleUserID, forKey: StorageKeys.appleUserID)
             UserDefaults.standard.set(profile.email, forKey: StorageKeys.email)

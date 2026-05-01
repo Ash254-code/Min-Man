@@ -3,7 +3,6 @@ import SwiftData
 import UIKit
 import PDFKit
 import MessageUI
-import ContactsUI
 
 @Model
 final class StatType {
@@ -222,6 +221,11 @@ final class StatsInviteAssignment {
     var assignedStatTypeIDsRaw: String
     var inviteLinkToken: String
     var inviteLinkURL: String
+    var inviteeEmail: String
+    var inviteeName: String
+    var cloudRecordName: String
+    var sessionIDRaw: String
+    var sessionSummary: String
     var lastInvitedAt: Date
     var isConnected: Bool
     var lastConnectedAt: Date?
@@ -232,6 +236,11 @@ final class StatsInviteAssignment {
         assignedStatTypeIDsRaw: String,
         inviteLinkToken: String,
         inviteLinkURL: String,
+        inviteeEmail: String = "",
+        inviteeName: String = "",
+        cloudRecordName: String = "",
+        sessionIDRaw: String = "",
+        sessionSummary: String = "",
         lastInvitedAt: Date = Date(),
         isConnected: Bool = false,
         lastConnectedAt: Date? = nil
@@ -241,6 +250,11 @@ final class StatsInviteAssignment {
         self.assignedStatTypeIDsRaw = assignedStatTypeIDsRaw
         self.inviteLinkToken = inviteLinkToken
         self.inviteLinkURL = inviteLinkURL
+        self.inviteeEmail = inviteeEmail
+        self.inviteeName = inviteeName
+        self.cloudRecordName = cloudRecordName
+        self.sessionIDRaw = sessionIDRaw
+        self.sessionSummary = sessionSummary
         self.lastInvitedAt = lastInvitedAt
         self.isConnected = isConnected
         self.lastConnectedAt = lastConnectedAt
@@ -410,6 +424,7 @@ private enum StatsDefaults {
     ]
 }
 
+@MainActor
 struct StatsRootView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var navigationState: AppNavigationState
@@ -477,18 +492,16 @@ struct StatsRootView: View {
             .onChange(of: navigationState.startNewStatsSessionToken) { _, _ in
                 openNewSessionIfAllowed()
             }
-            .alert("Save Current Session First", isPresented: $showUnsavedSessionAlert) {
-                Button("Open In Progress Session") {
-                    if let latestUnsavedSession {
-                        selectedSession = latestUnsavedSession
-                    }
+            .alert("Current Session In Progress", isPresented: $showUnsavedSessionAlert) {
+                Button("Yes") {
+                    saveInProgressSessionAndStartNew()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 if let latestUnsavedSession {
-                    Text("The most recent stats session for \(gradeName(for: latestUnsavedSession.gradeId)) vs \(latestUnsavedSession.opposition) is still in progress. Save it before starting another one.")
+                    Text("The current stats session for \(gradeName(for: latestUnsavedSession.gradeId)) vs \(latestUnsavedSession.opposition) is still in progress. Would you like to save that session and start a new session?")
                 } else {
-                    Text("The most recent stats session is still in progress. Save it before starting another one.")
+                    Text("A stats session is still in progress. Would you like to save that session and start a new session?")
                 }
             }
         }
@@ -515,6 +528,21 @@ struct StatsRootView: View {
         }
     }
 
+    private func saveInProgressSessionAndStartNew() {
+        guard let latestUnsavedSession else {
+            showNewSession = true
+            return
+        }
+
+        latestUnsavedSession.isSaved = true
+        latestUnsavedSession.savedAt = Date()
+        if navigationState.activeStatsSessionID == latestUnsavedSession.sessionId {
+            navigationState.clearActiveStatsSession()
+        }
+        try? modelContext.save()
+        showNewSession = true
+    }
+
     private func seedDefaultStatTypesIfNeeded() {
         let existing = (try? modelContext.fetch(FetchDescriptor<StatType>())) ?? []
         guard existing.isEmpty else { return }
@@ -539,7 +567,7 @@ struct StatsTypesSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StatType.sortOrder) private var statTypes: [StatType]
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
-    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
+    @AppStorage("app.testFlightURL") private var testFlightURL = ""
 
     var body: some View {
         sharedControlsPane
@@ -573,11 +601,11 @@ struct StatsTypesSettingsView: View {
                 }
             }
 
-            Section("Stat Taker Invite Link") {
-                TextField("https://your-host/invite", text: $statsInviteBaseURL)
+            Section("Stat Taker TestFlight Link") {
+                TextField("https://testflight.apple.com/join/...", text: $testFlightURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                Text("Set the web invite page URL used by the New Stats Session wizard when sending stat taker invites.")
+                Text("Set the public TestFlight invite used when sharing CloudKit stat taker assignments.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1045,13 +1073,14 @@ struct StatsSessionSetupView: View {
         let id: UUID
         let contact: PhoneInviteContact
         let selections: [StatsInviteSelection]
-        let smsBody: String?
+        let shareText: String
     }
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var navigationState: AppNavigationState
+    @AppStorage("app.testFlightURL") private var testFlightURL = ""
     @Query(sort: \Grade.displayOrder) private var grades: [Grade]
     @Query(sort: \Contact.name) private var contacts: [Contact]
     @Query(sort: \StatsInviteAssignment.lastInvitedAt, order: .reverse) private var inviteAssignments: [StatsInviteAssignment]
@@ -1067,24 +1096,24 @@ struct StatsSessionSetupView: View {
         StatsCollectionOption(title: "Handball", mode: .individual),
         StatsCollectionOption(title: "Mark", mode: .individual),
         StatsCollectionOption(title: "Tackle", mode: .individual),
-        StatsCollectionOption(title: "Hit Out", mode: .individual),
-        StatsCollectionOption(title: "Clearance", mode: .team),
-        StatsCollectionOption(title: "Inside 50", mode: .team),
-        StatsCollectionOption(title: "Free Kick", mode: .team),
-        StatsCollectionOption(title: "Turnover", mode: .team),
-        StatsCollectionOption(title: "Intercept", mode: .team)
+        StatsCollectionOption(title: "Hit Out", isEnabled: false, mode: .individual),
+        StatsCollectionOption(title: "Clearance", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Inside 50", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Free Kick", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Turnover", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Intercept", isEnabled: false, mode: .team)
     ]
     @State private var oppositionStatOptions: [StatsCollectionOption] = [
         StatsCollectionOption(title: "Kick", mode: .team),
         StatsCollectionOption(title: "Handball", mode: .team),
         StatsCollectionOption(title: "Mark", mode: .team),
         StatsCollectionOption(title: "Tackle", mode: .team),
-        StatsCollectionOption(title: "Hit Out", mode: .team),
-        StatsCollectionOption(title: "Clearance", mode: .team),
-        StatsCollectionOption(title: "Inside 50", mode: .team),
-        StatsCollectionOption(title: "Free Kick", mode: .team),
-        StatsCollectionOption(title: "Turnover", mode: .team),
-        StatsCollectionOption(title: "Intercept", mode: .team)
+        StatsCollectionOption(title: "Hit Out", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Clearance", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Inside 50", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Free Kick", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Turnover", isEnabled: false, mode: .team),
+        StatsCollectionOption(title: "Intercept", isEnabled: false, mode: .team)
     ]
     @State private var comparisonStatOptions: [StatsCollectionOption] = [
         StatsCollectionOption(title: "Disposal Efficiency", isEnabled: false, mode: .team),
@@ -1101,6 +1130,7 @@ struct StatsSessionSetupView: View {
     @State private var wizardInviteAssignments: [WizardInviteAssignment] = []
     @State private var draftInviteName = ""
     @State private var draftInvitePhone = ""
+    @State private var draftInviteMobile = ""
     @State private var draftInviteSelectionRawValues: Set<String> = []
     @State private var showWizardContactPicker = false
     @State private var showWizardStatPicker = false
@@ -1159,10 +1189,10 @@ struct StatsSessionSetupView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.blue)
             }
-            .font(.system(size: isCompactLayout ? 24 : 28, weight: .semibold))
-            .controlSize(isCompactLayout ? .large : .extraLarge)
-            .padding(.horizontal, isCompactLayout ? 18 : 26)
-            .padding(.vertical, isCompactLayout ? 14 : 18)
+            .font(.system(size: isIPhoneWizardLayout ? 18 : (isCompactLayout ? 24 : 28), weight: .semibold))
+            .controlSize(isIPhoneWizardLayout ? .regular : (isCompactLayout ? .large : .extraLarge))
+            .padding(.horizontal, isIPhoneWizardLayout ? 16 : (isCompactLayout ? 18 : 26))
+            .padding(.vertical, isIPhoneWizardLayout ? 10 : (isCompactLayout ? 14 : 18))
             .background(.ultraThinMaterial)
         }
         .background(Color(.systemGroupedBackground))
@@ -1203,20 +1233,24 @@ struct StatsSessionSetupView: View {
         horizontalSizeClass == .compact
     }
 
+    private var isIPhoneWizardLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
+
     private var wizardPrimaryTitleFont: Font {
-        .system(size: isCompactLayout ? 40 : 52, weight: .bold)
+        .system(size: isIPhoneWizardLayout ? 28 : (isCompactLayout ? 40 : 52), weight: .bold)
     }
 
     private var wizardSecondaryTitleFont: Font {
-        .system(size: isCompactLayout ? 22 : 30, weight: .semibold)
+        .system(size: isIPhoneWizardLayout ? 18 : (isCompactLayout ? 22 : 30), weight: .semibold)
     }
 
     private var wizardStepSubtitleFont: Font {
-        .system(size: isCompactLayout ? 16 : 20, weight: .semibold)
+        .system(size: isIPhoneWizardLayout ? 13 : (isCompactLayout ? 16 : 20), weight: .semibold)
     }
 
     private var wizardBodyFont: Font {
-        .system(size: isCompactLayout ? 20 : 24, weight: .regular)
+        .system(size: isIPhoneWizardLayout ? 16 : (isCompactLayout ? 20 : 24), weight: .regular)
     }
 
     private var activeGrades: [Grade] {
@@ -1290,7 +1324,8 @@ struct StatsSessionSetupView: View {
     }
 
     private var canProceedFromInviteUsers: Bool {
-        !wizardInviteAssignments.isEmpty && availableWizardInviteSelections.isEmpty
+        !wizardInviteAssignments.isEmpty &&
+        availableWizardInviteSelections.isEmpty
     }
 
     private var primaryActionTitle: String {
@@ -1298,10 +1333,11 @@ struct StatsSessionSetupView: View {
     }
 
     private var wizardHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: isIPhoneWizardLayout ? 8 : 12) {
             VStack(alignment: .leading, spacing: isCompactLayout ? 2 : 4) {
                 Text("New Stats Session")
                     .font(wizardPrimaryTitleFont)
+                    .minimumScaleFactor(0.75)
 
                 Text(stepSubtitle)
                     .font(wizardStepSubtitleFont)
@@ -1312,11 +1348,11 @@ struct StatsSessionSetupView: View {
                 .font(wizardSecondaryTitleFont)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.65)
         }
-        .padding(.horizontal, isCompactLayout ? 20 : 28)
-        .padding(.top, isCompactLayout ? 8 : 14)
-        .padding(.bottom, isCompactLayout ? 12 : 16)
+        .padding(.horizontal, isIPhoneWizardLayout ? 16 : (isCompactLayout ? 20 : 28))
+        .padding(.top, isIPhoneWizardLayout ? 4 : (isCompactLayout ? 8 : 14))
+        .padding(.bottom, isIPhoneWizardLayout ? 8 : (isCompactLayout ? 12 : 16))
     }
 
     private var stepSubtitle: String {
@@ -1337,7 +1373,7 @@ struct StatsSessionSetupView: View {
     private var detailsStep: some View {
         ScrollView {
             VStack(spacing: 14) {
-                StatsWizardCard(title: "Game Details", systemImage: "calendar") {
+                StatsWizardCard(title: "Game Details", systemImage: "calendar", compactStyle: isIPhoneWizardLayout) {
                     if activeGrades.count != 1 {
                         HStack(spacing: 12) {
                             rowLabel("Grade")
@@ -1425,7 +1461,7 @@ struct StatsSessionSetupView: View {
     private var comparisonStatsStep: some View {
         ScrollView {
             VStack(spacing: 14) {
-                StatsWizardCard(title: "Match Events", systemImage: "square.split.2x1") {
+                StatsWizardCard(title: "Match Events", systemImage: "square.split.2x1", compactStyle: isIPhoneWizardLayout) {
                     LazyVGrid(columns: statsSelectionColumns, spacing: 16) {
                         comparisonStatsColumn(
                             pillTitle: ourTeamName,
@@ -1452,7 +1488,7 @@ struct StatsSessionSetupView: View {
     private var inviteUsersStep: some View {
         ScrollView {
             VStack(spacing: 14) {
-                StatsWizardCard(title: "Invite Stat Takers", systemImage: "person.badge.plus") {
+                StatsWizardCard(title: "Invite Stat Takers", systemImage: "person.badge.plus", compactStyle: isIPhoneWizardLayout) {
                     Text("Assign the remaining enabled stats to people collecting data. Each stat can only be allocated once.")
                         .font(wizardBodyFont)
                         .foregroundStyle(.secondary)
@@ -1462,14 +1498,20 @@ struct StatsSessionSetupView: View {
                         .font(.headline.weight(.bold))
                         .foregroundStyle(unassignedWizardSelectionCount == 0 ? .green : .primary)
 
+                    if testFlightURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("TestFlight link is optional. If the app is already installed, recipients can open the ClubResults link directly after sign-in.")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 10) {
-                            Button("Pick From iPhone Contacts") {
-                                showWizardContactPicker = true
-                            }
-                            .buttonStyle(.borderedProminent)
+                            Text("Enter the stat taker's name, invited email and mobile number for SMS delivery.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
 
-                            if !draftInviteName.isEmpty || !draftInvitePhone.isEmpty {
+                            if !draftInviteName.isEmpty || !draftInvitePhone.isEmpty || !draftInviteMobile.isEmpty {
                                 Button("Clear") {
                                     clearDraftInvite()
                                 }
@@ -1477,7 +1519,7 @@ struct StatsSessionSetupView: View {
                             }
                         }
 
-                        TextField("Contact name", text: $draftInviteName)
+                        TextField("Stat taker name", text: $draftInviteName)
                             .textInputAutocapitalization(.words)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
@@ -1486,10 +1528,19 @@ struct StatsSessionSetupView: View {
                                     .fill(Color(.secondarySystemBackground))
                             )
 
-                        TextField("Mobile phone", text: $draftInvitePhone)
-                            .keyboardType(.phonePad)
+                        TextField("Invited email", text: $draftInvitePhone)
+                            .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(.secondarySystemBackground))
+                            )
+
+                        TextField("Mobile for SMS", text: $draftInviteMobile)
+                            .keyboardType(.phonePad)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
                             .background(
@@ -1557,12 +1608,6 @@ struct StatsSessionSetupView: View {
         }
         .dynamicTypeSize(.large ... .accessibility2)
         .background(Color(.systemGroupedBackground))
-        .sheet(isPresented: $showWizardContactPicker) {
-            NativeContactPickerSheet { picked in
-                draftInviteName = picked.name
-                draftInvitePhone = picked.phoneNumber
-            }
-        }
         .sheet(isPresented: $showWizardStatPicker) {
             NavigationStack {
                 List {
@@ -1649,7 +1694,7 @@ struct StatsSessionSetupView: View {
     ) -> some View {
         ScrollView {
             VStack(spacing: 14) {
-                StatsWizardCard(title: title, systemImage: "chart.bar") {
+                StatsWizardCard(title: title, systemImage: "chart.bar", compactStyle: isIPhoneWizardLayout) {
                     HStack {
                         wizardTeamPill(pillTitle, style: pillStyle)
                         Spacer()
@@ -1756,7 +1801,8 @@ struct StatsSessionSetupView: View {
 
     private var canAddDraftInvite: Bool {
         !draftInviteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !normalizedPhoneNumber(draftInvitePhone).isEmpty &&
+        !normalizedInviteAddress(draftInvitePhone).isEmpty &&
+        !draftInviteMobile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !draftInviteSelectionRawValues.isEmpty
     }
 
@@ -1859,7 +1905,7 @@ struct StatsSessionSetupView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(assignment.contact.name)
                         .font(.headline.weight(.bold))
-                    Text(assignment.contact.phoneNumber)
+                    Text(assignment.contact.subtitle.isEmpty ? assignment.contact.phoneNumber : assignment.contact.subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -1895,20 +1941,22 @@ struct StatsSessionSetupView: View {
     }
 
     private var statsSelectionColumns: [GridItem] {
-        [
-            GridItem(.flexible(), spacing: 12, alignment: .top),
-            GridItem(.flexible(), spacing: 12, alignment: .top)
-        ]
+        isIPhoneWizardLayout
+            ? [GridItem(.flexible(), spacing: 10, alignment: .top)]
+            : [
+                GridItem(.flexible(), spacing: 12, alignment: .top),
+                GridItem(.flexible(), spacing: 12, alignment: .top)
+            ]
     }
 
     private func wizardTeamPill(_ title: String, style: ClubStyle.Style) -> some View {
         Text(title)
-            .font(.system(size: isCompactLayout ? 30 : 40, weight: .black))
+            .font(.system(size: isIPhoneWizardLayout ? 22 : (isCompactLayout ? 30 : 40), weight: .black))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .foregroundStyle(style.text)
-            .padding(.horizontal, isCompactLayout ? 42 : 54)
-            .padding(.vertical, isCompactLayout ? 18 : 24)
+            .padding(.horizontal, isIPhoneWizardLayout ? 22 : (isCompactLayout ? 42 : 54))
+            .padding(.vertical, isIPhoneWizardLayout ? 12 : (isCompactLayout ? 18 : 24))
             .background(
                 Capsule(style: .continuous)
                     .fill(style.background)
@@ -2008,8 +2056,8 @@ struct StatsSessionSetupView: View {
         }
     }
 
-    private func normalizedPhoneNumber(_ value: String) -> String {
-        value.filter(\.isNumber)
+    private func normalizedInviteAddress(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private func toggleDraftInviteSelection(_ selection: StatsInviteSelection) {
@@ -2025,8 +2073,9 @@ struct StatsSessionSetupView: View {
         let assignment = WizardInviteAssignment(
             id: UUID(),
             contact: PhoneInviteContact(
-                name: draftInviteName.trimmingCharacters(in: .whitespacesAndNewlines),
-                phoneNumber: draftInvitePhone.trimmingCharacters(in: .whitespacesAndNewlines)
+                email: draftInvitePhone.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                displayName: draftInviteName.trimmingCharacters(in: .whitespacesAndNewlines),
+                mobileNumber: draftInviteMobile.trimmingCharacters(in: .whitespacesAndNewlines)
             ),
             selectionRawValues: draftInviteSelectionRawValues.sorted()
         )
@@ -2049,6 +2098,7 @@ struct StatsSessionSetupView: View {
     private func clearDraftInvite() {
         draftInviteName = ""
         draftInvitePhone = ""
+        draftInviteMobile = ""
         draftInviteSelectionRawValues = []
     }
 
@@ -2096,96 +2146,128 @@ struct StatsSessionSetupView: View {
         navigationState.activateStatsSession(id: session.sessionId)
         startedSession = session
 
-        inviteDispatchItems = persistWizardInviteAssignmentsAndBuildDispatchItems(session: session)
-        if inviteDispatchItems.isEmpty {
-            showLiveStats = true
-        } else {
-            showInviteDispatchSheet = true
+        Task {
+            let items = await persistWizardInviteAssignmentsAndBuildDispatchItems(session: session)
+            await MainActor.run {
+                inviteDispatchItems = items
+                if inviteDispatchItems.isEmpty {
+                    showLiveStats = true
+                } else {
+                    showInviteDispatchSheet = true
+                }
+            }
         }
     }
 
-    private func persistWizardInviteAssignmentsAndBuildDispatchItems(session: StatsSession) -> [WizardInviteDispatchItem] {
+    private func persistWizardInviteAssignmentsAndBuildDispatchItems(session: StatsSession) async -> [WizardInviteDispatchItem] {
         let sessionLine = "\(selectedGradeName) vs \(session.opposition) • \(session.date.formatted(date: .abbreviated, time: .omitted))"
         let statTypes = wizardPreviewStatTypes
 
-        let items = wizardInviteAssignments.compactMap { assignment -> WizardInviteDispatchItem? in
+        var items: [WizardInviteDispatchItem] = []
+
+        for assignment in wizardInviteAssignments {
             let selections = wizardSelections(for: assignment)
-            guard !selections.isEmpty else { return nil }
+            guard !selections.isEmpty else { continue }
 
-            let token = UUID().uuidString.lowercased()
-            let linkURL = inviteURL(token: token)
-            let storedContact: Contact
-
-            if let existing = contacts.first(where: {
-                normalizedPhoneNumber($0.mobile) == normalizedPhoneNumber(assignment.contact.phoneNumber)
-            }) {
-                storedContact = existing
-                if existing.name != assignment.contact.name {
-                    existing.name = assignment.contact.name
-                }
-            } else {
-                let created = Contact(name: assignment.contact.name, mobile: assignment.contact.phoneNumber, email: "")
-                modelContext.insert(created)
-                storedContact = created
-            }
-
-            if let existing = inviteAssignments.first(where: { $0.contactId == storedContact.id }) {
-                existing.inviteLinkToken = token
-                existing.inviteLinkURL = linkURL ?? ""
-                existing.lastInvitedAt = Date()
-                existing.setAssignedSelections(selections)
-            } else {
-                let persisted = StatsInviteAssignment(
-                    contactId: storedContact.id,
-                    assignedStatTypeIDsRaw: selections.map(\.rawValue).joined(separator: ","),
-                    inviteLinkToken: token,
-                    inviteLinkURL: linkURL ?? "",
-                    lastInvitedAt: Date()
-                )
-                modelContext.insert(persisted)
-            }
-
-            let assignedNames = statsInviteSelectionNames(
-                for: selections.sorted {
-                    if $0.side != $1.side {
-                        return $0.side == .ourClub
-                    }
-                    return wizardStatTitle(for: $0.statTypeID) < wizardStatTitle(for: $1.statTypeID)
-                },
-                statTypes: statTypes
-            ).joined(separator: ", ")
-
-            let body = linkURL.map { url in
-                """
-                \(assignment.contact.name), you're invited as a Min-Man Stat Taker.
-
-                Session: \(sessionLine)
-
-                Assigned stats: \(assignedNames)
-
-                Open this link:
-                \(url)
-                """
-            }
-
-            return WizardInviteDispatchItem(
-                id: assignment.id,
-                contact: assignment.contact,
-                selections: selections,
-                smsBody: body
+            let recordName = CloudKitStatsInviteService.recordName(
+                sessionID: session.sessionId,
+                inviteeEmail: assignment.contact.email
             )
+
+            do {
+                _ = try await CloudKitUserAccessService.shared.inviteUser(
+                    email: assignment.contact.email,
+                    role: .statTaker
+                )
+                let cloudAssignment = try await CloudKitStatsInviteService.shared.saveAssignment(
+                    inviteeEmail: assignment.contact.email,
+                    inviteeName: assignment.contact.displayName,
+                    sessionID: session.sessionId,
+                    gradeName: selectedGradeName,
+                    oppositionName: session.opposition,
+                    venue: session.venue,
+                    sessionDate: session.date,
+                    assignedSelectionRawValues: selections.map(\.rawValue)
+                )
+
+                if let existing = inviteAssignments.first(where: { $0.cloudRecordName == recordName }) {
+                    existing.inviteeEmail = assignment.contact.email
+                    existing.inviteeName = assignment.contact.displayName
+                    existing.cloudRecordName = cloudAssignment.id
+                    existing.sessionIDRaw = session.sessionId.uuidString
+                    existing.sessionSummary = sessionLine
+                    existing.lastInvitedAt = cloudAssignment.lastInvitedAt
+                    existing.isConnected = cloudAssignment.hasConnected
+                    existing.lastConnectedAt = cloudAssignment.lastConnectedAt
+                    existing.setAssignedSelections(selections)
+                } else {
+                    let persisted = StatsInviteAssignment(
+                        contactId: UUID(),
+                        assignedStatTypeIDsRaw: selections.map(\.rawValue).joined(separator: ","),
+                        inviteLinkToken: "",
+                        inviteLinkURL: "",
+                        inviteeEmail: assignment.contact.email,
+                        inviteeName: assignment.contact.displayName,
+                        cloudRecordName: cloudAssignment.id,
+                        sessionIDRaw: session.sessionId.uuidString,
+                        sessionSummary: sessionLine,
+                        lastInvitedAt: cloudAssignment.lastInvitedAt,
+                        isConnected: cloudAssignment.hasConnected,
+                        lastConnectedAt: cloudAssignment.lastConnectedAt
+                    )
+                    modelContext.insert(persisted)
+                }
+
+                let assignedNames = statsInviteSelectionNames(
+                    for: selections.sorted {
+                        if $0.side != $1.side {
+                            return $0.side == .ourClub
+                        }
+                        return wizardStatTitle(for: $0.statTypeID) < wizardStatTitle(for: $1.statTypeID)
+                    },
+                    statTypes: statTypes
+                ).joined(separator: ", ")
+
+                items.append(
+                    WizardInviteDispatchItem(
+                        id: assignment.id,
+                        contact: assignment.contact,
+                        selections: selections,
+                        shareText: statsInviteShareText(
+                            recipient: assignment.contact,
+                            sessionID: session.sessionId,
+                            recordName: cloudAssignment.id,
+                            sessionLine: sessionLine,
+                            assignedNames: assignedNames
+                        )
+                    )
+                )
+            } catch {
+                await MainActor.run {
+                    startedSession = session
+                }
+            }
         }
 
         try? modelContext.save()
         return items
     }
 
-    private func inviteURL(token: String) -> String? {
-        let trimmed = UserDefaults.standard.string(forKey: "statsInviteBaseURL")?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return nil }
-        let separator = trimmed.contains("?") ? "&" : "?"
-        return "\(trimmed)\(separator)token=\(token)"
+    private func statsInviteShareText(
+        recipient: StatsInviteRecipient,
+        sessionID: UUID,
+        recordName: String,
+        sessionLine: String,
+        assignedNames: String
+    ) -> String {
+        buildStatsInviteMessage(
+            recipient: recipient,
+            sessionID: sessionID,
+            recordName: recordName,
+            sessionLine: sessionLine,
+            assignedNames: assignedNames,
+            testFlightURL: testFlightURL
+        )
     }
 
     @MainActor
@@ -2230,12 +2312,12 @@ struct StatsSessionSetupView: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(wizardBodyFont)
+                .font(isIPhoneWizardLayout ? .system(size: 14, weight: .medium) : wizardBodyFont)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
-                .padding(.horizontal, isCompactLayout ? 12 : 14)
-                .padding(.vertical, isCompactLayout ? 8 : 10)
+                .padding(.horizontal, isIPhoneWizardLayout ? 10 : (isCompactLayout ? 12 : 14))
+                .padding(.vertical, isIPhoneWizardLayout ? 7 : (isCompactLayout ? 8 : 10))
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
@@ -2278,28 +2360,29 @@ struct StatsSessionSetupView: View {
 private struct StatsWizardCard<Content: View>: View {
     let title: String
     let systemImage: String
+    let compactStyle: Bool
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: compactStyle ? 10 : 12) {
+            HStack(spacing: compactStyle ? 8 : 10) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: compactStyle ? 15 : 18, weight: .semibold))
                 Text(title.uppercased())
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: compactStyle ? 12 : 14, weight: .bold))
                     .tracking(0.9)
                 Spacer()
             }
             .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: compactStyle ? 12 : 16) {
                 content
             }
-            .padding(16)
+            .padding(compactStyle ? 12 : 16)
             .background(Color(.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: compactStyle ? 14 : 18, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: compactStyle ? 14 : 18, style: .continuous)
                     .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
             )
         }
@@ -2322,6 +2405,7 @@ private struct WizardInviteEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var phone: String
+    @State private var mobile: String
     @State private var selectionRawValues: Set<String>
     @State private var showContactPicker = false
     @State private var showStatPicker = false
@@ -2352,7 +2436,8 @@ private struct WizardInviteEditorSheet: View {
         self.oppositionName = oppositionName
         self.onSave = onSave
         _name = State(initialValue: assignment.contact.name)
-        _phone = State(initialValue: assignment.contact.phoneNumber)
+        _phone = State(initialValue: assignment.contact.email)
+        _mobile = State(initialValue: assignment.contact.mobileNumber)
         _selectionRawValues = State(initialValue: Set(assignment.selectionRawValues))
     }
 
@@ -2361,10 +2446,9 @@ private struct WizardInviteEditorSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 10) {
-                        Button("Pick From iPhone Contacts") {
-                            showContactPicker = true
-                        }
-                        .buttonStyle(.borderedProminent)
+                        Text("Edit the stat taker's name, invited email and SMS number.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
 
                         Button("Preview") {
                             showPreview = true
@@ -2372,7 +2456,7 @@ private struct WizardInviteEditorSheet: View {
                         .buttonStyle(.bordered)
                     }
 
-                    TextField("Contact name", text: $name)
+                    TextField("Stat taker name", text: $name)
                         .textInputAutocapitalization(.words)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
@@ -2381,10 +2465,19 @@ private struct WizardInviteEditorSheet: View {
                                 .fill(Color(.secondarySystemBackground))
                         )
 
-                    TextField("Mobile phone", text: $phone)
-                        .keyboardType(.phonePad)
+                    TextField("Invited email", text: $phone)
+                        .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(.secondarySystemBackground))
+                        )
+
+                    TextField("Mobile for SMS", text: $mobile)
+                        .keyboardType(.phonePad)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
                         .background(
@@ -2446,8 +2539,9 @@ private struct WizardInviteEditorSheet: View {
                         let updated = StatsSessionSetupView.WizardInviteAssignment(
                             id: assignment.id,
                             contact: PhoneInviteContact(
-                                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                                phoneNumber: phone.trimmingCharacters(in: .whitespacesAndNewlines)
+                                email: phone.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                                displayName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                mobileNumber: mobile.trimmingCharacters(in: .whitespacesAndNewlines)
                             ),
                             selectionRawValues: selectionRawValues.sorted()
                         )
@@ -2455,12 +2549,6 @@ private struct WizardInviteEditorSheet: View {
                     }
                     .disabled(!canSave)
                 }
-            }
-        }
-        .sheet(isPresented: $showContactPicker) {
-            NativeContactPickerSheet { picked in
-                name = picked.name
-                phone = picked.phoneNumber
             }
         }
         .sheet(isPresented: $showStatPicker) {
@@ -2524,7 +2612,8 @@ private struct WizardInviteEditorSheet: View {
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !phone.filter(\.isNumber).isEmpty &&
+        !phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !mobile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !selectionRawValues.isEmpty
     }
 
@@ -2532,8 +2621,9 @@ private struct WizardInviteEditorSheet: View {
         StatsSessionSetupView.WizardInviteAssignment(
             id: assignment.id,
             contact: PhoneInviteContact(
-                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                phoneNumber: phone.trimmingCharacters(in: .whitespacesAndNewlines)
+                email: phone.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                displayName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                mobileNumber: mobile.trimmingCharacters(in: .whitespacesAndNewlines)
             ),
             selectionRawValues: selectionRawValues.sorted()
         )
@@ -2559,9 +2649,8 @@ private struct WizardInviteDispatchSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var sentIDs: Set<UUID> = []
-    @State private var draft: SMSDraft?
-
-    private var canSendSMS: Bool { MFMessageComposeViewController.canSendText() }
+    @State private var messageDraft: StatsInviteMessageDraft?
+    @State private var shareDraft: ShareDraft?
 
     var body: some View {
         NavigationStack {
@@ -2573,7 +2662,7 @@ private struct WizardInviteDispatchSheet: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.contact.name)
                                         .font(.headline)
-                                    Text(item.contact.phoneNumber)
+                                    Text(item.contact.subtitle.isEmpty ? item.contact.phoneNumber : item.contact.subtitle)
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                 }
@@ -2583,28 +2672,27 @@ private struct WizardInviteDispatchSheet: View {
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.green)
                                 } else {
-                                    Button("Send") {
-                                        guard let body = item.smsBody else { return }
-                                        draft = SMSDraft(recipients: [item.contact.phoneNumber], body: body)
+                                    Button(item.contact.canSendTextInvite ? "Text" : "Share") {
+                                        if item.contact.canSendTextInvite, MFMessageComposeViewController.canSendText() {
+                                            messageDraft = StatsInviteMessageDraft(
+                                                recipients: [item.contact.phoneNumber],
+                                                body: item.shareText
+                                            )
+                                        } else {
+                                            shareDraft = ShareDraft(text: item.shareText)
+                                        }
+                                        sentIDs.insert(item.id)
                                     }
                                     .buttonStyle(.borderedProminent)
-                                    .disabled(!canSendSMS || item.smsBody == nil)
                                 }
                             }
 
                             Text(statsInviteSelectionNames(for: item.selections, statTypes: statTypes).joined(separator: ", "))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-
-                            if item.smsBody == nil {
-                                Text("Invite link host is not set. Add it in Settings > Stats Settings to send SMS invites.")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                            } else if !canSendSMS {
-                                Text("SMS is not available on this device.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text(item.contact.email)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 4)
                     }
@@ -2612,6 +2700,12 @@ private struct WizardInviteDispatchSheet: View {
             }
             .navigationTitle("Send Invites")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $messageDraft) { draft in
+                StatsInviteMessageComposer(draft: draft)
+            }
+            .sheet(item: $shareDraft) { draft in
+                ShareSheet(items: [draft.text])
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(sentIDs.count == items.count ? "Open Stats" : "Skip") {
@@ -2620,18 +2714,6 @@ private struct WizardInviteDispatchSheet: View {
                     }
                 }
             }
-        }
-        .sheet(item: $draft, onDismiss: {
-            guard let draft else { return }
-            if let item = items.first(where: { $0.contact.phoneNumber == draft.recipients.first }) {
-                sentIDs.insert(item.id)
-                if sentIDs.count == items.count {
-                    dismiss()
-                    onFinished()
-                }
-            }
-        }) { draft in
-            SMSComposerView(recipients: draft.recipients, body: draft.body)
         }
     }
 }
@@ -2666,6 +2748,7 @@ private struct ReportPreviewDocument: Identifiable {
     let url: URL
 }
 
+@MainActor
 struct LiveStatsView: View {
     private enum StatsLayoutOption: String {
         case standard = "Standard"
@@ -2675,6 +2758,7 @@ struct LiveStatsView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var navigationState: AppNavigationState
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
@@ -2683,7 +2767,6 @@ struct LiveStatsView: View {
     @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
     @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
-    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
 
     let session: StatsSession
 
@@ -2707,6 +2790,8 @@ struct LiveStatsView: View {
     @State private var remainingQuarterSeconds = 0
     @State private var isQuarterTimerRunning = false
     @State private var quarterTimerTask: Task<Void, Never>?
+    @State private var quarterTimerAnchorUptime: TimeInterval?
+    @State private var quarterTimerAnchorSeconds: Int?
     @State private var visiblePlayerIDs: Set<UUID> = []
     @State private var savedVisiblePlayerIDs: Set<UUID> = []
     @State private var playerGridOrder: PlayerGridOrder = .number
@@ -2776,7 +2861,7 @@ struct LiveStatsView: View {
                 } else {
                     VStack(spacing: 12) {
                         headerBannerArea
-                            .frame(height: 102)
+                            .frame(height: headerBannerHeight)
                         combinedScoreAndActionsPanel
                             .frame(height: topPanelHeight)
 
@@ -2816,15 +2901,15 @@ struct LiveStatsView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    saveSessionAndReturnHome()
+                    returnToStatsList()
                 } label: {
                     Image(systemName: "chevron.left")
                 }
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                statsSyncStatusButton
+            }
             if !isReadOnlyMode {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    statsSyncStatusButton
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(isSessionActive ? "Save" : "Resume") {
                         if isSessionActive {
@@ -2861,6 +2946,9 @@ struct LiveStatsView: View {
             }
             maybePromptToSyncWithLiveGame()
             applySyncedLiveGameStateIfNeeded()
+        }
+        .task(id: session.sessionId) {
+            await monitorInviteConnectionStatuses()
         }
         .sheet(item: $showEditEvent) { event in
             EditStatEventView(event: event, players: playersForGrade, statTypes: enabledStatTypes)
@@ -3053,19 +3141,7 @@ struct LiveStatsView: View {
         dismiss()
     }
 
-    private func saveSessionAndReturnHome() {
-        guard !isReadOnlyMode else {
-            navigationState.selectedTab = .games
-            dismiss()
-            return
-        }
-        session.isSaved = true
-        session.savedAt = Date()
-        if navigationState.activeStatsSessionID == session.sessionId {
-            navigationState.clearActiveStatsSession()
-        }
-        navigationState.selectedTab = .games
-        try? modelContext.save()
+    private func returnToStatsList() {
         dismiss()
     }
 
@@ -3422,8 +3498,19 @@ struct LiveStatsView: View {
         statsLayout == StatsLayoutOption.simple.rawValue
     }
 
+    private var isIPhoneStatsLayout: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    private var headerBannerHeight: CGFloat {
+        isIPhoneStatsLayout ? 86 : 102
+    }
+
     private var topPanelHeight: CGFloat {
-        oppositionTrackPossessions ? 472 : 168
+        if oppositionTrackPossessions {
+            return isIPhoneStatsLayout ? 376 : 472
+        }
+        return isIPhoneStatsLayout ? 150 : 168
     }
 
     private var rightStatActionsHeight: CGFloat {
@@ -3442,23 +3529,39 @@ struct LiveStatsView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.thinMaterial)
-            HStack(alignment: .center, spacing: 14) {
+            HStack(alignment: .center, spacing: isIPhoneStatsLayout ? 10 : 14) {
                 timerBadge
 
-                VStack(spacing: 8) {
-                    HStack(spacing: 10) {
-                        Text(gradeName)
-                            .font(.title.weight(.black))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
-                        Text("•")
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(.secondary)
-                        Text(session.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                VStack(spacing: isIPhoneStatsLayout ? 4 : 8) {
+                    Group {
+                        if isIPhoneStatsLayout {
+                            VStack(spacing: 1) {
+                                Text(gradeName)
+                                    .font(.title3.weight(.black))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.72)
+                                Text(session.date.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                        } else {
+                            HStack(spacing: 10) {
+                                Text(gradeName)
+                                    .font(.title.weight(.black))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.72)
+                                Text("•")
+                                    .font(.title2.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                                Text(session.date.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.title2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
 
@@ -3493,7 +3596,7 @@ struct LiveStatsView: View {
 
                 quarterBadge
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, isIPhoneStatsLayout ? 14 : 18)
 
             if let statusBanner {
                 RoundedRectangle(cornerRadius: 12)
@@ -3710,13 +3813,13 @@ struct LiveStatsView: View {
     }
 
     private var edgeScoreSummaryPanel: some View {
-        HStack(spacing: 12) {
-            VStack(spacing: 6) {
+        HStack(spacing: isIPhoneStatsLayout ? 8 : 12) {
+            VStack(spacing: isIPhoneStatsLayout ? 4 : 6) {
                 ScorePill(ourTeamName, style: ourStyle)
-                    .font(.title2.weight(.black))
+                    .font((isIPhoneStatsLayout ? Font.title3 : .title2).weight(.black))
                     .padding(.horizontal, 8)
                 Text("\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))")
-                    .font(.system(size: 58, weight: .black, design: .rounded))
+                    .font(.system(size: isIPhoneStatsLayout ? 46 : 58, weight: .black, design: .rounded))
                     .foregroundStyle(.primary)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -3724,12 +3827,12 @@ struct LiveStatsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            VStack(spacing: 6) {
+            VStack(spacing: isIPhoneStatsLayout ? 4 : 6) {
                 ScorePill(session.opposition, style: oppositionStyle)
-                    .font(.title2.weight(.black))
+                    .font((isIPhoneStatsLayout ? Font.title3 : .title2).weight(.black))
                     .padding(.horizontal, 8)
                 Text("\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))")
-                    .font(.system(size: 58, weight: .black, design: .rounded))
+                    .font(.system(size: isIPhoneStatsLayout ? 46 : 58, weight: .black, design: .rounded))
                     .foregroundStyle(.primary)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -3737,23 +3840,35 @@ struct LiveStatsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, isIPhoneStatsLayout ? 10 : 14)
+        .padding(.vertical, isIPhoneStatsLayout ? 8 : 12)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var edgeComparisonMetricsPanel: some View {
         let metrics = scoreComparisonMetrics
-        return ScrollView {
-            VStack(spacing: 8) {
-                ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
-                    comparisonMetricRow(metric)
+        return Group {
+            if isIPhoneStatsLayout {
+                VStack(spacing: 4) {
+                    ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
+                        comparisonMetricRow(metric)
+                    }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            } else {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
+                            comparisonMetricRow(metric)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
+                .scrollIndicators(.hidden)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
         }
-        .scrollIndicators(.hidden)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
@@ -3897,7 +4012,7 @@ struct LiveStatsView: View {
         let tappableMetrics = Set(["Inside 50", "Clearance", "Hit Out", "Free Kick", "Turnover", "Intercept"])
         let isTappableMetric = tappableMetrics.contains(metric.label)
 
-        return HStack(spacing: 10) {
+        return HStack(spacing: isIPhoneStatsLayout ? 6 : 10) {
             comparisonMetricSide(
                 label: metric.label,
                 value: metric.ourValue,
@@ -3926,32 +4041,34 @@ struct LiveStatsView: View {
         mirrored: Bool,
         isTappableMetric: Bool
     ) -> some View {
-        let content = HStack(spacing: 6) {
+        let content = HStack(spacing: isIPhoneStatsLayout ? 3 : 6) {
             if mirrored {
                 Text(value)
-                    .font(.title3.weight(.black))
+                    .font((isIPhoneStatsLayout ? Font.headline : .title3).weight(.black))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                Spacer(minLength: 8)
+                Spacer(minLength: isIPhoneStatsLayout ? 3 : 8)
                 Text(label)
-                    .font(.headline.weight(.semibold))
+                    .font((isIPhoneStatsLayout ? Font.subheadline : .headline).weight(.semibold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.68)
             } else {
                 Text(label)
-                    .font(.headline.weight(.semibold))
+                    .font((isIPhoneStatsLayout ? Font.subheadline : .headline).weight(.semibold))
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                    .minimumScaleFactor(0.68)
+                Spacer(minLength: isIPhoneStatsLayout ? 3 : 8)
                 Text(value)
-                    .font(.title3.weight(.black))
+                    .font((isIPhoneStatsLayout ? Font.headline : .title3).weight(.black))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
         }
         .foregroundStyle(.white)
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
+        .padding(.vertical, isIPhoneStatsLayout ? 6 : 10)
+        .padding(.horizontal, isIPhoneStatsLayout ? 8 : 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background, in: RoundedRectangle(cornerRadius: 10))
         .overlay(
@@ -4028,15 +4145,15 @@ struct LiveStatsView: View {
     private var timerBadge: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(formattedQuarterTime)
-                .font(.system(size: 30, weight: .black, design: .rounded))
+                .font(.system(size: isIPhoneStatsLayout ? 24 : 30, weight: .black, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(remainingQuarterSeconds <= 0 ? .red : .primary)
             Text(quarterCountsUp ? "Count up" : "Count down")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, isIPhoneStatsLayout ? 10 : 12)
+        .padding(.vertical, isIPhoneStatsLayout ? 6 : 8)
         .background(timerBackgroundColor.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .onTapGesture {
@@ -4074,9 +4191,9 @@ struct LiveStatsView: View {
 
     private var quarterBadge: some View {
         Text(selectedQuarter)
-            .font(.title2.weight(.black))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .font((isIPhoneStatsLayout ? Font.title3 : .title2).weight(.black))
+            .padding(.horizontal, isIPhoneStatsLayout ? 12 : 16)
+            .padding(.vertical, isIPhoneStatsLayout ? 8 : 10)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))
             .onLongPressGesture {
@@ -5600,8 +5717,12 @@ struct LiveStatsView: View {
         if reset {
             stopQuarterTimer()
             remainingQuarterSeconds = quarterCountsUp ? 0 : customQuarterMinutes * 60
+            quarterTimerAnchorUptime = nil
+            quarterTimerAnchorSeconds = nil
         } else if !quarterCountsUp && remainingQuarterSeconds <= 0 {
             remainingQuarterSeconds = customQuarterMinutes * 60
+            quarterTimerAnchorUptime = nil
+            quarterTimerAnchorSeconds = nil
         }
     }
 
@@ -5610,27 +5731,39 @@ struct LiveStatsView: View {
             remainingQuarterSeconds = customQuarterMinutes * 60
         }
         guard !isQuarterTimerRunning else { return }
+        quarterTimerAnchorSeconds = remainingQuarterSeconds
+        quarterTimerAnchorUptime = ProcessInfo.processInfo.systemUptime
         isQuarterTimerRunning = true
         quarterTimerTask?.cancel()
         quarterTimerTask = Task {
             while !Task.isCancelled && isQuarterTimerRunning {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 250_000_000)
                 await MainActor.run {
-                    guard isQuarterTimerRunning else { return }
-                    if quarterCountsUp {
-                        remainingQuarterSeconds += 1
-                    } else {
-                        remainingQuarterSeconds -= 1
-                    }
+                    syncQuarterTimer()
                 }
             }
         }
     }
 
     private func stopQuarterTimer() {
+        syncQuarterTimer()
         isQuarterTimerRunning = false
         quarterTimerTask?.cancel()
         quarterTimerTask = nil
+        quarterTimerAnchorUptime = nil
+        quarterTimerAnchorSeconds = nil
+    }
+
+    private func syncQuarterTimer(referenceUptime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        guard isQuarterTimerRunning,
+              let anchorUptime = quarterTimerAnchorUptime,
+              let anchorSeconds = quarterTimerAnchorSeconds else { return }
+        let elapsedSeconds = max(0, Int(referenceUptime - anchorUptime))
+        if quarterCountsUp {
+            remainingQuarterSeconds = anchorSeconds + elapsedSeconds
+        } else {
+            remainingQuarterSeconds = anchorSeconds - elapsedSeconds
+        }
     }
 
     private func statName(for id: UUID) -> String {
@@ -5714,39 +5847,34 @@ struct LiveStatsView: View {
 
     private func sendInvite(contact: PhoneInviteContact, selections: Set<StatsInviteSelection>) {
         guard !selections.isEmpty else { return }
-        let token = UUID().uuidString.lowercased()
-        guard let linkURL = inviteURL(token: token) else {
-            showStatusBanner(text: "INVITE LINK HOST REQUIRED • Set invite URL in Stats Settings before sending", isSuccess: false)
-            return
-        }
+        let testFlightURL = (UserDefaults.standard.string(forKey: "app.testFlightURL") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let sessionLine = "\(gradeName) vs \(session.opposition) • \(session.date.formatted(date: .abbreviated, time: .omitted))"
+        let recordName = CloudKitStatsInviteService.recordName(sessionID: session.sessionId, inviteeEmail: contact.email)
         let assignment: StatsInviteAssignment
-        let storedContact: Contact
 
-        if let existing = contacts.first(where: {
-            normalizePhoneNumber($0.mobile) == normalizePhoneNumber(contact.phoneNumber)
-        }) {
-            storedContact = existing
-            if existing.name != contact.name {
-                existing.name = contact.name
-            }
-        } else {
-            let created = Contact(name: contact.name, mobile: contact.phoneNumber, email: "")
-            modelContext.insert(created)
-            storedContact = created
-        }
-
-        if let existing = inviteAssignments.first(where: { $0.contactId == storedContact.id }) {
+        if let existing = inviteAssignments.first(where: { $0.cloudRecordName == recordName }) {
             assignment = existing
-            assignment.inviteLinkToken = token
-            assignment.inviteLinkURL = linkURL
+            assignment.inviteeEmail = contact.email
+            assignment.inviteeName = contact.displayName
+            assignment.cloudRecordName = recordName
+            assignment.sessionIDRaw = session.sessionId.uuidString
+            assignment.sessionSummary = sessionLine
+            assignment.inviteLinkToken = ""
+            assignment.inviteLinkURL = ""
             assignment.lastInvitedAt = Date()
             assignment.setAssignedSelections(Array(selections))
         } else {
             assignment = StatsInviteAssignment(
-                contactId: storedContact.id,
+                contactId: UUID(),
                 assignedStatTypeIDsRaw: Array(selections).map(\.rawValue).joined(separator: ","),
-                inviteLinkToken: token,
-                inviteLinkURL: linkURL,
+                inviteLinkToken: "",
+                inviteLinkURL: "",
+                inviteeEmail: contact.email,
+                inviteeName: contact.displayName,
+                cloudRecordName: recordName,
+                sessionIDRaw: session.sessionId.uuidString,
+                sessionSummary: sessionLine,
                 lastInvitedAt: Date()
             )
             modelContext.insert(assignment)
@@ -5761,26 +5889,91 @@ struct LiveStatsView: View {
             },
             statTypes: enabledStatTypes
         ).joined(separator: ", ")
-        let recipientName = contact.name
-        composedShareText = """
-        \(recipientName), use this live stat link:
-        \(linkURL)
 
-        Your buttons: \(assignedNames)
-        """
-        UserDefaults.standard.set(linkURL, forKey: "stats.lastInviteURL")
+        composedShareText = buildStatsInviteMessage(
+            recipient: contact,
+            sessionID: session.sessionId,
+            recordName: recordName,
+            sessionLine: sessionLine,
+            assignedNames: assignedNames,
+            testFlightURL: testFlightURL
+        )
         try? modelContext.save()
+
+        Task {
+            do {
+                _ = try await CloudKitUserAccessService.shared.inviteUser(
+                    email: contact.email,
+                    role: .statTaker
+                )
+                let cloudAssignment = try await CloudKitStatsInviteService.shared.saveAssignment(
+                    inviteeEmail: contact.email,
+                    inviteeName: contact.displayName,
+                    sessionID: session.sessionId,
+                    gradeName: gradeName,
+                    oppositionName: session.opposition,
+                    venue: session.venue,
+                    sessionDate: session.date,
+                    assignedSelectionRawValues: Array(selections).map(\.rawValue)
+                )
+                await MainActor.run {
+                    assignment.lastInvitedAt = cloudAssignment.lastInvitedAt
+                    assignment.isConnected = cloudAssignment.hasConnected
+                    assignment.lastConnectedAt = cloudAssignment.lastConnectedAt
+                    try? modelContext.save()
+                }
+            } catch {
+                await MainActor.run {
+                    showStatusBanner(text: "CLOUDKIT INVITE FAILED • \(error.localizedDescription)", isSuccess: false)
+                }
+            }
+        }
     }
 
-    private func inviteURL(token: String) -> String? {
-        let trimmed = statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let separator = trimmed.contains("?") ? "&" : "?"
-        return "\(trimmed)\(separator)token=\(token)"
+    private func monitorInviteConnectionStatuses() async {
+        await refreshInviteConnectionStatuses()
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard !Task.isCancelled else { return }
+            await refreshInviteConnectionStatuses()
+        }
     }
 
-    private func normalizePhoneNumber(_ value: String) -> String {
-        value.filter(\.isNumber)
+    @MainActor
+    private func refreshInviteConnectionStatuses() async {
+        let sessionAssignments = inviteAssignments.filter {
+            $0.sessionIDRaw == session.sessionId.uuidString && !$0.cloudRecordName.isEmpty
+        }
+        let recordNames = sessionAssignments.map(\.cloudRecordName)
+        guard !recordNames.isEmpty else { return }
+
+        do {
+            let cloudAssignments = try await CloudKitStatsInviteService.shared.fetchAssignments(recordNames: recordNames)
+            let assignmentsByRecordName = Dictionary(uniqueKeysWithValues: cloudAssignments.map { ($0.id, $0) })
+            var didChange = false
+
+            for assignment in sessionAssignments {
+                guard let cloudAssignment = assignmentsByRecordName[assignment.cloudRecordName] else { continue }
+                if assignment.isConnected != cloudAssignment.hasConnected {
+                    assignment.isConnected = cloudAssignment.hasConnected
+                    didChange = true
+                }
+                if assignment.lastConnectedAt != cloudAssignment.lastConnectedAt {
+                    assignment.lastConnectedAt = cloudAssignment.lastConnectedAt
+                    didChange = true
+                }
+                if assignment.lastInvitedAt != cloudAssignment.lastInvitedAt {
+                    assignment.lastInvitedAt = cloudAssignment.lastInvitedAt
+                    didChange = true
+                }
+            }
+
+            if didChange {
+                try? modelContext.save()
+            }
+        } catch {
+            return
+        }
     }
 
     private func undoLastEvent() {
@@ -7077,14 +7270,14 @@ private struct StatsInviteComposerContent: View {
     var dismissAfterSMS = false
     var onSMSDismiss: () -> Void = {}
 
-    @AppStorage("statsInviteBaseURL") private var statsInviteBaseURL = ""
-    @State private var showSystemContactPicker = false
-    @State private var smsDraft: SMSDraft?
-    @State private var latestInviteURL = ""
+    @AppStorage("app.testFlightURL") private var testFlightURL = ""
+    @State private var inviteeName = ""
+    @State private var inviteeEmail = ""
+    @State private var inviteeMobile = ""
+    @State private var messageDraft: StatsInviteMessageDraft?
+    @State private var shareDraft: ShareDraft?
     @State private var editingInvite: StatsInviteAssignment?
     @State private var showPreview = false
-
-    private var canSendSMS: Bool { MFMessageComposeViewController.canSendText() }
 
     private var sortedStatTypes: [StatType] {
         statTypes.sorted(by: { $0.sortOrder < $1.sortOrder })
@@ -7119,7 +7312,9 @@ private struct StatsInviteComposerContent: View {
     private var lockedSelectionOwners: [String: String] {
         var result: [String: String] = [:]
         for assignment in inviteAssignments {
-            let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Unknown Contact"
+            let contactName = assignment.inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? assignment.inviteeEmail
+                : assignment.inviteeName
             for selection in assignment.assignedSelections {
                 result[selection.id] = contactName
             }
@@ -7159,20 +7354,24 @@ private struct StatsInviteComposerContent: View {
             }
 
             Section("Invite Stat Taker") {
-                TextField("https://your-host/invite", text: $statsInviteBaseURL)
+                TextField("Stat taker name", text: $inviteeName)
+                    .textInputAutocapitalization(.words)
+
+                TextField("Invited email", text: $inviteeEmail)
+                    .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                Text("Set your deployed invite page URL here before sending SMS invites.")
+                TextField("Mobile for text", text: $inviteeMobile)
+                    .keyboardType(.phonePad)
+                TextField("https://testflight.apple.com/join/...", text: $testFlightURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text("Assignments sync through CloudKit. The text invite includes the TestFlight link so the recipient can install the app before opening the Stat Taker tab.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button("Pick From iPhone Contacts") {
-                    showSystemContactPicker = true
-                }
-                .buttonStyle(.borderedProminent)
-
                 if let selectedContact {
-                    Text("\(selectedContact.name) • \(selectedContact.phoneNumber)")
+                    Text(selectedContact.subtitle.isEmpty ? selectedContact.title : "\(selectedContact.title) • \(selectedContact.subtitle)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -7217,14 +7416,14 @@ private struct StatsInviteComposerContent: View {
             .opacity(hasActiveSession ? 1 : 0.4)
 
             Section {
-                Button("Send Invite Link") {
+                Button("Generate Invite") {
                     sendInviteLink()
                 }
                 .disabled(
-                    selectedContact == nil ||
-                    selectedSelections.isEmpty ||
-                    !canSendSMS ||
-                    statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    inviteeMobile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    selectedSelections.isEmpty
                 )
 
                 if !selectedSelections.isEmpty {
@@ -7233,13 +7432,8 @@ private struct StatsInviteComposerContent: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if !canSendSMS {
-                    Text("SMS is not available on this device. Run on an iPhone with messaging enabled.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if statsInviteBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("Invite link host is required.")
+                if testFlightURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("TestFlight link is optional if the recipient already has ClubResults installed.")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -7260,17 +7454,19 @@ private struct StatsInviteComposerContent: View {
             .disabled(!hasActiveSession)
             .opacity(hasActiveSession ? 1 : 0.4)
         }
-        .sheet(isPresented: $showSystemContactPicker) {
-            NativeContactPickerSheet { picked in
-                selectedContact = picked
-            }
-        }
-        .sheet(item: $smsDraft, onDismiss: {
+        .sheet(item: $shareDraft, onDismiss: {
             if dismissAfterSMS {
                 onSMSDismiss()
             }
         }) { draft in
-            SMSComposerView(recipients: draft.recipients, body: draft.body)
+            ShareSheet(items: [draft.text])
+        }
+        .sheet(item: $messageDraft, onDismiss: {
+            if dismissAfterSMS {
+                onSMSDismiss()
+            }
+        }) { draft in
+            StatsInviteMessageComposer(draft: draft)
         }
         .sheet(item: $editingInvite) { assignment in
             StatsInviteManagementSheet(
@@ -7296,6 +7492,15 @@ private struct StatsInviteComposerContent: View {
         }
         .onAppear {
             loadDraftSelectionsIfNeeded()
+            if inviteeName.isEmpty {
+                inviteeName = selectedContact?.displayName ?? ""
+            }
+            if inviteeEmail.isEmpty {
+                inviteeEmail = selectedContact?.email ?? ""
+            }
+            if inviteeMobile.isEmpty {
+                inviteeMobile = selectedContact?.phoneNumber ?? ""
+            }
         }
         .onChange(of: selectedSelections) { _, newValue in
             StatsInviteDraftStore.saveSelections(newValue)
@@ -7425,28 +7630,46 @@ private struct StatsInviteComposerContent: View {
     }
 
     private func sendInviteLink() {
-        guard let selectedContact, let activeSession else { return }
-        let assigned = selectedSelectionSummary
+        guard let activeSession else { return }
+        let selectedContact = StatsInviteRecipient(
+            email: inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+            displayName: inviteeName.trimmingCharacters(in: .whitespacesAndNewlines),
+            mobileNumber: inviteeMobile.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        guard !selectedContact.email.isEmpty else { return }
+        guard !selectedContact.phoneNumber.isEmpty else { return }
+        let recordName = CloudKitStatsInviteService.recordName(
+            sessionID: activeSession.sessionId,
+            inviteeEmail: selectedContact.email
+        )
+
+        self.selectedContact = selectedContact
         onSendInvite(selectedContact, selectedSelections)
-        latestInviteURL = UserDefaults.standard.string(forKey: "stats.lastInviteURL") ?? latestInviteURL
         selectedSelections.removeAll()
-        let sessionLine = "\(activeSessionGradeName) vs \(activeSession.opposition) • \(activeSession.date.formatted(date: .abbreviated, time: .omitted))"
-        let body = """
-        \(selectedContact.name), you're invited as a Min-Man Stat Taker.
+        let inviteText = buildStatsInviteMessage(
+            recipient: selectedContact,
+            sessionID: activeSession.sessionId,
+            recordName: recordName,
+            sessionLine: "\(activeSessionGradeName) vs \(activeSession.opposition) • \(activeSession.date.formatted(date: .abbreviated, time: .omitted))",
+            assignedNames: selectedSelectionSummary,
+            testFlightURL: testFlightURL
+        )
 
-        Session: \(sessionLine)
-
-        Assigned stats: \(assigned)
-
-        Open this link:
-        \(latestInviteURL)
-        """
-        smsDraft = SMSDraft(recipients: [selectedContact.phoneNumber], body: body)
+        if MFMessageComposeViewController.canSendText() {
+            messageDraft = StatsInviteMessageDraft(
+                recipients: [selectedContact.phoneNumber],
+                body: inviteText
+            )
+        } else {
+            shareDraft = ShareDraft(text: inviteText)
+        }
     }
 
     @ViewBuilder
     private func invitedUserRow(_ assignment: StatsInviteAssignment) -> some View {
-        let contactName = contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Unknown Contact"
+        let contactName = assignment.inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? assignment.inviteeEmail
+            : assignment.inviteeName
         let statusText = assignment.isConnected ? "Connected" : "Waiting"
         let assignedNames = statsInviteSelectionNames(
             for: assignment.assignedSelections,
@@ -7472,6 +7695,11 @@ private struct StatsInviteComposerContent: View {
             Text("Collecting: \(assignedNames.isEmpty ? "None" : assignedNames)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            if !assignment.inviteeEmail.isEmpty {
+                Text(assignment.inviteeEmail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.vertical, 4)
     }
@@ -7484,6 +7712,7 @@ private struct StatsInviteLivePreviewView: View {
     let oppositionName: String
     let selections: [StatsInviteSelection]
     let statTypes: [StatType]
+    var sessionID: UUID? = nil
     var showsDoneButton: Bool = true
     @Environment(\.dismiss) private var dismiss
     @State private var countsBySelectionID: [String: Int] = [:]
@@ -7562,6 +7791,9 @@ private struct StatsInviteLivePreviewView: View {
         }
         .navigationTitle("Invite Preview")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: sessionID?.uuidString) {
+            await loadPersistedTallies()
+        }
         .toolbar {
             if showsDoneButton {
                 ToolbarItem(placement: .confirmationAction) {
@@ -7617,7 +7849,13 @@ private struct StatsInviteLivePreviewView: View {
     private func previewButton(for selection: StatsInviteSelection) -> some View {
         let count = countsBySelectionID[selection.id, default: 0]
         return Button {
-            countsBySelectionID[selection.id, default: 0] += 1
+            if let sessionID {
+                Task {
+                    await incrementPersistedTally(for: selection, sessionID: sessionID)
+                }
+            } else {
+                countsBySelectionID[selection.id, default: 0] += 1
+            }
         } label: {
             VStack(alignment: .leading, spacing: 14) {
                 Text(selection.side.title.uppercased())
@@ -7661,14 +7899,46 @@ private struct StatsInviteLivePreviewView: View {
     private func statName(for selection: StatsInviteSelection) -> String {
         statTypes.first(where: { $0.id == selection.statTypeID })?.name ?? "Stat"
     }
+
+    @MainActor
+    private func loadPersistedTallies() async {
+        guard let sessionID else { return }
+        do {
+            let tallies = try await CloudKitStatsInviteService.shared.fetchTallies(sessionID: sessionID)
+            countsBySelectionID = Dictionary(
+                uniqueKeysWithValues: tallies.map {
+                    ("\($0.statTypeID.uuidString)|\($0.sideRawValue)", $0.count)
+                }
+            )
+        } catch {
+            return
+        }
+    }
+
+    @MainActor
+    private func incrementPersistedTally(for selection: StatsInviteSelection, sessionID: UUID) async {
+        do {
+            let tally = try await CloudKitStatsInviteService.shared.incrementTally(
+                sessionID: sessionID,
+                statTypeID: selection.statTypeID,
+                sideRawValue: selection.side.rawValue
+            )
+            countsBySelectionID[selection.id] = tally.count
+        } catch {
+            countsBySelectionID[selection.id, default: 0] += 1
+        }
+    }
 }
 
+@MainActor
 struct StatTakerStatsView: View {
+    @EnvironmentObject private var authCoordinator: AuthenticationCoordinator
+    @EnvironmentObject private var navigationState: AppNavigationState
     @Query(sort: \Grade.displayOrder) private var grades: [Grade]
     @Query(sort: \StatType.sortOrder) private var allStatTypes: [StatType]
-
-    @AppStorage("statsInvitePreviewGradeID") private var previewGradeIDRaw = ""
-    @AppStorage("statsInvitePreviewOpponentName") private var previewOpponentName = "Opposition"
+    @State private var cloudAssignments: [CloudStatsInviteAssignment] = []
+    @State private var loadError: String?
+    @State private var isLoadingAssignments = false
 
     private var clubConfiguration: ClubConfiguration {
         ClubConfigurationStore.load()
@@ -7683,9 +7953,11 @@ struct StatTakerStatsView: View {
         allStatTypes.filter(\.isEnabled).sorted(by: { $0.sortOrder < $1.sortOrder })
     }
 
+    @MainActor
     private var assignedSelections: [StatsInviteSelection] {
+        let selections = latestAssignment?.assignedSelectionRawValues.compactMap(StatsInviteSelection.init(rawValue:)) ?? []
         let sortOrderByID = Dictionary(uniqueKeysWithValues: enabledStatTypes.map { ($0.id, $0.sortOrder) })
-        return StatsInviteDraftStore.loadSelections().sorted {
+        return selections.sorted {
             let leftOrder = sortOrderByID[$0.statTypeID] ?? 0
             let rightOrder = sortOrderByID[$1.statTypeID] ?? 0
             if leftOrder != rightOrder {
@@ -7698,29 +7970,42 @@ struct StatTakerStatsView: View {
         }
     }
 
-    private var selectedGrade: Grade? {
-        guard let id = UUID(uuidString: previewGradeIDRaw) else {
-            return grades.first
+    private var latestAssignment: CloudStatsInviteAssignment? {
+        if
+            let pendingSessionID = navigationState.pendingStatsInviteSessionID,
+            let matchingAssignment = cloudAssignments.first(where: { $0.sessionID == pendingSessionID })
+        {
+            return matchingAssignment
         }
-        return grades.first(where: { $0.id == id }) ?? grades.first
+        return cloudAssignments.sorted(by: { $0.sessionDate > $1.sessionDate }).first
     }
 
     private var gradeTitle: String {
-        selectedGrade?.name ?? "Grade"
+        latestAssignment?.gradeName ?? grades.first?.name ?? "Grade"
     }
 
     private var oppositionName: String {
-        let trimmed = previewOpponentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = latestAssignment?.oppositionName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "Opposition" : trimmed
     }
 
     var body: some View {
         NavigationStack {
-            if assignedSelections.isEmpty {
+            if isLoadingAssignments && cloudAssignments.isEmpty {
+                ProgressView("Loading assignments…")
+                    .navigationTitle("Stats View")
+            } else if let loadError {
+                ContentUnavailableView(
+                    "Unable to Load Assignments",
+                    systemImage: "icloud.slash",
+                    description: Text(loadError)
+                )
+                .navigationTitle("Stats View")
+            } else if assignedSelections.isEmpty {
                 ContentUnavailableView(
                     "Waiting for stats invite",
                     systemImage: "rectangle.grid.2x2",
-                    description: Text("Assigned stats will appear here when a stats session invite is received.")
+                    description: Text("Assigned stats will appear here after your invite syncs from CloudKit.")
                 )
                 .navigationTitle("Stats View")
             } else {
@@ -7731,18 +8016,45 @@ struct StatTakerStatsView: View {
                     oppositionName: oppositionName,
                     selections: assignedSelections,
                     statTypes: enabledStatTypes,
+                    sessionID: latestAssignment?.sessionID,
                     showsDoneButton: false
                 )
             }
         }
-        .onAppear {
-            if previewGradeIDRaw.isEmpty, let firstGrade = grades.first {
-                previewGradeIDRaw = firstGrade.id.uuidString
-            }
-            if previewOpponentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                previewOpponentName = clubConfiguration.sortedOppositions.first?.name ?? "Opposition"
-            }
+        .task(id: statsRefreshTaskID) {
+            await refreshAssignments()
         }
+        .refreshable {
+            await refreshAssignments()
+        }
+    }
+
+    @MainActor
+    private func refreshAssignments() async {
+        guard let email = authCoordinator.emailAddress, !email.isEmpty else {
+            cloudAssignments = []
+            return
+        }
+
+        isLoadingAssignments = true
+        defer { isLoadingAssignments = false }
+
+        do {
+            cloudAssignments = try await CloudKitStatsInviteService.shared.markAssignmentsConnected(for: email)
+            if let pendingSessionID = navigationState.pendingStatsInviteSessionID,
+               cloudAssignments.contains(where: { $0.sessionID == pendingSessionID }) {
+                navigationState.clearPendingStatsInvite()
+            }
+            loadError = nil
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
+    private var statsRefreshTaskID: String {
+        let email = authCoordinator.emailAddress ?? ""
+        let pending = navigationState.pendingStatsInviteSessionID?.uuidString ?? ""
+        return "\(email)|\(pending)"
     }
 }
 
@@ -7996,87 +8308,111 @@ struct StatsInvitePreviewSettingsView: View {
     }
 }
 
-private struct PhoneInviteContact: Equatable {
-    let name: String
-    let phoneNumber: String
+private struct StatsInviteRecipient: Identifiable, Equatable {
+    let email: String
+    let displayName: String
+    let mobileNumber: String
+
+    init(email: String, displayName: String, mobileNumber: String = "") {
+        self.email = email
+        self.displayName = displayName
+        self.mobileNumber = mobileNumber
+    }
+
+    var id: String { email }
+    var name: String { title }
+    var phoneNumber: String { mobileNumber }
+    var canSendTextInvite: Bool { !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    var title: String {
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedName.isEmpty ? email : trimmedName
+    }
+
+    var subtitle: String {
+        let trimmedMobile = phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedMobile.isEmpty && !trimmedEmail.isEmpty {
+            return "\(trimmedMobile) • \(trimmedEmail)"
+        }
+        if !trimmedMobile.isEmpty {
+            return trimmedMobile
+        }
+        return trimmedEmail
+    }
 }
 
-private struct SMSDraft: Identifiable {
+private typealias PhoneInviteContact = StatsInviteRecipient
+
+private struct ShareDraft: Identifiable {
+    let id = UUID()
+    let text: String
+}
+
+private func buildStatsInviteMessage(
+    recipient: StatsInviteRecipient,
+    sessionID: UUID,
+    recordName: String,
+    sessionLine: String,
+    assignedNames: String,
+    testFlightURL: String
+) -> String {
+    let trimmedInstallURL = testFlightURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    let appLink = StatsInviteLinking.appURL(
+        sessionID: sessionID,
+        recordName: recordName,
+        inviteeEmail: recipient.email
+    )?.absoluteString ?? ""
+    let installLine = trimmedInstallURL.isEmpty
+        ? "Install ClubResults from your assigned TestFlight build, then return to this text."
+        : "Install ClubResults from TestFlight: \(trimmedInstallURL)"
+    let openLine = appLink.isEmpty
+        ? ""
+        : "Open in ClubResults: \(appLink)\n"
+
+    return """
+    \(recipient.title), you're invited as a ClubResults Stat Taker.
+
+    Session: \(sessionLine)
+
+    Assigned stats: \(assignedNames)
+
+    \(openLine)\(installLine)
+    If ClubResults is not installed yet, install it first, then come back to this text and tap the ClubResults link.
+    Sign in with Apple using \(recipient.email).
+    After sign-in, your assigned stats will sync automatically in the Stat Taker tab via CloudKit.
+    """
+}
+
+private struct StatsInviteMessageDraft: Identifiable {
     let id = UUID()
     let recipients: [String]
     let body: String
 }
 
-private struct NativeContactPickerSheet: UIViewControllerRepresentable {
-    let onPicked: (PhoneInviteContact) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    func makeUIViewController(context: Context) -> CNContactPickerViewController {
-        let picker = CNContactPickerViewController()
-        picker.delegate = context.coordinator
-        picker.displayedPropertyKeys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey]
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: CNContactPickerViewController, context: Context) {}
+private struct StatsInviteMessageComposer: UIViewControllerRepresentable {
+    let draft: StatsInviteMessageDraft
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onPicked: onPicked, dismiss: dismiss)
+        Coordinator()
     }
-
-    final class Coordinator: NSObject, CNContactPickerDelegate {
-        let onPicked: (PhoneInviteContact) -> Void
-        let dismiss: DismissAction
-
-        init(onPicked: @escaping (PhoneInviteContact) -> Void, dismiss: DismissAction) {
-            self.onPicked = onPicked
-            self.dismiss = dismiss
-        }
-
-        func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
-            guard let phone = contact.phoneNumbers.first?.value.stringValue, !phone.isEmpty else {
-                dismiss()
-                return
-            }
-            let fullName = CNContactFormatter.string(from: contact, style: .fullName) ?? "\(contact.givenName) \(contact.familyName)"
-            onPicked(PhoneInviteContact(name: fullName.trimmingCharacters(in: .whitespaces), phoneNumber: phone))
-            dismiss()
-        }
-
-        func contactPickerDidCancel(_ picker: CNContactPickerViewController) {
-            dismiss()
-        }
-    }
-}
-
-private struct SMSComposerView: UIViewControllerRepresentable {
-    let recipients: [String]
-    let body: String
-    @Environment(\.dismiss) private var dismiss
 
     func makeUIViewController(context: Context) -> MFMessageComposeViewController {
         let controller = MFMessageComposeViewController()
         controller.messageComposeDelegate = context.coordinator
-        controller.recipients = recipients
-        controller.body = body
+        controller.recipients = draft.recipients
+        controller.body = draft.body
         return controller
     }
 
     func updateUIViewController(_ uiViewController: MFMessageComposeViewController, context: Context) {}
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(dismiss: dismiss)
-    }
-
     final class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
-        let dismiss: DismissAction
-
-        init(dismiss: DismissAction) {
-            self.dismiss = dismiss
-        }
-
-        func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
-            dismiss()
+        func messageComposeViewController(
+            _ controller: MFMessageComposeViewController,
+            didFinishWith result: MessageComposeResult
+        ) {
+            controller.dismiss(animated: true)
         }
     }
 }

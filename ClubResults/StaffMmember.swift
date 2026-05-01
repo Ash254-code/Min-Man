@@ -17,7 +17,7 @@ enum StaffRole: String, Codable, CaseIterable {
 final class StaffMember: Identifiable {
     @Attribute(.unique) var id: UUID
     var name: String
-    var role: StaffRole
+    var roleRawValue: String
     var gradeID: UUID
 
     init(
@@ -28,7 +28,12 @@ final class StaffMember: Identifiable {
     ) {
         self.id = id
         self.name = name
-        self.role = role
+        self.roleRawValue = role.rawValue
         self.gradeID = gradeID
+    }
+
+    var role: StaffRole {
+        get { StaffRole(rawValue: roleRawValue) ?? .teamManager }
+        set { roleRawValue = newValue.rawValue }
     }
 }

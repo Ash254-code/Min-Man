@@ -4,6 +4,7 @@ struct UserInviteSettingsView: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var authCoordinator: AuthenticationCoordinator
     @EnvironmentObject private var navigationState: AppNavigationState
+    @AppStorage("app.testFlightURL") private var testFlightURL = ""
 
     @State private var email = ""
     @State private var selectedRole: AppRole = .supporter
@@ -48,7 +49,16 @@ struct UserInviteSettingsView: View {
                 }
                 .disabled(isSendingInvite || normalizedEmail.isEmpty)
             } footer: {
-                Text("This creates or updates a CloudKit `User` record, then opens a prefilled email invite.")
+                Text("This creates or updates a CloudKit `User` record, then opens a prefilled email invite with the TestFlight install path.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("App Install") {
+                TextField("https://testflight.apple.com/join/...", text: $testFlightURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text("Recipients use this TestFlight link if they do not already have the app installed.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -200,6 +210,8 @@ struct UserInviteSettingsView: View {
                 You have been invited to ClubResults as \(profile.role.title).
 
                 Sign in with Apple using \(profile.email) to load your access role.
+
+                \(testFlightInstallLine)
                 """
                 openMailInvite(to: profile.email, body: body)
                 confirmationMessage = "Invite saved for \(profile.email) as \(profile.role.title)."
@@ -271,6 +283,14 @@ struct UserInviteSettingsView: View {
         }
 
         openURL(url)
+    }
+
+    private var testFlightInstallLine: String {
+        let trimmed = testFlightURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return "If you do not have the app yet, install the current ClubResults TestFlight build first."
+        }
+        return "Install the current ClubResults TestFlight build here: \(trimmed)"
     }
 }
 

@@ -18,6 +18,16 @@ private struct WizardGoalKickerEntry: Identifiable, Codable, Hashable {
     var goals: Int
 }
 
+private struct LiveStatsSummaryMetric: Identifiable, Equatable {
+    let label: String
+    let ourValue: String
+    let oppositionValue: String
+    let ourNumeric: Double
+    let oppositionNumeric: Double
+
+    var id: String { label }
+}
+
 struct NewGameWizardPreviewData {
     static let minimal = (
         venue: "Main Oval",
@@ -214,6 +224,8 @@ struct NewGameWizardView: View {
     @Query private var grades: [Grade]
     @Query private var games: [Game]
     @Query(sort: \Player.name) private var players: [Player]
+    @Query private var statTypes: [StatType]
+    @Query private var statEvents: [StatEvent]
     @Query(sort: [SortDescriptor(\Contact.name)]) private var contacts: [Contact]
     @Query private var statsSessions: [StatsSession]
     @Query private var reportRecipients: [ReportRecipient]
@@ -341,6 +353,7 @@ struct NewGameWizardView: View {
     @State private var hasAutoPromptedVotesScanner = false
     @State private var showLiveStatsSyncPrompt = false
     @State private var promptedStatsSessionIDForLiveGame: UUID?
+    @State private var remoteInviteTallies: [CloudStatsInviteTally] = []
 
     private enum LiveDraftResumeStore {
         private static let statePrefix = "liveDraft.state."
@@ -792,6 +805,10 @@ struct NewGameWizardView: View {
 
     private var isCompactLayout: Bool { horizontalSizeClass == .compact }
 
+    private var isIPhoneWizardLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
+
     private var wizardPrimaryTitleFont: Font {
         .system(size: isCompactLayout ? 40 : 52, weight: .bold)
     }
@@ -1035,6 +1052,38 @@ struct NewGameWizardView: View {
         ].joined(separator: "||")
     }
 
+    private var liveStatsInviteSyncTaskID: String {
+        [
+            activeSyncableStatsSession?.sessionId.uuidString ?? "no-session",
+            showsSyncedLiveStatsSummaryInLandscape ? "visible" : "hidden"
+        ].joined(separator: "||")
+    }
+
+    private func monitorRemoteInviteTallies() async {
+        await refreshRemoteInviteTallies()
+        guard showsSyncedLiveStatsSummaryInLandscape else { return }
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            await refreshRemoteInviteTallies()
+        }
+    }
+
+    @MainActor
+    private func refreshRemoteInviteTallies() async {
+        guard showsSyncedLiveStatsSummaryInLandscape,
+              let session = activeSyncableStatsSession else {
+            remoteInviteTallies = []
+            return
+        }
+
+        do {
+            remoteInviteTallies = try await CloudKitStatsInviteService.shared.fetchTallies(sessionID: session.sessionId)
+        } catch {
+            return
+        }
+    }
+
     private var sendStatusAlertBinding: Binding<Bool> {
         Binding(
             get: { sendStatusMessage != nil },
@@ -1066,6 +1115,130 @@ struct NewGameWizardView: View {
     private var isLiveGameSyncedToStats: Bool {
         guard let session = activeSyncableStatsSession else { return false }
         return navigationState.syncedStatsSessionID == session.sessionId
+    }
+
+    private var showsSyncedLiveStatsSummaryInLandscape: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && isLiveGameSyncedToStats
+    }
+
+    private var syncedLiveStatsSummaryMetrics: [LiveStatsSummaryMetric] {
+        guard showsSyncedLiveStatsSummaryInLandscape,
+              let session = activeSyncableStatsSession else { return [] }
+
+        let allowedIDs = session.enabledStatTypeIDs
+        let enabledSessionStatTypes = statTypes.filter { type in
+            guard type.isEnabled else { return false }
+            return allowedIDs.isEmpty || allowedIDs.contains(type.id)
+        }
+        let normalizedNameByID = Dictionary(
+            uniqueKeysWithValues: enabledSessionStatTypes.map { ($0.id, normalizedLiveStatsName($0.name)) }
+        )
+        let sessionEvents = statEvents.filter { $0.sessionId == session.sessionId }
+        let remoteTallyCountByKey = Dictionary(
+            uniqueKeysWithValues: remoteInviteTallies.map { tally in
+                ("\(tally.statTypeID.uuidString)|\(tally.sideRawValue)", tally.count)
+            }
+        )
+
+        func teamEvents(isOpposition: Bool) -> [StatEvent] {
+            sessionEvents.filter { event in
+                let isOppositionEvent = event.playerId == Self.liveStatsOppositionTeamPlayerID
+                return isOppositionEvent == isOpposition
+            }
+        }
+
+        func total(for names: Set<String>, isOpposition: Bool) -> Int {
+            let localTotal = teamEvents(isOpposition: isOpposition)
+                .filter { event in
+                    guard let normalizedName = normalizedNameByID[event.statTypeId] else { return false }
+                    return names.contains(normalizedName)
+                }
+                .count
+            let sideRawValue = isOpposition ? "opposition" : "ourClub"
+            let remoteTotal = enabledSessionStatTypes.reduce(into: 0) { partialResult, statType in
+                guard names.contains(normalizedLiveStatsName(statType.name)) else { return }
+                partialResult += remoteTallyCountByKey["\(statType.id.uuidString)|\(sideRawValue)", default: 0]
+            }
+            return localTotal + remoteTotal
+        }
+
+        var metrics: [LiveStatsSummaryMetric] = [
+            makeLiveStatsMetric(label: "Kick", names: ["kick"], total: total),
+            makeLiveStatsMetric(label: "Handball", names: ["handball"], total: total),
+            makeLiveStatsMetric(label: "Mark", names: ["mark"], total: total),
+            makeLiveStatsMetric(label: "Tackle", names: ["tackle"], total: total),
+            makeLiveStatsMetric(label: "Inside 50", names: ["inside 50"], total: total),
+            makeLiveStatsMetric(label: "Clearance", names: ["clearance"], total: total),
+            makeLiveStatsMetric(label: "Hit Out", names: ["hit out"], total: total),
+            makeLiveStatsMetric(label: "Free Kick", names: ["free kick"], total: total),
+            makeLiveStatsMetric(label: "Turnover", names: ["turnover"], total: total),
+            makeLiveStatsMetric(label: "Intercept", names: ["intercept"], total: total)
+        ]
+        .compactMap { $0 }
+
+        let ourEffective = teamEvents(isOpposition: false).filter { $0.efficiencyVoteRaw == "thumbsUp" }.count
+        let ourNonEffective = teamEvents(isOpposition: false).filter { $0.efficiencyVoteRaw == "thumbsDown" }.count
+        let oppositionEffective = teamEvents(isOpposition: true).filter { $0.efficiencyVoteRaw == "thumbsUp" }.count
+        let oppositionNonEffective = teamEvents(isOpposition: true).filter { $0.efficiencyVoteRaw == "thumbsDown" }.count
+        if (ourEffective + ourNonEffective + oppositionEffective + oppositionNonEffective) > 0 {
+            let ourPercent = percentage(numerator: ourEffective, denominator: ourEffective + ourNonEffective)
+            let oppositionPercent = percentage(numerator: oppositionEffective, denominator: oppositionEffective + oppositionNonEffective)
+            metrics.insert(
+                LiveStatsSummaryMetric(
+                    label: "Efficiency",
+                    ourValue: "\(Int(round(ourPercent)))%",
+                    oppositionValue: "\(Int(round(oppositionPercent)))%",
+                    ourNumeric: ourPercent,
+                    oppositionNumeric: oppositionPercent
+                ),
+                at: 0
+            )
+        }
+
+        let ourContested = teamEvents(isOpposition: false).filter { $0.contestedVoteRaw == "contested" }.count
+        let oppositionContested = teamEvents(isOpposition: true).filter { $0.contestedVoteRaw == "contested" }.count
+        if ourContested > 0 || oppositionContested > 0 {
+            metrics.insert(
+                LiveStatsSummaryMetric(
+                    label: "Contested",
+                    ourValue: "\(ourContested)",
+                    oppositionValue: "\(oppositionContested)",
+                    ourNumeric: Double(ourContested),
+                    oppositionNumeric: Double(oppositionContested)
+                ),
+                at: metrics.isEmpty ? 0 : min(1, metrics.count)
+            )
+        }
+
+        return metrics
+    }
+
+    private func normalizedLiveStatsName(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private func makeLiveStatsMetric(
+        label: String,
+        names: Set<String>,
+        total: (Set<String>, Bool) -> Int
+    ) -> LiveStatsSummaryMetric? {
+        let ourTotal = total(names, false)
+        let oppositionTotal = total(names, true)
+        guard ourTotal > 0 || oppositionTotal > 0 else { return nil }
+        return LiveStatsSummaryMetric(
+            label: label,
+            ourValue: "\(ourTotal)",
+            oppositionValue: "\(oppositionTotal)",
+            ourNumeric: Double(ourTotal),
+            oppositionNumeric: Double(oppositionTotal)
+        )
+    }
+
+    private func percentage(numerator: Int, denominator: Int) -> Double {
+        guard denominator > 0 else { return 0 }
+        return (Double(numerator) / Double(denominator)) * 100
     }
 
     private var liveGameSyncStatusIconName: String {
@@ -1495,10 +1668,10 @@ struct NewGameWizardView: View {
                                 .buttonStyle(.borderedProminent)
                         }
                     }
-                    .font(.system(size: isCompactLayout ? 24 : 28, weight: .semibold))
-                    .controlSize(isCompactLayout ? .large : .extraLarge)
-                    .padding(.horizontal, isCompactLayout ? 18 : 26)
-                    .padding(.vertical, isCompactLayout ? 14 : 18)
+                    .font(.system(size: isIPhoneWizardLayout ? 18 : (isCompactLayout ? 24 : 28), weight: .semibold))
+                    .controlSize(isIPhoneWizardLayout ? .regular : (isCompactLayout ? .large : .extraLarge))
+                    .padding(.horizontal, isIPhoneWizardLayout ? 16 : (isCompactLayout ? 18 : 26))
+                    .padding(.vertical, isIPhoneWizardLayout ? 10 : (isCompactLayout ? 14 : 18))
                     .background(.ultraThinMaterial)
                 }
             }
@@ -1566,6 +1739,9 @@ struct NewGameWizardView: View {
         .task(id: navigationState.selectedTab) {
             guard navigationState.selectedTab == .game else { return }
             maybePromptToSyncLiveGameWithStats()
+        }
+        .task(id: liveStatsInviteSyncTaskID) {
+            await monitorRemoteInviteTallies()
         }
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
@@ -2375,6 +2551,8 @@ struct NewGameWizardView: View {
             playerName: { playerID in
                 players.first(where: { $0.id == playerID })?.name ?? "Unknown"
             },
+            showsSyncedStatsSummary: showsSyncedLiveStatsSummaryInLandscape,
+            syncedStatsSummaryMetrics: syncedLiveStatsSummaryMetrics,
             syncStatusIconName: liveGameSyncStatusIconName,
             syncStatusTint: liveGameSyncStatusTint,
             syncStatusAccessibilityLabel: liveGameSyncAccessibilityLabel,
@@ -3738,6 +3916,8 @@ struct NewGameWizardView: View {
     }
 
     // MARK: - AFL-ish card container
+    private static let liveStatsOppositionTeamPlayerID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB") ?? UUID()
+
     private struct LiveGameView: View {
         @Binding var date: Date
         @Binding var ourGoals: Int
@@ -3756,6 +3936,8 @@ struct NewGameWizardView: View {
         let oppStyle: ClubStyle.Style
         let eligiblePlayers: [Player]
         let playerName: (UUID) -> String
+        let showsSyncedStatsSummary: Bool
+        let syncedStatsSummaryMetrics: [LiveStatsSummaryMetric]
         let syncStatusIconName: String
         let syncStatusTint: Color
         let syncStatusAccessibilityLabel: String
@@ -3801,6 +3983,8 @@ struct NewGameWizardView: View {
             oppStyle: ClubStyle.Style,
             eligiblePlayers: [Player],
             playerName: @escaping (UUID) -> String,
+            showsSyncedStatsSummary: Bool,
+            syncedStatsSummaryMetrics: [LiveStatsSummaryMetric],
             syncStatusIconName: String,
             syncStatusTint: Color,
             syncStatusAccessibilityLabel: String,
@@ -3830,6 +4014,8 @@ struct NewGameWizardView: View {
             self.oppStyle = oppStyle
             self.eligiblePlayers = eligiblePlayers
             self.playerName = playerName
+            self.showsSyncedStatsSummary = showsSyncedStatsSummary
+            self.syncedStatsSummaryMetrics = syncedStatsSummaryMetrics
             self.syncStatusIconName = syncStatusIconName
             self.syncStatusTint = syncStatusTint
             self.syncStatusAccessibilityLabel = syncStatusAccessibilityLabel
@@ -3874,6 +4060,16 @@ struct NewGameWizardView: View {
                     if lhsTotal != rhsTotal { return lhsTotal > rhsTotal }
                     return playerName(lhs.id) < playerName(rhs.id)
                 }
+        }
+
+        private var leftSyncedStatsSummaryMetrics: [LiveStatsSummaryMetric] {
+            let splitIndex = Int(ceil(Double(syncedStatsSummaryMetrics.count) / 2.0))
+            return Array(syncedStatsSummaryMetrics.prefix(splitIndex))
+        }
+
+        private var rightSyncedStatsSummaryMetrics: [LiveStatsSummaryMetric] {
+            let splitIndex = Int(ceil(Double(syncedStatsSummaryMetrics.count) / 2.0))
+            return Array(syncedStatsSummaryMetrics.dropFirst(splitIndex))
         }
 
         private struct GoalKickerEditorState: Equatable {
@@ -4154,20 +4350,20 @@ struct NewGameWizardView: View {
             }
         }
 
-        private func timerCard(height: CGFloat, width: CGFloat) -> some View {
+        private func timerCard(height: CGFloat, width: CGFloat, compact: Bool = false) -> some View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     Text("Timer")
-                        .font(.title3.weight(.semibold))
+                        .font(compact ? .headline.weight(.semibold) : .title3.weight(.semibold))
                     Spacer()
                     Text("\(liveSession.periodMinutes) min")
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                        .font((compact ? Font.caption : .subheadline).monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
                     Button {
                         showTimerAdjuster = true
                     } label: {
                         Image(systemName: "ellipsis.circle")
-                            .font(.title3.weight(.semibold))
+                            .font(compact ? .headline.weight(.semibold) : .title3.weight(.semibold))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Adjust timer")
@@ -4187,81 +4383,150 @@ struct NewGameWizardView: View {
                     }
                 }
 
-                Text(timeText(liveSession.secondsRemaining))
-                    .font(.system(size: 78, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(isDangerTime ? .red : .primary)
-                    .minimumScaleFactor(0.55)
-                    .lineLimit(1)
+                if compact {
+                    let timerColumnWidth = max((width - 32) * 0.62, 150)
+                    let scoreColumnWidth = max((width - 32) * 0.28, 86)
+
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(spacing: 10) {
+                            Text(timeText(liveSession.secondsRemaining))
+                                .font(.system(size: 64, weight: .heavy, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(isDangerTime ? .red : .primary)
+                                .minimumScaleFactor(0.55)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .center)
+
+                            Button {
+                                startTimer()
+                            } label: {
+                                Image(systemName: "play.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .accessibilityLabel("Start")
+                            .buttonStyle(.borderedProminent)
+                            .disabled(liveSession.isTimerRunning)
+
+                            Button {
+                                pauseTimer()
+                            } label: {
+                                Image(systemName: "pause.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .accessibilityLabel("Pause")
+                            .buttonStyle(.bordered)
+                            .disabled(!liveSession.isTimerRunning)
+
+                            Button {
+                                showManualSavePrompt = true
+                            } label: {
+                                Text("Save/reset")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .accessibilityLabel("Save and reset")
+                            .buttonStyle(.bordered)
+                            .disabled(nextPeriodLabel == nil)
+                        }
+                        .frame(width: timerColumnWidth, alignment: .top)
+
+                        Divider()
+
+                        periodScoresSection(compact: true)
+                            .frame(width: scoreColumnWidth, alignment: .topLeading)
+                            .frame(maxHeight: .infinity, alignment: .topLeading)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .controlSize(.regular)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                } else {
+                    Text(timeText(liveSession.secondsRemaining))
+                        .font(.system(size: 78, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(isDangerTime ? .red : .primary)
+                        .minimumScaleFactor(0.55)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    VStack(spacing: 10) {
+                        HStack(spacing: 12) {
+                            Button {
+                                startTimer()
+                            } label: {
+                                Image(systemName: "play.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .accessibilityLabel("Start")
+                            .buttonStyle(.borderedProminent)
+                            .disabled(liveSession.isTimerRunning)
+
+                            Button {
+                                pauseTimer()
+                            } label: {
+                                Image(systemName: "pause.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .accessibilityLabel("Pause")
+                            .buttonStyle(.bordered)
+                            .disabled(!liveSession.isTimerRunning)
+
+                            Button {
+                                showManualSavePrompt = true
+                            } label: {
+                                Text("Save and reset")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .accessibilityLabel("Save and reset")
+                            .buttonStyle(.bordered)
+                            .disabled(nextPeriodLabel == nil)
+                        }
+                    }
+                    .font(.title3.weight(.semibold))
+                    .controlSize(.large)
                     .frame(maxWidth: .infinity, alignment: .center)
 
-                VStack(spacing: 10) {
-                    HStack(spacing: 12) {
-                        Button {
-                            startTimer()
-                        } label: {
-                            Image(systemName: "play.fill")
-                                .frame(width: 72)
-                        }
-                        .accessibilityLabel("Start")
-                        .buttonStyle(.borderedProminent)
-                        .disabled(liveSession.isTimerRunning)
+                    Divider()
 
-                        Button {
-                            pauseTimer()
-                        } label: {
-                            Image(systemName: "pause.fill")
-                                .frame(width: 72)
-                        }
-                        .accessibilityLabel("Pause")
-                        .buttonStyle(.bordered)
-                        .disabled(!liveSession.isTimerRunning)
-                    }
-
-                    Button {
-                        showManualSavePrompt = true
-                    } label: {
-                        Text("Save and reset")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .accessibilityLabel("Save and reset")
-                    .buttonStyle(.bordered)
-                    .disabled(nextPeriodLabel == nil)
+                    periodScoresSection(compact: false)
                 }
-                .font(.title3.weight(.semibold))
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-                Divider()
-
-                periodScoresSection
             }
-            .padding(18)
+            .padding(compact ? 16 : 18)
             .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
-        private var periodScoresSection: some View {
+        private func periodScoresSection(compact: Bool) -> some View {
             VStack(alignment: .leading, spacing: 12) {
                 if liveSession.periodSnapshots.isEmpty {
                     Text("No period scores saved yet.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(liveSession.periodSnapshots) { snapshot in
-                        HStack {
-                            Text(snapshot.label)
-                            Spacer()
-                            Text("\(snapshot.ourGoals).\(snapshot.ourBehinds) (\(snapshot.ourScore))")
-                                .monospacedDigit()
-                            Text("–")
-                                .foregroundStyle(.secondary)
-                            Text("\(snapshot.theirGoals).\(snapshot.theirBehinds) (\(snapshot.theirScore))")
-                                .monospacedDigit()
+                        if compact {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(snapshot.label)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Text("\(snapshot.ourGoals).\(snapshot.ourBehinds) (\(snapshot.ourScore))")
+                                    .monospacedDigit()
+                                Text("\(snapshot.theirGoals).\(snapshot.theirBehinds) (\(snapshot.theirScore))")
+                                    .monospacedDigit()
+                            }
+                            .font(.caption.weight(.semibold))
+                        } else {
+                            HStack {
+                                Text(snapshot.label)
+                                Spacer()
+                                Text("\(snapshot.ourGoals).\(snapshot.ourBehinds) (\(snapshot.ourScore))")
+                                    .monospacedDigit()
+                                Text("–")
+                                    .foregroundStyle(.secondary)
+                                Text("\(snapshot.theirGoals).\(snapshot.theirBehinds) (\(snapshot.theirScore))")
+                                    .monospacedDigit()
+                            }
+                            .font(.subheadline.weight(.semibold))
                         }
-                        .font(.subheadline.weight(.semibold))
                     }
                 }
-
             }
         }
 
@@ -4272,59 +4537,69 @@ struct NewGameWizardView: View {
             sharedCardHeight: CGFloat,
             secondaryRowCardHeight: CGFloat
         ) -> some View {
+            let scoreCardWidth = max(((width - cardSpacing) / 2) - 2, 0)
+
             VStack(spacing: cardSpacing) {
-                teamScoreCard(
-                    title: ourTeamName,
-                    style: ourStyle,
-                    goals: $ourGoals,
-                    behinds: $ourBehinds,
-                    score: ourScore,
-                    goalAction: { showPlayerPicker = true },
-                    pointAction: { showPointPicker = true },
-                    showUndoButtons: true,
-                    showManualAdjusters: false,
-                    goalUndoAction: { confirmUndoGoal() },
-                    pointUndoAction: { confirmUndoPoint() },
-                    canUndoGoal: canUndoGoal,
-                    canUndoPoint: canUndoPoint,
-                    minHeight: sharedCardHeight
-                )
-                teamPressureCard(
-                    style: ourStyle,
-                    clearances: liveSession.ourClearances,
-                    inside50s: liveSession.ourInside50s,
-                    clearanceAction: { liveSession.ourClearances += 1 },
-                    inside50Action: { liveSession.ourInside50s += 1 },
-                    height: secondaryRowCardHeight,
-                    width: width
-                )
-                timerCard(height: max(280, sharedCardHeight * 0.66), width: width)
+                timerCard(height: 308, width: width, compact: true)
+                HStack(alignment: .top, spacing: cardSpacing) {
+                    teamScoreCard(
+                        title: ourTeamName,
+                        style: ourStyle,
+                        goals: $ourGoals,
+                        behinds: $ourBehinds,
+                        score: ourScore,
+                        goalAction: { showPlayerPicker = true },
+                        pointAction: { showPointPicker = true },
+                        showUndoButtons: true,
+                        showManualAdjusters: false,
+                        goalUndoAction: { confirmUndoGoal() },
+                        pointUndoAction: { confirmUndoPoint() },
+                        canUndoGoal: canUndoGoal,
+                        canUndoPoint: canUndoPoint,
+                        minHeight: 290,
+                        compact: true
+                    )
+                    .frame(width: scoreCardWidth, alignment: .topLeading)
+                    teamScoreCard(
+                        title: oppTeamName,
+                        style: oppStyle,
+                        goals: $theirGoals,
+                        behinds: $theirBehinds,
+                        score: theirScore,
+                        goalAction: { recordOpponentGoal() },
+                        pointAction: { recordOpponentPoint() },
+                        showUndoButtons: true,
+                        showManualAdjusters: false,
+                        goalUndoAction: { confirmUndoOpponentGoal() },
+                        pointUndoAction: { confirmUndoOpponentPoint() },
+                        canUndoGoal: canUndoOpponentGoal,
+                        canUndoPoint: canUndoOpponentPoint,
+                        minHeight: 290,
+                        compact: true
+                    )
+                    .frame(width: scoreCardWidth, alignment: .topLeading)
+                }
                 goalKickerSummaryCard(width: width, height: secondaryRowCardHeight)
-                teamScoreCard(
-                    title: oppTeamName,
-                    style: oppStyle,
-                    goals: $theirGoals,
-                    behinds: $theirBehinds,
-                    score: theirScore,
-                    goalAction: { recordOpponentGoal() },
-                    pointAction: { recordOpponentPoint() },
-                    showUndoButtons: true,
-                    showManualAdjusters: false,
-                    goalUndoAction: { confirmUndoOpponentGoal() },
-                    pointUndoAction: { confirmUndoOpponentPoint() },
-                    canUndoGoal: canUndoOpponentGoal,
-                    canUndoPoint: canUndoOpponentPoint,
-                    minHeight: sharedCardHeight
-                )
-                teamPressureCard(
-                    style: oppStyle,
-                    clearances: liveSession.theirClearances,
-                    inside50s: liveSession.theirInside50s,
-                    clearanceAction: { liveSession.theirClearances += 1 },
-                    inside50Action: { liveSession.theirInside50s += 1 },
-                    height: secondaryRowCardHeight,
-                    width: width
-                )
+                HStack(alignment: .top, spacing: cardSpacing) {
+                    teamPressureCard(
+                        style: ourStyle,
+                        clearances: liveSession.ourClearances,
+                        inside50s: liveSession.ourInside50s,
+                        clearanceAction: { liveSession.ourClearances += 1 },
+                        inside50Action: { liveSession.ourInside50s += 1 },
+                        height: secondaryRowCardHeight,
+                        width: (width - cardSpacing) / 2
+                    )
+                    teamPressureCard(
+                        style: oppStyle,
+                        clearances: liveSession.theirClearances,
+                        inside50s: liveSession.theirInside50s,
+                        clearanceAction: { liveSession.theirClearances += 1 },
+                        inside50Action: { liveSession.theirInside50s += 1 },
+                        height: secondaryRowCardHeight,
+                        width: (width - cardSpacing) / 2
+                    )
+                }
                 scoreWormCard(width: width)
             }
         }
@@ -4357,15 +4632,23 @@ struct NewGameWizardView: View {
                             canUndoPoint: canUndoPoint,
                             minHeight: sharedCardHeight
                         )
-                        teamPressureCard(
-                            style: ourStyle,
-                            clearances: liveSession.ourClearances,
-                            inside50s: liveSession.ourInside50s,
-                            clearanceAction: { liveSession.ourClearances += 1 },
-                            inside50Action: { liveSession.ourInside50s += 1 },
-                            height: secondaryRowCardHeight,
-                            width: teamCardWidth
-                        )
+                        if showsSyncedStatsSummary {
+                            syncedStatsSummaryCard(
+                                metrics: leftSyncedStatsSummaryMetrics,
+                                height: secondaryRowCardHeight,
+                                width: teamCardWidth
+                            )
+                        } else {
+                            teamPressureCard(
+                                style: ourStyle,
+                                clearances: liveSession.ourClearances,
+                                inside50s: liveSession.ourInside50s,
+                                clearanceAction: { liveSession.ourClearances += 1 },
+                                inside50Action: { liveSession.ourInside50s += 1 },
+                                height: secondaryRowCardHeight,
+                                width: teamCardWidth
+                            )
+                        }
                     }
                     .frame(width: teamCardWidth, alignment: .topLeading)
 
@@ -4392,15 +4675,23 @@ struct NewGameWizardView: View {
                             canUndoPoint: canUndoOpponentPoint,
                             minHeight: sharedCardHeight
                         )
-                        teamPressureCard(
-                            style: oppStyle,
-                            clearances: liveSession.theirClearances,
-                            inside50s: liveSession.theirInside50s,
-                            clearanceAction: { liveSession.theirClearances += 1 },
-                            inside50Action: { liveSession.theirInside50s += 1 },
-                            height: secondaryRowCardHeight,
-                            width: teamCardWidth
-                        )
+                        if showsSyncedStatsSummary {
+                            syncedStatsSummaryCard(
+                                metrics: rightSyncedStatsSummaryMetrics,
+                                height: secondaryRowCardHeight,
+                                width: teamCardWidth
+                            )
+                        } else {
+                            teamPressureCard(
+                                style: oppStyle,
+                                clearances: liveSession.theirClearances,
+                                inside50s: liveSession.theirInside50s,
+                                clearanceAction: { liveSession.theirClearances += 1 },
+                                inside50Action: { liveSession.theirInside50s += 1 },
+                                height: secondaryRowCardHeight,
+                                width: teamCardWidth
+                            )
+                        }
                     }
                     .frame(width: teamCardWidth, alignment: .topTrailing)
                 }
@@ -4465,6 +4756,94 @@ struct NewGameWizardView: View {
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
 
+        private func syncedStatsSummaryCard(
+            metrics: [LiveStatsSummaryMetric],
+            height: CGFloat,
+            width: CGFloat
+        ) -> some View {
+            VStack(alignment: .leading, spacing: 10) {
+                ScorePill("Stats Summary", style: ourStyle)
+
+                if metrics.isEmpty {
+                    Text("No synced stats yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(metrics) { metric in
+                            syncedStatsSummaryRow(metric)
+                        }
+                    }
+                }
+            }
+            .padding()
+            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+
+        private func syncedStatsSummaryRow(_ metric: LiveStatsSummaryMetric) -> some View {
+            let ourIsLeading = metric.ourNumeric > metric.oppositionNumeric
+            let oppositionIsLeading = metric.oppositionNumeric > metric.ourNumeric
+            let ourBackground = ourIsLeading ? Color.green.opacity(0.85) : (oppositionIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
+            let oppositionBackground = oppositionIsLeading ? Color.green.opacity(0.85) : (ourIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
+
+            return HStack(spacing: 8) {
+                syncedStatsSummarySide(
+                    label: metric.label,
+                    value: metric.ourValue,
+                    background: ourBackground,
+                    mirrored: false
+                )
+                syncedStatsSummarySide(
+                    label: metric.label,
+                    value: metric.oppositionValue,
+                    background: oppositionBackground,
+                    mirrored: true
+                )
+            }
+        }
+
+        private func syncedStatsSummarySide(
+            label: String,
+            value: String,
+            background: Color,
+            mirrored: Bool
+        ) -> some View {
+            HStack(spacing: 6) {
+                if mirrored {
+                    Text(value)
+                        .font(.title3.weight(.black))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Spacer(minLength: 6)
+                    Text(label)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
+                } else {
+                    Text(label)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
+                    Spacer(minLength: 6)
+                    Text(value)
+                        .font(.title3.weight(.black))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(background, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+            )
+        }
+
         private func teamPressureCard(
             style: ClubStyle.Style,
             clearances: Int,
@@ -4521,6 +4900,7 @@ struct NewGameWizardView: View {
                     title: buttonTitle,
                     background: style.background,
                     textColor: style.text,
+                    compact: false,
                     action: action
                 )
             }
@@ -4809,10 +5189,19 @@ struct NewGameWizardView: View {
             pointUndoAction: @escaping () -> Void,
             canUndoGoal: Bool,
             canUndoPoint: Bool,
-            minHeight: CGFloat
+            minHeight: CGFloat,
+            compact: Bool = false
         ) -> some View {
             VStack(alignment: .leading, spacing: 18) {
-                scoreColumn(title: title, style: style, goals: goals, behinds: behinds, score: score, showManualAdjusters: showManualAdjusters)
+                scoreColumn(
+                    title: title,
+                    style: style,
+                    goals: goals,
+                    behinds: behinds,
+                    score: score,
+                    showManualAdjusters: showManualAdjusters,
+                    compact: compact
+                )
                 teamActionSection(
                     style: style,
                     goalAction: goalAction,
@@ -4821,26 +5210,50 @@ struct NewGameWizardView: View {
                     goalUndoAction: goalUndoAction,
                     pointUndoAction: pointUndoAction,
                     canUndoGoal: canUndoGoal,
-                    canUndoPoint: canUndoPoint
+                    canUndoPoint: canUndoPoint,
+                    compact: compact
                 )
             }
-            .padding(20)
+            .padding(compact ? 14 : 20)
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
 
         @ViewBuilder
-        private func scoreColumn(title: String, style: ClubStyle.Style, goals: Binding<Int>, behinds: Binding<Int>, score: Int, showManualAdjusters: Bool) -> some View {
+        private func scoreColumn(
+            title: String,
+            style: ClubStyle.Style,
+            goals: Binding<Int>,
+            behinds: Binding<Int>,
+            score: Int,
+            showManualAdjusters: Bool,
+            compact: Bool
+        ) -> some View {
             VStack(alignment: .leading, spacing: 10) {
-                ScorePill(title, style: style, fixedWidth: 170)
+                ScorePill(title, style: style, fixedWidth: compact ? 120 : 170)
                     .frame(maxWidth: .infinity, alignment: .center)
 
-                Text("\(score)")
-                    .font(.system(size: 88, weight: .black, design: .rounded))
-                    .monospacedDigit()
-                Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
-                    .font(.system(size: 46, weight: .bold, design: .rounded))
-                    .monospacedDigit()
+                if compact {
+                    Text("\(score)")
+                        .font(.system(size: 34, weight: .black, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.72)
+                        .lineLimit(1)
+                    Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
+                        .font(.system(size: 28, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.72)
+                        .lineLimit(1)
+                } else {
+                    Text("\(score)")
+                        .font(.system(size: 88, weight: .black, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.65)
+                    Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
+                        .font(.system(size: 46, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.7)
+                }
 
                 if showManualAdjusters {
                     HStack(spacing: 12) {
@@ -4892,41 +5305,48 @@ struct NewGameWizardView: View {
             goalUndoAction: @escaping () -> Void,
             pointUndoAction: @escaping () -> Void,
             canUndoGoal: Bool,
-            canUndoPoint: Bool
+            canUndoPoint: Bool,
+            compact: Bool
         ) -> some View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    prominentActionButton(title: "Goal", background: style.background, textColor: style.text, action: goalAction)
-                    prominentActionButton(title: "Point", background: style.background, textColor: style.text, action: pointAction)
+                    prominentActionButton(title: "Goal", background: style.background, textColor: style.text, compact: compact, action: goalAction)
+                    prominentActionButton(title: "Point", background: style.background, textColor: style.text, compact: compact, action: pointAction)
                 }
                 if showUndoButtons {
                     HStack(spacing: 10) {
-                        undoActionButton(action: goalUndoAction, isEnabled: canUndoGoal)
-                        undoActionButton(action: pointUndoAction, isEnabled: canUndoPoint)
+                        undoActionButton(action: goalUndoAction, isEnabled: canUndoGoal, compact: compact)
+                        undoActionButton(action: pointUndoAction, isEnabled: canUndoPoint, compact: compact)
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        private func undoActionButton(action: @escaping () -> Void, isEnabled: Bool) -> some View {
+        private func undoActionButton(action: @escaping () -> Void, isEnabled: Bool, compact: Bool) -> some View {
             Button(action: action) {
                 Text("Undo")
-                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .font(.system(size: compact ? 16 : 21, weight: .bold, design: .rounded))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, compact ? 10 : 12)
             }
             .buttonStyle(.bordered)
             .tint(.orange)
             .disabled(!isEnabled)
         }
 
-        private func prominentActionButton(title: String, background: Color, textColor: Color, action: @escaping () -> Void) -> some View {
+        private func prominentActionButton(
+            title: String,
+            background: Color,
+            textColor: Color,
+            compact: Bool,
+            action: @escaping () -> Void
+        ) -> some View {
             Button(action: action) {
                 Text(title)
-                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .font(.system(size: compact ? 20 : 28, weight: compact ? .bold : .heavy, design: .rounded))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, compact ? 14 : 18)
             }
             .buttonStyle(.plain)
             .background(

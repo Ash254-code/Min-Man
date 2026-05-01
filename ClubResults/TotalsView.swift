@@ -3,6 +3,7 @@ import SwiftData
 
 struct TotalsView: View {
     @EnvironmentObject private var navigationState: AppNavigationState
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var grades: [Grade]
     @Query(sort: \Player.name) private var players: [Player]
     @Query(sort: \Game.date) private var games: [Game]
@@ -182,17 +183,19 @@ struct TotalsView: View {
             }
             .background(Color.clear)
 
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle("Totals")
+            .navigationBarTitleDisplayMode(horizontalSizeClass == .compact ? .inline : .large)
 
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    HStack {
-                        Text("Totals")
-                            .font(.largeTitle.weight(.bold))
-                            .fixedSize()
+                if horizontalSizeClass != .compact {
+                    ToolbarItem(placement: .principal) {
+                        HStack {
+                            Text("Totals")
+                                .font(.largeTitle.weight(.bold))
+                                .fixedSize()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -222,85 +225,92 @@ struct TotalsView: View {
     }
 
     private var filterOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.45)
-                .ignoresSafeArea()
-                .onTapGesture { showFilterSheet = false }
+        GeometryReader { proxy in
+            ZStack {
+                Color.black.opacity(0.45)
+                    .ignoresSafeArea()
+                    .onTapGesture { showFilterSheet = false }
 
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("Filters")
-                        .font(.system(size: 40, weight: .bold))
-                    Spacer()
-                    Button("Done") { showFilterSheet = false }
-                        .font(.headline)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                }
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text("Filters")
+                                .font(.system(size: horizontalSizeClass == .compact ? 32 : 40, weight: .bold))
+                            Spacer()
+                            Button("Done") { showFilterSheet = false }
+                                .font(.headline)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
 
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionLabel("Grades")
-                    UniformPillGrid {
-                        filterPill(
-                            title: "All",
-                            isSelected: includeAllGrades,
-                            action: {
-                                includeAllGrades = true
-                                selectedGradeIDs.removeAll()
+                        VStack(alignment: .leading, spacing: 12) {
+                            sectionLabel("Grades")
+                            UniformPillGrid {
+                                filterPill(
+                                    title: "All",
+                                    isSelected: includeAllGrades,
+                                    action: {
+                                        includeAllGrades = true
+                                        selectedGradeIDs.removeAll()
+                                    }
+                                )
+
+                                ForEach(orderedGrades, id: \.id) { grade in
+                                    filterPill(
+                                        title: grade.name,
+                                        isSelected: isGradeSelected(grade.id),
+                                        action: { toggleGradeSelection(grade.id) }
+                                    )
+                                }
                             }
-                        )
-
-                        ForEach(orderedGrades, id: \.id) { grade in
-                            filterPill(
-                                title: grade.name,
-                                isSelected: isGradeSelected(grade.id),
-                                action: { toggleGradeSelection(grade.id) }
-                            )
                         }
-                    }
-                }
-                .panelSection()
+                        .panelSection()
 
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionLabel("Show")
-                    UniformPillGrid {
-                        ForEach(TopCountOption.allCases) { option in
-                            filterPill(
-                                title: option.rawValue,
-                                isSelected: topCount == option,
-                                action: { topCount = option }
-                            )
+                        VStack(alignment: .leading, spacing: 12) {
+                            sectionLabel("Show")
+                            UniformPillGrid {
+                                ForEach(TopCountOption.allCases) { option in
+                                    filterPill(
+                                        title: option.rawValue,
+                                        isSelected: topCount == option,
+                                        action: { topCount = option }
+                                    )
+                                }
+                            }
                         }
-                    }
-                }
-                .panelSection()
+                        .panelSection()
 
-                VStack(alignment: .leading, spacing: 10) {
-                    sectionLabel("Layout")
-                    Toggle("Combine All Grades", isOn: $combineAllGrades)
-                        .toggleStyle(.switch)
-                        .font(.headline)
-                        .disabled(!shouldShowCombineToggle)
-                        .opacity(shouldShowCombineToggle ? 1 : 0.45)
-                    if !shouldShowCombineToggle {
-                        Text("Select 2 or more grades to enable.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionLabel("Layout")
+                            Toggle("Combine All Grades", isOn: $combineAllGrades)
+                                .toggleStyle(.switch)
+                                .font(.headline)
+                                .disabled(!shouldShowCombineToggle)
+                                .opacity(shouldShowCombineToggle ? 1 : 0.45)
+                            if !shouldShowCombineToggle {
+                                Text("Select 2 or more grades to enable.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .panelSection()
                     }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .panelSection()
+                .frame(
+                    maxWidth: horizontalSizeClass == .compact ? min(proxy.size.width - 24, 560) : 880,
+                    maxHeight: horizontalSizeClass == .compact ? proxy.size.height - 24 : 560
+                )
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
+                .padding(12)
             }
-            .padding(24)
-            .frame(maxWidth: 880)
-            .frame(height: 560)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
-            .padding(24)
         }
     }
 

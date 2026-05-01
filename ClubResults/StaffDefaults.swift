@@ -6,7 +6,7 @@ final class StaffDefault {
 
     @Attribute(.unique) var id: UUID
     var gradeID: UUID
-    var role: StaffRole
+    var roleRawValue: String
     var name: String
 
     init(
@@ -17,7 +17,12 @@ final class StaffDefault {
     ) {
         self.id = id
         self.gradeID = gradeID
-        self.role = role
+        self.roleRawValue = role.rawValue
         self.name = name
+    }
+
+    var role: StaffRole {
+        get { StaffRole(rawValue: roleRawValue) ?? .teamManager }
+        set { roleRawValue = newValue.rawValue }
     }
 }

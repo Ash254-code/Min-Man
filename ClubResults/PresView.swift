@@ -1,7 +1,15 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct PresView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dismiss) private var dismiss
+
+    private var showsIPhoneBackButton: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
+
     fileprivate struct GoalKickerPresentationItem: Identifiable {
         let id = UUID()
         let name: String
@@ -172,59 +180,85 @@ struct PresView: View {
 
     @ViewBuilder
     private var aiControls: some View {
-        HStack(spacing: 12) {
-            Button {
-                handleAIButtonTapped()
-            } label: {
-                Label(
-                    aiNarrator.isSpeaking && aiNarrator.isPaused
-                    ? "Resume AI"
-                    : (aiHasApprovedNarration ? "Play AI" : "AI"),
-                    systemImage: aiNarrator.isSpeaking && aiNarrator.isPaused
-                    ? "play.circle.fill"
-                    : (aiHasApprovedNarration ? "play.circle.fill" : "sparkles")
-                )
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.purple, in: Capsule(style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(gradeSections.isEmpty || isGeneratingAINarrationAudio)
-            .opacity((gradeSections.isEmpty || isGeneratingAINarrationAudio) ? 0.45 : 1.0)
+        Group {
+            if horizontalSizeClass == .compact && aiNarrator.isSpeaking {
+                VStack(spacing: 12) {
+                    primaryAIButton
 
-            if aiNarrator.isSpeaking {
-                Button {
-                    if aiNarrator.isPaused {
-                        aiNarrator.resume()
-                    } else {
-                        aiNarrator.pause()
+                    HStack(spacing: 12) {
+                        pauseResumeButton
+                        stopAIButton
                     }
-                } label: {
-                    Label(aiNarrator.isPaused ? "Resume" : "Pause", systemImage: aiNarrator.isPaused ? "play.circle.fill" : "pause.circle.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .background(Color.orange, in: Capsule(style: .continuous))
                 }
-                .buttonStyle(.plain)
+            } else {
+                HStack(spacing: 12) {
+                    primaryAIButton
 
-                Button {
-                    aiNarrator.stop()
-                } label: {
-                    Label("Stop", systemImage: "stop.circle.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .background(Color.red, in: Capsule(style: .continuous))
+                    if aiNarrator.isSpeaking {
+                        pauseResumeButton
+                        stopAIButton
+                    }
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 20)
+    }
+
+    private var primaryAIButton: some View {
+        Button {
+            handleAIButtonTapped()
+        } label: {
+            Label(
+                aiNarrator.isSpeaking && aiNarrator.isPaused
+                ? "Resume AI"
+                : (aiHasApprovedNarration ? "Play AI" : "AI"),
+                systemImage: aiNarrator.isSpeaking && aiNarrator.isPaused
+                ? "play.circle.fill"
+                : (aiHasApprovedNarration ? "play.circle.fill" : "sparkles")
+            )
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.purple, in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(gradeSections.isEmpty || isGeneratingAINarrationAudio)
+        .opacity((gradeSections.isEmpty || isGeneratingAINarrationAudio) ? 0.45 : 1.0)
+    }
+
+    private var pauseResumeButton: some View {
+        Button {
+            if aiNarrator.isPaused {
+                aiNarrator.resume()
+            } else {
+                aiNarrator.pause()
+            }
+        } label: {
+            Label(aiNarrator.isPaused ? "Resume" : "Pause", systemImage: aiNarrator.isPaused ? "play.circle.fill" : "pause.circle.fill")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(Color.orange, in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var stopAIButton: some View {
+        Button {
+            aiNarrator.stop()
+        } label: {
+            Label("Stop", systemImage: "stop.circle.fill")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(Color.red, in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var startPresentationsButton: some View {
@@ -571,6 +605,15 @@ struct PresView: View {
         NavigationStack {
             contentStack
             .navigationTitle("Pres")
+            .toolbar {
+                if showsIPhoneBackButton {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Back") {
+                            dismiss()
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $isPreviewSheetPresented) {
                 aiPreviewSheet
             }

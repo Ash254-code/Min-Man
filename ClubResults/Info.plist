@@ -2,6 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.minman.clubresults.statsinvite</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>clubresults</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSContactsUsageDescription</key>
 	<string>Min-Man needs access to your contacts so you can invite stat takers by mobile number.</string>
 </dict>
