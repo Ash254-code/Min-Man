@@ -5,6 +5,7 @@ import SwiftData
 struct ClubResultsApp: App {
     private static let modelStoreDirectoryName = "ClubResultsSwiftData"
     private static let modelStoreFileName = "ClubResults.store"
+    private static let cloudKitContainerIdentifier = "iCloud.MINMAN.ClubResults"
 
     @State private var showSplash = true
     @StateObject private var navigationState = AppNavigationState()
@@ -37,21 +38,33 @@ struct ClubResultsApp: App {
 
     private static func makeModelContainer(schema: Schema) -> ModelContainer {
         let storeURL = modelStoreURL()
-        let configuration = ModelConfiguration(url: storeURL, cloudKitDatabase: .none)
+        let cloudConfiguration = ModelConfiguration(
+            url: storeURL,
+            cloudKitDatabase: .private(cloudKitContainerIdentifier)
+        )
+        let localConfiguration = ModelConfiguration(
+            url: storeURL,
+            cloudKitDatabase: .none
+        )
         let inMemoryConfiguration = ModelConfiguration(isStoredInMemoryOnly: true)
 
         do {
-            return try ModelContainer(for: schema, configurations: configuration)
-        } catch {
+            return try ModelContainer(for: schema, configurations: cloudConfiguration)
+        } catch let cloudError {
             do {
                 try resetStoreDirectory(for: storeURL)
-                return try ModelContainer(for: schema, configurations: configuration)
-            } catch {
+                return try ModelContainer(for: schema, configurations: cloudConfiguration)
+            } catch let cloudRetryError {
                 do {
-                    assertionFailure("SwiftData disk container failed. Falling back to in-memory store. Error: \(error)")
-                    return try ModelContainer(for: schema, configurations: inMemoryConfiguration)
-                } catch {
-                    fatalError("Failed to create any SwiftData container: \(error)")
+                    debugPrint("CloudKit container unavailable. Falling back to local storage. First error: \(cloudError). Retry error: \(cloudRetryError)")
+                    return try ModelContainer(for: schema, configurations: localConfiguration)
+                } catch let localError {
+                    do {
+                        debugPrint("Local disk container unavailable. Falling back to in-memory store. Error: \(localError)")
+                        return try ModelContainer(for: schema, configurations: inMemoryConfiguration)
+                    } catch {
+                        fatalError("Failed to create any SwiftData container: \(error)")
+                    }
                 }
             }
         }

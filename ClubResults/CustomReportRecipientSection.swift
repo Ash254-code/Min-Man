@@ -3,7 +3,7 @@ import SwiftData
 
 @Model
 final class CustomReportRecipientSection {
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var templateID: UUID
     var sectionKey: String
 
@@ -20,7 +20,7 @@ final class CustomReportRecipientSection {
 
 @Model
 final class CustomReportRecipientGroup {
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var templateID: UUID
     var groupID: UUID
 
@@ -37,7 +37,7 @@ final class CustomReportRecipientGroup {
 
 @Model
 final class CustomReportRecipientContact {
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var templateID: UUID
     var contactID: UUID
 

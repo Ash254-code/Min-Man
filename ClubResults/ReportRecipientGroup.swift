@@ -3,7 +3,7 @@ import SwiftData
 
 @Model
 final class ReportRecipientGroup {
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var gradeID: UUID
     var groupID: UUID
     var sendEmail: Bool

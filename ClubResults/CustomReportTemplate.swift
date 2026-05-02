@@ -26,7 +26,7 @@ final class CustomReportTemplate {
         "matchNotes": 0
     ]
 
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var name: String
 
     // Stored as JSON [UUID] to avoid fragile SwiftData transformables.

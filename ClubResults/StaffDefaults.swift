@@ -4,7 +4,7 @@ import SwiftData
 @Model
 final class StaffDefault {
 
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var gradeID: UUID
     var roleRawValue: String
     var name: String

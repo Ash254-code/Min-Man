@@ -487,6 +487,20 @@ final class AuthenticationCoordinator: ObservableObject {
         }
     }
 
+    func continueWithoutAppleSignIn(navigationState: AppNavigationState) {
+        isAuthenticated = true
+        isSigningIn = false
+        isRestoringSession = false
+        emailAddress = nil
+        displayName = "Offline User"
+        currentRole = .admin
+        errorMessage = nil
+        pendingAppleUserID = nil
+        pendingDisplayName = ""
+        requiresManualEmailEntry = false
+        navigationState.setAuthenticatedRole(.admin)
+    }
+
     private func applyAuthenticatedUser(
         appleUserID: String,
         email: String,
@@ -604,6 +618,11 @@ struct AuthenticationGateView<Content: View>: View {
                     }
                     .signInWithAppleButtonStyle(.black)
                     .frame(height: 50)
+
+                    Button("Continue Without Apple Sign-In") {
+                        authCoordinator.continueWithoutAppleSignIn(navigationState: navigationState)
+                    }
+                    .buttonStyle(.bordered)
                 }
 
                 if authCoordinator.requiresManualEmailEntry {

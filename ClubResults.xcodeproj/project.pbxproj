@@ -27,6 +27,7 @@
 		5E1961772F3D41780040620A /* ClubResultsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClubResultsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5E1961782F3D41780040620A /* ClubResultsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClubResultsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5EE0D3CF2F3CB26700AA9C37 /* ClubResults.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClubResults.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5EFA0A682FA56565001BBB48 /* ModelContainer+Cloud.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ModelContainer+Cloud.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -94,6 +95,7 @@
 				5EE0D3CF2F3CB26700AA9C37 /* ClubResults.app */,
 				5E1961772F3D41780040620A /* ClubResultsTests.xctest */,
 				5E1961782F3D41780040620A /* ClubResultsUITests.xctest */,
+				5EFA0A682FA56565001BBB48 /* ModelContainer+Cloud.swift */,
 			);
 			sourceTree = "<group>";
 		};

@@ -15,7 +15,7 @@ enum StaffRole: String, Codable, CaseIterable {
 
 @Model
 final class StaffMember: Identifiable {
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var name: String
     var roleRawValue: String
     var gradeID: UUID

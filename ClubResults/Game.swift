@@ -4,7 +4,7 @@ import SwiftData
 @Model
 final class Game: Identifiable {
     // Identity
-    @Attribute(.unique) var id: UUID
+    var id: UUID
 
     // Relations
     var gradeID: UUID

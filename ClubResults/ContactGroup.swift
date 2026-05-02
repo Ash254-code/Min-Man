@@ -3,7 +3,7 @@ import SwiftData
 
 @Model
 final class ContactGroup {
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var name: String
 
     init(
