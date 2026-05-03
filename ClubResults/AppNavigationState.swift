@@ -225,6 +225,15 @@ struct LiveStatsSyncSessionDescriptor: Equatable {
     var date: Date
 }
 
+struct LiveStatsInviteSnapshot: Equatable {
+    var sessionID: UUID
+    var currentQuarter: String
+    var remainingSeconds: Int
+    var isTimerRunning: Bool
+    var ourPoints: Int
+    var theirPoints: Int
+}
+
 struct LiveStatsSyncIssue: Identifiable, Equatable, Hashable {
     let id: String
     let message: String
@@ -267,6 +276,7 @@ final class AppNavigationState: ObservableObject {
     @Published private(set) var syncedStatsSessionID: UUID?
     @Published private(set) var activeLiveStatsSessionDescriptor: LiveStatsSyncSessionDescriptor?
     @Published private(set) var activeUserStatsSessionDescriptor: LiveStatsSyncSessionDescriptor?
+    @Published private(set) var activeLiveStatsInviteSnapshot: LiveStatsInviteSnapshot?
     @Published private(set) var currentRole: AppRole
     @Published private(set) var authenticatedRole: AppRole?
 
@@ -341,6 +351,9 @@ final class AppNavigationState: ObservableObject {
         }
         activeLiveStatsSessionID = nil
         activeLiveStatsSessionDescriptor = nil
+        if id == nil || activeLiveStatsInviteSnapshot?.sessionID == id {
+            activeLiveStatsInviteSnapshot = nil
+        }
     }
 
     func updateLiveGameSnapshot(_ snapshot: LiveGameSyncSnapshot) {
@@ -380,6 +393,10 @@ final class AppNavigationState: ObservableObject {
 
     func setActiveUserStatsSession(_ descriptor: LiveStatsSyncSessionDescriptor?) {
         activeUserStatsSessionDescriptor = descriptor
+    }
+
+    func updateLiveStatsInviteSnapshot(_ snapshot: LiveStatsInviteSnapshot?) {
+        activeLiveStatsInviteSnapshot = snapshot
     }
 
     func clearActiveUserStatsSession(id: UUID? = nil) {

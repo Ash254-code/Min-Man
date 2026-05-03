@@ -4611,30 +4611,24 @@ struct NewGameWizardView: View {
                                 .frame(maxWidth: .infinity, alignment: .center)
 
                             Button {
-                                startTimer()
+                                if liveSession.isTimerRunning {
+                                    pauseTimer()
+                                } else {
+                                    startTimer()
+                                }
                             } label: {
-                                Image(systemName: "play.fill")
-                                    .frame(maxWidth: .infinity)
+                                Image(systemName: liveSession.isTimerRunning ? "pause.fill" : "play.fill")
+                                    .frame(width: 52, height: 52)
                             }
-                            .accessibilityLabel("Start")
+                            .accessibilityLabel(liveSession.isTimerRunning ? "Pause" : "Start")
                             .buttonStyle(.borderedProminent)
-                            .disabled(liveSession.isTimerRunning)
-
-                            Button {
-                                pauseTimer()
-                            } label: {
-                                Image(systemName: "pause.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .accessibilityLabel("Pause")
-                            .buttonStyle(.bordered)
-                            .disabled(!liveSession.isTimerRunning)
+                            .clipShape(Circle())
 
                             Button {
                                 showManualSavePrompt = true
                             } label: {
                                 Text("Save/reset")
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, minHeight: 52)
                             }
                             .accessibilityLabel("Save and reset")
                             .buttonStyle(.bordered)
@@ -4663,30 +4657,24 @@ struct NewGameWizardView: View {
                     VStack(spacing: 10) {
                         HStack(spacing: 12) {
                             Button {
-                                startTimer()
+                                if liveSession.isTimerRunning {
+                                    pauseTimer()
+                                } else {
+                                    startTimer()
+                                }
                             } label: {
-                                Image(systemName: "play.fill")
-                                    .frame(maxWidth: .infinity)
+                                Image(systemName: liveSession.isTimerRunning ? "pause.fill" : "play.fill")
+                                    .frame(width: 52, height: 52)
                             }
-                            .accessibilityLabel("Start")
+                            .accessibilityLabel(liveSession.isTimerRunning ? "Pause" : "Start")
                             .buttonStyle(.borderedProminent)
-                            .disabled(liveSession.isTimerRunning)
-
-                            Button {
-                                pauseTimer()
-                            } label: {
-                                Image(systemName: "pause.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .accessibilityLabel("Pause")
-                            .buttonStyle(.bordered)
-                            .disabled(!liveSession.isTimerRunning)
+                            .clipShape(Circle())
 
                             Button {
                                 showManualSavePrompt = true
                             } label: {
                                 Text("Save and reset")
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, minHeight: 52)
                             }
                             .accessibilityLabel("Save and reset")
                             .buttonStyle(.bordered)
@@ -4793,26 +4781,6 @@ struct NewGameWizardView: View {
                     .frame(width: scoreCardWidth, alignment: .topLeading)
                 }
                 goalKickerSummaryCard(width: width, height: secondaryRowCardHeight)
-                HStack(alignment: .top, spacing: cardSpacing) {
-                    teamPressureCard(
-                        style: ourStyle,
-                        clearances: liveSession.ourClearances,
-                        inside50s: liveSession.ourInside50s,
-                        clearanceAction: { liveSession.ourClearances += 1 },
-                        inside50Action: { liveSession.ourInside50s += 1 },
-                        height: secondaryRowCardHeight,
-                        width: (width - cardSpacing) / 2
-                    )
-                    teamPressureCard(
-                        style: oppStyle,
-                        clearances: liveSession.theirClearances,
-                        inside50s: liveSession.theirInside50s,
-                        clearanceAction: { liveSession.theirClearances += 1 },
-                        inside50Action: { liveSession.theirInside50s += 1 },
-                        height: secondaryRowCardHeight,
-                        width: (width - cardSpacing) / 2
-                    )
-                }
                 scoreWormCard(width: width)
             }
         }
@@ -4851,16 +4819,6 @@ struct NewGameWizardView: View {
                                 height: secondaryRowCardHeight,
                                 width: teamCardWidth
                             )
-                        } else {
-                            teamPressureCard(
-                                style: ourStyle,
-                                clearances: liveSession.ourClearances,
-                                inside50s: liveSession.ourInside50s,
-                                clearanceAction: { liveSession.ourClearances += 1 },
-                                inside50Action: { liveSession.ourInside50s += 1 },
-                                height: secondaryRowCardHeight,
-                                width: teamCardWidth
-                            )
                         }
                     }
                     .frame(width: teamCardWidth, alignment: .topLeading)
@@ -4891,16 +4849,6 @@ struct NewGameWizardView: View {
                         if showsSyncedStatsSummary {
                             syncedStatsSummaryCard(
                                 metrics: rightSyncedStatsSummaryMetrics,
-                                height: secondaryRowCardHeight,
-                                width: teamCardWidth
-                            )
-                        } else {
-                            teamPressureCard(
-                                style: oppStyle,
-                                clearances: liveSession.theirClearances,
-                                inside50s: liveSession.theirInside50s,
-                                clearanceAction: { liveSession.theirClearances += 1 },
-                                inside50Action: { liveSession.theirInside50s += 1 },
                                 height: secondaryRowCardHeight,
                                 width: teamCardWidth
                             )
@@ -5443,30 +5391,47 @@ struct NewGameWizardView: View {
             compact: Bool
         ) -> some View {
             VStack(alignment: .leading, spacing: 10) {
-                ScorePill(title, style: style, fixedWidth: compact ? 120 : 170)
-                    .frame(maxWidth: .infinity, alignment: .center)
-
-                if compact {
-                    Text("\(score)")
-                        .font(.system(size: 34, weight: .black, design: .rounded))
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.72)
-                        .lineLimit(1)
-                    Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
-                        .font(.system(size: 28, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.72)
-                        .lineLimit(1)
-                } else {
-                    Text("\(score)")
-                        .font(.system(size: 88, weight: .black, design: .rounded))
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.65)
-                    Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
-                        .font(.system(size: 46, weight: .bold, design: .rounded))
-                        .monospacedDigit()
+                VStack(spacing: compact ? 6 : 10) {
+                    Text(title)
+                        .font(compact ? .subheadline.weight(.bold) : .title3.weight(.bold))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.7)
+
+                    if compact {
+                        Text("\(score)")
+                            .font(.system(size: 42, weight: .black, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.72)
+                            .lineLimit(1)
+                        Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
+                            .font(.system(size: 26, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.72)
+                            .lineLimit(1)
+                    } else {
+                        Text("\(score)")
+                            .font(.system(size: 88, weight: .black, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.65)
+                        Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
+                            .font(.system(size: 46, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.7)
+                    }
                 }
+                .foregroundStyle(style.text)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, compact ? 10 : 16)
+                .padding(.vertical, compact ? 12 : 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(style.background)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(style.border.opacity(0.95), lineWidth: 1.5)
+                )
 
                 if showManualAdjusters {
                     HStack(spacing: 12) {

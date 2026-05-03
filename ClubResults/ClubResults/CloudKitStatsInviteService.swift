@@ -47,6 +47,17 @@ struct CloudStatsInviteTally: Identifiable, Hashable {
     let updatedAt: Date
 }
 
+struct CloudStatsInviteSessionState: Identifiable, Hashable {
+    let id: String
+    let sessionID: UUID
+    let currentQuarter: String
+    let remainingSeconds: Int
+    let isTimerRunning: Bool
+    let ourPoints: Int
+    let theirPoints: Int
+    let updatedAt: Date
+}
+
 actor CloudKitStatsInviteService {
     private enum SubscriptionKeys {
         static let statsTallyChanges = "stats-tally-changes"
@@ -68,6 +79,11 @@ actor CloudKitStatsInviteService {
         static let sideRawValue = "sideRawValue"
         static let count = "count"
         static let updatedAt = "updatedAt"
+        static let currentQuarter = "currentQuarter"
+        static let remainingSeconds = "remainingSeconds"
+        static let isTimerRunning = "isTimerRunning"
+        static let ourPoints = "ourPoints"
+        static let theirPoints = "theirPoints"
     }
 
     static let shared = CloudKitStatsInviteService()
@@ -93,6 +109,10 @@ actor CloudKitStatsInviteService {
 
     nonisolated static func tallyRecordName(sessionID: UUID, statTypeID: UUID, sideRawValue: String) -> String {
         "stats-tally-\(sessionID.uuidString.lowercased())-\(statTypeID.uuidString.lowercased())-\(sideRawValue)"
+    }
+
+    nonisolated static func sessionStateRecordName(sessionID: UUID) -> String {
+        "stats-session-state-\(sessionID.uuidString.lowercased())"
     }
 
     nonisolated static func tally(from notification: Notification) -> CloudStatsInviteTally? {
@@ -323,6 +343,34 @@ actor CloudKitStatsInviteService {
         )
     }
 
+    func saveSessionState(
+        sessionID: UUID,
+        currentQuarter: String,
+        remainingSeconds: Int,
+        isTimerRunning: Bool,
+        ourPoints: Int,
+        theirPoints: Int
+    ) async throws -> CloudStatsInviteSessionState {
+        let recordID = CKRecord.ID(recordName: Self.sessionStateRecordName(sessionID: sessionID))
+        let record = try await fetch(recordID: recordID) ?? CKRecord(recordType: "StatsSessionState", recordID: recordID)
+        record[FieldKeys.sessionID] = sessionID.uuidString.lowercased() as CKRecordValue
+        record[FieldKeys.currentQuarter] = currentQuarter as CKRecordValue
+        record[FieldKeys.remainingSeconds] = remainingSeconds as CKRecordValue
+        record[FieldKeys.isTimerRunning] = isTimerRunning as CKRecordValue
+        record[FieldKeys.ourPoints] = ourPoints as CKRecordValue
+        record[FieldKeys.theirPoints] = theirPoints as CKRecordValue
+        record[FieldKeys.updatedAt] = Date() as CKRecordValue
+
+        let savedRecord = try await save(record)
+        return try sessionState(from: savedRecord)
+    }
+
+    func fetchSessionState(sessionID: UUID) async throws -> CloudStatsInviteSessionState? {
+        let recordID = CKRecord.ID(recordName: Self.sessionStateRecordName(sessionID: sessionID))
+        guard let record = try await fetch(recordID: recordID) else { return nil }
+        return try sessionState(from: record)
+    }
+
     private func normalized(_ email: String) -> String {
         email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -492,6 +540,26 @@ actor CloudKitStatsInviteService {
             statTypeID: statTypeID,
             sideRawValue: (record[FieldKeys.sideRawValue] as? String) ?? "",
             count: record[FieldKeys.count] as? Int ?? 0,
+            updatedAt: (record[FieldKeys.updatedAt] as? Date) ?? .distantPast
+        )
+    }
+
+    private func sessionState(from record: CKRecord) throws -> CloudStatsInviteSessionState {
+        guard
+            let sessionIDRaw = record[FieldKeys.sessionID] as? String,
+            let sessionID = UUID(uuidString: sessionIDRaw)
+        else {
+            throw CKError(.partialFailure)
+        }
+
+        return CloudStatsInviteSessionState(
+            id: record.recordID.recordName,
+            sessionID: sessionID,
+            currentQuarter: (record[FieldKeys.currentQuarter] as? String) ?? "Q1",
+            remainingSeconds: record[FieldKeys.remainingSeconds] as? Int ?? 0,
+            isTimerRunning: record[FieldKeys.isTimerRunning] as? Bool ?? false,
+            ourPoints: record[FieldKeys.ourPoints] as? Int ?? 0,
+            theirPoints: record[FieldKeys.theirPoints] as? Int ?? 0,
             updatedAt: (record[FieldKeys.updatedAt] as? Date) ?? .distantPast
         )
     }

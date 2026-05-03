@@ -636,7 +636,6 @@ struct StatsRootView: View {
 
 struct StatsTypesSettingsView: View {
     private enum StatsLayoutOption: String, CaseIterable, Identifiable {
-        case standard = "Standard"
         case edge = "Edge"
         case simple = "Simple"
 
@@ -645,7 +644,7 @@ struct StatsTypesSettingsView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StatType.sortOrder) private var statTypes: [StatType]
-    @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
+    @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.simple.rawValue
     @AppStorage("app.testFlightURL") private var testFlightURL = ""
 
     var body: some View {
@@ -653,6 +652,9 @@ struct StatsTypesSettingsView: View {
             .padding()
         .navigationTitle("Stats")
         .task {
+            if statsLayout == "Standard" {
+                statsLayout = StatsLayoutOption.simple.rawValue
+            }
             seedDefaultStatTypesIfNeeded()
             ensureAlwaysOnStatTypesIfNeeded()
             ensureRequiredTeamComparisonStatTypesIfNeeded()
@@ -1212,6 +1214,7 @@ struct StatsSessionSetupView: View {
     @State private var draftInvitePhone = ""
     @State private var draftInviteMobile = ""
     @State private var draftInviteSelectionRawValues: Set<String> = []
+    @State private var selectedSavedInviteEmail = ""
     @State private var showWizardContactPicker = false
     @State private var showWizardStatPicker = false
     @State private var previewInviteAssignment: WizardInviteAssignment?
@@ -1592,8 +1595,27 @@ struct StatsSessionSetupView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
+                        if !savedWizardInviteContacts.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Previous stat takers")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+
+                                Picker("Previous stat takers", selection: $selectedSavedInviteEmail) {
+                                    Text("Select saved contact").tag("")
+                                    ForEach(savedWizardInviteContacts) { contact in
+                                        Text(contact.title).tag(contact.id)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .onChange(of: selectedSavedInviteEmail) { _, newValue in
+                                    applySavedInviteContact(email: newValue)
+                                }
+                            }
+                        }
+
                         HStack(spacing: 10) {
-                            Text("Enter the stat taker's name, invited email and mobile number for SMS delivery.")
+                            Text("Add a new stat taker or load a saved one, then allocate stats.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
 
@@ -1867,6 +1889,48 @@ struct StatsSessionSetupView: View {
 
     private var draftInviteSelections: [StatsInviteSelection] {
         enabledWizardInviteSelections.filter { draftInviteSelectionRawValues.contains($0.rawValue) }
+    }
+
+    private var savedWizardInviteContacts: [PhoneInviteContact] {
+        var seenEmails: Set<String> = []
+        var savedContacts: [PhoneInviteContact] = []
+
+        for assignment in inviteAssignments {
+            let email = normalizedInviteAddress(assignment.inviteeEmail)
+            guard !email.isEmpty, seenEmails.insert(email).inserted else { continue }
+
+            let existingContact = contacts.first { normalizedInviteAddress($0.email) == email }
+            let trimmedName = assignment.inviteeName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayName = trimmedName.isEmpty
+                ? (existingContact?.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? existingContact?.name ?? email : email)
+                : trimmedName
+            let mobile = existingContact?.mobile.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            savedContacts.append(
+                PhoneInviteContact(
+                    email: email,
+                    displayName: displayName,
+                    mobileNumber: mobile
+                )
+            )
+        }
+
+        for contact in contacts {
+            let email = normalizedInviteAddress(contact.email)
+            guard !email.isEmpty, seenEmails.insert(email).inserted else { continue }
+            let displayName = contact.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            savedContacts.append(
+                PhoneInviteContact(
+                    email: email,
+                    displayName: displayName.isEmpty ? email : displayName,
+                    mobileNumber: contact.mobile.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            )
+        }
+
+        return savedContacts.sorted { lhs, rhs in
+            lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
     }
 
     private var usesLiveGameScoreSyncForMatchEvents: Bool {
@@ -2154,18 +2218,35 @@ struct StatsSessionSetupView: View {
         }
     }
 
+    private func applySavedInviteContact(email: String) {
+        guard !email.isEmpty,
+              let contact = savedWizardInviteContacts.first(where: { $0.id == email })
+        else {
+            return
+        }
+
+        draftInviteName = contact.displayName
+        draftInvitePhone = contact.email
+        draftInviteMobile = contact.mobileNumber
+    }
+
     private func addWizardInviteAssignment() {
         guard canAddDraftInvite else { return }
+        let email = draftInvitePhone.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let displayName = draftInviteName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mobileNumber = draftInviteMobile.trimmingCharacters(in: .whitespacesAndNewlines)
+
         let assignment = WizardInviteAssignment(
             id: UUID(),
             contact: PhoneInviteContact(
-                email: draftInvitePhone.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-                displayName: draftInviteName.trimmingCharacters(in: .whitespacesAndNewlines),
-                mobileNumber: draftInviteMobile.trimmingCharacters(in: .whitespacesAndNewlines)
+                email: email,
+                displayName: displayName,
+                mobileNumber: mobileNumber
             ),
             selectionRawValues: draftInviteSelectionRawValues.sorted()
         )
         wizardInviteAssignments.append(assignment)
+        upsertSavedInviteContact(email: email, name: displayName, mobile: mobileNumber)
         clearDraftInvite()
     }
 
@@ -2186,6 +2267,34 @@ struct StatsSessionSetupView: View {
         draftInvitePhone = ""
         draftInviteMobile = ""
         draftInviteSelectionRawValues = []
+        selectedSavedInviteEmail = ""
+    }
+
+    private func upsertSavedInviteContact(email: String, name: String, mobile: String) {
+        let normalizedEmail = normalizedInviteAddress(email)
+        guard !normalizedEmail.isEmpty else { return }
+
+        if let existing = contacts.first(where: { normalizedInviteAddress($0.email) == normalizedEmail }) {
+            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedMobile = mobile.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedName.isEmpty {
+                existing.name = trimmedName
+            }
+            if !trimmedMobile.isEmpty {
+                existing.mobile = trimmedMobile
+            }
+            existing.email = normalizedEmail
+        } else {
+            modelContext.insert(
+                Contact(
+                    name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    mobile: mobile.trimmingCharacters(in: .whitespacesAndNewlines),
+                    email: normalizedEmail
+                )
+            )
+        }
+
+        try? modelContext.save()
     }
 
     private func removeWizardInviteAssignment(_ assignment: WizardInviteAssignment) {
@@ -2861,7 +2970,6 @@ private struct ReportPreviewDocument: Identifiable {
 @MainActor
 struct LiveStatsView: View {
     private enum StatsLayoutOption: String {
-        case standard = "Standard"
         case edge = "Edge"
         case simple = "Simple"
     }
@@ -2876,7 +2984,7 @@ struct LiveStatsView: View {
     @AppStorage("oppTrackPossessions") private var oppositionTrackPossessions = true
     @AppStorage("oppTrackDisposalEfficiency") private var oppositionTrackDisposalEfficiency = true
     @AppStorage("oppTrackContestedPossessions") private var oppositionTrackContestedPossessions = true
-    @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.standard.rawValue
+    @AppStorage("statsLayout") private var statsLayout = StatsLayoutOption.simple.rawValue
 
     let session: StatsSession
 
@@ -2914,7 +3022,7 @@ struct LiveStatsView: View {
     @State private var statusBannerTask: Task<Void, Never>?
     @State private var showStatsSettings = false
     @State private var showStatTakers = false
-    @State private var showStatTakerStatusPopover = false
+    @State private var showSyncStatusPopover = false
     @State private var selectedStatTakerAssignmentID: UUID?
     @State private var editingStatTakerAssignment: StatsInviteAssignment?
     @State private var composedShareText: String?
@@ -2924,7 +3032,6 @@ struct LiveStatsView: View {
     @State private var showQuarterPickerDialog = false
     @State private var showTimerModeEditor = false
     @State private var showLiveGameSyncPrompt = false
-    @State private var showLiveSyncIssues = false
     @State private var promptedForLiveGameSyncSessionID: UUID?
     @State private var customQuarterMinutes = 20
     @State private var activeEfficiencyButtonKey: String?
@@ -2943,8 +3050,11 @@ struct LiveStatsView: View {
     @State private var lastHapticQuickContestedVote: ContestedPossessionVote?
     @State private var lastHapticQuickEfficiencyVote: EfficiencyVote?
     @State private var remoteInviteTallies: [CloudStatsInviteTally] = []
+    @State private var remoteInviteCountsByTallyID: [String: Int] = [:]
     @State private var cloudInviteAssignmentsByRecordName: [String: CloudStatsInviteAssignment] = [:]
     @State private var lastRemoteInviteTallyUpdateAt: Date?
+    @State private var lastPublishedInviteSnapshotToken: String?
+    @State private var liveStatsInviteSyncError: String?
     @State private var quarterCountsUp = false
     @State private var activeSideSpeakPresses = 0
     @StateObject private var speechService = PressHoldSpeechService()
@@ -2955,6 +3065,8 @@ struct LiveStatsView: View {
     private let longPressHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let stepHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let playerQuickStatsLongPressDuration: Double = 0.45
+    private let remoteInvitePollIntervalNanoseconds: UInt64 = 250_000_000
+    private let liveStatsInvitePublishIntervalNanoseconds: UInt64 = 250_000_000
     
     private var isSessionActive: Bool {
         navigationState.activeStatsSessionID == session.sessionId && !session.isSaved
@@ -3069,6 +3181,7 @@ struct LiveStatsView: View {
         }
         .onAppear {
             navigationState.setActiveLiveStatsSession(liveStatsSessionDescriptor)
+            navigationState.updateLiveStatsInviteSnapshot(liveStatsInviteSnapshot)
             if !session.isSaved && !isReadOnlyMode {
                 navigationState.activateStatsSession(id: session.sessionId)
             }
@@ -3225,21 +3338,12 @@ struct LiveStatsView: View {
         } message: {
             Text("Use Live Game View as the source of truth for score, timer and quarter in this Live Stats session.")
         }
-        .alert("Sync Issues", isPresented: $showLiveSyncIssues) {
-            if liveSyncStatus.state == .orange && liveSyncStatus.canManuallySyncGameAndStats {
-                Button("Sync") {
-                    acceptLiveGameSync()
-                }
-            }
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(liveSyncIssuesMessage)
-        }
         .onDisappear {
             statusBannerTask?.cancel()
             stopQuarterTimer()
             activeSideSpeakPresses = 0
             navigationState.clearActiveLiveStatsSession(id: session.sessionId)
+            navigationState.updateLiveStatsInviteSnapshot(nil)
             if speechService.isRecording {
                 speechService.stopListening()
             }
@@ -3273,10 +3377,11 @@ struct LiveStatsView: View {
             while !Task.isCancelled && syncedLiveGameSnapshot?.isTimerRunning == true {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    applySyncedLiveGameStateIfNeeded()
-                }
+                applySyncedLiveGameStateIfNeeded()
             }
+        }
+        .task(id: session.sessionId) {
+            await monitorLiveStatsInviteSnapshotPublishing()
         }
         .onChange(of: selectedQuarter) { _, _ in
             guard !isLiveGameControllingMatchState else { return }
@@ -3389,17 +3494,6 @@ struct LiveStatsView: View {
         !sessionInviteAssignments.isEmpty && sessionInviteAssignments.allSatisfy(isCurrentlyConnected)
     }
 
-    private var statTakerStatusTint: Color {
-        if sessionInviteAssignments.isEmpty {
-            return .secondary
-        }
-        return allSessionStatTakersConnected ? .green : .orange
-    }
-
-    private var statTakerStatusSymbol: String {
-        allSessionStatTakersConnected ? "person.2.fill" : "person.2.badge.clock"
-    }
-
     private var connectedInviteSelectionIDs: Set<String> {
         Set(connectedInviteAssignments.flatMap { $0.assignedSelections.map(\.id) })
     }
@@ -3485,8 +3579,9 @@ struct LiveStatsView: View {
                 }
             } else {
                 for selection in assignment.assignedSelections {
-                    let normalizedName = normalizedStatName(statName(for: selection.statTypeID))
-                    if normalizedName != "unknown" {
+                    let localName = allStatTypes.first(where: { $0.id == selection.statTypeID })?.name ?? ""
+                    let normalizedName = normalizedStatName(localName)
+                    if !normalizedName.isEmpty, normalizedName != "unknown" {
                         namesByID[selection.statTypeID, default: []].insert(normalizedName)
                     }
                 }
@@ -3507,7 +3602,7 @@ struct LiveStatsView: View {
     private func monitorRemoteInviteTallies() async {
         await refreshRemoteInviteTallies(forceFullRefresh: true)
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(nanoseconds: remoteInvitePollIntervalNanoseconds)
             guard !Task.isCancelled else { return }
             await refreshRemoteInviteTallies(forceFullRefresh: false)
         }
@@ -3519,6 +3614,7 @@ struct LiveStatsView: View {
         let sideRawValues = StatsInviteTeamSide.allCases.map(\.rawValue)
         guard !statTypeIDs.isEmpty else {
             remoteInviteTallies = []
+            remoteInviteCountsByTallyID = [:]
             lastRemoteInviteTallyUpdateAt = nil
             return
         }
@@ -3532,6 +3628,7 @@ struct LiveStatsView: View {
                     sideRawValues: sideRawValues
                 )
                 remoteInviteTallies = tallies
+                remoteInviteCountsByTallyID = Dictionary(uniqueKeysWithValues: tallies.map { ($0.id, $0.count) })
             } else if let lastRemoteInviteTallyUpdateAt {
                 tallies = try await CloudKitStatsInviteService.shared.fetchTallies(
                     sessionID: session.sessionId,
@@ -3565,11 +3662,16 @@ struct LiveStatsView: View {
         guard !tallies.isEmpty else { return }
         var talliesByID = Dictionary(uniqueKeysWithValues: remoteInviteTallies.map { ($0.id, $0) })
         for tally in tallies {
+            let previousCount = remoteInviteCountsByTallyID[tally.id] ?? talliesByID[tally.id]?.count ?? 0
             talliesByID[tally.id] = tally
+            if tally.count > previousCount {
+                showRemoteInviteBanner(for: tally, delta: tally.count - previousCount)
+            }
         }
         remoteInviteTallies = talliesByID.values.sorted { lhs, rhs in
             lhs.updatedAt > rhs.updatedAt
         }
+        remoteInviteCountsByTallyID = Dictionary(uniqueKeysWithValues: remoteInviteTallies.map { ($0.id, $0.count) })
     }
 
     private var selectedGrade: Grade? {
@@ -3696,9 +3798,13 @@ struct LiveStatsView: View {
     }
 
     private var statsSyncStatusTint: Color {
+        if !sessionInviteAssignments.isEmpty, !allSessionStatTakersConnected {
+            return .orange
+        }
+
         switch liveSyncStatus.state {
         case .green:
-            return .green
+            return liveBrightGreen
         case .red:
             return .red
         case .orange:
@@ -3731,13 +3837,66 @@ struct LiveStatsView: View {
         liveSyncStatus.issues.map(\.message).joined(separator: "\n")
     }
 
+    private var liveStatsInviteSnapshot: LiveStatsInviteSnapshot {
+        LiveStatsInviteSnapshot(
+            sessionID: session.sessionId,
+            currentQuarter: selectedQuarter,
+            remainingSeconds: remainingQuarterSeconds,
+            isTimerRunning: isQuarterTimerRunning,
+            ourPoints: ourScoreSummary.points,
+            theirPoints: oppositionScoreSummary.points
+        )
+    }
+
+    private var liveStatsInviteSnapshotToken: String {
+        [
+            session.sessionId.uuidString,
+            selectedQuarter,
+            String(remainingQuarterSeconds),
+            isQuarterTimerRunning ? "running" : "paused",
+            String(ourScoreSummary.points),
+            String(oppositionScoreSummary.points)
+        ].joined(separator: "|")
+    }
+
+    private func pushLiveStatsInviteSnapshotToCloud() async throws {
+        _ = try await CloudKitStatsInviteService.shared.saveSessionState(
+            sessionID: session.sessionId,
+            currentQuarter: selectedQuarter,
+            remainingSeconds: remainingQuarterSeconds,
+            isTimerRunning: isQuarterTimerRunning,
+            ourPoints: ourScoreSummary.points,
+            theirPoints: oppositionScoreSummary.points
+        )
+    }
+
+    private func monitorLiveStatsInviteSnapshotPublishing() async {
+        while !Task.isCancelled {
+            await publishLiveStatsInviteSnapshotIfNeeded()
+            try? await Task.sleep(nanoseconds: liveStatsInvitePublishIntervalNanoseconds)
+        }
+    }
+
+    @MainActor
+    private func publishLiveStatsInviteSnapshotIfNeeded() async {
+        navigationState.updateLiveStatsInviteSnapshot(liveStatsInviteSnapshot)
+        let token = liveStatsInviteSnapshotToken
+        if token == lastPublishedInviteSnapshotToken, liveStatsInviteSyncError == nil {
+            return
+        }
+        do {
+            try await pushLiveStatsInviteSnapshotToCloud()
+            lastPublishedInviteSnapshotToken = token
+            liveStatsInviteSyncError = nil
+        } catch {
+            liveStatsInviteSyncError = "Live session sync failed: \(error.localizedDescription)"
+        }
+    }
+
     @ViewBuilder
     private var statsSyncStatusButton: some View {
         Button {
-            if liveSyncStatus.state != .green {
-                showLiveSyncIssues = true
-                return
-            }
+            showSyncStatusPopover.toggle()
         } label: {
             Image(systemName: statsSyncStatusIconName)
                 .imageScale(.large)
@@ -3746,6 +3905,9 @@ struct LiveStatsView: View {
         }
         .disabled(isStatsSyncStatusDisabled)
         .accessibilityLabel(statsSyncAccessibilityLabel)
+        .popover(isPresented: $showSyncStatusPopover, attachmentAnchor: .point(.bottomTrailing), arrowEdge: .top) {
+            syncStatusPopoverContent
+        }
     }
 
     private func maybePromptToSyncWithLiveGame() {
@@ -3815,11 +3977,19 @@ struct LiveStatsView: View {
         return sign + String(format: "%02d:%02d", absolute / 60, absolute % 60)
     }
 
+    private var liveBrightGreen: Color {
+        Color(red: 0.0, green: 0.82, blue: 0.36)
+    }
+
     private var timerBackgroundColor: Color {
         if isQuarterTimerRunning {
-            return remainingQuarterSeconds < 0 ? .red : .green
+            return remainingQuarterSeconds < 0 ? .red : liveBrightGreen
         }
         return .gray
+    }
+
+    private var quarterBadgeBackgroundColor: Color {
+        (isQuarterTimerRunning && remainingQuarterSeconds >= 0) ? liveBrightGreen.opacity(0.22) : Color(.systemGray5)
     }
 
     private var isEdgeLayoutActive: Bool {
@@ -3904,13 +4074,13 @@ struct LiveStatsView: View {
                             .minimumScaleFactor(0.78)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(Color.green.opacity(0.18), in: Capsule())
+                            .background(liveBrightGreen.opacity(0.22), in: Capsule())
                     } else if !connectedInviteAssignments.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(connectedInviteAssignments.prefix(3)) { assignment in
                                 HStack(spacing: 4) {
                                     Circle()
-                                        .fill(Color.green)
+                                        .fill(liveBrightGreen)
                                         .frame(width: 7, height: 7)
                                     Text(contacts.first(where: { $0.id == assignment.contactId })?.name ?? "Connected")
                                         .font(.caption.weight(.semibold))
@@ -3918,7 +4088,7 @@ struct LiveStatsView: View {
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(Color.green.opacity(0.12), in: Capsule())
+                                .background(liveBrightGreen.opacity(0.16), in: Capsule())
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -3927,7 +4097,6 @@ struct LiveStatsView: View {
                 .frame(maxWidth: .infinity)
 
                 HStack(spacing: 8) {
-                    statTakerStatusBadge
                     quarterBadge
                 }
             }
@@ -3935,7 +4104,7 @@ struct LiveStatsView: View {
 
             if let statusBanner {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(statusBanner.isSuccess ? Color.green : Color.red)
+                    .fill(statusBanner.isSuccess ? liveBrightGreen : Color.red)
                     .overlay {
                         Text(statusBanner.text)
                             .font(.system(size: 34, weight: .black, design: .rounded))
@@ -4149,35 +4318,49 @@ struct LiveStatsView: View {
 
     private var edgeScoreSummaryPanel: some View {
         HStack(spacing: isIPhoneStatsLayout ? 8 : 12) {
-            VStack(spacing: isIPhoneStatsLayout ? 4 : 6) {
-                ScorePill(ourTeamName, style: ourStyle)
-                    .font((isIPhoneStatsLayout ? Font.title3 : .title2).weight(.black))
-                    .padding(.horizontal, 8)
-                Text("\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))")
-                    .font(.system(size: isIPhoneStatsLayout ? 46 : 58, weight: .black, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
+            edgeTeamScoreBlock(
+                name: ourTeamName,
+                scoreText: "\(ourScoreSummary.goals).\(ourScoreSummary.behinds) (\(ourScoreSummary.points))",
+                style: ourStyle
+            )
 
-            VStack(spacing: isIPhoneStatsLayout ? 4 : 6) {
-                ScorePill(session.opposition, style: oppositionStyle)
-                    .font((isIPhoneStatsLayout ? Font.title3 : .title2).weight(.black))
-                    .padding(.horizontal, 8)
-                Text("\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))")
-                    .font(.system(size: isIPhoneStatsLayout ? 46 : 58, weight: .black, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
+            edgeTeamScoreBlock(
+                name: session.opposition,
+                scoreText: "\(oppositionScoreSummary.goals).\(oppositionScoreSummary.behinds) (\(oppositionScoreSummary.points))",
+                style: oppositionStyle
+            )
         }
         .padding(.horizontal, isIPhoneStatsLayout ? 10 : 14)
         .padding(.vertical, isIPhoneStatsLayout ? 8 : 12)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func edgeTeamScoreBlock(name: String, scoreText: String, style: ClubStyle.Style) -> some View {
+        VStack(spacing: isIPhoneStatsLayout ? 4 : 6) {
+            Text(name)
+                .font((isIPhoneStatsLayout ? Font.subheadline : .headline).weight(.bold))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.72)
+
+            Text(scoreText)
+                .font(.system(size: isIPhoneStatsLayout ? 50 : 58, weight: .black, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(style.text)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, 10)
+        .padding(.vertical, isIPhoneStatsLayout ? 10 : 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(style.background)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(style.border.opacity(0.95), lineWidth: 1.5)
+        )
     }
 
     private var edgeComparisonMetricsPanel: some View {
@@ -4515,6 +4698,7 @@ struct LiveStatsView: View {
         }
         .padding(.horizontal, isIPhoneStatsLayout ? 10 : 12)
         .padding(.vertical, isIPhoneStatsLayout ? 6 : 8)
+        .frame(minWidth: isIPhoneStatsLayout ? 92 : 112, minHeight: isIPhoneStatsLayout ? 58 : 68, alignment: .leading)
         .background(timerBackgroundColor.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .onTapGesture {
@@ -4553,9 +4737,8 @@ struct LiveStatsView: View {
     private var quarterBadge: some View {
         Text(selectedQuarter)
             .font((isIPhoneStatsLayout ? Font.title3 : .title2).weight(.black))
-            .padding(.horizontal, isIPhoneStatsLayout ? 12 : 16)
-            .padding(.vertical, isIPhoneStatsLayout ? 8 : 10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .frame(minWidth: isIPhoneStatsLayout ? 92 : 112, minHeight: isIPhoneStatsLayout ? 58 : 68)
+            .background(quarterBadgeBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))
             .onLongPressGesture {
                 guard !isLiveGameControllingMatchState else { return }
@@ -4563,41 +4746,41 @@ struct LiveStatsView: View {
             }
     }
 
-    private var statTakerStatusBadge: some View {
-        Button {
-            showStatTakerStatusPopover.toggle()
-        } label: {
-            Image(systemName: statTakerStatusSymbol)
-                .font((isIPhoneStatsLayout ? Font.title3 : .title2).weight(.black))
-                .foregroundStyle(statTakerStatusTint)
-                .frame(minWidth: isIPhoneStatsLayout ? 44 : 52)
-                .padding(.horizontal, isIPhoneStatsLayout ? 12 : 16)
-                .padding(.vertical, isIPhoneStatsLayout ? 8 : 10)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $showStatTakerStatusPopover, attachmentAnchor: .point(.bottomTrailing), arrowEdge: .top) {
-            statTakerStatusPopoverContent
-        }
-        .onChange(of: showStatTakerStatusPopover) { _, isPresented in
-            if !isPresented {
-                selectedStatTakerAssignmentID = nil
-            }
-        }
-        .accessibilityLabel("Stat taker status")
-        .accessibilityHint("Shows invited stat takers, assigned stats and connection status")
-    }
-
-    private var statTakerStatusPopoverContent: some View {
+    private var syncStatusPopoverContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Stat Takers")
+                Text("Sync Status")
                     .font(.headline.weight(.bold))
                 Spacer(minLength: 12)
+                Text(allSessionStatTakersConnected ? "Ready" : "Waiting")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(allSessionStatTakersConnected ? liveBrightGreen : .orange)
+            }
+
+            if !liveSyncIssuesMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("Issues")
+                    .font(.subheadline.weight(.semibold))
+                Text(liveSyncIssuesMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if liveSyncStatus.state == .orange && liveSyncStatus.canManuallySyncGameAndStats {
+                    Button("Sync now") {
+                        acceptLiveGameSync()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                Divider()
+            }
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Invited Users")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 12)
                 if !sessionInviteAssignments.isEmpty {
-                    Text(allSessionStatTakersConnected ? "Ready" : "Waiting")
+                    Text(allSessionStatTakersConnected ? "Connected" : "Not all connected")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(allSessionStatTakersConnected ? .green : .orange)
+                        .foregroundStyle(allSessionStatTakersConnected ? liveBrightGreen : .orange)
                 }
             }
 
@@ -4617,7 +4800,7 @@ struct LiveStatsView: View {
             }
         }
         .padding(16)
-        .frame(width: 320)
+        .frame(width: 360)
     }
 
     private func statTakerStatusRow(_ assignment: StatsInviteAssignment) -> some View {
@@ -4626,7 +4809,7 @@ struct LiveStatsView: View {
 
         return Button {
             if isSelected {
-                showStatTakerStatusPopover = false
+                showSyncStatusPopover = false
                 editingStatTakerAssignment = assignment
             } else {
                 selectedStatTakerAssignmentID = assignment.id
@@ -6258,7 +6441,17 @@ struct LiveStatsView: View {
     }
 
     private func statName(for id: UUID) -> String {
-        allStatTypes.first(where: { $0.id == id })?.name ?? "Unknown"
+        if let known = allStatTypes.first(where: { $0.id == id })?.name,
+           known.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return known
+        }
+
+        if let fallback = sessionStatNamesByID[id]?
+            .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return fallback.capitalized
+        }
+
+        return "Unknown"
     }
 
     private func sortInviteSelections(_ selections: [StatsInviteSelection]) -> [StatsInviteSelection] {
@@ -6767,6 +6960,15 @@ struct LiveStatsView: View {
         }
 
         return segments.joined(separator: " - ")
+    }
+
+    private func showRemoteInviteBanner(for tally: CloudStatsInviteTally, delta: Int) {
+        guard delta > 0 else { return }
+        let sideLabel = tally.sideRawValue == StatsInviteTeamSide.opposition.rawValue
+            ? session.opposition.uppercased()
+            : ourTeamName.uppercased()
+        let statLabel = statName(for: tally.statTypeID).uppercased()
+        showStatusBanner(text: "\(sideLabel) - \(statLabel) +\(delta)", isSuccess: true)
     }
 
     private func contestedEmojiForBanner(_ event: StatEvent) -> String? {
@@ -8326,8 +8528,11 @@ private struct StatsInviteLivePreviewView: View {
     @State private var tallySyncError: String?
     @State private var lastPersistedTallyUpdateAt: Date?
     @State private var tallySyncTask: Task<Void, Never>?
+    @State private var cloudSessionState: CloudStatsInviteSessionState?
     @State private var showSyncIssues = false
     @State private var showUndoLastStatPrompt = false
+    private let statTapHaptic = UIImpactFeedbackGenerator(style: .heavy)
+    private let invitePollIntervalNanoseconds: UInt64 = 250_000_000
 
     private var ourSelections: [StatsInviteSelection] {
         selections.filter { $0.side == .ourClub }
@@ -8386,6 +8591,27 @@ private struct StatsInviteLivePreviewView: View {
         recentEnteredSelections.contains { displayCount(for: $0) > 0 }
     }
 
+    private var liveStatsSnapshotForHeader: LiveStatsInviteSnapshot? {
+        if let cloudSessionState {
+            return LiveStatsInviteSnapshot(
+                sessionID: cloudSessionState.sessionID,
+                currentQuarter: cloudSessionState.currentQuarter,
+                remainingSeconds: cloudSessionState.remainingSeconds,
+                isTimerRunning: cloudSessionState.isTimerRunning,
+                ourPoints: cloudSessionState.ourPoints,
+                theirPoints: cloudSessionState.theirPoints
+            )
+        }
+        guard let snapshot = navigationState.activeLiveStatsInviteSnapshot else { return nil }
+        if let syncSessionDescriptor {
+            return snapshot.sessionID == syncSessionDescriptor.sessionID ? snapshot : nil
+        }
+        if let sessionID {
+            return snapshot.sessionID == sessionID ? snapshot : nil
+        }
+        return snapshot
+    }
+
     private var liveSnapshotForHeader: LiveGameSyncSnapshot? {
         guard let syncSessionDescriptor,
               navigationState.syncedStatsSessionID == syncSessionDescriptor.sessionID,
@@ -8395,19 +8621,34 @@ private struct StatsInviteLivePreviewView: View {
         return snapshot
     }
 
-    private var headerQuarterLabel: String? {
-        liveSnapshotForHeader?.currentQuarter
+    private var headerQuarterLabel: String {
+        if let liveStatsSnapshotForHeader {
+            return liveStatsSnapshotForHeader.currentQuarter
+        }
+        return liveSnapshotForHeader?.currentQuarter ?? "Q-"
     }
 
-    private var headerCountdownLabel: String? {
-        guard let snapshot = liveSnapshotForHeader else { return nil }
-        let remaining = snapshot.syncedRemainingSeconds()
+    private var headerCountdownLabel: String {
+        let remaining: Int
+        if let liveStatsSnapshotForHeader {
+            remaining = liveStatsSnapshotForHeader.remainingSeconds
+        } else if let snapshot = liveSnapshotForHeader {
+            remaining = snapshot.syncedRemainingSeconds()
+        } else {
+            return "--:--"
+        }
         let absolute = abs(remaining)
         let sign = remaining < 0 ? "-" : ""
         return sign + String(format: "%02d:%02d", absolute / 60, absolute % 60)
     }
 
     private var headerCountdownTint: Color {
+        if let liveStatsSnapshotForHeader {
+            if liveStatsSnapshotForHeader.isTimerRunning {
+                return liveStatsSnapshotForHeader.remainingSeconds < 0 ? .red : .green
+            }
+            return .secondary
+        }
         guard let snapshot = liveSnapshotForHeader else { return .secondary }
         let remaining = snapshot.syncedRemainingSeconds()
         if snapshot.isTimerActive() {
@@ -8416,25 +8657,58 @@ private struct StatsInviteLivePreviewView: View {
         return .secondary
     }
 
+    private var headerOurScoreText: String {
+        if let snapshot = liveSnapshotForHeader {
+            return "\(snapshot.ourGoals).\(snapshot.ourBehinds) (\(snapshot.ourPoints))"
+        }
+        if let liveStatsSnapshotForHeader {
+            return "\(liveStatsSnapshotForHeader.ourPoints)"
+        }
+        return "-"
+    }
+
+    private var headerOppositionScoreText: String {
+        if let snapshot = liveSnapshotForHeader {
+            return "\(snapshot.theirGoals).\(snapshot.theirBehinds) (\(snapshot.theirPoints))"
+        }
+        if let liveStatsSnapshotForHeader {
+            return "\(liveStatsSnapshotForHeader.theirPoints)"
+        }
+        return "-"
+    }
+
+    private var headerTeamPillWidth: CGFloat {
+        let font = UIFont.systemFont(ofSize: 18, weight: .bold)
+        let longestName = max(clubName.count, oppositionName.count) == clubName.count ? clubName : oppositionName
+        let measured = (longestName as NSString).size(withAttributes: [.font: font]).width
+        return min(max(measured + 32, 120), 280)
+    }
+
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("\(clubName) vs \(oppositionName)")
-                            .font(.system(size: 34, weight: .black, design: .rounded))
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.75)
+                        HStack {
+                            headerCountdownBadge(headerCountdownLabel)
+                            Spacer(minLength: 0)
+                            headerQuarterBadge(headerQuarterLabel)
+                        }
+
+                        headerTeamScorePill(
+                            name: clubName,
+                            score: headerOurScoreText,
+                            teamStyle: style(for: clubName)
+                        )
+
+                        headerTeamScorePill(
+                            name: oppositionName,
+                            score: headerOppositionScoreText,
+                            teamStyle: style(for: oppositionName)
+                        )
 
                         HStack(spacing: 10) {
                             Label(gradeTitle, systemImage: "person.3.fill")
-                            Spacer(minLength: 0)
-                            if let headerQuarterLabel {
-                                headerQuarterBadge(headerQuarterLabel)
-                            }
-                            if let headerCountdownLabel {
-                                headerCountdownBadge(headerCountdownLabel)
-                            }
                         }
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -8510,6 +8784,16 @@ private struct StatsInviteLivePreviewView: View {
             applyPersistedTallyUpdate(tally)
         }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    guard hasUndoableSelection else { return }
+                    showUndoLastStatPrompt = true
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                }
+                .disabled(!hasUndoableSelection)
+                .accessibilityLabel("Undo last stat")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 syncStatusToolbarButton
             }
@@ -8559,6 +8843,37 @@ private struct StatsInviteLivePreviewView: View {
                 )
             }
         }
+    }
+
+    private func headerTeamScorePill(name: String, score: String, teamStyle: ClubStyle.Style) -> some View {
+        HStack(spacing: 12) {
+            Text(name)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.7)
+                .frame(width: headerTeamPillWidth)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(teamStyle.background)
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(teamStyle.border.opacity(0.95), lineWidth: 1.5)
+                )
+
+            Spacer(minLength: 0)
+
+            Text(score)
+                .font(.system(size: 46, weight: .black, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .foregroundStyle(teamStyle.text)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func previewButtonGroupCard(
@@ -8662,11 +8977,13 @@ private struct StatsInviteLivePreviewView: View {
 
     private func monitorPersistedTallies() async {
         await loadPersistedTallies()
+        await loadCloudSessionState()
         guard sessionID != nil else { return }
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(nanoseconds: invitePollIntervalNanoseconds)
             guard !Task.isCancelled else { return }
             await refreshPersistedTallies()
+            await refreshCloudSessionState()
         }
     }
 
@@ -8705,6 +9022,28 @@ private struct StatsInviteLivePreviewView: View {
     }
 
     @MainActor
+    private func loadCloudSessionState() async {
+        guard let sessionID else { return }
+        do {
+            cloudSessionState = try await CloudKitStatsInviteService.shared.fetchSessionState(sessionID: sessionID)
+        } catch {
+            return
+        }
+    }
+
+    @MainActor
+    private func refreshCloudSessionState() async {
+        guard let sessionID else { return }
+        do {
+            if let state = try await CloudKitStatsInviteService.shared.fetchSessionState(sessionID: sessionID) {
+                cloudSessionState = state
+            }
+        } catch {
+            return
+        }
+    }
+
+    @MainActor
     private func queueTallySync(for sessionID: UUID) {
         guard tallySyncTask == nil else { return }
         tallySyncTask = Task {
@@ -8739,7 +9078,7 @@ private struct StatsInviteLivePreviewView: View {
                     pendingSyncDeltasBySelectionID[next.selection.id, default: 0] += next.amount
                     tallySyncError = "CloudKit write failed: \(error.localizedDescription)"
                 }
-                try? await Task.sleep(nanoseconds: 400_000_000)
+                try? await Task.sleep(nanoseconds: 120_000_000)
             }
         }
     }
@@ -8763,6 +9102,8 @@ private struct StatsInviteLivePreviewView: View {
 
     @MainActor
     private func recordSelectionTap(_ selection: StatsInviteSelection) {
+        statTapHaptic.prepare()
+        statTapHaptic.impactOccurred(intensity: 1.0)
         adjustSelection(selection, delta: 1)
         recentEnteredSelections.append(selection)
     }
