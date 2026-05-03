@@ -3983,7 +3983,10 @@ struct LiveStatsView: View {
 
     private var timerBackgroundColor: Color {
         if isQuarterTimerRunning {
-            return remainingQuarterSeconds < 0 ? .red : liveBrightGreen
+            if !quarterCountsUp && remainingQuarterSeconds <= (2 * 60) {
+                return .red
+            }
+            return liveBrightGreen
         }
         return .gray
     }
@@ -4691,7 +4694,7 @@ struct LiveStatsView: View {
             Text(formattedQuarterTime)
                 .font(.system(size: isIPhoneStatsLayout ? 24 : 30, weight: .black, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(remainingQuarterSeconds <= 0 ? .red : .primary)
+                .foregroundStyle((!quarterCountsUp && remainingQuarterSeconds <= (2 * 60)) ? .white : .primary)
             Text(quarterCountsUp ? "Count up" : "Count down")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -8645,14 +8648,14 @@ private struct StatsInviteLivePreviewView: View {
     private var headerCountdownTint: Color {
         if let liveStatsSnapshotForHeader {
             if liveStatsSnapshotForHeader.isTimerRunning {
-                return liveStatsSnapshotForHeader.remainingSeconds < 0 ? .red : .green
+                return liveStatsSnapshotForHeader.remainingSeconds <= (2 * 60) ? .white : .green
             }
             return .secondary
         }
         guard let snapshot = liveSnapshotForHeader else { return .secondary }
         let remaining = snapshot.syncedRemainingSeconds()
         if snapshot.isTimerActive() {
-            return remaining < 0 ? .red : .green
+            return remaining <= (2 * 60) ? .white : .green
         }
         return .secondary
     }
@@ -9198,9 +9201,21 @@ private struct StatsInviteLivePreviewView: View {
     }
 
     private var headerCountdownBackground: AnyShapeStyle {
-        isHeaderMatchStateActive
-            ? AnyShapeStyle(headerCountdownTint.opacity(0.22))
-            : AnyShapeStyle(.ultraThinMaterial)
+        if isHeaderMatchStateActive {
+            let remaining: Int?
+            if let liveStatsSnapshotForHeader, liveStatsSnapshotForHeader.isTimerRunning {
+                remaining = liveStatsSnapshotForHeader.remainingSeconds
+            } else if let snapshot = liveSnapshotForHeader, snapshot.isTimerActive() {
+                remaining = snapshot.syncedRemainingSeconds()
+            } else {
+                remaining = nil
+            }
+            if let remaining, remaining <= (2 * 60) {
+                return AnyShapeStyle(Color.red)
+            }
+            return AnyShapeStyle(headerCountdownTint.opacity(0.22))
+        }
+        return AnyShapeStyle(.ultraThinMaterial)
     }
 
     private var headerQuarterBadgeTint: Color {

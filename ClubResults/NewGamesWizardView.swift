@@ -4101,20 +4101,15 @@ struct NewGameWizardView: View {
                   let timerAnchorDate,
                   let timerAnchorSecondsRemaining else { return false }
             let elapsed = max(0, Int(date.timeIntervalSince(timerAnchorDate)))
-            let updatedSeconds = max(0, timerAnchorSecondsRemaining - elapsed)
-            let crossedZero = secondsRemaining > 0 && updatedSeconds == 0
+            let updatedSeconds = timerAnchorSecondsRemaining - elapsed
+            let crossedZero = secondsRemaining > 0 && updatedSeconds <= 0
             secondsRemaining = updatedSeconds
-            if updatedSeconds == 0 {
-                isTimerRunning = false
-                self.timerAnchorDate = nil
-                self.timerAnchorSecondsRemaining = nil
-            }
             return crossedZero
         }
 
         mutating func startTimer(at date: Date = Date()) {
             syncTimer(at: date)
-            guard !isTimerRunning, secondsRemaining > 0 else { return }
+            guard !isTimerRunning else { return }
             isTimerRunning = true
             timerAnchorDate = date
             timerAnchorSecondsRemaining = secondsRemaining
@@ -4242,7 +4237,7 @@ struct NewGameWizardView: View {
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
-        private var isDangerTime: Bool { liveSession.secondsRemaining <= 0 }
+        private var isDangerTime: Bool { liveSession.secondsRemaining <= (2 * 60) }
         private var canSaveAndContinue: Bool { liveSession.periodSnapshots.count == 4 }
         private var nextPeriodLabel: String? {
             switch liveSession.periodSnapshots.count {
@@ -4605,9 +4600,15 @@ struct NewGameWizardView: View {
                             Text(timeText(liveSession.secondsRemaining))
                                 .font(.system(size: 64, weight: .heavy, design: .rounded))
                                 .monospacedDigit()
-                                .foregroundStyle(isDangerTime ? .red : .primary)
+                                .foregroundStyle(isDangerTime ? .white : .primary)
                                 .minimumScaleFactor(0.55)
                                 .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(isDangerTime ? Color.red : Color.clear)
+                                )
                                 .frame(maxWidth: .infinity, alignment: .center)
 
                             Button {
@@ -4649,9 +4650,15 @@ struct NewGameWizardView: View {
                     Text(timeText(liveSession.secondsRemaining))
                         .font(.system(size: 78, weight: .heavy, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(isDangerTime ? .red : .primary)
+                        .foregroundStyle(isDangerTime ? .white : .primary)
                         .minimumScaleFactor(0.55)
                         .lineLimit(1)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(isDangerTime ? Color.red : Color.clear)
+                        )
                         .frame(maxWidth: .infinity, alignment: .center)
 
                     VStack(spacing: 10) {
@@ -5503,13 +5510,12 @@ struct NewGameWizardView: View {
 
         private func undoActionButton(action: @escaping () -> Void, isEnabled: Bool, compact: Bool) -> some View {
             Button(action: action) {
-                Text("Undo")
-                    .font(.system(size: compact ? 16 : 21, weight: .bold, design: .rounded))
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: compact ? 20 : 24, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, compact ? 10 : 12)
+                    .padding(.vertical, compact ? 8 : 10)
             }
-            .buttonStyle(.bordered)
-            .tint(.orange)
+            .buttonStyle(.plain)
             .disabled(!isEnabled)
         }
 
