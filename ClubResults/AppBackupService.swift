@@ -395,19 +395,39 @@ struct PlayerRecord: Codable {
     let id: UUID
     let firstName: String
     let lastName: String
+    let preferredName: String
     let name: String
     let number: Int?
     let gradeIDs: [UUID]
     let isActive: Bool
 
+    private enum CodingKeys: String, CodingKey {
+        case id, firstName, lastName, preferredName, name, number, gradeIDs, isActive
+    }
+
     init(_ player: Player) {
         id = player.id
         firstName = player.firstName
         lastName = player.lastName
+        preferredName = player.preferredName
         name = player.name
         number = player.number
         gradeIDs = player.gradeIDs
         isActive = player.isActive
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        let legacyName = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        let split = Player.splitName(legacyName)
+        firstName = try c.decodeIfPresent(String.self, forKey: .firstName) ?? split.first
+        lastName = try c.decodeIfPresent(String.self, forKey: .lastName) ?? split.last
+        preferredName = try c.decodeIfPresent(String.self, forKey: .preferredName) ?? ""
+        name = Player.combineDisplayName(first: firstName, last: lastName, preferred: preferredName)
+        number = try c.decodeIfPresent(Int.self, forKey: .number)
+        gradeIDs = try c.decodeIfPresent([UUID].self, forKey: .gradeIDs) ?? []
+        isActive = try c.decodeIfPresent(Bool.self, forKey: .isActive) ?? true
     }
 }
 
@@ -576,6 +596,7 @@ struct CustomReportTemplateRecord: Codable {
     let bestAndFairestLimit: Int
     let includeStaffRoles: Bool
     let includeOfficials: Bool
+    let displayOfficialsInListView: Bool
     let includeUmpires: Bool
     let includeTrainers: Bool
     let includeMatchNotes: Bool
@@ -609,6 +630,7 @@ struct CustomReportTemplateRecord: Codable {
         bestAndFairestLimit = template.bestAndFairestLimit
         includeStaffRoles = template.includeStaffRoles
         includeOfficials = template.includeOfficials
+        displayOfficialsInListView = template.displayOfficialsInListView
         includeUmpires = template.includeUmpires
         includeTrainers = template.includeTrainers
         includeMatchNotes = template.includeMatchNotes
@@ -630,7 +652,7 @@ struct CustomReportTemplateRecord: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, name, gradeIDs, includeScores, includeBestPlayers, bestPlayersLimit, includePlayerGrades, guestVotesLimit
         case includeGoalKickers, goalKickersLimit, includeGuernseyNumbers, includeBestAndFairestVotes
-        case bestAndFairestLimit, includeStaffRoles, includeOfficials
+        case bestAndFairestLimit, includeStaffRoles, includeOfficials, displayOfficialsInListView
         case includeUmpires, includeTrainers, includeMatchNotes, includeSectionOrder, includeOnlyActiveGrades
         case includePlayersOnly, playersOnlyGradeFilterIDs, sendReportOnGameSave, sendReportTriggerGradeID, minimumGamesPlayed, groupingModeRawValue
         case reportColumnCount, includeSectionColumnAssignments
@@ -654,6 +676,7 @@ struct CustomReportTemplateRecord: Codable {
         bestAndFairestLimit = try c.decodeIfPresent(Int.self, forKey: .bestAndFairestLimit) ?? 5
         includeStaffRoles = try c.decodeIfPresent(Bool.self, forKey: .includeStaffRoles) ?? true
         includeOfficials = try c.decodeIfPresent(Bool.self, forKey: .includeOfficials) ?? true
+        displayOfficialsInListView = try c.decodeIfPresent(Bool.self, forKey: .displayOfficialsInListView) ?? true
         includeUmpires = try c.decodeIfPresent(Bool.self, forKey: .includeUmpires) ?? true
         includeTrainers = try c.decodeIfPresent(Bool.self, forKey: .includeTrainers) ?? true
         includeMatchNotes = try c.decodeIfPresent(Bool.self, forKey: .includeMatchNotes) ?? false
@@ -1239,6 +1262,7 @@ enum AppBackupService {
                     id: $0.id,
                     firstName: $0.firstName,
                     lastName: $0.lastName,
+                    preferredName: $0.preferredName,
                     number: $0.number,
                     gradeIDs: $0.gradeIDs,
                     isActive: $0.isActive
@@ -1318,6 +1342,7 @@ enum AppBackupService {
                     bestAndFairestLimit: $0.bestAndFairestLimit,
                     includeStaffRoles: $0.includeStaffRoles,
                     includeOfficials: $0.includeOfficials,
+                    displayOfficialsInListView: $0.displayOfficialsInListView,
                     includeUmpires: $0.includeUmpires,
                     includeTrainers: $0.includeTrainers,
                     includeMatchNotes: $0.includeMatchNotes,

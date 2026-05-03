@@ -2924,6 +2924,7 @@ struct LiveStatsView: View {
     @State private var showQuarterPickerDialog = false
     @State private var showTimerModeEditor = false
     @State private var showLiveGameSyncPrompt = false
+    @State private var showLiveSyncIssues = false
     @State private var promptedForLiveGameSyncSessionID: UUID?
     @State private var customQuarterMinutes = 20
     @State private var activeEfficiencyButtonKey: String?
@@ -2943,6 +2944,7 @@ struct LiveStatsView: View {
     @State private var lastHapticQuickEfficiencyVote: EfficiencyVote?
     @State private var remoteInviteTallies: [CloudStatsInviteTally] = []
     @State private var cloudInviteAssignmentsByRecordName: [String: CloudStatsInviteAssignment] = [:]
+    @State private var lastRemoteInviteTallyUpdateAt: Date?
     @State private var quarterCountsUp = false
     @State private var activeSideSpeakPresses = 0
     @StateObject private var speechService = PressHoldSpeechService()
@@ -2960,6 +2962,15 @@ struct LiveStatsView: View {
 
     private var isReadOnlyMode: Bool {
         !navigationState.currentRole.canModifyStatsSessions
+    }
+
+    private var liveStatsSessionDescriptor: LiveStatsSyncSessionDescriptor {
+        LiveStatsSyncSessionDescriptor(
+            sessionID: session.sessionId,
+            gradeID: session.gradeId,
+            opposition: session.opposition,
+            date: session.date
+        )
     }
 
     var body: some View {
@@ -3057,7 +3068,7 @@ struct LiveStatsView: View {
             }
         }
         .onAppear {
-            navigationState.setActiveLiveStatsSession(id: session.sessionId)
+            navigationState.setActiveLiveStatsSession(liveStatsSessionDescriptor)
             if !session.isSaved && !isReadOnlyMode {
                 navigationState.activateStatsSession(id: session.sessionId)
             }
@@ -3070,9 +3081,14 @@ struct LiveStatsView: View {
         .task(id: remoteInviteTalliesTaskID) {
             await monitorRemoteInviteTallies()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .statsTalliesDidChange)) { _ in
-            Task {
-                await refreshRemoteInviteTallies()
+        .onReceive(NotificationCenter.default.publisher(for: .statsTalliesDidChange)) { notification in
+            if let tally = CloudKitStatsInviteService.tally(from: notification),
+               tally.sessionID == session.sessionId {
+                applyRemoteInviteTallyUpdate(tally)
+            } else {
+                Task {
+                    await refreshRemoteInviteTallies(forceFullRefresh: false)
+                }
             }
         }
         .sheet(item: $showEditEvent) { event in
@@ -3208,6 +3224,16 @@ struct LiveStatsView: View {
             }
         } message: {
             Text("Use Live Game View as the source of truth for score, timer and quarter in this Live Stats session.")
+        }
+        .alert("Sync Issues", isPresented: $showLiveSyncIssues) {
+            if liveSyncStatus.state == .orange && liveSyncStatus.canManuallySyncGameAndStats {
+                Button("Sync") {
+                    acceptLiveGameSync()
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(liveSyncIssuesMessage)
         }
         .onDisappear {
             statusBannerTask?.cancel()
@@ -3479,24 +3505,70 @@ struct LiveStatsView: View {
     }
 
     private func monitorRemoteInviteTallies() async {
-        await refreshRemoteInviteTallies()
+        await refreshRemoteInviteTallies(forceFullRefresh: true)
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
-            await refreshRemoteInviteTallies()
+            await refreshRemoteInviteTallies(forceFullRefresh: false)
         }
     }
 
     @MainActor
-    private func refreshRemoteInviteTallies() async {
+    private func refreshRemoteInviteTallies(forceFullRefresh: Bool) async {
+        let statTypeIDs = Array(sessionStatNamesByID.keys)
+        let sideRawValues = StatsInviteTeamSide.allCases.map(\.rawValue)
+        guard !statTypeIDs.isEmpty else {
+            remoteInviteTallies = []
+            lastRemoteInviteTallyUpdateAt = nil
+            return
+        }
+
         do {
-            remoteInviteTallies = try await CloudKitStatsInviteService.shared.fetchTallies(
-                sessionID: session.sessionId,
-                statTypeIDs: Array(sessionStatNamesByID.keys),
-                sideRawValues: StatsInviteTeamSide.allCases.map(\.rawValue)
-            )
+            let tallies: [CloudStatsInviteTally]
+            if forceFullRefresh || lastRemoteInviteTallyUpdateAt == nil {
+                tallies = try await CloudKitStatsInviteService.shared.fetchTallies(
+                    sessionID: session.sessionId,
+                    statTypeIDs: statTypeIDs,
+                    sideRawValues: sideRawValues
+                )
+                remoteInviteTallies = tallies
+            } else if let lastRemoteInviteTallyUpdateAt {
+                tallies = try await CloudKitStatsInviteService.shared.fetchTallies(
+                    sessionID: session.sessionId,
+                    statTypeIDs: statTypeIDs,
+                    sideRawValues: sideRawValues,
+                    updatedAfter: lastRemoteInviteTallyUpdateAt
+                )
+                mergeRemoteInviteTallies(tallies)
+            } else {
+                tallies = []
+            }
+
+            if let latestUpdatedAt = (forceFullRefresh ? remoteInviteTallies : tallies)
+                .map(\.updatedAt)
+                .max() {
+                lastRemoteInviteTallyUpdateAt = max(lastRemoteInviteTallyUpdateAt ?? .distantPast, latestUpdatedAt)
+            }
         } catch {
             return
+        }
+    }
+
+    @MainActor
+    private func applyRemoteInviteTallyUpdate(_ tally: CloudStatsInviteTally) {
+        mergeRemoteInviteTallies([tally])
+        lastRemoteInviteTallyUpdateAt = max(lastRemoteInviteTallyUpdateAt ?? .distantPast, tally.updatedAt)
+    }
+
+    @MainActor
+    private func mergeRemoteInviteTallies(_ tallies: [CloudStatsInviteTally]) {
+        guard !tallies.isEmpty else { return }
+        var talliesByID = Dictionary(uniqueKeysWithValues: remoteInviteTallies.map { ($0.id, $0) })
+        for tally in tallies {
+            talliesByID[tally.id] = tally
+        }
+        remoteInviteTallies = talliesByID.values.sorted { lhs, rhs in
+            lhs.updatedAt > rhs.updatedAt
         }
     }
 
@@ -3610,48 +3682,69 @@ struct LiveStatsView: View {
         syncedLiveGameSnapshot != nil
     }
 
+    private var liveSyncStatus: LiveStatsSyncStatus {
+        navigationState.liveStatsSyncStatus
+    }
+
     private var statsSyncStatusIconName: String {
-        if isStatsSyncedToLiveGame {
+        switch liveSyncStatus.state {
+        case .green, .red:
             return "arrow.triangle.2.circlepath.circle.fill"
-        }
-        if syncableLiveGameSnapshot != nil {
+        case .orange:
             return "arrow.triangle.2.circlepath.circle"
         }
-        return "arrow.triangle.2.circlepath.circle.slash"
     }
 
     private var statsSyncStatusTint: Color {
-        if isStatsSyncedToLiveGame {
+        switch liveSyncStatus.state {
+        case .green:
             return .green
+        case .red:
+            return .red
+        case .orange:
+            return .orange
         }
-        if syncableLiveGameSnapshot != nil {
-            return .secondary
-        }
-        return Color.secondary.opacity(0.45)
     }
 
     private var statsSyncAccessibilityLabel: String {
-        if isStatsSyncedToLiveGame {
-            return "Live Stats synced with Live Game"
+        switch liveSyncStatus.state {
+        case .green:
+            return "Live Game, Live Stats and user view are synced"
+        case .red:
+            return "Live Stats sync issues detected"
+        case .orange:
+            if liveSyncStatus.canManuallySyncGameAndStats {
+                return "Live Stats sync available"
+            }
+            if liveSyncStatus.isGameAndStatsLinked {
+                return "Live Game and Live Stats are linked, waiting for user view"
+            }
+            return "Live Stats waiting for a matching Live Game or user view"
         }
-        if syncableLiveGameSnapshot != nil {
-            return "Live Stats sync available"
-        }
-        return "Live Stats sync unavailable"
+    }
+
+    private var isStatsSyncStatusDisabled: Bool {
+        false
+    }
+
+    private var liveSyncIssuesMessage: String {
+        liveSyncStatus.issues.map(\.message).joined(separator: "\n")
     }
 
     @ViewBuilder
     private var statsSyncStatusButton: some View {
         Button {
-            guard syncableLiveGameSnapshot != nil, !isStatsSyncedToLiveGame else { return }
-            acceptLiveGameSync()
+            if liveSyncStatus.state != .green {
+                showLiveSyncIssues = true
+                return
+            }
         } label: {
             Image(systemName: statsSyncStatusIconName)
                 .imageScale(.large)
                 .foregroundStyle(statsSyncStatusTint)
-                .opacity(syncableLiveGameSnapshot == nil ? 0.55 : 1)
+                .opacity(isStatsSyncStatusDisabled ? 0.55 : 1)
         }
-        .disabled(syncableLiveGameSnapshot == nil)
+        .disabled(isStatsSyncStatusDisabled)
         .accessibilityLabel(statsSyncAccessibilityLabel)
     }
 
@@ -4625,7 +4718,7 @@ struct LiveStatsView: View {
             Text(player.lastName.uppercased())
                 .font(.headline.weight(.semibold))
                 .lineLimit(1)
-            Text(player.firstName)
+            Text(player.displayFirstName)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -5506,7 +5599,7 @@ struct LiveStatsView: View {
             section.defaultAliases + SpeechDetectedWordsStore.words(forSectionKey: section.key)
         }
         let rosterPhrases = playersForGrade.flatMap { player -> [String] in
-            var values = [player.name, player.firstName, player.lastName]
+            var values = [player.name, player.displayFirstName, player.firstName, player.lastName]
             if let number = player.number {
                 values.append("number \(number)")
                 values.append("no \(number)")
@@ -6533,7 +6626,7 @@ struct LiveStatsView: View {
             VoiceRosterPlayer(
                 id: $0.id,
                 number: $0.number,
-                firstName: $0.firstName,
+                firstName: $0.displayFirstName,
                 lastName: $0.lastName,
                 fullName: $0.name
             )
@@ -7242,7 +7335,7 @@ private struct PlayerVisibilityEditorView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(player.lastName.uppercased())
                                     .font(.headline)
-                                Text(player.firstName)
+                                Text(player.displayFirstName)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -8223,10 +8316,18 @@ private struct StatsInviteLivePreviewView: View {
     let statTypes: [StatType]
     var selectionDisplayNamesByRawValue: [String: String] = [:]
     var sessionID: UUID? = nil
+    var syncSessionDescriptor: LiveStatsSyncSessionDescriptor? = nil
     var showsDoneButton: Bool = true
+    @EnvironmentObject private var navigationState: AppNavigationState
     @Environment(\.dismiss) private var dismiss
-    @State private var countsBySelectionID: [String: Int] = [:]
+    @State private var persistedCountsBySelectionID: [String: Int] = [:]
+    @State private var pendingSyncDeltasBySelectionID: [String: Int] = [:]
+    @State private var recentEnteredSelections: [StatsInviteSelection] = []
     @State private var tallySyncError: String?
+    @State private var lastPersistedTallyUpdateAt: Date?
+    @State private var tallySyncTask: Task<Void, Never>?
+    @State private var showSyncIssues = false
+    @State private var showUndoLastStatPrompt = false
 
     private var ourSelections: [StatsInviteSelection] {
         selections.filter { $0.side == .ourClub }
@@ -8234,6 +8335,85 @@ private struct StatsInviteLivePreviewView: View {
 
     private var oppositionSelections: [StatsInviteSelection] {
         selections.filter { $0.side == .opposition }
+    }
+
+    private var syncStatus: LiveStatsSyncStatus? {
+        guard syncSessionDescriptor != nil else { return nil }
+        return navigationState.liveStatsSyncStatus
+    }
+
+    private var syncStatusIconName: String {
+        guard let syncStatus else { return "dot.radiowaves.left.and.right" }
+        switch syncStatus.state {
+        case .green, .red:
+            return "arrow.triangle.2.circlepath.circle.fill"
+        case .orange:
+            return "arrow.triangle.2.circlepath.circle"
+        }
+    }
+
+    private var syncStatusTint: Color {
+        guard let syncStatus else {
+            return sessionID != nil && tallySyncError == nil ? .green : .secondary
+        }
+        switch syncStatus.state {
+        case .green:
+            return .green
+        case .red:
+            return .red
+        case .orange:
+            return .orange
+        }
+    }
+
+    private var syncStatusAccessibilityLabel: String {
+        guard let syncStatus else { return "Live Stats" }
+        switch syncStatus.state {
+        case .green:
+            return "Live Game, Live Stats and user view are synced"
+        case .red:
+            return "User sync issues detected"
+        case .orange:
+            return "User view waiting for the same live session"
+        }
+    }
+
+    private var syncIssuesMessage: String {
+        syncStatus?.issues.map(\.message).joined(separator: "\n") ?? ""
+    }
+
+    private var hasUndoableSelection: Bool {
+        recentEnteredSelections.contains { displayCount(for: $0) > 0 }
+    }
+
+    private var liveSnapshotForHeader: LiveGameSyncSnapshot? {
+        guard let syncSessionDescriptor,
+              navigationState.syncedStatsSessionID == syncSessionDescriptor.sessionID,
+              let snapshot = navigationState.activeLiveGameSnapshot else {
+            return nil
+        }
+        return snapshot
+    }
+
+    private var headerQuarterLabel: String? {
+        liveSnapshotForHeader?.currentQuarter
+    }
+
+    private var headerCountdownLabel: String? {
+        guard let snapshot = liveSnapshotForHeader else { return nil }
+        let remaining = snapshot.syncedRemainingSeconds()
+        let absolute = abs(remaining)
+        let sign = remaining < 0 ? "-" : ""
+        return sign + String(format: "%02d:%02d", absolute / 60, absolute % 60)
+    }
+
+    private var headerCountdownTint: Color {
+        guard let snapshot = liveSnapshotForHeader else { return .secondary }
+        let remaining = snapshot.syncedRemainingSeconds()
+        if snapshot.isTimerActive() {
+            return remaining < 0 ? .red : .green
+        }
+        return .secondary
     }
 
     var body: some View {
@@ -8248,11 +8428,12 @@ private struct StatsInviteLivePreviewView: View {
 
                         HStack(spacing: 10) {
                             Label(gradeTitle, systemImage: "person.3.fill")
-                            Label {
-                                Text("Live Stats")
-                            } icon: {
-                                Image(systemName: "dot.radiowaves.left.and.right")
-                                    .foregroundStyle(sessionID != nil && tallySyncError == nil ? .green : .secondary)
+                            Spacer(minLength: 0)
+                            if let headerQuarterLabel {
+                                headerQuarterBadge(headerQuarterLabel)
+                            }
+                            if let headerCountdownLabel {
+                                headerCountdownBadge(headerCountdownLabel)
                             }
                         }
                         .font(.subheadline.weight(.semibold))
@@ -8262,10 +8443,6 @@ private struct StatsInviteLivePreviewView: View {
                             Label(tallySyncError, systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.red)
-                        } else if sessionID != nil {
-                            Label("CloudKit tally sync connected", systemImage: "checkmark.circle.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.green)
                         }
                     }
                     .padding(20)
@@ -8311,12 +8488,31 @@ private struct StatsInviteLivePreviewView: View {
                 )
             )
         }
-        .navigationTitle("Invite Preview")
+        .navigationTitle("Live Stats")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: sessionID?.uuidString) {
             await monitorPersistedTallies()
         }
+        .onAppear {
+            if let syncSessionDescriptor {
+                navigationState.setActiveUserStatsSession(syncSessionDescriptor)
+            }
+        }
+        .onChange(of: syncSessionDescriptor) { _, newValue in
+            navigationState.setActiveUserStatsSession(newValue)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .statsTalliesDidChange)) { notification in
+            guard let sessionID,
+                  let tally = CloudKitStatsInviteService.tally(from: notification),
+                  tally.sessionID == sessionID else {
+                return
+            }
+            applyPersistedTallyUpdate(tally)
+        }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                syncStatusToolbarButton
+            }
             if showsDoneButton {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -8324,6 +8520,29 @@ private struct StatsInviteLivePreviewView: View {
                     }
                 }
             }
+        }
+        .alert("Sync Issues", isPresented: $showSyncIssues) {
+            if syncStatus?.state == .orange && syncStatus?.canManuallySyncGameAndStats == true {
+                Button("Sync") {
+                    if let syncSessionDescriptor {
+                        navigationState.syncActiveLiveGame(toStatsSessionID: syncSessionDescriptor.sessionID)
+                    }
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(syncIssuesMessage)
+        }
+        .alert("Undo last stat?", isPresented: $showUndoLastStatPrompt) {
+            Button("Cancel", role: .cancel) {}
+            Button("Undo", role: .destructive) {
+                undoLastEnteredSelection()
+            }
+        } message: {
+            Text(undoPromptMessage)
+        }
+        .onDisappear {
+            navigationState.clearActiveUserStatsSession(id: syncSessionDescriptor?.sessionID)
         }
     }
 
@@ -8369,15 +8588,9 @@ private struct StatsInviteLivePreviewView: View {
     }
 
     private func previewButton(for selection: StatsInviteSelection) -> some View {
-        let count = countsBySelectionID[selection.id, default: 0]
+        let count = displayCount(for: selection)
         return Button {
-            if let sessionID {
-                Task {
-                    await incrementPersistedTally(for: selection, sessionID: sessionID)
-                }
-            } else {
-                countsBySelectionID[selection.id, default: 0] += 1
-            }
+            recordSelectionTap(selection)
         } label: {
             VStack(alignment: .leading, spacing: 14) {
                 Text(statName(for: selection))
@@ -8396,6 +8609,10 @@ private struct StatsInviteLivePreviewView: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
+        .onLongPressGesture {
+            guard hasUndoableSelection else { return }
+            showUndoLastStatPrompt = true
+        }
     }
 
     private func style(for title: String) -> ClubStyle.Style {
@@ -8430,11 +8647,12 @@ private struct StatsInviteLivePreviewView: View {
                 statTypeIDs: Array(Set(selections.map(\.statTypeID))),
                 sideRawValues: Array(Set(selections.map(\.side.rawValue)))
             )
-            countsBySelectionID = Dictionary(
+            persistedCountsBySelectionID = Dictionary(
                 uniqueKeysWithValues: tallies.map {
                     ("\($0.statTypeID.uuidString)|\($0.sideRawValue)", $0.count)
                 }
             )
+            lastPersistedTallyUpdateAt = tallies.map(\.updatedAt).max()
             tallySyncError = nil
         } catch {
             tallySyncError = "CloudKit read failed: \(error.localizedDescription)"
@@ -8446,25 +8664,210 @@ private struct StatsInviteLivePreviewView: View {
         await loadPersistedTallies()
         guard sessionID != nil else { return }
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
-            await loadPersistedTallies()
+            await refreshPersistedTallies()
         }
     }
 
     @MainActor
-    private func incrementPersistedTally(for selection: StatsInviteSelection, sessionID: UUID) async {
+    private func refreshPersistedTallies() async {
+        guard let sessionID else { return }
+        let statTypeIDs = Array(Set(selections.map(\.statTypeID)))
+        let sideRawValues = Array(Set(selections.map(\.side.rawValue)))
+        guard !statTypeIDs.isEmpty, !sideRawValues.isEmpty else { return }
+
         do {
-            let tally = try await CloudKitStatsInviteService.shared.incrementTally(
-                sessionID: sessionID,
-                statTypeID: selection.statTypeID,
-                sideRawValue: selection.side.rawValue
-            )
-            countsBySelectionID[selection.id] = tally.count
+            let tallies: [CloudStatsInviteTally]
+            if let lastPersistedTallyUpdateAt {
+                tallies = try await CloudKitStatsInviteService.shared.fetchTallies(
+                    sessionID: sessionID,
+                    statTypeIDs: statTypeIDs,
+                    sideRawValues: sideRawValues,
+                    updatedAfter: lastPersistedTallyUpdateAt
+                )
+            } else {
+                tallies = try await CloudKitStatsInviteService.shared.fetchTallies(
+                    sessionID: sessionID,
+                    statTypeIDs: statTypeIDs,
+                    sideRawValues: sideRawValues
+                )
+            }
+
+            guard !tallies.isEmpty else { return }
+            for tally in tallies {
+                applyPersistedTallyUpdate(tally)
+            }
             tallySyncError = nil
         } catch {
-            tallySyncError = "CloudKit write failed: \(error.localizedDescription)"
+            tallySyncError = "CloudKit read failed: \(error.localizedDescription)"
         }
+    }
+
+    @MainActor
+    private func queueTallySync(for sessionID: UUID) {
+        guard tallySyncTask == nil else { return }
+        tallySyncTask = Task {
+            defer {
+                Task { @MainActor in
+                    tallySyncTask = nil
+                    if !pendingSyncDeltasBySelectionID.isEmpty {
+                        queueTallySync(for: sessionID)
+                    }
+                }
+            }
+            await flushPendingTallies(sessionID: sessionID)
+        }
+    }
+
+    private func flushPendingTallies(sessionID: UUID) async {
+        while !Task.isCancelled {
+            guard let next = nextPendingSelectionForSync() else { return }
+            do {
+                let tally = try await CloudKitStatsInviteService.shared.incrementTally(
+                    sessionID: sessionID,
+                    statTypeID: next.selection.statTypeID,
+                    sideRawValue: next.selection.side.rawValue,
+                    amount: next.amount
+                )
+                await MainActor.run {
+                    applyPersistedTallyUpdate(tally)
+                    tallySyncError = nil
+                }
+            } catch {
+                await MainActor.run {
+                    pendingSyncDeltasBySelectionID[next.selection.id, default: 0] += next.amount
+                    tallySyncError = "CloudKit write failed: \(error.localizedDescription)"
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
+        }
+    }
+
+    @MainActor
+    private func nextPendingSelectionForSync() -> (selection: StatsInviteSelection, amount: Int)? {
+        guard let entry = pendingSyncDeltasBySelectionID.first(where: { $0.value != 0 }),
+              let selection = StatsInviteSelection(rawValue: entry.key) else {
+            return nil
+        }
+        pendingSyncDeltasBySelectionID[entry.key] = nil
+        return (selection, entry.value)
+    }
+
+    @MainActor
+    private func applyPersistedTallyUpdate(_ tally: CloudStatsInviteTally) {
+        let selectionID = "\(tally.statTypeID.uuidString)|\(tally.sideRawValue)"
+        persistedCountsBySelectionID[selectionID] = tally.count
+        lastPersistedTallyUpdateAt = max(lastPersistedTallyUpdateAt ?? .distantPast, tally.updatedAt)
+    }
+
+    @MainActor
+    private func recordSelectionTap(_ selection: StatsInviteSelection) {
+        adjustSelection(selection, delta: 1)
+        recentEnteredSelections.append(selection)
+    }
+
+    @MainActor
+    private func undoLastEnteredSelection() {
+        while let last = recentEnteredSelections.popLast() {
+            guard displayCount(for: last) > 0 else { continue }
+            adjustSelection(last, delta: -1)
+            return
+        }
+    }
+
+    @MainActor
+    private func adjustSelection(_ selection: StatsInviteSelection, delta: Int) {
+        guard delta != 0 else { return }
+        let currentCount = displayCount(for: selection)
+        let nextCount = max(0, currentCount + delta)
+        guard nextCount != currentCount else { return }
+
+        let appliedDelta = nextCount - currentCount
+        pendingSyncDeltasBySelectionID[selection.id, default: 0] += appliedDelta
+        if pendingSyncDeltasBySelectionID[selection.id] == 0 {
+            pendingSyncDeltasBySelectionID[selection.id] = nil
+        }
+
+        if let sessionID {
+            queueTallySync(for: sessionID)
+        }
+    }
+
+    private func displayCount(for selection: StatsInviteSelection) -> Int {
+        let persisted = persistedCountsBySelectionID[selection.id, default: 0]
+        let pending = pendingSyncDeltasBySelectionID[selection.id, default: 0]
+        return max(0, persisted + pending)
+    }
+
+    private var undoPromptMessage: String {
+        guard let selection = recentEnteredSelections.last else {
+            return "Undo the last stat entered?"
+        }
+        return "Undo the last \(statName(for: selection)) stat entered?"
+    }
+
+    @ViewBuilder
+    private var syncStatusToolbarButton: some View {
+        if let syncStatus {
+            Button {
+                guard syncStatus.state != .green else { return }
+                showSyncIssues = true
+            } label: {
+                Image(systemName: syncStatusIconName)
+                    .foregroundStyle(syncStatusTint)
+            }
+            .accessibilityLabel(syncStatusAccessibilityLabel)
+            .disabled(syncStatus.state == .green)
+        } else {
+            Image(systemName: syncStatusIconName)
+                .foregroundStyle(syncStatusTint)
+                .accessibilityLabel("Sync status")
+        }
+    }
+
+    private func headerQuarterBadge(_ label: String) -> some View {
+        Text(label)
+            .font(.caption.weight(.black))
+            .foregroundStyle(headerQuarterBadgeTint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(headerQuarterBadgeBackground, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func headerCountdownBadge(_ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption.weight(.black))
+                .monospacedDigit()
+                .foregroundStyle(headerCountdownTint)
+            Text("Count down")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(headerCountdownBackground, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var headerQuarterBadgeBackground: AnyShapeStyle {
+        isHeaderMatchStateActive
+            ? AnyShapeStyle(Color.green.opacity(0.22))
+            : AnyShapeStyle(.ultraThinMaterial)
+    }
+
+    private var headerCountdownBackground: AnyShapeStyle {
+        isHeaderMatchStateActive
+            ? AnyShapeStyle(headerCountdownTint.opacity(0.22))
+            : AnyShapeStyle(.ultraThinMaterial)
+    }
+
+    private var headerQuarterBadgeTint: Color {
+        isHeaderMatchStateActive ? .green : .primary
+    }
+
+    private var isHeaderMatchStateActive: Bool {
+        liveSnapshotForHeader?.isTimerActive() == true
     }
 }
 
@@ -8527,6 +8930,31 @@ struct StatTakerStatsView: View {
         return trimmed.isEmpty ? "Opposition" : trimmed
     }
 
+    private var latestAssignmentSyncDescriptor: LiveStatsSyncSessionDescriptor? {
+        guard let latestAssignment else { return nil }
+        let normalizedGradeName = latestAssignment.gradeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedGradeID = grades.first(where: {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(normalizedGradeName) == .orderedSame
+        })?.id ?? {
+            guard let activeDescriptor = navigationState.activeLiveStatsSessionDescriptor,
+                  activeDescriptor.sessionID == latestAssignment.sessionID else {
+                return nil
+            }
+            return activeDescriptor.gradeID
+        }()
+
+        guard let gradeID = resolvedGradeID else {
+            return nil
+        }
+
+        return LiveStatsSyncSessionDescriptor(
+            sessionID: latestAssignment.sessionID,
+            gradeID: gradeID,
+            opposition: latestAssignment.oppositionName,
+            date: latestAssignment.sessionDate
+        )
+    }
+
     var body: some View {
         NavigationStack {
             if isLoadingAssignments && cloudAssignments.isEmpty {
@@ -8556,6 +8984,7 @@ struct StatTakerStatsView: View {
                     statTypes: enabledStatTypes,
                     selectionDisplayNamesByRawValue: latestAssignment?.assignedSelectionDisplayNameByRawValue ?? [:],
                     sessionID: latestAssignment?.sessionID,
+                    syncSessionDescriptor: latestAssignmentSyncDescriptor,
                     showsDoneButton: false
                 )
             }

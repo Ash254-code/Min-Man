@@ -6,6 +6,7 @@
 //
 
 import Testing
+import SwiftData
 @testable import ClubResults
 
 struct ClubResultsTests {
@@ -144,6 +145,92 @@ struct ClubResultsTests {
         #expect(decoded.guestBestPlayersCount == 3)
         #expect(decoded.allowsLiveGameView == false)
         #expect(decoded.quarterLengthMinutes == 20)
+    }
+
+    @Test func playerDuplicateKeyMatchesSurnameAndFirstName() async throws {
+        let firstKey = Player.duplicateMatchKey(firstName: " Sam ", lastName: "O'Brien")
+        let secondKey = Player.duplicateMatchKey(firstName: "sam", lastName: "o’brien")
+
+        #expect(firstKey == secondKey)
+    }
+
+    @Test func mergingDuplicatePlayersPreservesReferencesAndClearsConflictingNumbers() async throws {
+        let container = try ModelContainer(
+            for: Schema([
+                Player.self,
+                Game.self,
+                StatEvent.self
+            ]),
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+
+        let first = Player(
+            firstName: "Sam",
+            lastName: "Taylor",
+            preferredName: "Sammy",
+            number: 12,
+            gradeIDs: [UUID()],
+            isActive: true
+        )
+        let secondGradeID = UUID()
+        let second = Player(
+            firstName: "sam",
+            lastName: "taylor",
+            preferredName: "",
+            number: 24,
+            gradeIDs: [secondGradeID],
+            isActive: false
+        )
+
+        let game = Game(
+            gradeID: UUID(),
+            date: Date(),
+            opponent: "Rivals",
+            venue: "Ground",
+            ourGoals: 0,
+            ourBehinds: 0,
+            theirGoals: 0,
+            theirBehinds: 0,
+            goalKickers: [
+                GameGoalKickerEntry(playerID: first.id, goals: 2),
+                GameGoalKickerEntry(playerID: second.id, goals: 1)
+            ],
+            bestPlayersRanked: [second.id],
+            guestVotesRanked: [GameGuestVoteEntry(rank: 1, playerID: second.id)],
+            notes: "Test"
+        )
+        let event = StatEvent(
+            sessionId: UUID(),
+            playerId: second.id,
+            statTypeId: UUID(),
+            quarter: "Q1",
+            sourceRaw: "manual"
+        )
+
+        context.insert(first)
+        context.insert(second)
+        context.insert(game)
+        context.insert(event)
+        try context.save()
+
+        let merged = try PlayerDuplicateService.merge(players: [first, second], modelContext: context)
+
+        let players = try context.fetch(FetchDescriptor<Player>())
+        let games = try context.fetch(FetchDescriptor<Game>())
+        let events = try context.fetch(FetchDescriptor<StatEvent>())
+
+        #expect(players.count == 1)
+        #expect(players.first?.id == merged.id)
+        #expect(merged.number == nil)
+        #expect(Set(merged.gradeIDs).count == 2)
+        #expect(merged.preferredName == "Sammy")
+        #expect(games.first?.bestPlayersRanked == [merged.id])
+        #expect(games.first?.guestVotesRanked.first?.playerID == merged.id)
+        #expect(games.first?.goalKickers.count == 1)
+        #expect(games.first?.goalKickers.first?.playerID == merged.id)
+        #expect(games.first?.goalKickers.first?.goals == 3)
+        #expect(events.first?.playerId == merged.id)
     }
 
 }

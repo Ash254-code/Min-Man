@@ -3343,6 +3343,7 @@ struct ReportsSettingsView: View {
                 initialSelectedGradeIDs: template.gradeIDs,
                 initialSendReportOnGameSave: template.sendReportOnGameSave,
                 initialSendReportTriggerGradeID: template.sendReportTriggerGradeID,
+                initialDisplayOfficialsInListView: template.displayOfficialsInListView,
                 initialIncludeScores: template.includeScores,
                 initialIncludeBestPlayers: template.includeBestPlayers,
                 initialBestPlayersLimit: template.bestPlayersLimit,
@@ -3442,6 +3443,7 @@ struct ReportsSettingsView: View {
             bestAndFairestLimit: draft.bestAndFairestLimit,
             includeStaffRoles: draft.includeStaffRoles,
             includeOfficials: draft.includeOfficials,
+            displayOfficialsInListView: draft.displayOfficialsInListView,
             includeUmpires: draft.includeOfficials,
             includeTrainers: draft.includeTrainers,
             includeMatchNotes: draft.includeMatchNotes,
@@ -3503,6 +3505,7 @@ struct ReportsSettingsView: View {
         template.bestAndFairestLimit = draft.bestAndFairestLimit
         template.includeStaffRoles = draft.includeStaffRoles
         template.includeOfficials = draft.includeOfficials
+        template.displayOfficialsInListView = draft.displayOfficialsInListView
         template.includeUmpires = draft.includeOfficials
         template.includeTrainers = draft.includeTrainers
         template.includeMatchNotes = draft.includeMatchNotes
@@ -3667,6 +3670,7 @@ struct ReportsSettingsView: View {
             bestAndFairestLimit: template.bestAndFairestLimit,
             includeStaffRoles: template.includeStaffRoles,
             includeOfficials: template.includeOfficials,
+            displayOfficialsInListView: template.displayOfficialsInListView,
             includeUmpires: template.includeUmpires,
             includeTrainers: template.includeTrainers,
             includeMatchNotes: template.includeMatchNotes,
@@ -4808,13 +4812,31 @@ func makeTemplatePreviewPDF(
                       columns[0].lowercased() == "goals",
                       columns[1].lowercased() == "player" {
                 colWidths = [width * 0.14, width * 0.86]
-            } else if columns.count == 5,
+            } else if columns.count == 7,
                       columns[0].lowercased() == "name",
-                      columns[1].lowercased() == "boundary umpire",
-                      columns[2].lowercased() == "water boy",
-                      columns[3].lowercased() == "field umpire",
-                      columns[4].lowercased() == "total" {
-                colWidths = [width * 0.36, width * 0.16, width * 0.16, width * 0.16, width * 0.16]
+                      columns[1].lowercased() == "goal ump",
+                      columns[2].lowercased() == "time keep",
+                      columns[3].lowercased() == "boundary ump",
+                      columns[4].lowercased() == "water",
+                      columns[5].lowercased() == "field ump",
+                      columns[6].lowercased() == "total" {
+                let longestName = rows
+                    .compactMap { $0.first }
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .max { lhs, rhs in
+                        lhs.size(withAttributes: [.font: bodyFont]).width < rhs.size(withAttributes: [.font: bodyFont]).width
+                    } ?? columns[0]
+                let nameHeaderWidth = columns[0].size(withAttributes: [.font: headerFont]).width
+                let longestNameWidth = longestName.size(withAttributes: [.font: bodyFont]).width
+                let paddedNameWidth = ceil(max(nameHeaderWidth, longestNameWidth)) + 12
+                let remainingColumnCount = CGFloat(columns.count - 1)
+                let minimumOtherColumnWidth: CGFloat = 44
+                let maximumNameWidth = width - (remainingColumnCount * minimumOtherColumnWidth)
+                let clampedNameWidth = max(60, min(paddedNameWidth, maximumNameWidth))
+                let otherColumnWidth = max(minimumOtherColumnWidth, (width - clampedNameWidth) / remainingColumnCount)
+                var widths = [clampedNameWidth]
+                widths.append(contentsOf: Array(repeating: otherColumnWidth, count: columns.count - 1))
+                colWidths = widths
             } else {
                 colWidths = columns.map { _ in width / CGFloat(max(columns.count, 1)) }
             }
@@ -4992,12 +5014,15 @@ func makeTemplatePreviewPDF(
 
             typealias RoleNameKey = String
             var coachingCounts: [RoleNameKey: Int] = [:]
+            var officialCounts: [RoleNameKey: Int] = [:]
             var trainerCounts: [RoleNameKey: Int] = [:]
             struct OfficialDutyTally {
+                var goalUmpire: Int = 0
+                var timeKeeper: Int = 0
                 var boundaryUmpire: Int = 0
                 var waterBoy: Int = 0
                 var fieldUmpire: Int = 0
-                var total: Int { boundaryUmpire + waterBoy + fieldUmpire }
+                var total: Int { goalUmpire + timeKeeper + boundaryUmpire + waterBoy + fieldUmpire }
             }
             var officialDutyCountsByName: [String: OfficialDutyTally] = [:]
 
@@ -5046,13 +5071,35 @@ func makeTemplatePreviewPDF(
                     increment(&coachingCounts, role: "Runner", name: game.runnerName)
                 }
                 if template.includeOfficials || template.includeUmpires {
-                    incrementOfficialDuty(name: game.fieldUmpireName) { $0.fieldUmpire += 1 }
-                    incrementOfficialDuty(name: game.boundaryUmpire1Name) { $0.boundaryUmpire += 1 }
-                    incrementOfficialDuty(name: game.boundaryUmpire2Name) { $0.boundaryUmpire += 1 }
-                    incrementOfficialDuty(name: game.waterBoy1Name) { $0.waterBoy += 1 }
-                    incrementOfficialDuty(name: game.waterBoy2Name) { $0.waterBoy += 1 }
-                    incrementOfficialDuty(name: game.waterBoy3Name) { $0.waterBoy += 1 }
-                    incrementOfficialDuty(name: game.waterBoy4Name) { $0.waterBoy += 1 }
+                    if template.displayOfficialsInListView {
+                        if template.includeOfficials {
+                            increment(&officialCounts, role: "Goal Umpire", name: game.goalUmpireName)
+                            increment(&officialCounts, role: "Time Keeper", name: game.timeKeeperName)
+                            increment(&officialCounts, role: "Field Umpire", name: game.fieldUmpireName)
+                        }
+                        if template.includeUmpires {
+                            increment(&officialCounts, role: "Boundary Umpire", name: game.boundaryUmpire1Name)
+                            increment(&officialCounts, role: "Boundary Umpire", name: game.boundaryUmpire2Name)
+                            increment(&officialCounts, role: "Water", name: game.waterBoy1Name)
+                            increment(&officialCounts, role: "Water", name: game.waterBoy2Name)
+                            increment(&officialCounts, role: "Water", name: game.waterBoy3Name)
+                            increment(&officialCounts, role: "Water", name: game.waterBoy4Name)
+                        }
+                    } else {
+                        if template.includeOfficials {
+                            incrementOfficialDuty(name: game.goalUmpireName) { $0.goalUmpire += 1 }
+                            incrementOfficialDuty(name: game.timeKeeperName) { $0.timeKeeper += 1 }
+                            incrementOfficialDuty(name: game.fieldUmpireName) { $0.fieldUmpire += 1 }
+                        }
+                        if template.includeUmpires {
+                            incrementOfficialDuty(name: game.boundaryUmpire1Name) { $0.boundaryUmpire += 1 }
+                            incrementOfficialDuty(name: game.boundaryUmpire2Name) { $0.boundaryUmpire += 1 }
+                            incrementOfficialDuty(name: game.waterBoy1Name) { $0.waterBoy += 1 }
+                            incrementOfficialDuty(name: game.waterBoy2Name) { $0.waterBoy += 1 }
+                            incrementOfficialDuty(name: game.waterBoy3Name) { $0.waterBoy += 1 }
+                            incrementOfficialDuty(name: game.waterBoy4Name) { $0.waterBoy += 1 }
+                        }
+                    }
                 }
                 if template.includeTrainers {
                     for trainer in game.trainers {
@@ -5061,45 +5108,37 @@ func makeTemplatePreviewPDF(
                 }
             }
 
-            if template.includePlayersOnly {
-                for player in playersInPlayersOnlyScope {
-                    let trimmed = normalizedName(player.name)
-                    guard !trimmed.isEmpty else { continue }
-                    let alreadyIncluded = officialDutyCountsByName.keys.contains {
-                        $0.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
-                    }
-                    if !alreadyIncluded {
-                        officialDutyCountsByName[trimmed] = OfficialDutyTally()
-                    }
-                }
-            }
-
-            let officialEntries: [(name: String, tally: OfficialDutyTally)] = officialDutyCountsByName.map {
-                (name: $0.key, tally: $0.value)
-            }
-            let sortedOfficialEntries = officialEntries.sorted { left, right in
-                if left.tally.total != right.tally.total {
-                    return left.tally.total > right.tally.total
-                }
-                return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
-            }
-            let officialRows = sortedOfficialEntries.map { entry in
-                [
-                    entry.name,
-                    String(entry.tally.boundaryUmpire),
-                    String(entry.tally.waterBoy),
-                    String(entry.tally.fieldUmpire),
-                    String(entry.tally.total)
-                ]
-            }
-
             var tables: [String: CompactReportTable] = [:]
             tables["coachingStaff"] = CompactReportTable(title: "Coaching Staff", columns: ["Role", "Name"], rows: makeRoleCountRows(coachingCounts))
-            tables["officials"] = CompactReportTable(
-                title: "Officials",
-                columns: ["Name", "Boundary Umpire", "Water", "Field Umpire", "Total"],
-                rows: officialRows
-            )
+            if template.displayOfficialsInListView {
+                tables["officials"] = CompactReportTable(title: "Officials", columns: ["Role", "Name"], rows: makeRoleCountRows(officialCounts))
+            } else {
+                let officialEntries: [(name: String, tally: OfficialDutyTally)] = officialDutyCountsByName.map {
+                    (name: $0.key, tally: $0.value)
+                }
+                let sortedOfficialEntries = officialEntries.sorted { left, right in
+                    if left.tally.total != right.tally.total {
+                        return left.tally.total > right.tally.total
+                    }
+                    return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+                }
+                let officialRows = sortedOfficialEntries.map { entry in
+                    [
+                        entry.name,
+                        String(entry.tally.goalUmpire),
+                        String(entry.tally.timeKeeper),
+                        String(entry.tally.boundaryUmpire),
+                        String(entry.tally.waterBoy),
+                        String(entry.tally.fieldUmpire),
+                        String(entry.tally.total)
+                    ]
+                }
+                tables["officials"] = CompactReportTable(
+                    title: "Officials",
+                    columns: ["Name", "Goal Ump", "Time Keep", "Boundary Ump", "Water", "Field Ump", "Total"],
+                    rows: officialRows
+                )
+            }
             tables["trainers"] = CompactReportTable(title: "Trainers", columns: ["Role", "Name"], rows: makeRoleCountRows(trainerCounts))
             return tables
         }
@@ -5404,6 +5443,7 @@ private struct CustomReportTemplateDraft {
     let selectedGradeIDs: [UUID]
     let sendReportOnGameSave: Bool
     let sendReportTriggerGradeID: UUID?
+    let displayOfficialsInListView: Bool
     let includeScores: Bool
     let includeBestPlayers: Bool
     let bestPlayersLimit: Int
@@ -5447,6 +5487,7 @@ private struct CustomReportEditView: View {
     @State private var selectedGradeIDs: Set<UUID>
     @State private var sendReportOnGameSave: Bool
     @State private var sendReportTriggerGradeID: UUID?
+    @State private var displayOfficialsInListView: Bool
     @State private var includeScores: Bool
     @State private var includeBestPlayers: Bool
     @State private var bestPlayersLimit: Int
@@ -5489,6 +5530,7 @@ private struct CustomReportEditView: View {
         initialSelectedGradeIDs: [UUID] = [],
         initialSendReportOnGameSave: Bool = false,
         initialSendReportTriggerGradeID: UUID? = nil,
+        initialDisplayOfficialsInListView: Bool = true,
         initialIncludeScores: Bool = true,
         initialIncludeBestPlayers: Bool = true,
         initialBestPlayersLimit: Int = 6,
@@ -5528,6 +5570,7 @@ private struct CustomReportEditView: View {
         _selectedGradeIDs = State(initialValue: Set(initialSelectedGradeIDs))
         _sendReportOnGameSave = State(initialValue: initialSendReportOnGameSave)
         _sendReportTriggerGradeID = State(initialValue: initialSendReportTriggerGradeID)
+        _displayOfficialsInListView = State(initialValue: initialDisplayOfficialsInListView)
         _includeScores = State(initialValue: initialIncludeScores)
         _includeBestPlayers = State(initialValue: initialIncludeBestPlayers)
         _bestPlayersLimit = State(initialValue: Self.clampedReportItemLimit(initialBestPlayersLimit, defaultValue: 0))
@@ -5952,6 +5995,7 @@ private struct CustomReportEditView: View {
 
                     Divider()
                     Toggle("Send Report on Game Save", isOn: $sendReportOnGameSave)
+                    Toggle("Display Officials in list view", isOn: $displayOfficialsInListView)
                     if shouldShowSendTriggerPicker {
                         Picker("Trigger grade", selection: Binding(
                             get: { sendReportTriggerGradeID ?? selectedTriggerGradeOptions.first?.id },
@@ -6230,6 +6274,7 @@ private struct CustomReportEditView: View {
                             selectedGradeIDs: Array(selectedGradeIDs),
                             sendReportOnGameSave: sendReportOnGameSave,
                             sendReportTriggerGradeID: shouldShowSendTriggerPicker ? sendReportTriggerGradeID : nil,
+                            displayOfficialsInListView: displayOfficialsInListView,
                             includeScores: includeScores,
                             includeBestPlayers: includeBestPlayers,
                             bestPlayersLimit: bestPlayersLimit,

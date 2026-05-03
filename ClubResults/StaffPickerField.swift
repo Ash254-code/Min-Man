@@ -20,12 +20,16 @@ struct StaffPickerField: View {
     @State private var chooserDetent: PresentationDetent = .large
 
     private var options: [String] {
-        let savedForRole = persistedNames(for: role, gradeID: gradeID)
+        let savedForRole = StaffPickerNameStore.persistedNames(for: role, gradeID: gradeID)
 
         let namesFromDataStore = staffNamesForSelectedGrade
         let namesFromBoundarySelection = boundarySelectionPlayerNames
 
-        return deduplicatedNames(from: namesFromDataStore + namesFromBoundarySelection + savedForRole)
+        return StaffPickerNameStore.visibleNames(
+            from: namesFromDataStore + namesFromBoundarySelection + savedForRole,
+            role: role,
+            gradeID: gradeID
+        )
     }
 
     private var staffNamesForSelectedGrade: [String] {
@@ -138,6 +142,11 @@ struct StaffPickerField: View {
                             chooserRow(title: name, selected: value == name)
                         }
                         .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button("Delete", role: .destructive) {
+                                deleteOption(name)
+                            }
+                        }
                     }
 
                     Section {
@@ -222,47 +231,11 @@ struct StaffPickerField: View {
 
 
 
-    private func persistedNames(for role: StaffRole, gradeID: UUID?) -> [String] {
-        guard let key = pickerNamesKey(for: role, gradeID: gradeID) else { return [] }
-        let names = UserDefaults.standard.stringArray(forKey: key) ?? []
-        return deduplicatedNames(from: names)
-    }
-
-    private func persistName(_ name: String, for role: StaffRole, gradeID: UUID?) {
-        guard let key = pickerNamesKey(for: role, gradeID: gradeID) else { return }
-        var names = UserDefaults.standard.stringArray(forKey: key) ?? []
-        names.append(name)
-        UserDefaults.standard.set(deduplicatedNames(from: names), forKey: key)
-    }
-
-    private func pickerNamesKey(for role: StaffRole, gradeID: UUID?) -> String? {
-        guard let gradeID else { return nil }
-        return "staffPickerNames.\(gradeID.uuidString).\(role.rawValue)"
-    }
-
-    private func deduplicatedNames(from names: [String]) -> [String] {
-        var seen = Set<String>()
-        var unique: [String] = []
-
-        for rawName in names {
-            let cleanedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !cleanedName.isEmpty else { continue }
-
-            let normalized = cleanedName.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            guard !seen.contains(normalized) else { continue }
-
-            seen.insert(normalized)
-            unique.append(cleanedName)
-        }
-
-        return unique.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-    }
-
     private func saveNewStaff() {
         guard canSaveNewStaff else { return }
 
         let cleanedName = trimmedNewName
-        persistName(cleanedName, for: role, gradeID: gradeID)
+        StaffPickerNameStore.persistName(cleanedName, for: role, gradeID: gradeID)
 
         if let gradeID {
             let nameAlreadyExists = staffMembers.contains { member in
@@ -285,6 +258,13 @@ struct StaffPickerField: View {
         showAdd = false
     }
 
+    private func deleteOption(_ name: String) {
+        StaffPickerNameStore.hideName(name, for: role, gradeID: gradeID)
+        if value.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame {
+            value = ""
+        }
+    }
+
     @ViewBuilder
     private func chooserRow(title: String, selected: Bool) -> some View {
         HStack(spacing: 12) {
@@ -303,5 +283,106 @@ struct StaffPickerField: View {
         }
         .padding(.vertical, horizontalSizeClass == .compact ? 8 : 12)
         .contentShape(Rectangle())
+    }
+}
+
+enum StaffPickerNameStore {
+    static func persistedNames(for role: StaffRole, gradeID: UUID?) -> [String] {
+        guard let key = pickerNamesKey(for: role, gradeID: gradeID) else { return [] }
+        let names = UserDefaults.standard.stringArray(forKey: key) ?? []
+        return deduplicatedNames(from: names)
+    }
+
+    static func visibleNames(from names: [String], role: StaffRole, gradeID: UUID?) -> [String] {
+        let hidden = hiddenNameSet(for: role, gradeID: gradeID)
+        return deduplicatedNames(from: names).filter { !hidden.contains(normalized($0)) }
+    }
+
+    static func persistName(_ name: String, for role: StaffRole, gradeID: UUID?) {
+        guard let key = pickerNamesKey(for: role, gradeID: gradeID) else { return }
+
+        let cleanedName = cleaned(name)
+        guard !cleanedName.isEmpty else { return }
+
+        var names = UserDefaults.standard.stringArray(forKey: key) ?? []
+        names.append(cleanedName)
+        UserDefaults.standard.set(deduplicatedNames(from: names), forKey: key)
+
+        removeHiddenName(cleanedName, for: role, gradeID: gradeID)
+    }
+
+    static func hideName(_ name: String, for role: StaffRole, gradeID: UUID?) {
+        let cleanedName = cleaned(name)
+        guard !cleanedName.isEmpty else { return }
+
+        if let pickerKey = pickerNamesKey(for: role, gradeID: gradeID) {
+            let currentNames = UserDefaults.standard.stringArray(forKey: pickerKey) ?? []
+            let filteredNames = currentNames.filter {
+                normalized($0) != normalized(cleanedName)
+            }
+            UserDefaults.standard.set(deduplicatedNames(from: filteredNames), forKey: pickerKey)
+        }
+
+        guard let hiddenKey = hiddenNamesKey(for: role, gradeID: gradeID) else { return }
+        var hiddenNames = UserDefaults.standard.stringArray(forKey: hiddenKey) ?? []
+        hiddenNames.append(cleanedName)
+        UserDefaults.standard.set(deduplicatedNames(from: hiddenNames), forKey: hiddenKey)
+    }
+
+    static func isHidden(_ name: String, for role: StaffRole, gradeID: UUID?) -> Bool {
+        let cleanedName = cleaned(name)
+        guard !cleanedName.isEmpty else { return false }
+        return hiddenNameSet(for: role, gradeID: gradeID).contains(normalized(cleanedName))
+    }
+
+    private static func removeHiddenName(_ name: String, for role: StaffRole, gradeID: UUID?) {
+        guard let key = hiddenNamesKey(for: role, gradeID: gradeID) else { return }
+        let cleanedName = cleaned(name)
+        let filteredNames = (UserDefaults.standard.stringArray(forKey: key) ?? []).filter {
+            normalized($0) != normalized(cleanedName)
+        }
+        UserDefaults.standard.set(deduplicatedNames(from: filteredNames), forKey: key)
+    }
+
+    private static func hiddenNameSet(for role: StaffRole, gradeID: UUID?) -> Set<String> {
+        guard let key = hiddenNamesKey(for: role, gradeID: gradeID) else { return [] }
+        let hiddenNames = UserDefaults.standard.stringArray(forKey: key) ?? []
+        return Set(hiddenNames.map(normalized))
+    }
+
+    private static func pickerNamesKey(for role: StaffRole, gradeID: UUID?) -> String? {
+        guard let gradeID else { return nil }
+        return "staffPickerNames.\(gradeID.uuidString).\(role.rawValue)"
+    }
+
+    private static func hiddenNamesKey(for role: StaffRole, gradeID: UUID?) -> String? {
+        guard let gradeID else { return nil }
+        return "staffPickerNames.hidden.\(gradeID.uuidString).\(role.rawValue)"
+    }
+
+    private nonisolated static func deduplicatedNames(from names: [String]) -> [String] {
+        var seen = Set<String>()
+        var unique: [String] = []
+
+        for rawName in names {
+            let cleanedName = cleaned(rawName)
+            guard !cleanedName.isEmpty else { continue }
+
+            let foldedName = normalized(cleanedName)
+            guard !seen.contains(foldedName) else { continue }
+
+            seen.insert(foldedName)
+            unique.append(cleanedName)
+        }
+
+        return unique.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private nonisolated static func cleaned(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func normalized(_ name: String) -> String {
+        cleaned(name).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
     }
 }

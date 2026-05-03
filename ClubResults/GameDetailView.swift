@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PDFKit
 
 struct GameDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +20,7 @@ struct GameDetailView: View {
     @State private var showEditSheet = false
     @State private var shareItems: [Any] = []
     @State private var showShareSheet = false
+    @State private var showVotesScanPreview = false
 
     private enum ProtectedGameAction {
         case edit
@@ -183,8 +185,19 @@ struct GameDetailView: View {
 
                 if navigationState.currentRole.canViewVoteDetails && game.guestBestFairestVotesScanPDF != nil {
                     Section(header: Text("Guest Best & Fairest Votes")) {
-                        Label("Votes scan attached", systemImage: "doc.richtext")
-                            .foregroundStyle(.secondary)
+                        HStack {
+                            Label("Votes scan attached", systemImage: "doc.richtext")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                showVotesScanPreview = true
+                            } label: {
+                                Image(systemName: "eye")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("View votes scan")
+                        }
                     }
                 }
             }
@@ -247,11 +260,16 @@ struct GameDetailView: View {
             Text("Delete \(game.opponent) permanently? This cannot be undone.")
         }
         .sheet(isPresented: $showEditSheet) {
-            GameEditView(game: game, grades: grades)
+            GameEditView(game: game, secondaryGame: partnerGame, grades: grades)
                 .appPopupStyle()
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(items: shareItems)
+        }
+        .sheet(isPresented: $showVotesScanPreview) {
+            if let scanData = game.guestBestFairestVotesScanPDF {
+                VotesScanPreviewSheet(pdfData: scanData)
+            }
         }
     }
 
@@ -391,6 +409,45 @@ struct GameDetailView: View {
             break
         }
         pendingProtectedAction = nil
+    }
+}
+
+private struct VotesScanPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let pdfData: Data
+
+    var body: some View {
+        NavigationStack {
+            VotesScanPDFView(pdfData: pdfData)
+                .navigationTitle("Votes Scan")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+    }
+}
+
+private struct VotesScanPDFView: UIViewRepresentable {
+    let pdfData: Data
+
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.autoScales = true
+        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayDirection = .vertical
+        pdfView.backgroundColor = .secondarySystemBackground
+        pdfView.document = PDFDocument(data: pdfData)
+        return pdfView
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        uiView.document = PDFDocument(data: pdfData)
     }
 }
 

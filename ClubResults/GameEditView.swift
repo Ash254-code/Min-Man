@@ -36,7 +36,7 @@ private struct GameEditDraft: Equatable {
 
     var notes: String
 
-    init(game: Game) {
+    @MainActor init(game: Game) {
         gradeID = game.gradeID
         date = game.date
         opponent = game.opponent
@@ -126,7 +126,7 @@ struct GameEditView: View {
     @State private var secondaryDraft: GameEditDraft?
     @State private var selectedGameTab = 0
 
-    init(game: Game, secondaryGame: Game? = nil, grades: [Grade]) {
+    @MainActor init(game: Game, secondaryGame: Game? = nil, grades: [Grade]) {
         self.game = game
         self.secondaryGame = secondaryGame
         self.grades = grades

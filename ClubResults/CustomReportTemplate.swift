@@ -45,6 +45,7 @@ final class CustomReportTemplate {
     var bestAndFairestLimit: Int
     var includeStaffRoles: Bool
     var includeOfficials: Bool
+    var displayOfficialsInListView: Bool
     var includeUmpires: Bool
     var includeTrainers: Bool
     var includeMatchNotes: Bool
@@ -80,6 +81,7 @@ final class CustomReportTemplate {
         bestAndFairestLimit: Int = 5,
         includeStaffRoles: Bool = true,
         includeOfficials: Bool = true,
+        displayOfficialsInListView: Bool = true,
         includeUmpires: Bool = true,
         includeTrainers: Bool = true,
         includeMatchNotes: Bool = false,
@@ -112,6 +114,7 @@ final class CustomReportTemplate {
         self.bestAndFairestLimit = max(0, min(bestAndFairestLimit, 10))
         self.includeStaffRoles = includeStaffRoles
         self.includeOfficials = includeOfficials
+        self.displayOfficialsInListView = displayOfficialsInListView
         self.includeUmpires = includeUmpires
         self.includeTrainers = includeTrainers
         self.includeMatchNotes = includeMatchNotes

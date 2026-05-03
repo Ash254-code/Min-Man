@@ -218,6 +218,40 @@ struct LiveGameSyncSnapshot: Equatable {
     }
 }
 
+struct LiveStatsSyncSessionDescriptor: Equatable {
+    var sessionID: UUID
+    var gradeID: UUID
+    var opposition: String
+    var date: Date
+}
+
+struct LiveStatsSyncIssue: Identifiable, Equatable, Hashable {
+    let id: String
+    let message: String
+
+    init(_ message: String) {
+        self.id = message
+        self.message = message
+    }
+}
+
+enum LiveStatsSyncIndicatorState: Equatable {
+    case orange
+    case green
+    case red
+}
+
+struct LiveStatsSyncStatus: Equatable {
+    let state: LiveStatsSyncIndicatorState
+    let issues: [LiveStatsSyncIssue]
+    let canManuallySyncGameAndStats: Bool
+    let isGameAndStatsLinked: Bool
+
+    var isProblem: Bool {
+        state == .red
+    }
+}
+
 @MainActor
 final class AppNavigationState: ObservableObject {
     private static let appRoleKey = "app.role.preview"
@@ -231,6 +265,8 @@ final class AppNavigationState: ObservableObject {
     @Published private(set) var activeLiveGameGradeID: UUID?
     @Published private(set) var activeLiveGameSnapshot: LiveGameSyncSnapshot?
     @Published private(set) var syncedStatsSessionID: UUID?
+    @Published private(set) var activeLiveStatsSessionDescriptor: LiveStatsSyncSessionDescriptor?
+    @Published private(set) var activeUserStatsSessionDescriptor: LiveStatsSyncSessionDescriptor?
     @Published private(set) var currentRole: AppRole
     @Published private(set) var authenticatedRole: AppRole?
 
@@ -293,12 +329,18 @@ final class AppNavigationState: ObservableObject {
         activeLiveStatsSessionID = id
     }
 
+    func setActiveLiveStatsSession(_ descriptor: LiveStatsSyncSessionDescriptor) {
+        activeLiveStatsSessionID = descriptor.sessionID
+        activeLiveStatsSessionDescriptor = descriptor
+    }
+
     func clearActiveLiveStatsSession(id: UUID? = nil) {
         guard id == nil || activeLiveStatsSessionID == id else { return }
         if syncedStatsSessionID == activeLiveStatsSessionID {
             syncedStatsSessionID = nil
         }
         activeLiveStatsSessionID = nil
+        activeLiveStatsSessionDescriptor = nil
     }
 
     func updateLiveGameSnapshot(_ snapshot: LiveGameSyncSnapshot) {
@@ -336,6 +378,52 @@ final class AppNavigationState: ObservableObject {
         syncedStatsSessionID = nil
     }
 
+    func setActiveUserStatsSession(_ descriptor: LiveStatsSyncSessionDescriptor?) {
+        activeUserStatsSessionDescriptor = descriptor
+    }
+
+    func clearActiveUserStatsSession(id: UUID? = nil) {
+        guard id == nil || activeUserStatsSessionDescriptor?.sessionID == id else { return }
+        activeUserStatsSessionDescriptor = nil
+    }
+
+    var liveStatsSyncStatus: LiveStatsSyncStatus {
+        let blockingIssues = syncBlockingIssues()
+        if !blockingIssues.isEmpty {
+            return LiveStatsSyncStatus(
+                state: .red,
+                issues: blockingIssues,
+                canManuallySyncGameAndStats: false,
+                isGameAndStatsLinked: false
+            )
+        }
+
+        let canManuallySyncGameAndStats = canSyncLiveGameAndStats
+        let isGameAndStatsLinked = isLiveGameAndStatsLinked
+        if isGameAndStatsLinked,
+           let statsDescriptor = activeLiveStatsSessionDescriptor,
+           let userDescriptor = activeUserStatsSessionDescriptor,
+           userDescriptor.sessionID == statsDescriptor.sessionID {
+            return LiveStatsSyncStatus(
+                state: .green,
+                issues: [],
+                canManuallySyncGameAndStats: false,
+                isGameAndStatsLinked: true
+            )
+        }
+
+        let waitingReasons = syncWaitingReasons(
+            canManuallySyncGameAndStats: canManuallySyncGameAndStats,
+            isGameAndStatsLinked: isGameAndStatsLinked
+        )
+        return LiveStatsSyncStatus(
+            state: .orange,
+            issues: waitingReasons,
+            canManuallySyncGameAndStats: canManuallySyncGameAndStats,
+            isGameAndStatsLinked: isGameAndStatsLinked
+        )
+    }
+
     func openStatsNewSession() {
         guard currentRole.canStartStatsSessions else { return }
         selectedTab = .stats
@@ -360,5 +448,157 @@ final class AppNavigationState: ObservableObject {
         } else if !role.visibleTabs.contains(selectedTab) {
             selectedTab = role.visibleTabs.first ?? .games
         }
+    }
+
+    private var activeLiveGameIdentity: (gradeID: UUID, opposition: String, date: Date)? {
+        guard let snapshot = activeLiveGameSnapshot else { return nil }
+        return (snapshot.gradeID, snapshot.opposition, snapshot.date)
+    }
+
+    private var canSyncLiveGameAndStats: Bool {
+        guard let liveGame = activeLiveGameIdentity,
+              let stats = activeLiveStatsSessionDescriptor else {
+            return false
+        }
+        return liveGame.gradeID == stats.gradeID
+            && Calendar.current.isDate(liveGame.date, inSameDayAs: stats.date)
+            && liveGame.opposition.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare(stats.opposition.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+    }
+
+    private var isLiveGameAndStatsLinked: Bool {
+        guard let stats = activeLiveStatsSessionDescriptor else { return false }
+        return syncedStatsSessionID == stats.sessionID && canSyncLiveGameAndStats
+    }
+
+    private func syncBlockingIssues() -> [LiveStatsSyncIssue] {
+        var issues: Set<LiveStatsSyncIssue> = []
+
+        if let liveGame = activeLiveGameIdentity, let stats = activeLiveStatsSessionDescriptor {
+            issues.formUnion(identityMismatchIssues(
+                leftLabel: "Live Game view",
+                leftGradeID: liveGame.gradeID,
+                leftOpposition: liveGame.opposition,
+                leftDate: liveGame.date,
+                rightLabel: "Live Stats view",
+                right: stats
+            ))
+        }
+
+        if let liveGame = activeLiveGameIdentity, let user = activeUserStatsSessionDescriptor {
+            issues.formUnion(identityMismatchIssues(
+                leftLabel: "Live Game view",
+                leftGradeID: liveGame.gradeID,
+                leftOpposition: liveGame.opposition,
+                leftDate: liveGame.date,
+                rightLabel: "Stats user view",
+                right: user
+            ))
+        }
+
+        if let stats = activeLiveStatsSessionDescriptor, let user = activeUserStatsSessionDescriptor {
+            if stats.sessionID != user.sessionID {
+                issues.insert(
+                    LiveStatsSyncIssue(
+                        "Stats user view is on session \(shortSessionID(user.sessionID)) while Live Stats view is on session \(shortSessionID(stats.sessionID))."
+                    )
+                )
+            }
+
+            issues.formUnion(identityMismatchIssues(
+                leftLabel: "Live Stats view",
+                leftGradeID: stats.gradeID,
+                leftOpposition: stats.opposition,
+                leftDate: stats.date,
+                rightLabel: "Stats user view",
+                right: user
+            ))
+        }
+
+        if let syncedStatsSessionID, let stats = activeLiveStatsSessionDescriptor, syncedStatsSessionID != stats.sessionID {
+            issues.insert(
+                LiveStatsSyncIssue(
+                    "Live Game view is synced to session \(shortSessionID(syncedStatsSessionID)) while Live Stats view is on session \(shortSessionID(stats.sessionID))."
+                )
+            )
+        }
+
+        if let syncedStatsSessionID, let user = activeUserStatsSessionDescriptor, syncedStatsSessionID != user.sessionID {
+            issues.insert(
+                LiveStatsSyncIssue(
+                    "Live Game view is synced to session \(shortSessionID(syncedStatsSessionID)) while Stats user view is on session \(shortSessionID(user.sessionID))."
+                )
+            )
+        }
+
+        return issues.sorted { $0.message < $1.message }
+    }
+
+    private func syncWaitingReasons(
+        canManuallySyncGameAndStats: Bool,
+        isGameAndStatsLinked: Bool
+    ) -> [LiveStatsSyncIssue] {
+        var reasons: [LiveStatsSyncIssue] = []
+
+        if activeLiveGameSnapshot == nil {
+            reasons.append(LiveStatsSyncIssue("Live Game view is not open on an active live match yet."))
+        }
+
+        if activeLiveStatsSessionDescriptor == nil {
+            reasons.append(LiveStatsSyncIssue("Live Stats view is not open on an active live session yet."))
+        }
+
+        if activeUserStatsSessionDescriptor == nil {
+            reasons.append(LiveStatsSyncIssue("Invite user stats view has not joined the live session yet."))
+        }
+
+        if activeLiveGameSnapshot != nil,
+           activeLiveStatsSessionDescriptor != nil,
+           !canManuallySyncGameAndStats {
+            reasons.append(LiveStatsSyncIssue("Live Game view and Live Stats view are not matched on grade, opposition, or date yet."))
+        }
+
+        if canManuallySyncGameAndStats && !isGameAndStatsLinked {
+            reasons.append(LiveStatsSyncIssue("Live Game view and Live Stats view match, but they have not been linked to the same session yet."))
+        }
+
+        if isGameAndStatsLinked,
+           let statsDescriptor = activeLiveStatsSessionDescriptor,
+           let userDescriptor = activeUserStatsSessionDescriptor,
+           userDescriptor.sessionID != statsDescriptor.sessionID {
+            reasons.append(
+                LiveStatsSyncIssue(
+                    "Invite user stats view is on session \(shortSessionID(userDescriptor.sessionID)) while Live Stats view is on session \(shortSessionID(statsDescriptor.sessionID))."
+                )
+            )
+        }
+
+        return Array(NSOrderedSet(array: reasons)) as? [LiveStatsSyncIssue] ?? reasons
+    }
+
+    private func identityMismatchIssues(
+        leftLabel: String,
+        leftGradeID: UUID,
+        leftOpposition: String,
+        leftDate: Date,
+        rightLabel: String,
+        right: LiveStatsSyncSessionDescriptor
+    ) -> Set<LiveStatsSyncIssue> {
+        var issues: Set<LiveStatsSyncIssue> = []
+        if leftGradeID != right.gradeID {
+            issues.insert(LiveStatsSyncIssue("\(leftLabel) and \(rightLabel) are on different grades."))
+        }
+        if !Calendar.current.isDate(leftDate, inSameDayAs: right.date) {
+            issues.insert(LiveStatsSyncIssue("\(leftLabel) and \(rightLabel) are on different dates."))
+        }
+        if leftOpposition.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare(right.opposition.trimmingCharacters(in: .whitespacesAndNewlines)) != .orderedSame {
+            issues.insert(LiveStatsSyncIssue("\(leftLabel) and \(rightLabel) have different opposition teams."))
+        }
+        return issues
+    }
+
+    private func shortSessionID(_ id: UUID) -> String {
+        String(id.uuidString.prefix(8))
     }
 }

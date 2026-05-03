@@ -11,7 +11,9 @@ struct PlayerEditView: View {
     let orderedGrades: [Grade]
     let existingPlayers: [Player]
 
-    @State private var draftName: String = ""
+    @State private var draftFirstName: String = ""
+    @State private var draftLastName: String = ""
+    @State private var draftPreferredName: String = ""
     @State private var draftNumberText: String = ""
     @State private var draftIsActive: Bool = true
     @State private var draftGradeIDs: [UUID] = []
@@ -25,23 +27,36 @@ struct PlayerEditView: View {
         orderedGrades: [Grade],
         existingPlayers: [Player]
     ) {
+        let split = Player.splitName(player.name)
         self.player = player
         self.orderedGrades = orderedGrades
         self.existingPlayers = existingPlayers
 
-        _draftName = State(initialValue: player.name)
+        _draftFirstName = State(initialValue: player.firstName.isEmpty ? split.first : player.firstName)
+        _draftLastName = State(initialValue: player.lastName.isEmpty ? split.last : player.lastName)
+        _draftPreferredName = State(initialValue: player.preferredName)
         _draftNumberText = State(initialValue: player.number.map { String($0) } ?? "")
         _draftIsActive = State(initialValue: player.isActive)
         _draftGradeIDs = State(initialValue: player.gradeIDs)
     }
 
-    private var nameTrimmed: String {
-        draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var firstNameTrimmed: String {
+        draftFirstName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var lastNameTrimmed: String {
+        draftLastName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var preferredNameTrimmed: String {
+        draftPreferredName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var nameIsDuplicate: Bool {
-        let lower = nameTrimmed.lowercased()
-        return existingPlayers.contains { $0.id != player.id && $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == lower }
+        let duplicateKey = Player.duplicateMatchKey(firstName: firstNameTrimmed, lastName: lastNameTrimmed)
+        return existingPlayers.contains {
+            $0.id != player.id && $0.duplicateMatchKey == duplicateKey
+        }
     }
 
     private var parsedNumber: Int? {
@@ -51,11 +66,13 @@ struct PlayerEditView: View {
     }
 
     private var canSave: Bool {
-        !nameTrimmed.isEmpty && !nameIsDuplicate
+        !firstNameTrimmed.isEmpty && !lastNameTrimmed.isEmpty && !nameIsDuplicate
     }
 
     private var hasChanges: Bool {
-        nameTrimmed != player.name.trimmingCharacters(in: .whitespacesAndNewlines) ||
+        firstNameTrimmed != player.firstName.trimmingCharacters(in: .whitespacesAndNewlines) ||
+        lastNameTrimmed != player.lastName.trimmingCharacters(in: .whitespacesAndNewlines) ||
+        preferredNameTrimmed != player.preferredName.trimmingCharacters(in: .whitespacesAndNewlines) ||
         parsedNumber != player.number ||
         draftIsActive != player.isActive ||
         Set(draftGradeIDs) != Set(player.gradeIDs)
@@ -65,16 +82,34 @@ struct PlayerEditView: View {
         List {
             Section("Player") {
                 HStack {
-                    Text("Name")
+                    Text("First Name")
                     Spacer()
-                    TextField("Name", text: $draftName)
+                    TextField("First Name", text: $draftFirstName)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                }
+
+                HStack {
+                    Text("Surname")
+                    Spacer()
+                    TextField("Surname", text: $draftLastName)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                }
+
+                HStack {
+                    Text("Preferred Name")
+                    Spacer()
+                    TextField("Optional", text: $draftPreferredName)
                         .multilineTextAlignment(.trailing)
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
                 }
 
                 if nameIsDuplicate {
-                    Text("That name already exists.")
+                    Text("A player with that first name and surname already exists.")
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
@@ -128,8 +163,11 @@ struct PlayerEditView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") {
-                    let split = Player.splitName(nameTrimmed)
-                    player.setName(firstName: split.first, lastName: split.last)
+                    player.setName(
+                        firstName: firstNameTrimmed,
+                        lastName: lastNameTrimmed,
+                        preferredName: preferredNameTrimmed
+                    )
                     player.number = parsedNumber
                     player.isActive = draftIsActive
                     player.gradeIDs = draftGradeIDs

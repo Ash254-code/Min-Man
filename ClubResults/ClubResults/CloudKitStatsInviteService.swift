@@ -5,6 +5,14 @@ extension Notification.Name {
     static let statsTalliesDidChange = Notification.Name("statsTalliesDidChange")
 }
 
+private enum StatsTallyNotificationKeys {
+    static let sessionID = "sessionID"
+    static let statTypeID = "statTypeID"
+    static let sideRawValue = "sideRawValue"
+    static let count = "count"
+    static let updatedAt = "updatedAt"
+}
+
 struct CloudStatsInviteAssignment: Identifiable, Hashable {
     let id: String
     let inviteeEmail: String
@@ -87,6 +95,30 @@ actor CloudKitStatsInviteService {
         "stats-tally-\(sessionID.uuidString.lowercased())-\(statTypeID.uuidString.lowercased())-\(sideRawValue)"
     }
 
+    nonisolated static func tally(from notification: Notification) -> CloudStatsInviteTally? {
+        guard
+            let userInfo = notification.userInfo,
+            let sessionIDRaw = userInfo["sessionID"] as? String,
+            let sessionID = UUID(uuidString: sessionIDRaw),
+            let statTypeIDRaw = userInfo["statTypeID"] as? String,
+            let statTypeID = UUID(uuidString: statTypeIDRaw),
+            let sideRawValue = userInfo["sideRawValue"] as? String,
+            let count = userInfo["count"] as? Int,
+            let updatedAt = userInfo["updatedAt"] as? Date
+        else {
+            return nil
+        }
+
+        return CloudStatsInviteTally(
+            id: Self.tallyRecordName(sessionID: sessionID, statTypeID: statTypeID, sideRawValue: sideRawValue),
+            sessionID: sessionID,
+            statTypeID: statTypeID,
+            sideRawValue: sideRawValue,
+            count: count,
+            updatedAt: updatedAt
+        )
+    }
+
     func ensureTallySubscription() async throws {
         if try await subscriptionExists(id: SubscriptionKeys.statsTallyChanges) {
             return
@@ -111,8 +143,20 @@ actor CloudKitStatsInviteService {
             return
         }
 
-        Task { @MainActor in
-            NotificationCenter.default.post(name: .statsTalliesDidChange, object: nil)
+        if let queryNotification = notification as? CKQueryNotification,
+           let recordID = queryNotification.recordID {
+            Task {
+                if let tally = try? await fetchTally(recordID: recordID) {
+                    await postTallyDidChange(tally)
+                } else {
+                    await postGenericTallyChange()
+                }
+            }
+            return
+        }
+
+        Task {
+            await postGenericTallyChange()
         }
     }
 
@@ -231,10 +275,37 @@ actor CloudKitStatsInviteService {
         }
     }
 
+    func fetchTallies(
+        sessionID: UUID,
+        statTypeIDs: [UUID],
+        sideRawValues: [String],
+        updatedAfter: Date
+    ) async throws -> [CloudStatsInviteTally] {
+        let normalizedStatTypeIDs = Array(Set(statTypeIDs.map { $0.uuidString.lowercased() }))
+        let normalizedSideRawValues = Array(Set(sideRawValues))
+        guard !normalizedStatTypeIDs.isEmpty, !normalizedSideRawValues.isEmpty else { return [] }
+
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            NSPredicate(format: "%K == %@", FieldKeys.sessionID, sessionID.uuidString.lowercased()),
+            NSPredicate(format: "%K IN %@", FieldKeys.statTypeID, normalizedStatTypeIDs),
+            NSPredicate(format: "%K IN %@", FieldKeys.sideRawValue, normalizedSideRawValues),
+            NSPredicate(format: "%K > %@", FieldKeys.updatedAt, updatedAfter as NSDate)
+        ])
+        let query = CKQuery(recordType: "StatsTally", predicate: predicate)
+        let records = try await performQuery(query)
+
+        return try records
+            .map(tally(from:))
+            .sorted { lhs, rhs in
+                lhs.updatedAt > rhs.updatedAt
+            }
+    }
+
     func incrementTally(
         sessionID: UUID,
         statTypeID: UUID,
-        sideRawValue: String
+        sideRawValue: String,
+        amount: Int = 1
     ) async throws -> CloudStatsInviteTally {
         let recordID = CKRecord.ID(
             recordName: Self.tallyRecordName(
@@ -243,7 +314,13 @@ actor CloudKitStatsInviteService {
                 sideRawValue: sideRawValue
             )
         )
-        return try await incrementTally(recordID: recordID, sessionID: sessionID, statTypeID: statTypeID, sideRawValue: sideRawValue)
+        return try await incrementTally(
+            recordID: recordID,
+            sessionID: sessionID,
+            statTypeID: statTypeID,
+            sideRawValue: sideRawValue,
+            amount: amount
+        )
     }
 
     private func normalized(_ email: String) -> String {
@@ -255,6 +332,7 @@ actor CloudKitStatsInviteService {
         sessionID: UUID,
         statTypeID: UUID,
         sideRawValue: String,
+        amount: Int,
         attempt: Int = 0
     ) async throws -> CloudStatsInviteTally {
         let record = try await fetch(recordID: recordID) ?? CKRecord(recordType: "StatsTally", recordID: recordID)
@@ -262,12 +340,14 @@ actor CloudKitStatsInviteService {
         record[FieldKeys.sessionID] = sessionID.uuidString.lowercased() as CKRecordValue
         record[FieldKeys.statTypeID] = statTypeID.uuidString.lowercased() as CKRecordValue
         record[FieldKeys.sideRawValue] = sideRawValue as CKRecordValue
-        record[FieldKeys.count] = (currentCount + 1) as CKRecordValue
+        record[FieldKeys.count] = (currentCount + amount) as CKRecordValue
         record[FieldKeys.updatedAt] = Date() as CKRecordValue
 
         do {
             let savedRecord = try await save(record)
-            return try tally(from: savedRecord)
+            let savedTally = try tally(from: savedRecord)
+            await postTallyDidChange(savedTally)
+            return savedTally
         } catch let error as CKError
             where error.code == .serverRecordChanged && attempt < 3 {
             return try await incrementTally(
@@ -275,9 +355,15 @@ actor CloudKitStatsInviteService {
                 sessionID: sessionID,
                 statTypeID: statTypeID,
                 sideRawValue: sideRawValue,
+                amount: amount,
                 attempt: attempt + 1
             )
         }
+    }
+
+    private func fetchTally(recordID: CKRecord.ID) async throws -> CloudStatsInviteTally? {
+        guard let record = try await fetch(recordID: recordID) else { return nil }
+        return try tally(from: record)
     }
 
     private func fetch(recordID: CKRecord.ID) async throws -> CKRecord? {
@@ -407,6 +493,26 @@ actor CloudKitStatsInviteService {
             sideRawValue: (record[FieldKeys.sideRawValue] as? String) ?? "",
             count: record[FieldKeys.count] as? Int ?? 0,
             updatedAt: (record[FieldKeys.updatedAt] as? Date) ?? .distantPast
+        )
+    }
+
+    @MainActor
+    private func postGenericTallyChange() {
+        NotificationCenter.default.post(name: .statsTalliesDidChange, object: nil)
+    }
+
+    @MainActor
+    private func postTallyDidChange(_ tally: CloudStatsInviteTally) {
+        NotificationCenter.default.post(
+            name: .statsTalliesDidChange,
+            object: nil,
+            userInfo: [
+                StatsTallyNotificationKeys.sessionID: tally.sessionID.uuidString.lowercased(),
+                StatsTallyNotificationKeys.statTypeID: tally.statTypeID.uuidString.lowercased(),
+                StatsTallyNotificationKeys.sideRawValue: tally.sideRawValue,
+                StatsTallyNotificationKeys.count: tally.count,
+                StatsTallyNotificationKeys.updatedAt: tally.updatedAt
+            ]
         )
     }
 }

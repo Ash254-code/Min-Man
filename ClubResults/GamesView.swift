@@ -6,6 +6,8 @@ struct GamesView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var navigationState: AppNavigationState
 
+    private let clubConfiguration = ClubConfigurationStore.load()
+
     private struct RoundGroup: Identifiable {
         let id: String
         let roundNumber: Int
@@ -44,6 +46,20 @@ struct GamesView: View {
         var hasTwoGames: Bool { secondary != nil }
     }
 
+    fileprivate struct CompletionFieldStatus: Identifiable {
+        let title: String
+        let isComplete: Bool
+
+        var id: String { title }
+    }
+
+    fileprivate struct IncompleteGradeStatusDetails: Identifiable {
+        let gradeName: String
+        let fields: [CompletionFieldStatus]
+
+        var id: String { gradeName }
+    }
+
     enum QuickStartGradeStatus {
         case noGameSaved
         case draftOnly
@@ -73,6 +89,13 @@ struct GamesView: View {
         let reopenLiveView: Bool
     }
 
+    private struct GameEditPresentation: Identifiable {
+        let primary: Game
+        let secondary: Game?
+
+        var id: UUID { primary.id }
+    }
+
     private enum DraftResumeStore {
         private static let openLivePrefix = "resume.openLive."
 
@@ -92,7 +115,8 @@ struct GamesView: View {
     @State private var selectedGradeID: UUID? = nil
     @State private var newGameWizardPresentation: NewGameWizardPresentation?
     @State private var selectedGameForSummary: Game?
-    @State private var selectedGameForEdit: Game?
+    @State private var selectedGameForEdit: GameEditPresentation?
+    @State private var selectedIncompleteGradeStatus: IncompleteGradeStatusDetails?
     @State private var selectedRoundID: String?
     @State private var gamePendingDelete: Game?
     @State private var codePromptGame: Game?
@@ -145,6 +169,10 @@ struct GamesView: View {
 
     private var gradeByID: [UUID: Grade] {
         Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
+    }
+
+    private var playerIDs: Set<UUID> {
+        Set(players.map(\.id))
     }
 
     private func gameListItems(from sourceGames: [Game]) -> [GameListItem] {
@@ -333,6 +361,230 @@ struct GamesView: View {
         return normalized == "under 9's" || normalized == "under 12's"
     }
 
+    private var showsExpandedRoundCompletionIndicator: Bool {
+        navigationState.currentRole == .admin || navigationState.currentRole == .restrictedAdmin
+    }
+
+    private func requiredBestPlayersCount(for grade: Grade) -> Int {
+        min(max(grade.bestPlayersCount, 0), 10)
+    }
+
+    private func requiredGuestVotesCount(for grade: Grade) -> Int {
+        guard grade.asksGuestBestFairestVotesScan else { return 0 }
+        return min(max(grade.guestBestPlayersCount, 0), 10)
+    }
+
+    private func hasRequiredBestPlayers(for game: Game, grade: Grade) -> Bool {
+        let requiredCount = requiredBestPlayersCount(for: grade)
+        guard requiredCount > 0 else { return true }
+
+        let playerIDs = Array(game.bestPlayersRanked.prefix(requiredCount))
+        return playerIDs.count == requiredCount
+            && Set(playerIDs).count == requiredCount
+            && playerIDs.allSatisfy(self.playerIDs.contains)
+    }
+
+    private func hasRequiredGuestVotes(for game: Game, grade: Grade) -> Bool {
+        let requiredCount = requiredGuestVotesCount(for: grade)
+        guard requiredCount > 0 else { return true }
+
+        let votes = Array(game.guestVotesRanked.prefix(requiredCount))
+        let playerIDs = votes.map(\.playerID)
+        return votes.count == requiredCount
+            && Set(playerIDs).count == requiredCount
+            && playerIDs.allSatisfy(self.playerIDs.contains)
+    }
+
+    private func hasTextValue(_ value: String) -> Bool {
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func requiredTrainerCount(for grade: Grade) -> Int {
+        [
+            grade.asksTrainer1,
+            grade.asksTrainer2,
+            grade.asksTrainer3,
+            grade.asksTrainer4
+        ].filter { $0 }.count
+    }
+
+    private func isHomeGame(_ game: Game) -> Bool {
+        let selectedVenue = game.venue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !selectedVenue.isEmpty else { return false }
+        return clubConfiguration.clubTeam.sanitizedVenues
+            .map { $0.lowercased() }
+            .contains(selectedVenue)
+    }
+
+    private func requiresFieldUmpire(for game: Game, grade: Grade) -> Bool {
+        grade.asksFieldUmpire && isHomeGame(game)
+    }
+
+    private func hasRequiredStaffFields(for game: Game, grade: Grade) -> Bool {
+        if grade.asksHeadCoach && !hasTextValue(game.headCoachName) { return false }
+        if grade.asksAssistantCoach && !hasTextValue(game.assistantCoachName) { return false }
+        if grade.asksTeamManager && !hasTextValue(game.teamManagerName) { return false }
+        if grade.asksRunner && !hasTextValue(game.runnerName) { return false }
+        if grade.asksGoalUmpire && !hasTextValue(game.goalUmpireName) { return false }
+        if grade.asksTimeKeeper && !hasTextValue(game.timeKeeperName) { return false }
+        if requiresFieldUmpire(for: game, grade: grade) && !hasTextValue(game.fieldUmpireName) { return false }
+        if grade.asksBoundaryUmpire1 && !hasTextValue(game.boundaryUmpire1Name) { return false }
+        if grade.asksBoundaryUmpire2 && !hasTextValue(game.boundaryUmpire2Name) { return false }
+        if grade.asksWaterBoy1 && !hasTextValue(game.waterBoy1Name) { return false }
+        if grade.asksWaterBoy2 && !hasTextValue(game.waterBoy2Name) { return false }
+        if grade.asksWaterBoy3 && !hasTextValue(game.waterBoy3Name) { return false }
+        if grade.asksWaterBoy4 && !hasTextValue(game.waterBoy4Name) { return false }
+
+        let completedTrainerCount = game.trainers.filter(hasTextValue).count
+        return completedTrainerCount >= requiredTrainerCount(for: grade)
+    }
+
+    private func hasRequiredNotes(for game: Game, grade: Grade) -> Bool {
+        guard grade.asksNotes else { return true }
+        return hasTextValue(game.notes)
+    }
+
+    private func hasRequiredGoalKickers(for game: Game, grade: Grade) -> Bool {
+        guard grade.asksGoalKickers else { return true }
+        guard game.ourGoals > 0 else { return true }
+
+        let validEntries = game.goalKickers.filter { entry in
+            entry.goals > 0 && entry.playerID.map(playerIDs.contains) == true
+        }
+        let totalGoals = validEntries.reduce(0) { $0 + $1.goals }
+        return totalGoals == game.ourGoals
+    }
+
+    private func isGameComplete(_ game: Game, grade: Grade) -> Bool {
+        hasRequiredStaffFields(for: game, grade: grade)
+            && hasRequiredNotes(for: game, grade: grade)
+            && hasRequiredGoalKickers(for: game, grade: grade)
+            && hasRequiredBestPlayers(for: game, grade: grade)
+            && hasRequiredGuestVotes(for: game, grade: grade)
+    }
+
+    private func isExpandedRoundComplete(for grade: Grade, items: [GameListItem]) -> Bool {
+        items.allSatisfy { item in
+            isGameComplete(item.primary, grade: grade)
+                && (item.secondary.map { isGameComplete($0, grade: grade) } ?? true)
+        }
+    }
+
+    @ViewBuilder
+    private func gradeCompletionIcon(isComplete: Bool, grade: Grade, items: [GameListItem]) -> some View {
+        if isComplete {
+            RoundCompletionIcon(isComplete: true)
+                .accessibilityLabel("\(grade.name) complete")
+        } else {
+            Button {
+                selectedIncompleteGradeStatus = IncompleteGradeStatusDetails(
+                    gradeName: grade.name,
+                    fields: completionFieldStatuses(for: grade, items: items)
+                )
+            } label: {
+                RoundCompletionIcon(isComplete: false)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(grade.name) incomplete")
+        }
+    }
+
+    private func completionFieldStatuses(for grade: Grade, items: [GameListItem]) -> [CompletionFieldStatus] {
+        var fields: [CompletionFieldStatus] = []
+
+        if grade.asksHeadCoach {
+            fields.append(makeCompletionFieldStatus(title: "Head Coach", items: items) { hasTextValue($0.headCoachName) })
+        }
+        if grade.asksAssistantCoach {
+            fields.append(makeCompletionFieldStatus(title: "Assistant Coach", items: items) { hasTextValue($0.assistantCoachName) })
+        }
+        if grade.asksTeamManager {
+            fields.append(makeCompletionFieldStatus(title: "Team Manager", items: items) { hasTextValue($0.teamManagerName) })
+        }
+        if grade.asksRunner {
+            fields.append(makeCompletionFieldStatus(title: "Runner", items: items) { hasTextValue($0.runnerName) })
+        }
+        if grade.asksGoalUmpire {
+            fields.append(makeCompletionFieldStatus(title: "Goal Umpire", items: items) { hasTextValue($0.goalUmpireName) })
+        }
+        if grade.asksTimeKeeper {
+            fields.append(makeCompletionFieldStatus(title: "Time Keeper", items: items) { hasTextValue($0.timeKeeperName) })
+        }
+        let anyGameRequiresFieldUmpire = items.contains { item in
+            requiresFieldUmpire(for: item.primary, grade: grade)
+                || item.secondary.map { requiresFieldUmpire(for: $0, grade: grade) } == true
+        }
+        if anyGameRequiresFieldUmpire {
+            fields.append(makeCompletionFieldStatus(title: "Field Umpire", items: items) {
+                !requiresFieldUmpire(for: $0, grade: grade) || hasTextValue($0.fieldUmpireName)
+            })
+        }
+        if grade.asksBoundaryUmpire1 {
+            fields.append(makeCompletionFieldStatus(title: "Boundary Umpire 1", items: items) { hasTextValue($0.boundaryUmpire1Name) })
+        }
+        if grade.asksBoundaryUmpire2 {
+            fields.append(makeCompletionFieldStatus(title: "Boundary Umpire 2", items: items) { hasTextValue($0.boundaryUmpire2Name) })
+        }
+        if grade.asksWaterBoy1 {
+            fields.append(makeCompletionFieldStatus(title: "Water 1", items: items) { hasTextValue($0.waterBoy1Name) })
+        }
+        if grade.asksWaterBoy2 {
+            fields.append(makeCompletionFieldStatus(title: "Water 2", items: items) { hasTextValue($0.waterBoy2Name) })
+        }
+        if grade.asksWaterBoy3 {
+            fields.append(makeCompletionFieldStatus(title: "Water 3", items: items) { hasTextValue($0.waterBoy3Name) })
+        }
+        if grade.asksWaterBoy4 {
+            fields.append(makeCompletionFieldStatus(title: "Water 4", items: items) { hasTextValue($0.waterBoy4Name) })
+        }
+
+        let trainerCount = requiredTrainerCount(for: grade)
+        if trainerCount > 0 {
+            let title = trainerCount == 1 ? "Trainer" : "Trainers (\(trainerCount) required)"
+            fields.append(makeCompletionFieldStatus(title: title, items: items) {
+                $0.trainers.filter(hasTextValue).count >= trainerCount
+            })
+        }
+
+        if grade.asksNotes {
+            fields.append(makeCompletionFieldStatus(title: "Notes", items: items) { hasTextValue($0.notes) })
+        }
+        if grade.asksGoalKickers {
+            fields.append(makeCompletionFieldStatus(title: "Goal Kickers", items: items) { hasRequiredGoalKickers(for: $0, grade: grade) })
+        }
+        if requiredBestPlayersCount(for: grade) > 0 {
+            fields.append(makeCompletionFieldStatus(title: "Best Players (\(requiredBestPlayersCount(for: grade)) required)", items: items) {
+                hasRequiredBestPlayers(for: $0, grade: grade)
+            })
+        }
+        if requiredGuestVotesCount(for: grade) > 0 {
+            fields.append(makeCompletionFieldStatus(title: "Guest Votes (\(requiredGuestVotesCount(for: grade)) required)", items: items) {
+                hasRequiredGuestVotes(for: $0, grade: grade)
+            })
+        }
+
+        return fields
+    }
+
+    private func makeCompletionFieldStatus(
+        title: String,
+        items: [GameListItem],
+        check: (Game) -> Bool
+    ) -> CompletionFieldStatus {
+        let isComplete = items.allSatisfy { item in
+            check(item.primary) && (item.secondary.map(check) ?? true)
+        }
+        return CompletionFieldStatus(title: title, isComplete: isComplete)
+    }
+
+    private func isRoundComplete(_ round: RoundGroup) -> Bool {
+        let groupedGrades = roundGamesByGrade(for: round)
+        guard !groupedGrades.isEmpty else { return false }
+        return groupedGrades.allSatisfy { grouped in
+            isExpandedRoundComplete(for: grouped.grade, items: grouped.items)
+        }
+    }
+
     private func shouldShowScore(for gradeID: UUID) -> Bool {
         guard isTwoGameGrade(for: gradeID) else { return true }
         return gradeByID[gradeID]?.asksScore ?? true
@@ -420,9 +672,20 @@ struct GamesView: View {
 
                 ForEach(roundGamesByGrade(for: round), id: \.grade.id) { grouped in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(grouped.grade.name)
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Text(grouped.grade.name)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.secondary)
+
+                            if showsExpandedRoundCompletionIndicator {
+                                let isComplete = isExpandedRoundComplete(for: grouped.grade, items: grouped.items)
+                                gradeCompletionIcon(
+                                    isComplete: isComplete,
+                                    grade: grouped.grade,
+                                    items: grouped.items
+                                )
+                            }
+                        }
                         ForEach(grouped.items) { item in
                             gameRow(for: item)
                         }
@@ -439,7 +702,8 @@ struct GamesView: View {
                             roundNumber: round.roundNumber,
                             dateLabel: roundDateLabel(for: round),
                             opponent: round.opponent,
-                            outcomePills: roundOutcomePills(for: round)
+                            outcomePills: roundOutcomePills(for: round),
+                            completionStatus: showsExpandedRoundCompletionIndicator ? isRoundComplete(round) : nil
                         )
                     }
                     .buttonStyle(.plain)
@@ -536,8 +800,12 @@ struct GamesView: View {
             .navigationDestination(item: $selectedGameForSummary) { game in
                 GameDetailView(game: game, grades: orderedGrades, players: players)
             }
-            .sheet(item: $selectedGameForEdit) { game in
-                GameEditView(game: game, grades: orderedGrades)
+            .sheet(item: $selectedGameForEdit) { presentation in
+                GameEditView(game: presentation.primary, secondaryGame: presentation.secondary, grades: orderedGrades)
+                    .appPopupStyle()
+            }
+            .sheet(item: $selectedIncompleteGradeStatus) { details in
+                GradeCompletionStatusSheet(details: details)
                     .appPopupStyle()
             }
             .alert("Enter code", isPresented: $showCodePrompt) {
@@ -606,7 +874,7 @@ struct GamesView: View {
         guard let action = pendingProtectedAction, let game = codePromptGame else { return }
         switch action {
         case .edit:
-            selectedGameForEdit = game
+            selectedGameForEdit = editPresentation(for: game)
         case .delete:
             gamePendingDelete = game
             showDeleteConfirmAlert = true
@@ -620,6 +888,20 @@ struct GamesView: View {
         modelContext.delete(game)
         try? modelContext.save()
         gamePendingDelete = nil
+    }
+
+    private func editPresentation(for game: Game) -> GameEditPresentation {
+        GameEditPresentation(
+            primary: game,
+            secondary: pairedGame(for: game)
+        )
+    }
+
+    private func pairedGame(for game: Game) -> Game? {
+        guard isTwoGameGrade(for: game.gradeID) else { return nil }
+        return games.first { candidate in
+            candidate.id != game.id && arePairedTwoGames(game, candidate)
+        }
     }
 }
 
@@ -1030,6 +1312,7 @@ private struct RoundTitleLine: View {
     let dateLabel: String
     let opponent: String
     let outcomePills: [GamesView.RoundOutcomePillItem]
+    let completionStatus: Bool?
     var showsChevron: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -1044,11 +1327,17 @@ private struct RoundTitleLine: View {
             if horizontalSizeClass == .compact {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .center, spacing: 8) {
-                        Text("ROUND \(roundNumber) - \(dateLabel)")
-                            .font(.system(size: 19, weight: .bold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .layoutPriority(3)
+                        HStack(spacing: 8) {
+                            Text("ROUND \(roundNumber) - \(dateLabel)")
+                                .font(.system(size: 19, weight: .bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .layoutPriority(3)
+
+                            if let completionStatus {
+                                RoundCompletionIcon(isComplete: completionStatus)
+                            }
+                        }
 
                         Spacer(minLength: 4)
 
@@ -1063,12 +1352,19 @@ private struct RoundTitleLine: View {
                 }
             } else {
                 HStack(spacing: useCompactLayout ? 8 : 10) {
-                    Text("ROUND \(roundNumber) - \(dateLabel)")
-                        .font(.system(size: useCompactLayout ? 19 : 22, weight: .bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .frame(width: roundDateColumnWidth, alignment: .leading)
-                        .layoutPriority(3)
+                    HStack(spacing: 8) {
+                        Text("ROUND \(roundNumber) - \(dateLabel)")
+                            .font(.system(size: useCompactLayout ? 19 : 22, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .layoutPriority(3)
+
+                        if let completionStatus {
+                            RoundCompletionIcon(isComplete: completionStatus)
+                        }
+                    }
+                    .frame(width: roundDateColumnWidth, alignment: .leading)
+                    .layoutPriority(3)
 
                     Text("V")
                         .font(.system(size: useCompactLayout ? 19 : 22, weight: .semibold))
@@ -1107,6 +1403,7 @@ private struct RoundCardRow: View {
     let dateLabel: String
     let opponent: String
     let outcomePills: [GamesView.RoundOutcomePillItem]
+    let completionStatus: Bool?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
@@ -1115,6 +1412,7 @@ private struct RoundCardRow: View {
             dateLabel: dateLabel,
             opponent: opponent,
             outcomePills: outcomePills,
+            completionStatus: completionStatus,
             showsChevron: true
         )
         .padding(.horizontal, 16)
@@ -1148,6 +1446,7 @@ private struct RoundDetailHeaderCard: View {
             dateLabel: dateLabel,
             opponent: opponent,
             outcomePills: outcomePills,
+            completionStatus: nil,
             showsChevron: false
         )
         .padding(.horizontal, 16)
@@ -1165,6 +1464,52 @@ private struct RoundDetailHeaderCard: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
+    }
+}
+
+private struct RoundCompletionIcon: View {
+    let isComplete: Bool
+
+    var body: some View {
+        Image(systemName: isComplete ? "checkmark.circle.fill" : "xmark.circle.fill")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(isComplete ? Color.green : Color.red)
+    }
+}
+
+private struct GradeCompletionStatusSheet: View {
+    let details: GamesView.IncompleteGradeStatusDetails
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(details.fields) { field in
+                        HStack(spacing: 12) {
+                            Image(systemName: field.isComplete ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(field.isComplete ? Color.green : Color.red)
+                                .font(.system(size: 18, weight: .semibold))
+                            Text(field.title)
+                                .font(.body.weight(.medium))
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } header: {
+                    Text("Monitored Fields")
+                }
+            }
+            .navigationTitle(details.gradeName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -293,11 +293,13 @@ struct NewGameWizardView: View {
     @State private var waterBoy2Name: String = ""
     @State private var waterBoy3Name: String = ""
     @State private var waterBoy4Name: String = ""
+    @State private var visibleWaterBoySlots: Int = 0
 
     @State private var trainer1Name: String = ""
     @State private var trainer2Name: String = ""
     @State private var trainer3Name: String = ""
     @State private var trainer4Name: String = ""
+    @State private var visibleTrainerSlots: Int = 0
 
     @State private var notes = ""
     @State private var game2HeadCoachName: String = ""
@@ -313,10 +315,12 @@ struct NewGameWizardView: View {
     @State private var game2WaterBoy2Name: String = ""
     @State private var game2WaterBoy3Name: String = ""
     @State private var game2WaterBoy4Name: String = ""
+    @State private var visibleGame2WaterBoySlots: Int = 0
     @State private var game2Trainer1Name: String = ""
     @State private var game2Trainer2Name: String = ""
     @State private var game2Trainer3Name: String = ""
     @State private var game2Trainer4Name: String = ""
+    @State private var visibleGame2TrainerSlots: Int = 0
 
     // MARK: Score (AFL: goals * 6 + behinds)
     @State private var ourGoals = 0
@@ -354,6 +358,7 @@ struct NewGameWizardView: View {
     @State private var scannerErrorMessage: String?
     @State private var hasAutoPromptedVotesScanner = false
     @State private var showLiveStatsSyncPrompt = false
+    @State private var showLiveStatsSyncIssues = false
     @State private var promptedStatsSessionIDForLiveGame: UUID?
     @State private var remoteInviteTallies: [CloudStatsInviteTally] = []
 
@@ -586,6 +591,20 @@ struct NewGameWizardView: View {
             .filter { !$0.isEmpty }
     }
 
+    private var requiredWaterBoySlotCount: Int {
+        guard let grade = selectedGrade else { return 0 }
+        return [grade.asksWaterBoy1, grade.asksWaterBoy2, grade.asksWaterBoy3, grade.asksWaterBoy4]
+            .filter { $0 }
+            .count
+    }
+
+    private var requiredTrainerSlotCount: Int {
+        guard let grade = selectedGrade else { return 0 }
+        return [grade.asksTrainer1, grade.asksTrainer2, grade.asksTrainer3, grade.asksTrainer4]
+            .filter { $0 }
+            .count
+    }
+
     private var opponentNames: [String] {
         clubConfiguration.sortedOppositions.map(\.name)
     }
@@ -604,6 +623,18 @@ struct NewGameWizardView: View {
 
     private var shouldAskFieldUmpire: Bool {
         (selectedGrade?.asksFieldUmpire ?? true) && isHomeGame
+    }
+
+    private var shouldIncludeOfficialsStep: Bool {
+        (selectedGrade?.asksGoalUmpire ?? false) ||
+        (selectedGrade?.asksTimeKeeper ?? false) ||
+        shouldAskFieldUmpire ||
+        (selectedGrade?.asksBoundaryUmpire1 ?? false) ||
+        (selectedGrade?.asksBoundaryUmpire2 ?? false) ||
+        (selectedGrade?.asksWaterBoy1 ?? false) ||
+        (selectedGrade?.asksWaterBoy2 ?? false) ||
+        (selectedGrade?.asksWaterBoy3 ?? false) ||
+        (selectedGrade?.asksWaterBoy4 ?? false)
     }
 
     private var venuesForSelection: [String] {
@@ -664,7 +695,10 @@ struct NewGameWizardView: View {
     // MARK: Defaults (from SwiftData)
     private func defaultStaffName(for role: StaffRole, gradeID: UUID?) -> String? {
         guard let gradeID else { return nil }
-        return staffDefaults.first(where: { $0.gradeID == gradeID && $0.role == role })?.name
+        guard let savedDefault = staffDefaults.first(where: { $0.gradeID == gradeID && $0.role == role })?.name else {
+            return nil
+        }
+        return StaffPickerNameStore.isHidden(savedDefault, for: role, gradeID: gradeID) ? nil : savedDefault
     }
 
     private enum StaffFieldKey: String, CaseIterable {
@@ -685,14 +719,29 @@ struct NewGameWizardView: View {
         case trainer2
         case trainer3
         case trainer4
+
+        var usesRememberedSelection: Bool {
+            switch self {
+            case .timeKeeper, .fieldUmpire, .boundaryUmpire1, .boundaryUmpire2,
+                 .waterBoy1, .waterBoy2, .waterBoy3, .waterBoy4:
+                return false
+            default:
+                return true
+            }
+        }
+
+        var usesRoleDefaultSelection: Bool {
+            usesRememberedSelection
+        }
     }
 
-    private func persistedLastSelection(for field: StaffFieldKey, gradeID: UUID?) -> String? {
+    private func persistedLastSelection(for field: StaffFieldKey, role: StaffRole, gradeID: UUID?) -> String? {
         guard let gradeID else { return nil }
         let key = "lastStaffSelection.\(gradeID.uuidString).\(field.rawValue)"
         let saved = UserDefaults.standard.string(forKey: key) ?? ""
         let cleaned = clean(saved)
-        return cleaned.isEmpty ? nil : cleaned
+        guard !cleaned.isEmpty else { return nil }
+        return StaffPickerNameStore.isHidden(cleaned, for: role, gradeID: gradeID) ? nil : cleaned
     }
 
     private func saveLastSelection(_ value: String, for field: StaffFieldKey, gradeID: UUID?) {
@@ -707,12 +756,20 @@ struct NewGameWizardView: View {
     }
 
     private func assignDefault(for field: StaffFieldKey, role: StaffRole, gradeID: UUID?, assign: (String) -> Void) {
-        let lastSelected = persistedLastSelection(for: field, gradeID: gradeID)
-        let roleDefault = defaultStaffName(for: role, gradeID: gradeID)
+        let lastSelected = field.usesRememberedSelection
+            ? persistedLastSelection(for: field, role: role, gradeID: gradeID)
+            : nil
+        let roleDefault = field.usesRoleDefaultSelection
+            ? defaultStaffName(for: role, gradeID: gradeID)
+            : nil
         assign(lastSelected ?? roleDefault ?? "")
     }
 
     private func applyDefaults(for gradeID: UUID?) {
+        visibleWaterBoySlots = 0
+        visibleTrainerSlots = 0
+        visibleGame2WaterBoySlots = 0
+        visibleGame2TrainerSlots = 0
         assignDefault(for: .headCoach, role: .headCoach, gradeID: gradeID) { headCoachName = $0 }
         assignDefault(for: .assistantCoach, role: .assistantCoach, gradeID: gradeID) { assCoachName = $0 }
         assignDefault(for: .teamManager, role: .teamManager, gradeID: gradeID) { teamManagerName = $0 }
@@ -753,6 +810,33 @@ struct NewGameWizardView: View {
                 remainingSeconds = periodMinutes * 60
             }
         }
+        syncOptionalStaffSlotVisibility()
+    }
+
+    private func syncOptionalStaffSlotVisibility() {
+        visibleWaterBoySlots = resolvedVisibleSlotCount(
+            requiredCount: requiredWaterBoySlotCount,
+            currentVisibleCount: visibleWaterBoySlots
+        )
+        visibleTrainerSlots = resolvedVisibleSlotCount(
+            requiredCount: requiredTrainerSlotCount,
+            currentVisibleCount: visibleTrainerSlots
+        )
+        visibleGame2WaterBoySlots = resolvedVisibleSlotCount(
+            requiredCount: requiredWaterBoySlotCount,
+            currentVisibleCount: visibleGame2WaterBoySlots
+        )
+        visibleGame2TrainerSlots = resolvedVisibleSlotCount(
+            requiredCount: requiredTrainerSlotCount,
+            currentVisibleCount: visibleGame2TrainerSlots
+        )
+    }
+
+    private func resolvedVisibleSlotCount(
+        requiredCount: Int,
+        currentVisibleCount: Int
+    ) -> Int {
+        return min(4, max(requiredCount, currentVisibleCount))
     }
 
     private func persistCurrentStaffSelections(for gradeID: UUID?) {
@@ -886,7 +970,7 @@ struct NewGameWizardView: View {
     }
 
     private var defaultGameCountSelection: GameCountSelection? {
-        shouldAskGameCount ? nil : .one
+        shouldAskGameCount ? .two : .one
     }
 
     private var requiredBestPlayersCount: Int {
@@ -933,15 +1017,7 @@ struct NewGameWizardView: View {
             grade.asksRunner {
             steps.append(.staff)
         }
-        if grade.asksGoalUmpire ||
-            grade.asksTimeKeeper ||
-            grade.asksFieldUmpire ||
-            grade.asksBoundaryUmpire1 ||
-            grade.asksBoundaryUmpire2 ||
-            grade.asksWaterBoy1 ||
-            grade.asksWaterBoy2 ||
-            grade.asksWaterBoy3 ||
-            grade.asksWaterBoy4 {
+        if shouldIncludeOfficialsStep {
             steps.append(.officials)
         }
         if grade.asksTrainer1 ||
@@ -1017,8 +1093,7 @@ struct NewGameWizardView: View {
 
     private func maybePromptToSyncLiveGameWithStats() {
         guard isLiveGameScreenActive,
-              let activeStatsSessionID = navigationState.activeStatsSessionID,
-              navigationState.activeLiveStatsSessionID == activeStatsSessionID,
+              let activeStatsSessionID = navigationState.activeLiveStatsSessionDescriptor?.sessionID,
               let activeStatsSession = statsSessions.first(where: { $0.sessionId == activeStatsSessionID }),
               canSyncLiveGame(with: activeStatsSession),
               promptedStatsSessionIDForLiveGame != activeStatsSessionID else { return }
@@ -1036,8 +1111,7 @@ struct NewGameWizardView: View {
     }
 
     private func acceptLiveStatsSync() {
-        guard let activeStatsSessionID = navigationState.activeStatsSessionID,
-              navigationState.activeLiveStatsSessionID == activeStatsSessionID else { return }
+        guard let activeStatsSessionID = navigationState.activeLiveStatsSessionDescriptor?.sessionID else { return }
         navigationState.syncActiveLiveGame(toStatsSessionID: activeStatsSessionID)
         refreshLiveGameSyncSnapshot()
     }
@@ -1123,8 +1197,7 @@ struct NewGameWizardView: View {
     }
 
     private var activeSyncableStatsSession: StatsSession? {
-        guard let activeStatsSessionID = navigationState.activeStatsSessionID else { return nil }
-        guard navigationState.activeLiveStatsSessionID == activeStatsSessionID else { return nil }
+        guard let activeStatsSessionID = navigationState.activeLiveStatsSessionDescriptor?.sessionID else { return nil }
         guard let session = statsSessions.first(where: { $0.sessionId == activeStatsSessionID }) else { return nil }
         return canSyncLiveGame(with: session) ? session : nil
     }
@@ -1132,6 +1205,10 @@ struct NewGameWizardView: View {
     private var isLiveGameSyncedToStats: Bool {
         guard let session = activeSyncableStatsSession else { return false }
         return navigationState.syncedStatsSessionID == session.sessionId
+    }
+
+    private var liveGameSyncStatus: LiveStatsSyncStatus {
+        navigationState.liveStatsSyncStatus
     }
 
     private var showsSyncedLiveStatsSummaryInLandscape: Bool {
@@ -1259,33 +1336,48 @@ struct NewGameWizardView: View {
     }
 
     private var liveGameSyncStatusIconName: String {
-        if isLiveGameSyncedToStats {
+        switch liveGameSyncStatus.state {
+        case .green, .red:
             return "arrow.triangle.2.circlepath.circle.fill"
-        }
-        if activeSyncableStatsSession != nil {
+        case .orange:
             return "arrow.triangle.2.circlepath.circle"
         }
-        return "arrow.triangle.2.circlepath.circle.slash"
     }
 
     private var liveGameSyncStatusTint: Color {
-        if isLiveGameSyncedToStats {
+        switch liveGameSyncStatus.state {
+        case .green:
             return .green
+        case .red:
+            return .red
+        case .orange:
+            return .orange
         }
-        if activeSyncableStatsSession != nil {
-            return .secondary
-        }
-        return Color.secondary.opacity(0.45)
     }
 
     private var liveGameSyncAccessibilityLabel: String {
-        if isLiveGameSyncedToStats {
-            return "Live Game synced with Live Stats"
+        switch liveGameSyncStatus.state {
+        case .green:
+            return "Live Game, Live Stats and user view are synced"
+        case .red:
+            return "Live Game sync issues detected"
+        case .orange:
+            if liveGameSyncStatus.canManuallySyncGameAndStats {
+                return "Live Game sync available"
+            }
+            if liveGameSyncStatus.isGameAndStatsLinked {
+                return "Live Game and Live Stats are linked, waiting for user view"
+            }
+            return "Live Game waiting for a matching Live Stats session"
         }
-        if activeSyncableStatsSession != nil {
-            return "Live Game sync available"
-        }
-        return "Live Game sync unavailable"
+    }
+
+    private var isLiveGameSyncStatusDisabled: Bool {
+        false
+    }
+
+    private var liveGameSyncIssuesMessage: String {
+        liveGameSyncStatus.issues.map(\.message).joined(separator: "\n")
     }
 
     private func canSyncLiveGame(with session: StatsSession) -> Bool {
@@ -1427,7 +1519,6 @@ struct NewGameWizardView: View {
             let asksWaterBoy3 = selectedGrade?.asksWaterBoy3 ?? false
             let asksWaterBoy4 = selectedGrade?.asksWaterBoy4 ?? false
 
-            let requiredWaterBoys = 2
             func waterBoyRequirementMet(
                 _ names: [String],
                 asks: [Bool]
@@ -1437,7 +1528,7 @@ struct NewGameWizardView: View {
                 let allocatedCount = askedSlots
                     .filter { !clean($0.0).isEmpty }
                     .count
-                return allocatedCount >= min(requiredWaterBoys, askedSlots.count)
+                return allocatedCount >= askedSlots.count
             }
 
             let waterBoysCompleted = waterBoyRequirementMet(
@@ -1477,8 +1568,10 @@ struct NewGameWizardView: View {
             return officialsCompleted && boundarySelectionIsUnique && officialsGame2Completed && boundaryGame2SelectionIsUnique
 
         case .medical:
-            // This step is informational/optional; never block navigation here.
-            return true
+            let trainersCompleted = selectedTrainerNames.count >= requiredTrainerSlotCount
+            if !isTwoGameFlow { return trainersCompleted }
+            let game2TrainersCompleted = selectedGame2TrainerNames.count >= requiredTrainerSlotCount
+            return trainersCompleted && game2TrainersCompleted
 
         case .score:
             return true
@@ -1778,6 +1871,16 @@ struct NewGameWizardView: View {
             }
         } message: {
             Text("Use Live Game View as the source of truth for score, timer and quarter in the active Live Stats session.")
+        }
+        .alert("Sync Issues", isPresented: $showLiveStatsSyncIssues) {
+            if liveGameSyncStatus.state == .orange && liveGameSyncStatus.canManuallySyncGameAndStats {
+                Button("Sync") {
+                    acceptLiveStatsSync()
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(liveGameSyncIssuesMessage)
         }
         .sheet(isPresented: $showMailComposer) {
             if let attachmentURL = reportAttachmentURL {
@@ -2094,6 +2197,7 @@ struct NewGameWizardView: View {
         trainer2Name = selectedTrainers.indices.contains(1) ? selectedTrainers[1] : ""
         trainer3Name = selectedTrainers.indices.contains(2) ? selectedTrainers[2] : ""
         trainer4Name = selectedTrainers.indices.contains(3) ? selectedTrainers[3] : ""
+        syncOptionalStaffSlotVisibility()
 
         let selectedPlayerNames = Set(previewSelectedPlayers ?? [])
         let selectedPlayerIDs = previewPlayers
@@ -2159,6 +2263,7 @@ struct NewGameWizardView: View {
         trainer4Name = draft.trainers.indices.contains(3) ? draft.trainers[3] : ""
         notes = draft.notes
         guestBestFairestVotesScanPDF = draft.guestBestFairestVotesScanPDF
+        syncOptionalStaffSlotVisibility()
 
         syncBestPlayersSelectionCount()
         let bestIDs = draft.bestPlayersRanked
@@ -2427,17 +2532,27 @@ struct NewGameWizardView: View {
                         )
                     }
 
-                    if selectedGrade?.asksWaterBoy1 ?? false {
+                    if visibleWaterBoySlots >= 1 {
                         StaffPickerField(title: "Water 1", role: .waterBoy, gradeID: gradeID, value: $waterBoy1Name)
                     }
-                    if selectedGrade?.asksWaterBoy2 ?? false {
+                    if visibleWaterBoySlots >= 2 {
                         StaffPickerField(title: "Water 2", role: .waterBoy, gradeID: gradeID, value: $waterBoy2Name)
                     }
-                    if selectedGrade?.asksWaterBoy3 ?? false {
+                    if visibleWaterBoySlots >= 3 {
                         StaffPickerField(title: "Water 3", role: .waterBoy, gradeID: gradeID, value: $waterBoy3Name)
                     }
-                    if selectedGrade?.asksWaterBoy4 ?? false {
+                    if visibleWaterBoySlots >= 4 {
                         StaffPickerField(title: "Water 4", role: .waterBoy, gradeID: gradeID, value: $waterBoy4Name)
+                    }
+                    if visibleWaterBoySlots > 0 && visibleWaterBoySlots < 4 {
+                        Button {
+                            visibleWaterBoySlots += 1
+                        } label: {
+                            Text("+ Water")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalBoundary1.isEmpty, finalBoundary1 == finalBoundary2 {
@@ -2481,17 +2596,27 @@ struct NewGameWizardView: View {
                             )
                         }
 
-                        if selectedGrade?.asksWaterBoy1 ?? false {
+                        if visibleGame2WaterBoySlots >= 1 {
                             StaffPickerField(title: "Water 1", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy1Name)
                         }
-                        if selectedGrade?.asksWaterBoy2 ?? false {
+                        if visibleGame2WaterBoySlots >= 2 {
                             StaffPickerField(title: "Water 2", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy2Name)
                         }
-                        if selectedGrade?.asksWaterBoy3 ?? false {
+                        if visibleGame2WaterBoySlots >= 3 {
                             StaffPickerField(title: "Water 3", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy3Name)
                         }
-                        if selectedGrade?.asksWaterBoy4 ?? false {
+                        if visibleGame2WaterBoySlots >= 4 {
                             StaffPickerField(title: "Water 4", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy4Name)
+                        }
+                        if visibleGame2WaterBoySlots > 0 && visibleGame2WaterBoySlots < 4 {
+                            Button {
+                                visibleGame2WaterBoySlots += 1
+                            } label: {
+                                Text("+ Water")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.blue)
+                            }
+                            .buttonStyle(.plain)
                         }
 
                         if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalGame2Boundary1.isEmpty, finalGame2Boundary1 == finalGame2Boundary2 {
@@ -2517,47 +2642,59 @@ struct NewGameWizardView: View {
         ScrollView {
             VStack(spacing: 14) {
                 StaffCard(title: isTwoGameFlow ? "Game 1 · Medical & Trainers" : "Medical & Trainers", systemImage: "cross.case.fill") {
-                    if selectedGrade?.asksTrainer1 ?? true {
+                    if visibleTrainerSlots >= 1 {
                         StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $trainer1Name)
                     }
-                    if selectedGrade?.asksTrainer2 ?? true {
+                    if visibleTrainerSlots >= 2 {
                         StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $trainer2Name)
                     }
-                    if selectedGrade?.asksTrainer3 ?? true {
+                    if visibleTrainerSlots >= 3 {
                         StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $trainer3Name)
                     }
-                    if selectedGrade?.asksTrainer4 ?? true {
+                    if visibleTrainerSlots >= 4 {
                         StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $trainer4Name)
                     }
-                    if !(selectedGrade?.asksTrainer1 ?? true) &&
-                        !(selectedGrade?.asksTrainer2 ?? true) &&
-                        !(selectedGrade?.asksTrainer3 ?? true) &&
-                        !(selectedGrade?.asksTrainer4 ?? true) {
+                    if visibleTrainerSlots == 0 {
                         Text("Trainer fields are disabled for this grade.")
                             .foregroundStyle(.secondary)
+                    } else if visibleTrainerSlots < 4 {
+                        Button {
+                            visibleTrainerSlots += 1
+                        } label: {
+                            Text("+ Trainer")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 
                 if isTwoGameFlow {
                     StaffCard(title: "Game 2 · Medical & Trainers", systemImage: "cross.case.fill") {
-                        if selectedGrade?.asksTrainer1 ?? true {
+                        if visibleGame2TrainerSlots >= 1 {
                             StaffPickerField(title: "Trainer 1", role: .trainer, gradeID: gradeID, value: $game2Trainer1Name)
                         }
-                        if selectedGrade?.asksTrainer2 ?? true {
+                        if visibleGame2TrainerSlots >= 2 {
                             StaffPickerField(title: "Trainer 2", role: .trainer, gradeID: gradeID, value: $game2Trainer2Name)
                         }
-                        if selectedGrade?.asksTrainer3 ?? true {
+                        if visibleGame2TrainerSlots >= 3 {
                             StaffPickerField(title: "Trainer 3", role: .trainer, gradeID: gradeID, value: $game2Trainer3Name)
                         }
-                        if selectedGrade?.asksTrainer4 ?? true {
+                        if visibleGame2TrainerSlots >= 4 {
                             StaffPickerField(title: "Trainer 4", role: .trainer, gradeID: gradeID, value: $game2Trainer4Name)
                         }
-                        if !(selectedGrade?.asksTrainer1 ?? true) &&
-                            !(selectedGrade?.asksTrainer2 ?? true) &&
-                            !(selectedGrade?.asksTrainer3 ?? true) &&
-                            !(selectedGrade?.asksTrainer4 ?? true) {
+                        if visibleGame2TrainerSlots == 0 {
                             Text("Trainer fields are disabled for this grade.")
                                 .foregroundStyle(.secondary)
+                        } else if visibleGame2TrainerSlots < 4 {
+                            Button {
+                                visibleGame2TrainerSlots += 1
+                            } label: {
+                                Text("+ Trainer")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.blue)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -2615,10 +2752,12 @@ struct NewGameWizardView: View {
             syncStatusIconName: liveGameSyncStatusIconName,
             syncStatusTint: liveGameSyncStatusTint,
             syncStatusAccessibilityLabel: liveGameSyncAccessibilityLabel,
-            isSyncStatusDisabled: activeSyncableStatsSession == nil,
+            isSyncStatusDisabled: isLiveGameSyncStatusDisabled,
             onSyncStatusTapped: {
-                guard activeSyncableStatsSession != nil, !isLiveGameSyncedToStats else { return }
-                acceptLiveStatsSync()
+                if liveGameSyncStatus.state != .green {
+                    showLiveStatsSyncIssues = true
+                    return
+                }
             },
             onSaveAndContinue: {
                 _ = saveGame(asDraft: true, dismissOnSuccess: false, enforceCompletionRequirements: false)
@@ -3271,7 +3410,7 @@ struct NewGameWizardView: View {
                         activeGrades: resolvedGrades.filter(\.isActive),
                         existingPlayers: players,
                         preselectedGradeID: gradeID,
-                        onSave: createAndSavePlayerFromBestPicker(name:number:gradeIDs:)
+                        onSave: createAndSavePlayerFromBestPicker(firstName:lastName:preferredName:number:gradeIDs:)
                     )
                 }
                 .alert("Could not save player", isPresented: $showAddPlayerError) {
@@ -3526,14 +3665,26 @@ struct NewGameWizardView: View {
         }
     }
 
-    private func createAndSavePlayerFromBestPicker(name: String, number: Int?, gradeIDs: [UUID]) {
-        let trimmed = clean(name)
-        guard !trimmed.isEmpty else { return }
+    private func createAndSavePlayerFromBestPicker(
+        firstName: String,
+        lastName: String,
+        preferredName: String,
+        number: Int?,
+        gradeIDs: [UUID]
+    ) {
+        let displayName = Player.combineDisplayName(first: firstName, last: lastName, preferred: preferredName)
+        guard !displayName.isEmpty else { return }
 
-        let normalized = normalizePlayerName(trimmed)
+        let normalized = normalizePlayerName(displayName)
         guard !players.contains(where: { normalizePlayerName($0.name) == normalized }) else { return }
 
-        let player = Player(name: trimmed, number: number, gradeIDs: gradeIDs)
+        let player = Player(
+            firstName: firstName,
+            lastName: lastName,
+            preferredName: preferredName,
+            number: number,
+            gradeIDs: gradeIDs
+        )
         dataContext.insert(player)
 
         do {

@@ -83,11 +83,12 @@ enum CSVImportError: LocalizedError {
 struct CSVHeaderMap {
     let firstNameIndex: Int?
     let lastNameIndex: Int?
+    let preferredNameIndex: Int?
     let legacyNameIndex: Int?
     let numberIndex: Int?
     let gradesIndex: Int?
 
-    static let expectedColumnsDisplay = "First Name, Last Name, Number, Grade"
+    static let expectedColumnsDisplay = "First Name, Surname, Preferred Name, Number, Grade"
 
     var hasAnyRecognizedColumn: Bool { firstNameIndex != nil || lastNameIndex != nil || legacyNameIndex != nil }
 
@@ -103,6 +104,7 @@ struct CSVHeaderMap {
 
         firstNameIndex = find(["first name", "firstname", "first"])
         lastNameIndex = find(["last name", "lastname", "last", "surname"])
+        preferredNameIndex = find(["preferred name", "preferred", "nickname", "display name"])
         legacyNameIndex = find(["name", "player", "playername", "player name"])
         numberIndex = find(["number", "no", "guernsey", "jumper", "jumper number", "guernsey number"])
         gradesIndex = find(["grades", "grade", "grade(s)", "teams", "team"])
@@ -122,11 +124,12 @@ struct CSVPlayerRow {
     let line: Int
     let firstName: String
     let lastName: String
+    let preferredName: String
     let number: Int?
     let gradesRaw: String?
 
-    var fullName: String {
-        Player.combineName(first: firstName, last: lastName)
+    var displayName: String {
+        Player.combineDisplayName(first: firstName, last: lastName, preferred: preferredName)
     }
 
     static func from(_ row: [String], headerMap: CSVHeaderMap, lineNumber: Int) throws -> CSVPlayerRow {
@@ -142,6 +145,7 @@ struct CSVPlayerRow {
 
         let first = value(at: headerMap.firstNameIndex)
         let last = value(at: headerMap.lastNameIndex)
+        let preferred = value(at: headerMap.preferredNameIndex)
         let legacyName = value(at: headerMap.legacyNameIndex)
 
         let resolvedFirst: String
@@ -166,7 +170,14 @@ struct CSVPlayerRow {
         let number = numberString.flatMap { Int($0.filter { $0.isNumber }) }
         let grades = value(at: headerMap.gradesIndex)
 
-        return CSVPlayerRow(line: lineNumber, firstName: resolvedFirst, lastName: resolvedLast, number: number, gradesRaw: grades)
+        return CSVPlayerRow(
+            line: lineNumber,
+            firstName: resolvedFirst,
+            lastName: resolvedLast,
+            preferredName: preferred?.cleanedName ?? "",
+            number: number,
+            gradesRaw: grades
+        )
     }
 }
 

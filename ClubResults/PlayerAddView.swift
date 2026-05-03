@@ -6,9 +6,11 @@ struct PlayerAddView: View {
     let activeGrades: [Grade]
     let existingPlayers: [Player]
     let preselectedGradeID: UUID?
-    let onSave: (String, Int?, [UUID]) -> Void
+    let onSave: (String, String, String, Int?, [UUID]) -> Void
 
-    @State private var name: String = ""
+    @State private var firstName: String = ""
+    @State private var lastName: String = ""
+    @State private var preferredName: String = ""
     @State private var numberText: String = ""
     @State private var selectedGradeIDs: Set<UUID> = []
     @State private var nameValidationMessage: String?
@@ -25,16 +27,28 @@ struct PlayerAddView: View {
     }
 
     private var canSave: Bool {
-        numberIsValid && !cleanedName.isEmpty
+        numberIsValid && !cleanedFirstName.isEmpty && !cleanedLastName.isEmpty
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Name") {
-                    TextField("Player name", text: $name)
+                    TextField("First Name", text: $firstName)
                         .textInputAutocapitalization(.words)
-                        .onChange(of: name) { _, _ in
+                        .onChange(of: firstName) { _, _ in
+                            nameValidationMessage = nil
+                        }
+
+                    TextField("Surname", text: $lastName)
+                        .textInputAutocapitalization(.words)
+                        .onChange(of: lastName) { _, _ in
+                            nameValidationMessage = nil
+                        }
+
+                    TextField("Preferred Name", text: $preferredName)
+                        .textInputAutocapitalization(.words)
+                        .onChange(of: preferredName) { _, _ in
                             nameValidationMessage = nil
                         }
 
@@ -91,8 +105,20 @@ struct PlayerAddView: View {
         }
     }
 
-    private var cleanedName: String {
-        name
+    private var cleanedFirstName: String {
+        firstName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
+    private var cleanedLastName: String {
+        lastName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
+    private var cleanedPreferredName: String {
+        preferredName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
@@ -100,23 +126,30 @@ struct PlayerAddView: View {
     private func save() {
         nameValidationMessage = nil
 
-        guard !cleanedName.isEmpty else {
-            nameValidationMessage = "Please enter a player name."
+        guard !cleanedFirstName.isEmpty else {
+            nameValidationMessage = "Please enter a first name."
             return
         }
 
-        let exists = existingPlayers.contains {
-            $0.name
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-                .lowercased() == cleanedName.lowercased()
+        guard !cleanedLastName.isEmpty else {
+            nameValidationMessage = "Please enter a surname."
+            return
         }
+
+        let duplicateKey = Player.duplicateMatchKey(firstName: cleanedFirstName, lastName: cleanedLastName)
+        let exists = existingPlayers.contains { $0.duplicateMatchKey == duplicateKey }
         guard !exists else {
-            nameValidationMessage = "That player name already exists."
+            nameValidationMessage = "A player with that first name and surname already exists."
             return
         }
 
-        onSave(cleanedName, parsedNumber, Array(selectedGradeIDs))
+        onSave(
+            cleanedFirstName,
+            cleanedLastName,
+            cleanedPreferredName,
+            parsedNumber,
+            Array(selectedGradeIDs)
+        )
         dismiss()
     }
 }

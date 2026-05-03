@@ -21,6 +21,7 @@ struct PlayersView: View {
     @State private var showDeletePrompt = false
     @State private var deleteCode = ""
     @State private var playerPendingDelete: Player? = nil
+    @State private var showDeleteReferenceWarning = false
     @State private var showWrongCode = false
 
     // ✅ CSV Import
@@ -33,8 +34,14 @@ struct PlayersView: View {
     @State private var showImportResult = false
     @State private var importErrorMessage: String? = nil
     @State private var showImportError = false
+    @State private var exportURL: URL? = nil
+    @State private var showExportSheet = false
+    @State private var exportErrorMessage: String? = nil
+    @State private var showExportError = false
     @State private var addErrorMessage: String? = nil
     @State private var showAddError = false
+    @State private var pendingDuplicateGroup: DuplicatePlayerGroup?
+    @State private var mergeErrorMessage: String?
 
     // MARK: - Grade Ordering
 
@@ -83,56 +90,58 @@ struct PlayersView: View {
         }
     }
 
+    private var duplicateGroupLookup: [UUID: DuplicatePlayerGroup] {
+        PlayerDuplicateService.duplicateGroupLookup(in: playersForDisplay)
+    }
+
+    private var isDuplicateMergeAlertPresented: Binding<Bool> {
+        Binding(
+            get: { pendingDuplicateGroup != nil },
+            set: { if !$0 { pendingDuplicateGroup = nil } }
+        )
+    }
+
+    private var isMergeErrorAlertPresented: Binding<Bool> {
+        Binding(
+            get: { mergeErrorMessage != nil },
+            set: { if !$0 { mergeErrorMessage = nil } }
+        )
+    }
+
     // MARK: - Body
 
     var body: some View {
         NavigationStack {
-            List {
-                // Players
-                playersSection
-            }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(Color.clear)
-            .toolbarBackground(.hidden, for: .navigationBar)
+            playersList
+        }
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search players")
+        .onAppear { reloadPlayersFromStore() }
+        .onChange(of: queriedPlayers.count) { _, _ in
+            reloadPlayersFromStore()
+        }
+    }
 
-            // ✅ We provide our own title row (Players + grade pill)
-            .navigationTitle(horizontalSizeClass == .compact ? "Players" : "")
-            .navigationBarTitleDisplayMode(horizontalSizeClass == .compact ? .inline : .large)
-
-            .toolbar { playersToolbar }
-
+    private var playersList: some View {
+        playersListBase
             .sheet(isPresented: $showAdd) {
                 NavigationStack {
                     PlayerAddView(
                         activeGrades: activeGrades,
                         existingPlayers: playersForDisplay,
                         preselectedGradeID: effectiveSelectedGradeID,
-                        onSave: createAndSavePlayer(name:number:gradeIDs:)
+                        onSave: createAndSavePlayer(firstName:lastName:preferredName:number:gradeIDs:)
                     )
                     .toolbarBackground(.hidden, for: .navigationBar)
                 }
                 .appPopupStyle()
             }
-
-            // ✅ file importer
             .fileImporter(
                 isPresented: $showImporter,
                 allowedContentTypes: csvAllowedTypes(),
                 allowsMultipleSelection: false
             ) { result in
-                switch result {
-                case .success(let urls):
-                    guard let url = urls.first else { return }
-                    pendingImportURL = url
-                    showImportOptions = true
-                case .failure(let error):
-                    importErrorMessage = "Could not open file: \(error.localizedDescription)"
-                    showImportError = true
-                }
+                handleImportFileSelection(result)
             }
-
-            // ✅ Import options sheet
             .confirmationDialog(
                 "Import Players from CSV",
                 isPresented: $showImportOptions,
@@ -142,7 +151,7 @@ struct PlayersView: View {
                     importMode = .skipDuplicates
                     runCSVImportIfPossible()
                 }
-                Button("Update existing (match by full name)") {
+                Button("Update existing (match by first and surname)") {
                     importMode = .updateExisting
                     runCSVImportIfPossible()
                 }
@@ -156,13 +165,21 @@ struct PlayersView: View {
             } message: {
                 if let selectedGradeID = effectiveSelectedGradeID,
                    let selected = activeGrades.first(where: { $0.id == selectedGradeID }) {
-                    Text("Choose what happens when a player name already exists. Rows without a grade will default to \(selected.name). You can import multiple grades in one cell using commas or semicolons.")
+                    Text("Choose what happens when a player with the same first name and surname already exists. Rows without a grade will default to \(selected.name). You can import multiple grades in one cell using commas or semicolons.")
                 } else {
-                    Text("Choose what happens when a player name already exists. You can import multiple grades in one cell using commas or semicolons.")
+                    Text("Choose what happens when a player with the same first name and surname already exists. You can import multiple grades in one cell using commas or semicolons.")
                 }
             }
-
-            // ✅ Delete prompts
+            .alert("Player used in saved games", isPresented: $showDeleteReferenceWarning) {
+                Button("Delete", role: .destructive) {
+                    showDeletePrompt = true
+                }
+                Button("Cancel", role: .cancel) {
+                    cancelDelete()
+                }
+            } message: {
+                Text("This player appears in previously saved games. Do you wish to proceed? This cannot be undone.")
+            }
             .alert("Enter delete code", isPresented: $showDeletePrompt) {
                 SecureField("Code", text: $deleteCode)
                 Button("Delete", role: .destructive) { confirmDelete() }
@@ -175,31 +192,70 @@ struct PlayersView: View {
             } message: {
                 Text("Player was not deleted.")
             }
-
-            // ✅ Import result
             .alert("Import complete", isPresented: $showImportResult) {
                 Button("OK", role: .cancel) { importResult = nil }
             } message: {
                 Text(importResult?.prettySummary ?? "Done.")
             }
-
-            // ✅ Import error
             .alert("Import failed", isPresented: $showImportError) {
                 Button("OK", role: .cancel) { importErrorMessage = nil }
             } message: {
                 Text(importErrorMessage ?? "Unknown error.")
+            }
+            .sheet(isPresented: $showExportSheet) {
+                if let exportURL {
+                    ShareSheet(items: [exportURL])
+                }
+            }
+            .alert("Export failed", isPresented: $showExportError) {
+                Button("OK", role: .cancel) { exportErrorMessage = nil }
+            } message: {
+                Text(exportErrorMessage ?? "Unknown error.")
             }
             .alert("Could not save player", isPresented: $showAddError) {
                 Button("OK", role: .cancel) { addErrorMessage = nil }
             } message: {
                 Text(addErrorMessage ?? "Unknown error.")
             }
+            .alert(
+                "Duplicate players found",
+                isPresented: isDuplicateMergeAlertPresented,
+                presenting: pendingDuplicateGroup
+            ) { group in
+                Button("Cancel", role: .cancel) {
+                    pendingDuplicateGroup = nil
+                }
+                Button("Merge", role: .destructive) {
+                    mergeDuplicateGroup(group)
+                }
+            } message: { group in
+                Text(duplicateMergeMessage(for: group))
+            }
+            .alert(
+                "Could not merge players",
+                isPresented: isMergeErrorAlertPresented
+            ) {
+                Button("OK", role: .cancel) {
+                    mergeErrorMessage = nil
+                }
+            } message: {
+                Text(mergeErrorMessage ?? "Unknown error.")
+            }
+    }
+
+    private var playersListBase: some View {
+        List {
+            playersSection
         }
-        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search players")
-        .onAppear { reloadPlayersFromStore() }
-        .onChange(of: queriedPlayers.count) { _, _ in
-            reloadPlayersFromStore()
-        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .toolbarBackground(.hidden, for: .navigationBar)
+
+        .navigationTitle(horizontalSizeClass == .compact ? "Players" : "")
+        .navigationBarTitleDisplayMode(horizontalSizeClass == .compact ? .inline : .large)
+
+        .toolbar { playersToolbar }
     }
 
     // MARK: - Players Section
@@ -207,31 +263,7 @@ struct PlayersView: View {
     private var playersSection: some View {
         Section {
             ForEach(filteredPlayers) { player in
-                NavigationLink {
-                    PlayerEditView(
-                        player: player,
-                        orderedGrades: orderedGrades,
-                        existingPlayers: playersForDisplay
-                    )
-                } label: {
-                    PlayerRowAFL(
-                        name: player.name,
-                        number: player.number,
-                        gradeNames: gradeNamesArray(for: player),
-                        isActive: player.isActive
-                    )
-                }
-                .buttonStyle(.plain)
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        requestDelete(player)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
+                playerRow(for: player)
             }
             .onDelete { idx in
                 if let first = idx.first {
@@ -265,6 +297,54 @@ struct PlayersView: View {
         }
     }
 
+    @ViewBuilder
+    private func playerRow(for player: Player) -> some View {
+        if let duplicateGroup = duplicateGroupLookup[player.id] {
+            Button {
+                pendingDuplicateGroup = duplicateGroup
+            } label: {
+                playerRowCard(for: player, isDuplicate: true)
+            }
+            .playerListRowStyle()
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                deletePlayerButton(for: player)
+            }
+        } else {
+            NavigationLink {
+                PlayerEditView(
+                    player: player,
+                    orderedGrades: orderedGrades,
+                    existingPlayers: playersForDisplay
+                )
+            } label: {
+                playerRowCard(for: player, isDuplicate: false)
+            }
+            .buttonStyle(.plain)
+            .playerListRowChrome()
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                deletePlayerButton(for: player)
+            }
+        }
+    }
+
+    private func playerRowCard(for player: Player, isDuplicate: Bool) -> some View {
+        PlayerRowAFL(
+            name: player.name,
+            number: player.number,
+            gradeNames: gradeNamesArray(for: player),
+            isActive: player.isActive,
+            isDuplicate: isDuplicate
+        )
+    }
+
+    private func deletePlayerButton(for player: Player) -> some View {
+        Button(role: .destructive) {
+            requestDelete(player)
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
     // MARK: - Toolbar
 
     @ToolbarContentBuilder
@@ -294,7 +374,10 @@ struct PlayersView: View {
                 includeAll: true
             )
 
+            Button { exportPlayersCSV() } label: { Image(systemName: "square.and.arrow.up") }
+                .accessibilityLabel("Export Players")
             Button { showImporter = true } label: { Image(systemName: "square.and.arrow.down") }
+                .accessibilityLabel("Import Players")
             Button { showAdd = true } label: { Image(systemName: "plus") }
         }
     }
@@ -304,7 +387,11 @@ struct PlayersView: View {
     private func requestDelete(_ player: Player) {
         playerPendingDelete = player
         deleteCode = ""
-        showDeletePrompt = true
+        if playerAppearsInSavedGames(player) {
+            showDeleteReferenceWarning = true
+        } else {
+            showDeletePrompt = true
+        }
     }
 
     private func confirmDelete() {
@@ -326,7 +413,61 @@ struct PlayersView: View {
     private func cancelDelete() {
         playerPendingDelete = nil
         deleteCode = ""
+        showDeleteReferenceWarning = false
         showDeletePrompt = false
+    }
+
+    private func playerAppearsInSavedGames(_ player: Player) -> Bool {
+        let savedGames = fetchSavedGamesFromStore()
+        guard !savedGames.isEmpty else { return false }
+
+        let candidateNames = Set([
+            player.name,
+            player.fullName
+        ]
+        .map { normalizedPersonName($0) }
+        .filter { !$0.isEmpty })
+
+        return savedGames.contains { game in
+            if game.bestPlayersRanked.contains(player.id) { return true }
+            if game.guestVotesRanked.contains(where: { $0.playerID == player.id }) { return true }
+            if game.goalKickers.contains(where: { $0.playerID == player.id }) { return true }
+
+            let roleNames = [
+                game.headCoachName,
+                game.assistantCoachName,
+                game.teamManagerName,
+                game.runnerName,
+                game.goalUmpireName,
+                game.timeKeeperName,
+                game.fieldUmpireName,
+                game.boundaryUmpire1Name,
+                game.boundaryUmpire2Name,
+                game.waterBoy1Name,
+                game.waterBoy2Name,
+                game.waterBoy3Name,
+                game.waterBoy4Name
+            ]
+
+            if roleNames.contains(where: { candidateNames.contains(normalizedPersonName($0)) }) {
+                return true
+            }
+
+            return game.trainers.contains(where: { candidateNames.contains(normalizedPersonName($0)) })
+        }
+    }
+
+    private func fetchSavedGamesFromStore() -> [Game] {
+        var descriptor = FetchDescriptor<Game>()
+        descriptor.includePendingChanges = false
+        return ((try? dataContext.fetch(descriptor)) ?? []).filter { !$0.isDraft }
+    }
+
+    private func normalizedPersonName(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
 
     private func gradeNamesArray(for player: Player) -> [String] {
@@ -342,7 +483,11 @@ struct PlayersView: View {
     // MARK: - CSV Import
 
     private func csvAllowedTypes() -> [UTType] {
-        [.commaSeparatedText, .plainText]
+        var allowedTypes: [UTType] = [.commaSeparatedText, .plainText, .text]
+        if let csvType = UTType(filenameExtension: "csv") {
+            allowedTypes.insert(csvType, at: 0)
+        }
+        return allowedTypes
     }
 
     private func runCSVImportIfPossible() {
@@ -357,6 +502,65 @@ struct PlayersView: View {
             importErrorMessage = error.localizedDescription
             showImportError = true
         }
+    }
+
+    private func handleImportFileSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            pendingImportURL = url
+            showImportOptions = true
+        case .failure(let error):
+            importErrorMessage = "Could not open file: \(error.localizedDescription)"
+            showImportError = true
+        }
+    }
+
+    private func exportPlayersCSV() {
+        let allPlayers = fetchPlayersFromStore()
+        let csv = makePlayersCSV(from: allPlayers)
+        let fileName = playersExportFileName()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+
+        do {
+            try csv.write(to: url, atomically: true, encoding: .utf8)
+            exportURL = url
+            showExportSheet = true
+        } catch {
+            exportErrorMessage = error.localizedDescription
+            showExportError = true
+        }
+    }
+
+    private func makePlayersCSV(from players: [Player]) -> String {
+        let header = ["First Name", "Surname", "Preferred Name", "Number", "Grade"]
+        let rows = players.map { player in
+            [
+                csvEscape(player.firstName),
+                csvEscape(player.lastName),
+                csvEscape(player.preferredName),
+                csvEscape(player.number.map(String.init) ?? ""),
+                csvEscape(gradeNames(for: player))
+            ].joined(separator: ",")
+        }
+
+        return ([header.joined(separator: ",")] + rows).joined(separator: "\n") + "\n"
+    }
+
+    private func playersExportFileName() -> String {
+        let components = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: Date())
+        let year = components.year ?? 0
+        let month = components.month ?? 0
+        let day = components.day ?? 0
+        let dateStamp = String(format: "%04d-%02d-%02d", year, month, day)
+        return "Players_\(dateStamp).csv"
+    }
+
+    private func csvEscape(_ value: String) -> String {
+        if value.contains(",") || value.contains("\"") || value.contains("\n") {
+            return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+        }
+        return value
     }
 
     private func importPlayersCSV(from url: URL, mode: CSVImportMode) throws -> CSVImportResult {
@@ -392,7 +596,7 @@ struct PlayersView: View {
         // Always start from the persisted source of truth, not an in-memory snapshot.
         let persistedPlayers = fetchPlayersFromStore()
         var existingByName: [String: Player] = persistedPlayers.reduce(into: [:]) { partial, player in
-            partial[normalizeName(player.name)] = player
+            partial[player.duplicateMatchKey] = player
         }
 
         var result = CSVImportResult(mode: mode)
@@ -422,9 +626,8 @@ struct PlayersView: View {
         }
 
         for row in parsedRows {
-            let fullName = row.fullName
-            let normName = normalizeName(fullName)
-            if normName.isEmpty {
+            let duplicateKey = Player.duplicateMatchKey(firstName: row.firstName, lastName: row.lastName)
+            if duplicateKey == "|" {
                 result.skipped += 1
                 result.errors.append("Line \(row.line): First/last name was empty after trimming.")
                 continue
@@ -441,13 +644,22 @@ struct PlayersView: View {
                 gradeIDs = parsedGradeIDs
             }
 
-            if let existing = existingByName[normName], mode != .replaceAll {
+            if let existing = existingByName[duplicateKey], mode != .replaceAll {
                 switch mode {
                 case .skipDuplicates:
                     result.skipped += 1
                     continue
                 case .updateExisting:
-                    existing.setName(firstName: row.firstName, lastName: row.lastName)
+                    let previousDuplicateKey = existing.duplicateMatchKey
+                    existing.setName(
+                        firstName: row.firstName,
+                        lastName: row.lastName,
+                        preferredName: row.preferredName
+                    )
+                    if previousDuplicateKey != duplicateKey {
+                        existingByName.removeValue(forKey: previousDuplicateKey)
+                    }
+                    existingByName[duplicateKey] = existing
                     existing.number = number
                     existing.gradeIDs = gradeIDs
                     result.updated += 1
@@ -458,12 +670,13 @@ struct PlayersView: View {
                 let newPlayer = Player(
                     firstName: row.firstName,
                     lastName: row.lastName,
+                    preferredName: row.preferredName,
                     number: number,
                     gradeIDs: gradeIDs,
                     isActive: true
                 )
                 dataContext.insert(newPlayer)
-                existingByName[normName] = newPlayer
+                existingByName[duplicateKey] = newPlayer
                 result.imported += 1
             }
         }
@@ -482,23 +695,28 @@ struct PlayersView: View {
         return orderedGrades.first?.id
     }
 
-    private func normalizeName(_ s: String) -> String {
-        s.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-    }
+    private func createAndSavePlayer(
+        firstName: String,
+        lastName: String,
+        preferredName: String,
+        number: Int?,
+        gradeIDs: [UUID]
+    ) {
+        guard !Player.combineName(first: firstName, last: lastName).isEmpty else { return }
 
-    private func createAndSavePlayer(name: String, number: Int?, gradeIDs: [UUID]) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let normalized = normalizeName(trimmed)
+        let duplicateKey = Player.duplicateMatchKey(firstName: firstName, lastName: lastName)
         let persistedPlayers = fetchPlayersFromStore()
-        guard !persistedPlayers.contains(where: { normalizeName($0.name) == normalized }) else {
+        guard !persistedPlayers.contains(where: { $0.duplicateMatchKey == duplicateKey }) else {
             return
         }
 
-        let p = Player(name: trimmed, number: number, gradeIDs: gradeIDs)
+        let p = Player(
+            firstName: firstName,
+            lastName: lastName,
+            preferredName: preferredName,
+            number: number,
+            gradeIDs: gradeIDs
+        )
         dataContext.insert(p)
 
         do {
@@ -523,6 +741,24 @@ struct PlayersView: View {
         descriptor.includePendingChanges = false
         return (try? dataContext.fetch(descriptor)) ?? []
     }
+
+    private func duplicateMergeMessage(for group: DuplicatePlayerGroup) -> String {
+        let playerList = group.players
+            .map(\.name)
+            .joined(separator: ", ")
+        return "There are \(group.players.count) players with the same surname and first name: \(playerList). Would you like to merge them?"
+    }
+
+    private func mergeDuplicateGroup(_ group: DuplicatePlayerGroup) {
+        do {
+            _ = try PlayerDuplicateService.merge(players: group.players, modelContext: dataContext)
+            pendingDuplicateGroup = nil
+            reloadPlayersFromStore()
+        } catch {
+            pendingDuplicateGroup = nil
+            mergeErrorMessage = error.localizedDescription
+        }
+    }
 }
 
 // MARK: - AFL Row UI
@@ -532,6 +768,7 @@ private struct PlayerRowAFL: View {
     let number: Int?
     let gradeNames: [String]
     let isActive: Bool
+    let isDuplicate: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
@@ -568,7 +805,15 @@ private struct PlayerRowAFL: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(isDuplicate ? Color.red.opacity(0.22) : Color.clear)
+        )
         .premiumGlassCard(cornerRadius: 16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(isDuplicate ? Color.red.opacity(0.65) : Color.clear, lineWidth: 1.5)
+        )
         .contentShape(Rectangle())
     }
 
@@ -616,5 +861,18 @@ private struct GradePill: View {
                     .stroke(Color.white.opacity(0.18), lineWidth: 1)
             )
             .lineLimit(1)
+    }
+}
+
+private extension View {
+    func playerListRowChrome() -> some View {
+        listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
+    func playerListRowStyle() -> some View {
+        buttonStyle(.plain)
+            .playerListRowChrome()
     }
 }
