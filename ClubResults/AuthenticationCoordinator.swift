@@ -501,6 +501,11 @@ final class AuthenticationCoordinator: ObservableObject {
         navigationState.setAuthenticatedRole(.admin)
     }
 
+    func enableAdminRecoveryOnNextSignIn(navigationState: AppNavigationState) {
+        UserDefaults.standard.set(true, forKey: StorageKeys.forceAdminOnNextSignIn)
+        signOut(navigationState: navigationState)
+    }
+
     private func applyAuthenticatedUser(
         appleUserID: String,
         email: String,

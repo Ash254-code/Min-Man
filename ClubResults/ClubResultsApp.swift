@@ -1,8 +1,29 @@
 import SwiftUI
 import SwiftData
+import UIKit
+
+final class ClubResultsAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        application.registerForRemoteNotifications()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        CloudKitStatsInviteService.shared.handleRemoteNotification(userInfo: userInfo)
+        completionHandler(.newData)
+    }
+}
 
 @main
 struct ClubResultsApp: App {
+    @UIApplicationDelegateAdaptor(ClubResultsAppDelegate.self) private var appDelegate
     private static let modelStoreDirectoryName = "ClubResultsSwiftData"
     private static let modelStoreFileName = "ClubResults.store"
     private static let cloudKitContainerIdentifier = "iCloud.MINMAN.ClubResults"
@@ -38,36 +59,51 @@ struct ClubResultsApp: App {
 
     private static func makeModelContainer(schema: Schema) -> ModelContainer {
         let storeURL = modelStoreURL()
-        let cloudConfiguration = ModelConfiguration(
-            url: storeURL,
-            cloudKitDatabase: .private(cloudKitContainerIdentifier)
-        )
-        let localConfiguration = ModelConfiguration(
-            url: storeURL,
-            cloudKitDatabase: .none
-        )
         let inMemoryConfiguration = ModelConfiguration(isStoredInMemoryOnly: true)
 
         do {
-            return try ModelContainer(for: schema, configurations: cloudConfiguration)
+            return try makeCloudContainer(schema: schema, storeURL: storeURL)
         } catch let cloudError {
             do {
                 try resetStoreDirectory(for: storeURL)
-                return try ModelContainer(for: schema, configurations: cloudConfiguration)
+                return try makeCloudContainer(schema: schema, storeURL: storeURL)
             } catch let cloudRetryError {
                 do {
                     debugPrint("CloudKit container unavailable. Falling back to local storage. First error: \(cloudError). Retry error: \(cloudRetryError)")
-                    return try ModelContainer(for: schema, configurations: localConfiguration)
+                    return try makeLocalContainer(schema: schema, storeURL: storeURL)
                 } catch let localError {
                     do {
-                        debugPrint("Local disk container unavailable. Falling back to in-memory store. Error: \(localError)")
+                        let recoveryStoreURL = recoveryStoreURL()
+                        try resetStoreDirectory(for: recoveryStoreURL)
+                        debugPrint("Local disk container unavailable at primary store. Retrying with a clean recovery store. Error: \(localError)")
+                        return try makeLocalContainer(schema: schema, storeURL: recoveryStoreURL)
+                    } catch let recoveryError {
+                        do {
+                            debugPrint("Recovery disk container unavailable. Falling back to in-memory store. Error: \(recoveryError)")
                         return try ModelContainer(for: schema, configurations: inMemoryConfiguration)
-                    } catch {
-                        fatalError("Failed to create any SwiftData container: \(error)")
+                        } catch {
+                            fatalError("Failed to create any SwiftData container: \(error)")
+                        }
                     }
                 }
             }
         }
+    }
+
+    private static func makeCloudContainer(schema: Schema, storeURL: URL) throws -> ModelContainer {
+        let cloudConfiguration = ModelConfiguration(
+            url: storeURL,
+            cloudKitDatabase: .private(cloudKitContainerIdentifier)
+        )
+        return try ModelContainer(for: schema, configurations: cloudConfiguration)
+    }
+
+    private static func makeLocalContainer(schema: Schema, storeURL: URL) throws -> ModelContainer {
+        let localConfiguration = ModelConfiguration(
+            url: storeURL,
+            cloudKitDatabase: .none
+        )
+        return try ModelContainer(for: schema, configurations: localConfiguration)
     }
 
     private static func modelStoreURL() -> URL {
@@ -80,6 +116,20 @@ struct ClubResultsApp: App {
             )
         } catch {
             fatalError("Failed to prepare app support directory: \(error)")
+        }
+        return applicationSupportURL.appending(path: modelStoreFileName)
+    }
+
+    private static func recoveryStoreURL() -> URL {
+        let applicationSupportURL = URL.applicationSupportDirectory
+            .appending(path: "\(modelStoreDirectoryName)-Recovery", directoryHint: .isDirectory)
+        do {
+            try FileManager.default.createDirectory(
+                at: applicationSupportURL,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            fatalError("Failed to prepare recovery app support directory: \(error)")
         }
         return applicationSupportURL.appending(path: modelStoreFileName)
     }
@@ -154,10 +204,11 @@ struct ClubResultsApp: App {
             .preferredColorScheme(preferredScheme)
             .tint(.appleBlue)
             .onOpenURL { url in
-                guard let invite = StatsInviteLinking.parse(url) else { return }
-                navigationState.openStatsInvite(sessionID: invite.sessionID)
+                guard let deepLink = StatsInviteLinking.parse(url) else { return }
+                _navigationState.wrappedValue.openStatsInvite(sessionID: deepLink.sessionID)
             }
             .onAppear {
+                applicationDidAppear()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     withAnimation(.easeOut(duration: 0.5)) {
                         showSplash = false
@@ -166,5 +217,12 @@ struct ClubResultsApp: App {
             }
         }
         .modelContainer(modelContainer)
+    }
+
+    private func applicationDidAppear() {
+        UIApplication.shared.registerForRemoteNotifications()
+        Task {
+            try? await CloudKitStatsInviteService.shared.ensureTallySubscription()
+        }
     }
 }

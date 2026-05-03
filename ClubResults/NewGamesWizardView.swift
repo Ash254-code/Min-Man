@@ -283,6 +283,7 @@ struct NewGameWizardView: View {
     @State private var runnerName: String = ""
 
     @State private var goalUmpireName: String = ""
+    @State private var timeKeeperName: String = ""
     @State private var fieldUmpireName: String = ""
 
     // Boundary umpires are chosen from a configured grade's players, or entered manually.
@@ -304,6 +305,7 @@ struct NewGameWizardView: View {
     @State private var game2TeamManagerName: String = ""
     @State private var game2RunnerName: String = ""
     @State private var game2GoalUmpireName: String = ""
+    @State private var game2TimeKeeperName: String = ""
     @State private var game2FieldUmpireName: String = ""
     @State private var game2BoundaryUmpire1Name: String = ""
     @State private var game2BoundaryUmpire2Name: String = ""
@@ -542,12 +544,14 @@ struct NewGameWizardView: View {
     private var finalRunner: String { clean(runnerName) }
 
     private var finalGoalUmpire: String { clean(goalUmpireName) }
+    private var finalTimeKeeper: String { clean(timeKeeperName) }
     private var finalFieldUmpire: String { clean(fieldUmpireName) }
     private var finalGame2HeadCoach: String { clean(game2HeadCoachName) }
     private var finalGame2AssCoach: String { clean(game2AssCoachName) }
     private var finalGame2TeamManager: String { clean(game2TeamManagerName) }
     private var finalGame2Runner: String { clean(game2RunnerName) }
     private var finalGame2GoalUmpire: String { clean(game2GoalUmpireName) }
+    private var finalGame2TimeKeeper: String { clean(game2TimeKeeperName) }
     private var finalGame2FieldUmpire: String { clean(game2FieldUmpireName) }
 
     private func playerName(for id: UUID?) -> String {
@@ -669,6 +673,7 @@ struct NewGameWizardView: View {
         case teamManager
         case runner
         case goalUmpire
+        case timeKeeper
         case fieldUmpire
         case boundaryUmpire1
         case boundaryUmpire2
@@ -713,6 +718,7 @@ struct NewGameWizardView: View {
         assignDefault(for: .teamManager, role: .teamManager, gradeID: gradeID) { teamManagerName = $0 }
         assignDefault(for: .runner, role: .runner, gradeID: gradeID) { runnerName = $0 }
         assignDefault(for: .goalUmpire, role: .goalUmpire, gradeID: gradeID) { goalUmpireName = $0 }
+        assignDefault(for: .timeKeeper, role: .timeKeeper, gradeID: gradeID) { timeKeeperName = $0 }
         assignDefault(for: .fieldUmpire, role: .fieldUmpire, gradeID: gradeID) { fieldUmpireName = $0 }
         assignDefault(for: .boundaryUmpire1, role: .boundaryUmpire, gradeID: gradeID) { boundaryUmpire1Name = $0 }
         assignDefault(for: .boundaryUmpire2, role: .boundaryUmpire, gradeID: gradeID) { boundaryUmpire2Name = $0 }
@@ -729,6 +735,7 @@ struct NewGameWizardView: View {
         assignDefault(for: .teamManager, role: .teamManager, gradeID: gradeID) { game2TeamManagerName = $0 }
         assignDefault(for: .runner, role: .runner, gradeID: gradeID) { game2RunnerName = $0 }
         assignDefault(for: .goalUmpire, role: .goalUmpire, gradeID: gradeID) { game2GoalUmpireName = $0 }
+        assignDefault(for: .timeKeeper, role: .timeKeeper, gradeID: gradeID) { game2TimeKeeperName = $0 }
         assignDefault(for: .fieldUmpire, role: .fieldUmpire, gradeID: gradeID) { game2FieldUmpireName = $0 }
         assignDefault(for: .boundaryUmpire1, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire1Name = $0 }
         assignDefault(for: .boundaryUmpire2, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire2Name = $0 }
@@ -754,6 +761,7 @@ struct NewGameWizardView: View {
         saveLastSelection(teamManagerName, for: .teamManager, gradeID: gradeID)
         saveLastSelection(runnerName, for: .runner, gradeID: gradeID)
         saveLastSelection(goalUmpireName, for: .goalUmpire, gradeID: gradeID)
+        saveLastSelection(timeKeeperName, for: .timeKeeper, gradeID: gradeID)
         saveLastSelection(fieldUmpireName, for: .fieldUmpire, gradeID: gradeID)
         saveLastSelection(boundaryUmpire1Name, for: .boundaryUmpire1, gradeID: gradeID)
         saveLastSelection(boundaryUmpire2Name, for: .boundaryUmpire2, gradeID: gradeID)
@@ -771,6 +779,7 @@ struct NewGameWizardView: View {
             saveLastSelection(game2TeamManagerName, for: .teamManager, gradeID: gradeID)
             saveLastSelection(game2RunnerName, for: .runner, gradeID: gradeID)
             saveLastSelection(game2GoalUmpireName, for: .goalUmpire, gradeID: gradeID)
+            saveLastSelection(game2TimeKeeperName, for: .timeKeeper, gradeID: gradeID)
             saveLastSelection(game2FieldUmpireName, for: .fieldUmpire, gradeID: gradeID)
             saveLastSelection(game2BoundaryUmpire1Name, for: .boundaryUmpire1, gradeID: gradeID)
             saveLastSelection(game2BoundaryUmpire2Name, for: .boundaryUmpire2, gradeID: gradeID)
@@ -925,6 +934,7 @@ struct NewGameWizardView: View {
             steps.append(.staff)
         }
         if grade.asksGoalUmpire ||
+            grade.asksTimeKeeper ||
             grade.asksFieldUmpire ||
             grade.asksBoundaryUmpire1 ||
             grade.asksBoundaryUmpire2 ||
@@ -1008,6 +1018,7 @@ struct NewGameWizardView: View {
     private func maybePromptToSyncLiveGameWithStats() {
         guard isLiveGameScreenActive,
               let activeStatsSessionID = navigationState.activeStatsSessionID,
+              navigationState.activeLiveStatsSessionID == activeStatsSessionID,
               let activeStatsSession = statsSessions.first(where: { $0.sessionId == activeStatsSessionID }),
               canSyncLiveGame(with: activeStatsSession),
               promptedStatsSessionIDForLiveGame != activeStatsSessionID else { return }
@@ -1025,7 +1036,8 @@ struct NewGameWizardView: View {
     }
 
     private func acceptLiveStatsSync() {
-        guard let activeStatsSessionID = navigationState.activeStatsSessionID else { return }
+        guard let activeStatsSessionID = navigationState.activeStatsSessionID,
+              navigationState.activeLiveStatsSessionID == activeStatsSessionID else { return }
         navigationState.syncActiveLiveGame(toStatsSessionID: activeStatsSessionID)
         refreshLiveGameSyncSnapshot()
     }
@@ -1063,7 +1075,7 @@ struct NewGameWizardView: View {
         await refreshRemoteInviteTallies()
         guard showsSyncedLiveStatsSummaryInLandscape else { return }
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             await refreshRemoteInviteTallies()
         }
@@ -1078,7 +1090,11 @@ struct NewGameWizardView: View {
         }
 
         do {
-            remoteInviteTallies = try await CloudKitStatsInviteService.shared.fetchTallies(sessionID: session.sessionId)
+            remoteInviteTallies = try await CloudKitStatsInviteService.shared.fetchTallies(
+                sessionID: session.sessionId,
+                statTypeIDs: statTypes.map(\.id),
+                sideRawValues: ["ourClub", "opposition"]
+            )
         } catch {
             return
         }
@@ -1108,6 +1124,7 @@ struct NewGameWizardView: View {
 
     private var activeSyncableStatsSession: StatsSession? {
         guard let activeStatsSessionID = navigationState.activeStatsSessionID else { return nil }
+        guard navigationState.activeLiveStatsSessionID == activeStatsSessionID else { return nil }
         guard let session = statsSessions.first(where: { $0.sessionId == activeStatsSessionID }) else { return nil }
         return canSyncLiveGame(with: session) ? session : nil
     }
@@ -1401,6 +1418,7 @@ struct NewGameWizardView: View {
 
         case .officials:
             let asksGoalUmpire = selectedGrade?.asksGoalUmpire ?? true
+            let asksTimeKeeper = selectedGrade?.asksTimeKeeper ?? true
             let asksFieldUmpire = shouldAskFieldUmpire
             let asksBoundaryUmpire1 = selectedGrade?.asksBoundaryUmpire1 ?? true
             let asksBoundaryUmpire2 = selectedGrade?.asksBoundaryUmpire2 ?? true
@@ -1429,6 +1447,7 @@ struct NewGameWizardView: View {
 
             let officialsCompleted =
                 (!asksGoalUmpire || !finalGoalUmpire.isEmpty) &&
+                (!asksTimeKeeper || !finalTimeKeeper.isEmpty) &&
                 (!asksFieldUmpire || !finalFieldUmpire.isEmpty) &&
                 (!asksBoundaryUmpire1 || !finalBoundary1.isEmpty) &&
                 (!asksBoundaryUmpire2 || !finalBoundary2.isEmpty) &&
@@ -1445,6 +1464,7 @@ struct NewGameWizardView: View {
             )
             let officialsGame2Completed =
                 (!asksGoalUmpire || !finalGame2GoalUmpire.isEmpty) &&
+                (!asksTimeKeeper || !finalGame2TimeKeeper.isEmpty) &&
                 (!asksFieldUmpire || !finalGame2FieldUmpire.isEmpty) &&
                 (!asksBoundaryUmpire1 || !finalGame2Boundary1.isEmpty) &&
                 (!asksBoundaryUmpire2 || !finalGame2Boundary2.isEmpty) &&
@@ -1743,6 +1763,11 @@ struct NewGameWizardView: View {
         .task(id: liveStatsInviteSyncTaskID) {
             await monitorRemoteInviteTallies()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .statsTalliesDidChange)) { _ in
+            Task {
+                await refreshRemoteInviteTallies()
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
         }
@@ -1761,9 +1786,9 @@ struct NewGameWizardView: View {
                     subject: "Min-Man Game Report",
                     body: "Attached is the game report PDF.",
                     attachmentURL: attachmentURL
-                ) {
+                ) { result in
                     showMailComposer = false
-                    beginTextSendIfNeeded()
+                    handleMailComposerFinish(result: result)
                 }
             }
         }
@@ -1884,6 +1909,33 @@ struct NewGameWizardView: View {
         } else {
             dismiss()
         }
+    }
+
+    private func finalizeCompletedLiveFlowToHome() {
+        guard let gid = gradeID else {
+            if isEmbeddedInGameTab {
+                onEmbeddedFlowFinished?()
+            } else {
+                dismiss()
+            }
+            return
+        }
+
+        onBackToHomeFromLive?(gid)
+        if isEmbeddedInGameTab {
+            onEmbeddedFlowFinished?()
+        } else {
+            dismiss()
+        }
+    }
+
+    private func handleMailComposerFinish(result: MFMailComposeResult) {
+        if entryMode == .live, result == .sent {
+            finalizeCompletedLiveFlowToHome()
+            return
+        }
+
+        beginTextSendIfNeeded()
     }
 
     private func handleScenePhaseChange(_ newPhase: ScenePhase) {
@@ -2093,6 +2145,7 @@ struct NewGameWizardView: View {
         teamManagerName = draft.teamManagerName
         runnerName = draft.runnerName
         goalUmpireName = draft.goalUmpireName
+        timeKeeperName = draft.timeKeeperName
         fieldUmpireName = draft.fieldUmpireName
         boundaryUmpire1Name = draft.boundaryUmpire1Name
         boundaryUmpire2Name = draft.boundaryUmpire2Name
@@ -2346,6 +2399,9 @@ struct NewGameWizardView: View {
                     if selectedGrade?.asksGoalUmpire ?? true {
                         StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
                     }
+                    if selectedGrade?.asksTimeKeeper ?? true {
+                        StaffPickerField(title: "Time Keeper", role: .timeKeeper, gradeID: gradeID, value: $timeKeeperName)
+                    }
                     if shouldAskFieldUmpire {
                         StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $fieldUmpireName)
                     }
@@ -2372,16 +2428,16 @@ struct NewGameWizardView: View {
                     }
 
                     if selectedGrade?.asksWaterBoy1 ?? false {
-                        StaffPickerField(title: "Water Boy 1", role: .waterBoy, gradeID: gradeID, value: $waterBoy1Name)
+                        StaffPickerField(title: "Water 1", role: .waterBoy, gradeID: gradeID, value: $waterBoy1Name)
                     }
                     if selectedGrade?.asksWaterBoy2 ?? false {
-                        StaffPickerField(title: "Water Boy 2", role: .waterBoy, gradeID: gradeID, value: $waterBoy2Name)
+                        StaffPickerField(title: "Water 2", role: .waterBoy, gradeID: gradeID, value: $waterBoy2Name)
                     }
                     if selectedGrade?.asksWaterBoy3 ?? false {
-                        StaffPickerField(title: "Water Boy 3", role: .waterBoy, gradeID: gradeID, value: $waterBoy3Name)
+                        StaffPickerField(title: "Water 3", role: .waterBoy, gradeID: gradeID, value: $waterBoy3Name)
                     }
                     if selectedGrade?.asksWaterBoy4 ?? false {
-                        StaffPickerField(title: "Water Boy 4", role: .waterBoy, gradeID: gradeID, value: $waterBoy4Name)
+                        StaffPickerField(title: "Water 4", role: .waterBoy, gradeID: gradeID, value: $waterBoy4Name)
                     }
 
                     if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalBoundary1.isEmpty, finalBoundary1 == finalBoundary2 {
@@ -2396,6 +2452,9 @@ struct NewGameWizardView: View {
                     StaffCard(title: "Game 2 · Officials", systemImage: "flag.fill") {
                         if selectedGrade?.asksGoalUmpire ?? true {
                             StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $game2GoalUmpireName)
+                        }
+                        if selectedGrade?.asksTimeKeeper ?? true {
+                            StaffPickerField(title: "Time Keeper", role: .timeKeeper, gradeID: gradeID, value: $game2TimeKeeperName)
                         }
                         if shouldAskFieldUmpire {
                             StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $game2FieldUmpireName)
@@ -2423,16 +2482,16 @@ struct NewGameWizardView: View {
                         }
 
                         if selectedGrade?.asksWaterBoy1 ?? false {
-                            StaffPickerField(title: "Water Boy 1", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy1Name)
+                            StaffPickerField(title: "Water 1", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy1Name)
                         }
                         if selectedGrade?.asksWaterBoy2 ?? false {
-                            StaffPickerField(title: "Water Boy 2", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy2Name)
+                            StaffPickerField(title: "Water 2", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy2Name)
                         }
                         if selectedGrade?.asksWaterBoy3 ?? false {
-                            StaffPickerField(title: "Water Boy 3", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy3Name)
+                            StaffPickerField(title: "Water 3", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy3Name)
                         }
                         if selectedGrade?.asksWaterBoy4 ?? false {
-                            StaffPickerField(title: "Water Boy 4", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy4Name)
+                            StaffPickerField(title: "Water 4", role: .waterBoy, gradeID: gradeID, value: $game2WaterBoy4Name)
                         }
 
                         if asksBoundaryUmpire1, asksBoundaryUmpire2, !finalGame2Boundary1.isEmpty, finalGame2Boundary1 == finalGame2Boundary2 {
@@ -3603,6 +3662,7 @@ struct NewGameWizardView: View {
             existingGame.teamManagerName = finalTeamManager
             existingGame.runnerName = finalRunner
             existingGame.goalUmpireName = finalGoalUmpire
+            existingGame.timeKeeperName = finalTimeKeeper
             existingGame.fieldUmpireName = shouldAskFieldUmpire ? finalFieldUmpire : ""
             existingGame.boundaryUmpire1Name = finalBoundary1
             existingGame.boundaryUmpire2Name = finalBoundary2
@@ -3634,6 +3694,7 @@ struct NewGameWizardView: View {
                 teamManagerName: finalTeamManager,
                 runnerName: finalRunner,
                 goalUmpireName: finalGoalUmpire,
+                timeKeeperName: finalTimeKeeper,
                 fieldUmpireName: shouldAskFieldUmpire ? finalFieldUmpire : "",
                 boundaryUmpire1Name: finalBoundary1,
                 boundaryUmpire2Name: finalBoundary2,
@@ -3668,6 +3729,7 @@ struct NewGameWizardView: View {
                     teamManagerName: finalGame2TeamManager,
                     runnerName: finalGame2Runner,
                     goalUmpireName: finalGame2GoalUmpire,
+                    timeKeeperName: finalGame2TimeKeeper,
                     fieldUmpireName: shouldAskFieldUmpire ? finalGame2FieldUmpire : "",
                     boundaryUmpire1Name: finalGame2Boundary1,
                     boundaryUmpire2Name: finalGame2Boundary2,
@@ -5592,7 +5654,7 @@ struct NewGameWizardView: View {
         let subject: String
         let body: String
         let attachmentURL: URL
-        let onFinish: () -> Void
+        let onFinish: (MFMailComposeResult) -> Void
 
         func makeCoordinator() -> Coordinator {
             Coordinator(onFinish: onFinish)
@@ -5613,9 +5675,9 @@ struct NewGameWizardView: View {
         func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {}
 
         final class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
-            let onFinish: () -> Void
+            let onFinish: (MFMailComposeResult) -> Void
 
-            init(onFinish: @escaping () -> Void) {
+            init(onFinish: @escaping (MFMailComposeResult) -> Void) {
                 self.onFinish = onFinish
             }
 
@@ -5625,7 +5687,7 @@ struct NewGameWizardView: View {
                 error: Error?
             ) {
                 controller.dismiss(animated: true)
-                onFinish()
+                onFinish(result)
             }
         }
     }

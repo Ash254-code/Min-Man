@@ -17,5 +17,10 @@
 	</array>
 	<key>NSContactsUsageDescription</key>
 	<string>Min-Man needs access to your contacts so you can invite stat takers by mobile number.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

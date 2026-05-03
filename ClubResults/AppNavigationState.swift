@@ -224,6 +224,7 @@ final class AppNavigationState: ObservableObject {
 
     @Published var selectedTab: AppTab = .games
     @Published var activeStatsSessionID: UUID?
+    @Published private(set) var activeLiveStatsSessionID: UUID?
     @Published private(set) var pendingStatsInviteSessionID: UUID?
     @Published var startNewStatsSessionToken = UUID()
     @Published private(set) var activeLiveGameDraftID: UUID?
@@ -288,6 +289,18 @@ final class AppNavigationState: ObservableObject {
         activeStatsSessionID = nil
     }
 
+    func setActiveLiveStatsSession(id: UUID) {
+        activeLiveStatsSessionID = id
+    }
+
+    func clearActiveLiveStatsSession(id: UUID? = nil) {
+        guard id == nil || activeLiveStatsSessionID == id else { return }
+        if syncedStatsSessionID == activeLiveStatsSessionID {
+            syncedStatsSessionID = nil
+        }
+        activeLiveStatsSessionID = nil
+    }
+
     func updateLiveGameSnapshot(_ snapshot: LiveGameSyncSnapshot) {
         activeLiveGameSnapshot = snapshot
     }
@@ -314,7 +327,8 @@ final class AppNavigationState: ObservableObject {
     }
 
     func syncActiveLiveGame(toStatsSessionID sessionID: UUID) {
-        guard activeLiveGameSnapshot != nil else { return }
+        guard activeLiveGameSnapshot != nil,
+              activeLiveStatsSessionID == sessionID else { return }
         syncedStatsSessionID = sessionID
     }
 

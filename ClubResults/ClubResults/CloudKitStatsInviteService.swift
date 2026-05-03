@@ -1,6 +1,10 @@
 import Foundation
 import CloudKit
 
+extension Notification.Name {
+    static let statsTalliesDidChange = Notification.Name("statsTalliesDidChange")
+}
+
 struct CloudStatsInviteAssignment: Identifiable, Hashable {
     let id: String
     let inviteeEmail: String
@@ -11,11 +15,18 @@ struct CloudStatsInviteAssignment: Identifiable, Hashable {
     let venue: String
     let sessionDate: Date
     let assignedSelectionRawValues: [String]
+    let assignedSelectionDisplayNames: [String]
     let lastInvitedAt: Date
     let lastConnectedAt: Date?
 
     var hasConnected: Bool {
         lastConnectedAt != nil
+    }
+
+    var assignedSelectionDisplayNameByRawValue: [String: String] {
+        Dictionary(
+            uniqueKeysWithValues: zip(assignedSelectionRawValues, assignedSelectionDisplayNames).map { ($0, $1) }
+        )
     }
 }
 
@@ -29,6 +40,10 @@ struct CloudStatsInviteTally: Identifiable, Hashable {
 }
 
 actor CloudKitStatsInviteService {
+    private enum SubscriptionKeys {
+        static let statsTallyChanges = "stats-tally-changes"
+    }
+
     private enum FieldKeys {
         static let inviteeEmail = "inviteeEmail"
         static let inviteeName = "inviteeName"
@@ -38,6 +53,7 @@ actor CloudKitStatsInviteService {
         static let venue = "venue"
         static let sessionDate = "sessionDate"
         static let assignedSelectionRawValues = "assignedSelectionRawValues"
+        static let assignedSelectionDisplayNames = "assignedSelectionDisplayNames"
         static let lastInvitedAt = "lastInvitedAt"
         static let lastConnectedAt = "lastConnectedAt"
         static let statTypeID = "statTypeID"
@@ -71,6 +87,35 @@ actor CloudKitStatsInviteService {
         "stats-tally-\(sessionID.uuidString.lowercased())-\(statTypeID.uuidString.lowercased())-\(sideRawValue)"
     }
 
+    func ensureTallySubscription() async throws {
+        if try await subscriptionExists(id: SubscriptionKeys.statsTallyChanges) {
+            return
+        }
+
+        let subscription = CKQuerySubscription(
+            recordType: "StatsTally",
+            predicate: NSPredicate(value: true),
+            subscriptionID: SubscriptionKeys.statsTallyChanges,
+            options: [.firesOnRecordCreation, .firesOnRecordUpdate]
+        )
+        let notificationInfo = CKSubscription.NotificationInfo()
+        notificationInfo.shouldSendContentAvailable = true
+        subscription.notificationInfo = notificationInfo
+
+        _ = try await save(subscription: subscription)
+    }
+
+    nonisolated func handleRemoteNotification(userInfo: [AnyHashable: Any]) {
+        guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo),
+              notification.subscriptionID == SubscriptionKeys.statsTallyChanges else {
+            return
+        }
+
+        Task { @MainActor in
+            NotificationCenter.default.post(name: .statsTalliesDidChange, object: nil)
+        }
+    }
+
     func saveAssignment(
         inviteeEmail: String,
         inviteeName: String,
@@ -79,7 +124,8 @@ actor CloudKitStatsInviteService {
         oppositionName: String,
         venue: String,
         sessionDate: Date,
-        assignedSelectionRawValues: [String]
+        assignedSelectionRawValues: [String],
+        assignedSelectionDisplayNames: [String]
     ) async throws -> CloudStatsInviteAssignment {
         let normalizedEmail = normalized(inviteeEmail)
         let recordID = CKRecord.ID(recordName: Self.recordName(sessionID: sessionID, inviteeEmail: normalizedEmail))
@@ -93,6 +139,7 @@ actor CloudKitStatsInviteService {
         record[FieldKeys.venue] = venue as CKRecordValue
         record[FieldKeys.sessionDate] = sessionDate as CKRecordValue
         record[FieldKeys.assignedSelectionRawValues] = assignedSelectionRawValues as CKRecordValue
+        record[FieldKeys.assignedSelectionDisplayNames] = assignedSelectionDisplayNames as CKRecordValue
         record[FieldKeys.lastInvitedAt] = Date() as CKRecordValue
 
         let savedRecord = try await save(record)
@@ -122,9 +169,7 @@ actor CloudKitStatsInviteService {
         for existingAssignment in assignments {
             let recordID = CKRecord.ID(recordName: existingAssignment.id)
             guard let record = try await fetch(recordID: recordID) else { continue }
-            if record[FieldKeys.lastConnectedAt] as? Date == nil {
-                record[FieldKeys.lastConnectedAt] = now as CKRecordValue
-            }
+            record[FieldKeys.lastConnectedAt] = now as CKRecordValue
             let savedRecord = try await save(record)
             updated.append(try assignment(from: savedRecord))
         }
@@ -155,6 +200,35 @@ actor CloudKitStatsInviteService {
             .sorted { lhs, rhs in
                 lhs.updatedAt > rhs.updatedAt
             }
+    }
+
+    func fetchTallies(
+        sessionID: UUID,
+        statTypeIDs: [UUID],
+        sideRawValues: [String]
+    ) async throws -> [CloudStatsInviteTally] {
+        var tallies: [CloudStatsInviteTally] = []
+        let uniqueStatTypeIDs = Array(Set(statTypeIDs))
+        let uniqueSideRawValues = Array(Set(sideRawValues))
+
+        for statTypeID in uniqueStatTypeIDs {
+            for sideRawValue in uniqueSideRawValues {
+                let recordID = CKRecord.ID(
+                    recordName: Self.tallyRecordName(
+                        sessionID: sessionID,
+                        statTypeID: statTypeID,
+                        sideRawValue: sideRawValue
+                    )
+                )
+                if let record = try await fetch(recordID: recordID) {
+                    tallies.append(try tally(from: record))
+                }
+            }
+        }
+
+        return tallies.sorted { lhs, rhs in
+            lhs.updatedAt > rhs.updatedAt
+        }
     }
 
     func incrementTally(
@@ -238,6 +312,39 @@ actor CloudKitStatsInviteService {
         }
     }
 
+    private func subscriptionExists(id: String) async throws -> Bool {
+        let subscription: CKSubscription? = try await withCheckedThrowingContinuation { continuation in
+            database.fetch(withSubscriptionID: id) { subscription, error in
+                if let ckError = error as? CKError, ckError.code == .unknownItem {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: subscription)
+            }
+        }
+        return subscription != nil
+    }
+
+    private func save(subscription: CKSubscription) async throws -> CKSubscription {
+        try await withCheckedThrowingContinuation { continuation in
+            database.save(subscription) { savedSubscription, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let savedSubscription else {
+                    continuation.resume(throwing: CKError(.internalError))
+                    return
+                }
+                continuation.resume(returning: savedSubscription)
+            }
+        }
+    }
+
     private func performQuery(_ query: CKQuery) async throws -> [CKRecord] {
         try await withCheckedThrowingContinuation { continuation in
             var matches: [CKRecord] = []
@@ -277,6 +384,7 @@ actor CloudKitStatsInviteService {
             venue: (record[FieldKeys.venue] as? String) ?? "",
             sessionDate: (record[FieldKeys.sessionDate] as? Date) ?? .distantPast,
             assignedSelectionRawValues: (record[FieldKeys.assignedSelectionRawValues] as? [String]) ?? [],
+            assignedSelectionDisplayNames: (record[FieldKeys.assignedSelectionDisplayNames] as? [String]) ?? [],
             lastInvitedAt: (record[FieldKeys.lastInvitedAt] as? Date) ?? .distantPast,
             lastConnectedAt: record[FieldKeys.lastConnectedAt] as? Date
         )

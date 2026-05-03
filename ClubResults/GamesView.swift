@@ -338,6 +338,10 @@ struct GamesView: View {
         return gradeByID[gradeID]?.asksScore ?? true
     }
 
+    private func shouldShowOutcome(for gradeID: UUID) -> Bool {
+        gradeByID[gradeID]?.asksScore ?? true
+    }
+
     private func normalizedGoalKickerSignature(_ game: Game) -> [String] {
         game.goalKickers
             .map { "\($0.playerID?.uuidString ?? "nil"):\($0.goals)" }
@@ -368,6 +372,7 @@ struct GamesView: View {
                 game: game,
                 opponentWidth: standardPillWidth,
                 showScore: shouldShowScore(for: game.gradeID),
+                showOutcome: shouldShowOutcome(for: game.gradeID),
                 hasTwoGames: item.hasTwoGames
             )
         }
@@ -448,22 +453,10 @@ struct GamesView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
 
-                    // Header like your screenshot: "Home" + small "All" pill
+                    // Header
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text("Home")
                             .font(.system(size: 44, weight: .bold))
-
-                        if !(isIPhoneAdminLayout && selectedGradeID == nil) {
-                            Text(selectedGradeName)
-                                .font(.system(size: 16, weight: .semibold))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .fill(.ultraThinMaterial)
-                                )
-                                .foregroundStyle(.secondary)
-                        }
 
                         Spacer()
 
@@ -853,6 +846,7 @@ private struct GameCardRow: View {
     let game: Game
     let opponentWidth: CGFloat
     let showScore: Bool
+    let showOutcome: Bool
     let hasTwoGames: Bool
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -884,7 +878,9 @@ private struct GameCardRow: View {
                     }
 
                     Spacer(minLength: 8)
-                    CompactGameOutcomePill(outcome: outcome)
+                    if showOutcome {
+                        CompactGameOutcomePill(outcome: outcome)
+                    }
                 }
             } else {
                 HStack(spacing: 12) {
@@ -906,7 +902,9 @@ private struct GameCardRow: View {
                     }
 
                     Spacer(minLength: 10)
-                    ResultPill(win: outcome == .win)
+                    if showOutcome {
+                        ResultPill(win: outcome == .win)
+                    }
                 }
             }
         }

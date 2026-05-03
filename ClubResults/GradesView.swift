@@ -14,6 +14,7 @@ final class Grade {
     var asksTeamManager: Bool
     var asksRunner: Bool
     var asksGoalUmpire: Bool
+    var asksTimeKeeper: Bool = true
     var asksFieldUmpire: Bool
     var asksBoundaryUmpire1: Bool
     var asksBoundaryUmpire2: Bool
@@ -48,6 +49,7 @@ final class Grade {
         asksTeamManager: Bool = true,
         asksRunner: Bool = true,
         asksGoalUmpire: Bool = true,
+        asksTimeKeeper: Bool = true,
         asksFieldUmpire: Bool = true,
         asksBoundaryUmpire1: Bool = true,
         asksBoundaryUmpire2: Bool = true,
@@ -81,6 +83,7 @@ final class Grade {
         self.asksTeamManager = asksTeamManager
         self.asksRunner = asksRunner
         self.asksGoalUmpire = asksGoalUmpire
+        self.asksTimeKeeper = asksTimeKeeper
         self.asksFieldUmpire = asksFieldUmpire
         self.asksBoundaryUmpire1 = asksBoundaryUmpire1
         self.asksBoundaryUmpire2 = asksBoundaryUmpire2
@@ -125,5 +128,14 @@ final class Grade {
             normalized.append(contentsOf: defaults.dropFirst(normalized.count))
         }
         return normalized
+    }
+
+    static func defaultAsksTimeKeeper(for gradeName: String) -> Bool {
+        let normalizedName = gradeName
+            .lowercased()
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "’", with: "")
+            .replacingOccurrences(of: "-", with: " ")
+        return !normalizedName.contains("under 9") && !normalizedName.contains("under 12")
     }
 }

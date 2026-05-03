@@ -26,12 +26,14 @@ struct GameEditView: View {
 
     @State private var goalKickers: [GameGoalKickerEntry]
     @State private var bestPlayersRanked: [UUID]
+    @State private var guestVotesRanked: [GameGuestVoteEntry]
 
     @State private var headCoachName: String
     @State private var assistantCoachName: String
     @State private var teamManagerName: String
     @State private var runnerName: String
     @State private var goalUmpireName: String
+    @State private var timeKeeperName: String
     @State private var fieldUmpireName: String
     @State private var boundaryUmpire1Name: String
     @State private var boundaryUmpire2Name: String
@@ -68,12 +70,14 @@ struct GameEditView: View {
 
         _goalKickers = State(initialValue: game.goalKickers)
         _bestPlayersRanked = State(initialValue: game.bestPlayersRanked)
+        _guestVotesRanked = State(initialValue: game.guestVotesRanked.sorted(by: { $0.rank < $1.rank }))
 
         _headCoachName = State(initialValue: game.headCoachName)
         _assistantCoachName = State(initialValue: game.assistantCoachName)
         _teamManagerName = State(initialValue: game.teamManagerName)
         _runnerName = State(initialValue: game.runnerName)
         _goalUmpireName = State(initialValue: game.goalUmpireName)
+        _timeKeeperName = State(initialValue: game.timeKeeperName)
         _fieldUmpireName = State(initialValue: game.fieldUmpireName)
         _boundaryUmpire1Name = State(initialValue: game.boundaryUmpire1Name)
         _boundaryUmpire2Name = State(initialValue: game.boundaryUmpire2Name)
@@ -107,11 +111,13 @@ struct GameEditView: View {
         game.theirBehinds != theirBehinds ||
         game.goalKickers != goalKickers ||
         game.bestPlayersRanked != bestPlayersRanked ||
+        game.guestVotesRanked.sorted(by: { $0.rank < $1.rank }) != guestVotesRanked ||
         game.headCoachName != headCoachName ||
         game.assistantCoachName != assistantCoachName ||
         game.teamManagerName != teamManagerName ||
         game.runnerName != runnerName ||
         game.goalUmpireName != goalUmpireName ||
+        game.timeKeeperName != timeKeeperName ||
         game.fieldUmpireName != fieldUmpireName ||
         game.boundaryUmpire1Name != boundaryUmpire1Name ||
         game.boundaryUmpire2Name != boundaryUmpire2Name ||
@@ -166,13 +172,14 @@ struct GameEditView: View {
 
                 Section("Officials") {
                     StaffPickerField(title: "Goal Umpire", role: .goalUmpire, gradeID: gradeID, value: $goalUmpireName)
+                    StaffPickerField(title: "Time Keeper", role: .timeKeeper, gradeID: gradeID, value: $timeKeeperName)
                     StaffPickerField(title: "Field Umpire", role: .fieldUmpire, gradeID: gradeID, value: $fieldUmpireName)
                     StaffPickerField(title: "Boundary Umpire 1", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire1Name)
                     StaffPickerField(title: "Boundary Umpire 2", role: .boundaryUmpire, gradeID: gradeID, value: $boundaryUmpire2Name)
-                    StaffPickerField(title: "Water Boy 1", role: .waterBoy, gradeID: gradeID, value: $waterBoy1Name)
-                    StaffPickerField(title: "Water Boy 2", role: .waterBoy, gradeID: gradeID, value: $waterBoy2Name)
-                    StaffPickerField(title: "Water Boy 3", role: .waterBoy, gradeID: gradeID, value: $waterBoy3Name)
-                    StaffPickerField(title: "Water Boy 4", role: .waterBoy, gradeID: gradeID, value: $waterBoy4Name)
+                    StaffPickerField(title: "Water 1", role: .waterBoy, gradeID: gradeID, value: $waterBoy1Name)
+                    StaffPickerField(title: "Water 2", role: .waterBoy, gradeID: gradeID, value: $waterBoy2Name)
+                    StaffPickerField(title: "Water 3", role: .waterBoy, gradeID: gradeID, value: $waterBoy3Name)
+                    StaffPickerField(title: "Water 4", role: .waterBoy, gradeID: gradeID, value: $waterBoy4Name)
                 }
 
                 Section("Trainers") {
@@ -241,6 +248,40 @@ struct GameEditView: View {
                     }
                 }
 
+                Section("Guest Votes") {
+                    if players.isEmpty {
+                        Text("No players yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(guestVoteRanks, id: \.self) { index in
+                            Picker(guestVoteLabel(for: index), selection: guestVoteBinding(for: index)) {
+                                Text("Select…").tag(UUID?.none)
+                                ForEach(players) { p in
+                                    Text(p.name).tag(UUID?.some(p.id))
+                                }
+                            }
+                        }
+
+                        Button {
+                            guard let playerID = players.first?.id else { return }
+                            guestVotesRanked.append(
+                                GameGuestVoteEntry(rank: guestVotesRanked.count + 1, playerID: playerID)
+                            )
+                        } label: {
+                            Label("Add guest vote", systemImage: "plus")
+                        }
+                        .disabled(guestVotesRanked.count >= players.count)
+
+                        if !guestVotesRanked.isEmpty {
+                            Button(role: .destructive) {
+                                guestVotesRanked.removeAll()
+                            } label: {
+                                Text("Clear guest votes")
+                            }
+                        }
+                    }
+                }
+
                 Section("Notes") {
                     TextEditor(text: $notes)
                         .frame(minHeight: 120)
@@ -272,6 +313,10 @@ struct GameEditView: View {
 
     private var bestPlayerRanks: [Int] {
         Array(bestPlayersRanked.indices)
+    }
+
+    private var guestVoteRanks: [Int] {
+        Array(guestVotesRanked.indices)
     }
 
     private var opponentNames: [String] {
@@ -439,6 +484,42 @@ struct GameEditView: View {
         )
     }
 
+    private func guestVoteLabel(for index: Int) -> String {
+        switch index {
+        case 0: return "1st Guest Vote"
+        case 1: return "2nd Guest Vote"
+        case 2: return "3rd Guest Vote"
+        default: return "\(index + 1)th Guest Vote"
+        }
+    }
+
+    private func guestVoteBinding(for index: Int) -> Binding<UUID?> {
+        Binding<UUID?>(
+            get: {
+                guard guestVotesRanked.indices.contains(index) else { return nil }
+                return guestVotesRanked[index].playerID
+            },
+            set: { selectedID in
+                guard guestVotesRanked.indices.contains(index) else { return }
+                if let selectedID {
+                    if let existingIndex = guestVotesRanked.firstIndex(where: { $0.playerID == selectedID }), existingIndex != index {
+                        guestVotesRanked.remove(at: existingIndex)
+                        let adjustedIndex = existingIndex < index ? index - 1 : index
+                        guestVotesRanked[adjustedIndex].playerID = selectedID
+                    } else {
+                        guestVotesRanked[index].playerID = selectedID
+                    }
+                } else {
+                    guestVotesRanked.remove(at: index)
+                }
+
+                for rankIndex in guestVotesRanked.indices {
+                    guestVotesRanked[rankIndex].rank = rankIndex + 1
+                }
+            }
+        )
+    }
+
     private func saveGame() {
         game.gradeID = gradeID
         game.date = date
@@ -452,12 +533,16 @@ struct GameEditView: View {
 
         game.goalKickers = goalKickers
         game.bestPlayersRanked = bestPlayersRanked
+        game.guestVotesRanked = guestVotesRanked.enumerated().map { index, entry in
+            GameGuestVoteEntry(id: entry.id, rank: index + 1, playerID: entry.playerID)
+        }
 
         game.headCoachName = headCoachName
         game.assistantCoachName = assistantCoachName
         game.teamManagerName = teamManagerName
         game.runnerName = runnerName
         game.goalUmpireName = goalUmpireName
+        game.timeKeeperName = timeKeeperName
         game.fieldUmpireName = fieldUmpireName
         game.boundaryUmpire1Name = boundaryUmpire1Name
         game.boundaryUmpire2Name = boundaryUmpire2Name

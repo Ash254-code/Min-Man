@@ -280,6 +280,7 @@ struct GradeRecord: Codable {
     let asksTeamManager: Bool
     let asksRunner: Bool
     let asksGoalUmpire: Bool
+    let asksTimeKeeper: Bool
     let asksFieldUmpire: Bool
     let asksBoundaryUmpire1: Bool
     let asksBoundaryUmpire2: Bool
@@ -307,7 +308,7 @@ struct GradeRecord: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, name, isActive, displayOrder
         case asksHeadCoach, asksAssistantCoach, asksTeamManager, asksRunner
-        case asksGoalUmpire, asksFieldUmpire, asksBoundaryUmpire1, asksBoundaryUmpire2
+        case asksGoalUmpire, asksTimeKeeper, asksFieldUmpire, asksBoundaryUmpire1, asksBoundaryUmpire2
         case asksWaterBoy1, asksWaterBoy2, asksWaterBoy3, asksWaterBoy4
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
@@ -326,6 +327,7 @@ struct GradeRecord: Codable {
         asksTeamManager = grade.asksTeamManager
         asksRunner = grade.asksRunner
         asksGoalUmpire = grade.asksGoalUmpire
+        asksTimeKeeper = grade.asksTimeKeeper
         asksFieldUmpire = grade.asksFieldUmpire
         asksBoundaryUmpire1 = grade.asksBoundaryUmpire1
         asksBoundaryUmpire2 = grade.asksBoundaryUmpire2
@@ -362,6 +364,7 @@ struct GradeRecord: Codable {
         asksTeamManager = try c.decodeIfPresent(Bool.self, forKey: .asksTeamManager) ?? true
         asksRunner = try c.decodeIfPresent(Bool.self, forKey: .asksRunner) ?? true
         asksGoalUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksGoalUmpire) ?? true
+        asksTimeKeeper = try c.decodeIfPresent(Bool.self, forKey: .asksTimeKeeper) ?? Grade.defaultAsksTimeKeeper(for: name)
         asksFieldUmpire = try c.decodeIfPresent(Bool.self, forKey: .asksFieldUmpire) ?? true
         asksBoundaryUmpire1 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire1) ?? true
         asksBoundaryUmpire2 = try c.decodeIfPresent(Bool.self, forKey: .asksBoundaryUmpire2) ?? true
@@ -438,6 +441,7 @@ struct GameRecord: Codable {
     let teamManagerName: String
     let runnerName: String
     let goalUmpireName: String
+    let timeKeeperName: String
     let fieldUmpireName: String
     let boundaryUmpire1Name: String
     let boundaryUmpire2Name: String
@@ -455,7 +459,7 @@ struct GameRecord: Codable {
         case ourGoals, ourBehinds, theirGoals, theirBehinds
         case goalKickers, bestPlayersRanked, guestVotesRanked
         case headCoachName, assistantCoachName, teamManagerName, runnerName
-        case goalUmpireName, fieldUmpireName, boundaryUmpire1Name, boundaryUmpire2Name
+        case goalUmpireName, timeKeeperName, fieldUmpireName, boundaryUmpire1Name, boundaryUmpire2Name
         case waterBoy1Name, waterBoy2Name, waterBoy3Name, waterBoy4Name
         case trainers, notes, guestBestFairestVotesScanPDF, isDraft
     }
@@ -478,6 +482,7 @@ struct GameRecord: Codable {
         teamManagerName = game.teamManagerName
         runnerName = game.runnerName
         goalUmpireName = game.goalUmpireName
+        timeKeeperName = game.timeKeeperName
         fieldUmpireName = game.fieldUmpireName
         boundaryUmpire1Name = game.boundaryUmpire1Name
         boundaryUmpire2Name = game.boundaryUmpire2Name
@@ -510,6 +515,7 @@ struct GameRecord: Codable {
         teamManagerName = try c.decodeIfPresent(String.self, forKey: .teamManagerName) ?? ""
         runnerName = try c.decodeIfPresent(String.self, forKey: .runnerName) ?? ""
         goalUmpireName = try c.decodeIfPresent(String.self, forKey: .goalUmpireName) ?? ""
+        timeKeeperName = try c.decodeIfPresent(String.self, forKey: .timeKeeperName) ?? ""
         fieldUmpireName = try c.decodeIfPresent(String.self, forKey: .fieldUmpireName) ?? ""
         boundaryUmpire1Name = try c.decodeIfPresent(String.self, forKey: .boundaryUmpire1Name) ?? ""
         boundaryUmpire2Name = try c.decodeIfPresent(String.self, forKey: .boundaryUmpire2Name) ?? ""
@@ -1199,6 +1205,7 @@ enum AppBackupService {
                     asksTeamManager: $0.asksTeamManager,
                     asksRunner: $0.asksRunner,
                     asksGoalUmpire: $0.asksGoalUmpire,
+                    asksTimeKeeper: $0.asksTimeKeeper,
                     asksFieldUmpire: $0.asksFieldUmpire,
                     asksBoundaryUmpire1: $0.asksBoundaryUmpire1,
                     asksBoundaryUmpire2: $0.asksBoundaryUmpire2,
@@ -1261,6 +1268,7 @@ enum AppBackupService {
                     teamManagerName: $0.teamManagerName,
                     runnerName: $0.runnerName,
                     goalUmpireName: $0.goalUmpireName,
+                    timeKeeperName: $0.timeKeeperName,
                     fieldUmpireName: $0.fieldUmpireName,
                     boundaryUmpire1Name: $0.boundaryUmpire1Name,
                     boundaryUmpire2Name: $0.boundaryUmpire2Name,
