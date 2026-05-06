@@ -653,7 +653,6 @@ struct PresView: View {
 }
 
 private struct GeneratingNarrationOverlayView: View {
-    @State private var isSpinning = false
 
     var body: some View {
         ZStack {
@@ -661,22 +660,16 @@ private struct GeneratingNarrationOverlayView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 12) {
-                Image(systemName: "football.fill")
-                    .font(.system(size: 42))
-                    .foregroundStyle(.orange)
-                    .rotationEffect(.degrees(isSpinning ? 360 : 0))
-                    .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: isSpinning)
-
-                ProgressView("AI is building voice…")
-                    .font(.headline)
-                    .tint(.white)
+                LoadingFootballView(
+                    "AI is building voice…",
+                    tint: .white,
+                    size: 42,
+                    font: .headline
+                )
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 20)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-        .onAppear {
-            isSpinning = true
         }
     }
 }

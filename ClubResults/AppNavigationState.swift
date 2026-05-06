@@ -182,6 +182,13 @@ enum AppTab: Hashable {
 struct LiveGameSyncGoalKicker: Codable, Equatable {
     var playerID: UUID
     var goals: Int
+    var points: Int
+
+    init(playerID: UUID, goals: Int, points: Int = 0) {
+        self.playerID = playerID
+        self.goals = goals
+        self.points = points
+    }
 }
 
 struct LiveGameSyncSnapshot: Equatable {
@@ -346,9 +353,6 @@ final class AppNavigationState: ObservableObject {
 
     func clearActiveLiveStatsSession(id: UUID? = nil) {
         guard id == nil || activeLiveStatsSessionID == id else { return }
-        if syncedStatsSessionID == activeLiveStatsSessionID {
-            syncedStatsSessionID = nil
-        }
         activeLiveStatsSessionID = nil
         activeLiveStatsSessionDescriptor = nil
         if id == nil || activeLiveStatsInviteSnapshot?.sessionID == id {
@@ -417,10 +421,15 @@ final class AppNavigationState: ObservableObject {
 
         let canManuallySyncGameAndStats = canSyncLiveGameAndStats
         let isGameAndStatsLinked = isLiveGameAndStatsLinked
-        if isGameAndStatsLinked,
-           let statsDescriptor = activeLiveStatsSessionDescriptor,
-           let userDescriptor = activeUserStatsSessionDescriptor,
-           userDescriptor.sessionID == statsDescriptor.sessionID {
+        let isUserViewMatchedToStats: Bool = {
+            guard let statsDescriptor = activeLiveStatsSessionDescriptor,
+                  let userDescriptor = activeUserStatsSessionDescriptor else {
+                return false
+            }
+            return userDescriptor.sessionID == statsDescriptor.sessionID
+        }()
+
+        if isGameAndStatsLinked && (activeUserStatsSessionDescriptor == nil || isUserViewMatchedToStats) {
             return LiveStatsSyncStatus(
                 state: .green,
                 issues: [],
@@ -565,7 +574,7 @@ final class AppNavigationState: ObservableObject {
             reasons.append(LiveStatsSyncIssue("Live Stats view is not open on an active live session yet."))
         }
 
-        if activeUserStatsSessionDescriptor == nil {
+        if activeUserStatsSessionDescriptor == nil, !isGameAndStatsLinked {
             reasons.append(LiveStatsSyncIssue("Invite user stats view has not joined the live session yet."))
         }
 

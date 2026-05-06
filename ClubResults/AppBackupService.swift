@@ -859,6 +859,7 @@ struct StatEventRecord: Codable {
     let parserConfidence: Double?
     let efficiencyVoteRaw: String?
     let contestedVoteRaw: String?
+    let remoteRecordName: String?
 
     init(_ item: StatEvent) {
         id = item.id
@@ -873,6 +874,7 @@ struct StatEventRecord: Codable {
         parserConfidence = item.parserConfidence
         efficiencyVoteRaw = item.efficiencyVoteRaw
         contestedVoteRaw = item.contestedVoteRaw
+        remoteRecordName = item.remoteRecordName
     }
 }
 
@@ -1437,7 +1439,8 @@ enum AppBackupService {
                     normalizedTranscript: $0.normalizedTranscript,
                     parserConfidence: $0.parserConfidence,
                     efficiencyVoteRaw: $0.efficiencyVoteRaw,
-                    contestedVoteRaw: $0.contestedVoteRaw
+                    contestedVoteRaw: $0.contestedVoteRaw,
+                    remoteRecordName: $0.remoteRecordName
                 )
             )
         }

@@ -837,17 +837,8 @@ struct GamesView: View {
 
     private func startNewGame(for gradeID: UUID) {
         if let draft = latestDraft(for: gradeID) {
-            let reopenLive = DraftResumeStore.shouldOpenLive(for: gradeID)
-            if reopenLive {
-                navigationState.openLiveGameTab(draftGameID: draft.id, gradeID: gradeID)
-            } else {
-                newGameWizardPresentation = NewGameWizardPresentation(
-                    initialGradeID: gradeID,
-                    draftGameID: draft.id,
-                    reopenLiveView: false
-                )
-            }
-            DraftResumeStore.setShouldOpenLive(false, for: gradeID)
+            DraftResumeStore.setShouldOpenLive(true, for: gradeID)
+            navigationState.openLiveGameTab(draftGameID: draft.id, gradeID: gradeID)
         } else {
             newGameWizardPresentation = NewGameWizardPresentation(
                 initialGradeID: gradeID,

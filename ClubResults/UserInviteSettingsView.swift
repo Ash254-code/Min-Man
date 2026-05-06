@@ -41,8 +41,7 @@ struct UserInviteSettingsView: View {
                 } label: {
                     HStack {
                         if isSendingInvite {
-                            ProgressView()
-                                .progressViewStyle(.circular)
+                            LoadingFootballView(size: 18)
                         }
                         Text(isSendingInvite ? "Sending Invite…" : "Send Invite")
                     }
@@ -126,7 +125,7 @@ struct UserInviteSettingsView: View {
         Section {
             if isLoadingUsers && invitedUsers.isEmpty {
                 HStack {
-                    ProgressView()
+                    LoadingFootballView(size: 18)
                     Text("Loading invited users…")
                         .foregroundStyle(.secondary)
                 }

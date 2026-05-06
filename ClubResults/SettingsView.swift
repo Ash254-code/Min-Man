@@ -349,8 +349,7 @@ private struct BackupAndRestoreSettingsView: View {
                 } label: {
                     HStack {
                         if isExporting {
-                            ProgressView()
-                                .progressViewStyle(.circular)
+                            LoadingFootballView(size: 18)
                         }
                         Text(isExporting ? "Creating Backup…" : "Export All Data")
                     }
@@ -362,8 +361,7 @@ private struct BackupAndRestoreSettingsView: View {
                 } label: {
                     HStack {
                         if isImporting {
-                            ProgressView()
-                                .progressViewStyle(.circular)
+                            LoadingFootballView(size: 18)
                         }
                         Text(isImporting ? "Importing…" : "Import Backup File")
                     }
@@ -1853,7 +1851,7 @@ private struct ContactsSettingsView: View {
                             Text(contact.name)
                                 .font(.headline)
 
-                            Text(contact.mobile)
+                            Text(contact.mobile.formattedMobileNumber)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
 
@@ -1911,11 +1909,11 @@ private struct ContactsSettingsView: View {
             ContactEditSheet(
                 title: "Edit Contact",
                 initialName: contact.name,
-                initialMobile: contact.mobile,
+                initialMobile: contact.mobile.formattedMobileNumber,
                 initialEmail: contact.email,
                 onSave: { name, mobile, email in
                     contact.name = name
-                    contact.mobile = mobile
+                    contact.mobile = mobile.formattedMobileNumber
                     contact.email = email
                     SettingsBackupStore.saveContacts(contacts)
                     saveContext()
@@ -2108,11 +2106,11 @@ private struct GroupsSettingsView: View {
             ContactEditSheet(
                 title: "Edit Contact",
                 initialName: contact.name,
-                initialMobile: contact.mobile,
+                initialMobile: contact.mobile.formattedMobileNumber,
                 initialEmail: contact.email,
                 onSave: { name, mobile, email in
                     contact.name = name
-                    contact.mobile = mobile
+                    contact.mobile = mobile.formattedMobileNumber
                     contact.email = email
                     saveContext()
                     return true
@@ -2545,7 +2543,7 @@ private struct GroupSectionEditorSheet: View {
                                 Text(contact.name)
                                     .font(.headline)
                                 if !contact.mobile.isEmpty {
-                                    Text(contact.mobile)
+                                    Text(contact.mobile.formattedMobileNumber)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 } else if !contact.email.isEmpty {
@@ -4049,7 +4047,7 @@ private struct CustomReportPreviewView: View {
                     }
                     .padding()
                 } else {
-                    ProgressView("Generating PDF preview…")
+                    LoadingFootballView("Generating PDF preview…")
                 }
             }
             .navigationTitle("Preview")
@@ -6796,7 +6794,7 @@ private struct ReportRecipientsSettingsView: View {
             recipientRow(
                 title: contact.name,
                 subtitle: contact.email,
-                secondarySubtitle: contact.mobile,
+                secondarySubtitle: contact.mobile.formattedMobileNumber,
                 sendEmail: sendEmailBinding(for: recipient),
                 sendText: sendTextBinding(for: recipient),
                 footer: footer

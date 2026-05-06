@@ -28,6 +28,14 @@ private struct LiveStatsSummaryMetric: Identifiable, Equatable {
     var id: String { label }
 }
 
+private struct SyncedPossessionLeader: Identifiable, Equatable {
+    let id: UUID
+    let playerName: String
+    let possessions: Int
+    let goals: Int
+    let points: Int
+}
+
 struct NewGameWizardPreviewData {
     static let minimal = (
         venue: "Main Oval",
@@ -361,6 +369,7 @@ struct NewGameWizardView: View {
     @State private var showLiveStatsSyncIssues = false
     @State private var promptedStatsSessionIDForLiveGame: UUID?
     @State private var remoteInviteTallies: [CloudStatsInviteTally] = []
+    @State private var remoteInvitePlayerEvents: [CloudStatsInvitePlayerEvent] = []
 
     private enum LiveDraftResumeStore {
         private static let statePrefix = "liveDraft.state."
@@ -1058,6 +1067,7 @@ struct NewGameWizardView: View {
 
     private var liveGameSyncSnapshot: LiveGameSyncSnapshot? {
         guard isLiveGameScreenActive, let gradeID else { return nil }
+        let scorerIDs = Set(goalKickers.compactMap(\.playerID)).union(liveGameSession.pointScorers.keys)
         return LiveGameSyncSnapshot(
             gradeID: gradeID,
             date: date,
@@ -1072,9 +1082,11 @@ struct NewGameWizardView: View {
             ourBehinds: ourBehinds,
             theirGoals: theirGoals,
             theirBehinds: theirBehinds,
-            goalKickers: goalKickers.compactMap { entry in
-                guard let playerID = entry.playerID, entry.goals > 0 else { return nil }
-                return LiveGameSyncGoalKicker(playerID: playerID, goals: entry.goals)
+            goalKickers: scorerIDs.compactMap { playerID in
+                let goals = goalKickers.first(where: { $0.playerID == playerID })?.goals ?? 0
+                let points = liveGameSession.pointScorers[playerID, default: 0]
+                guard goals > 0 || points > 0 else { return nil }
+                return LiveGameSyncGoalKicker(playerID: playerID, goals: goals, points: points)
             }
         )
     }
@@ -1141,23 +1153,72 @@ struct NewGameWizardView: View {
     private var liveStatsInviteSyncTaskID: String {
         [
             activeSyncableStatsSession?.sessionId.uuidString ?? "no-session",
-            showsSyncedLiveStatsSummaryInLandscape ? "visible" : "hidden"
+            showsSyncedLiveStatsSummary ? "visible" : "hidden"
         ].joined(separator: "||")
+    }
+
+    private var syncedPossessionLeaders: [SyncedPossessionLeader] {
+        guard showsSyncedLiveStatsSummary,
+              let session = activeSyncableStatsSession else { return [] }
+
+        let localEvents = statEvents.filter { $0.sessionId == session.sessionId }
+        let kickIDs = Set(statTypes.filter { normalizedLiveStatsName($0.name) == "kick" }.map(\.id))
+        let handballIDs = Set(statTypes.filter { normalizedLiveStatsName($0.name) == "handball" }.map(\.id))
+        guard !kickIDs.isEmpty || !handballIDs.isEmpty else { return [] }
+
+        let goalMap = Dictionary(uniqueKeysWithValues: liveGameSyncSnapshot?.goalKickers.map { ($0.playerID, (goals: $0.goals, points: $0.points)) } ?? [])
+
+        var possessionCounts: [UUID: Int] = [:]
+        for event in localEvents {
+            guard eligiblePlayers.contains(where: { $0.id == event.playerId }) else { continue }
+            if kickIDs.contains(event.statTypeId) || handballIDs.contains(event.statTypeId) {
+                possessionCounts[event.playerId, default: 0] += 1
+            }
+        }
+        for event in remoteInvitePlayerEvents {
+            guard eligiblePlayers.contains(where: { $0.id == event.playerID }) else { continue }
+            if kickIDs.contains(event.statTypeID) || handballIDs.contains(event.statTypeID) {
+                possessionCounts[event.playerID, default: 0] += 1
+            }
+        }
+
+        return possessionCounts
+            .filter { $0.value > 0 }
+            .map { playerID, possessions in
+                let scoreLine = goalMap[playerID] ?? (goals: 0, points: 0)
+                return SyncedPossessionLeader(
+                    id: playerID,
+                    playerName: playerName(playerID),
+                    possessions: possessions,
+                    goals: scoreLine.goals,
+                    points: scoreLine.points
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.possessions != rhs.possessions { return lhs.possessions > rhs.possessions }
+                if lhs.goals != rhs.goals { return lhs.goals > rhs.goals }
+                if lhs.points != rhs.points { return lhs.points > rhs.points }
+                return lhs.playerName.localizedCaseInsensitiveCompare(rhs.playerName) == .orderedAscending
+            }
+            .prefix(8)
+            .map { $0 }
     }
 
     private func monitorRemoteInviteTallies() async {
         await refreshRemoteInviteTallies()
-        guard showsSyncedLiveStatsSummaryInLandscape else { return }
+        await refreshRemoteInvitePlayerEvents()
+        guard showsSyncedLiveStatsSummary else { return }
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             await refreshRemoteInviteTallies()
+            await refreshRemoteInvitePlayerEvents()
         }
     }
 
     @MainActor
     private func refreshRemoteInviteTallies() async {
-        guard showsSyncedLiveStatsSummaryInLandscape,
+        guard showsSyncedLiveStatsSummary,
               let session = activeSyncableStatsSession else {
             remoteInviteTallies = []
             return
@@ -1169,6 +1230,21 @@ struct NewGameWizardView: View {
                 statTypeIDs: statTypes.map(\.id),
                 sideRawValues: ["ourClub", "opposition"]
             )
+        } catch {
+            return
+        }
+    }
+
+    @MainActor
+    private func refreshRemoteInvitePlayerEvents() async {
+        guard showsSyncedLiveStatsSummary,
+              let session = activeSyncableStatsSession else {
+            remoteInvitePlayerEvents = []
+            return
+        }
+
+        do {
+            remoteInvitePlayerEvents = try await CloudKitStatsInviteService.shared.fetchPlayerEvents(sessionID: session.sessionId)
         } catch {
             return
         }
@@ -1197,8 +1273,11 @@ struct NewGameWizardView: View {
     }
 
     private var activeSyncableStatsSession: StatsSession? {
-        guard let activeStatsSessionID = navigationState.activeLiveStatsSessionDescriptor?.sessionID else { return nil }
-        guard let session = statsSessions.first(where: { $0.sessionId == activeStatsSessionID }) else { return nil }
+        let candidateSessionID =
+            navigationState.activeLiveStatsSessionDescriptor?.sessionID
+            ?? navigationState.syncedStatsSessionID
+        guard let candidateSessionID else { return nil }
+        guard let session = statsSessions.first(where: { $0.sessionId == candidateSessionID }) else { return nil }
         return canSyncLiveGame(with: session) ? session : nil
     }
 
@@ -1211,12 +1290,22 @@ struct NewGameWizardView: View {
         navigationState.liveStatsSyncStatus
     }
 
-    private var showsSyncedLiveStatsSummaryInLandscape: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad && isLiveGameSyncedToStats
+    private var showsSyncedLiveStatsSummary: Bool {
+        isLiveGameSyncedToStats
+    }
+
+    private var linkedLiveStatsSnapshot: LiveStatsInviteSnapshot? {
+        guard isLiveGameSyncedToStats,
+              let session = activeSyncableStatsSession,
+              let snapshot = navigationState.activeLiveStatsInviteSnapshot,
+              snapshot.sessionID == session.sessionId else {
+            return nil
+        }
+        return snapshot
     }
 
     private var syncedLiveStatsSummaryMetrics: [LiveStatsSummaryMetric] {
-        guard showsSyncedLiveStatsSummaryInLandscape,
+        guard showsSyncedLiveStatsSummary,
               let session = activeSyncableStatsSession else { return [] }
 
         let allowedIDs = session.enabledStatTypeIDs
@@ -1859,6 +1948,11 @@ struct NewGameWizardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .statsTalliesDidChange)) { _ in
             Task {
                 await refreshRemoteInviteTallies()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .statsPlayerEventsDidChange)) { _ in
+            Task {
+                await refreshRemoteInvitePlayerEvents()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -2747,8 +2841,10 @@ struct NewGameWizardView: View {
             playerName: { playerID in
                 players.first(where: { $0.id == playerID })?.name ?? "Unknown"
             },
-            showsSyncedStatsSummary: showsSyncedLiveStatsSummaryInLandscape,
+            showsSyncedStatsSummary: showsSyncedLiveStatsSummary,
             syncedStatsSummaryMetrics: syncedLiveStatsSummaryMetrics,
+            syncedPossessionLeaders: syncedPossessionLeaders,
+            linkedLiveStatsSnapshot: linkedLiveStatsSnapshot,
             syncStatusIconName: liveGameSyncStatusIconName,
             syncStatusTint: liveGameSyncStatusTint,
             syncStatusAccessibilityLabel: liveGameSyncAccessibilityLabel,
@@ -4146,6 +4242,8 @@ struct NewGameWizardView: View {
         let playerName: (UUID) -> String
         let showsSyncedStatsSummary: Bool
         let syncedStatsSummaryMetrics: [LiveStatsSummaryMetric]
+        let syncedPossessionLeaders: [SyncedPossessionLeader]
+        let linkedLiveStatsSnapshot: LiveStatsInviteSnapshot?
         let syncStatusIconName: String
         let syncStatusTint: Color
         let syncStatusAccessibilityLabel: String
@@ -4193,6 +4291,8 @@ struct NewGameWizardView: View {
             playerName: @escaping (UUID) -> String,
             showsSyncedStatsSummary: Bool,
             syncedStatsSummaryMetrics: [LiveStatsSummaryMetric],
+            syncedPossessionLeaders: [SyncedPossessionLeader],
+            linkedLiveStatsSnapshot: LiveStatsInviteSnapshot?,
             syncStatusIconName: String,
             syncStatusTint: Color,
             syncStatusAccessibilityLabel: String,
@@ -4224,6 +4324,8 @@ struct NewGameWizardView: View {
             self.playerName = playerName
             self.showsSyncedStatsSummary = showsSyncedStatsSummary
             self.syncedStatsSummaryMetrics = syncedStatsSummaryMetrics
+            self.syncedPossessionLeaders = syncedPossessionLeaders
+            self.linkedLiveStatsSnapshot = linkedLiveStatsSnapshot
             self.syncStatusIconName = syncStatusIconName
             self.syncStatusTint = syncStatusTint
             self.syncStatusAccessibilityLabel = syncStatusAccessibilityLabel
@@ -4268,16 +4370,6 @@ struct NewGameWizardView: View {
                     if lhsTotal != rhsTotal { return lhsTotal > rhsTotal }
                     return playerName(lhs.id) < playerName(rhs.id)
                 }
-        }
-
-        private var leftSyncedStatsSummaryMetrics: [LiveStatsSummaryMetric] {
-            let splitIndex = Int(ceil(Double(syncedStatsSummaryMetrics.count) / 2.0))
-            return Array(syncedStatsSummaryMetrics.prefix(splitIndex))
-        }
-
-        private var rightSyncedStatsSummaryMetrics: [LiveStatsSummaryMetric] {
-            let splitIndex = Int(ceil(Double(syncedStatsSummaryMetrics.count) / 2.0))
-            return Array(syncedStatsSummaryMetrics.dropFirst(splitIndex))
         }
 
         private struct GoalKickerEditorState: Equatable {
@@ -4337,45 +4429,47 @@ struct NewGameWizardView: View {
         }
 
         var body: some View {
-            VStack(spacing: 0) {
-                GeometryReader { proxy in
-                    let compact = proxy.size.width < 980
-                    let cardSpacing: CGFloat = compact ? 14 : 18
-                    let availableWidth = proxy.size.width
-                    let preferredTeamCardWidth: CGFloat = availableWidth * 0.35
-                    let reservedCenterWidth: CGFloat = 300
-                    let remainingWidthForTeams: CGFloat = (availableWidth - (cardSpacing * 2) - reservedCenterWidth) / 2
-                    let clampedTeamCardWidth = min(preferredTeamCardWidth, remainingWidthForTeams)
-                    let teamCardWidth = max(280, clampedTeamCardWidth)
-                    let timerWidth = max(260, availableWidth - (teamCardWidth * 2) - (cardSpacing * 2))
-                    let sharedCardHeight = max(368, proxy.size.height * 0.46)
-                    let secondaryRowCardHeight: CGFloat = 250
+            GeometryReader { proxy in
+                let compact = proxy.size.width < 980
+                let cardSpacing: CGFloat = compact ? 14 : 18
+                let horizontalPadding: CGFloat = compact ? 14 : 18
+                let availableWidth = max(0, proxy.size.width - (horizontalPadding * 2))
+                let preferredTeamCardWidth: CGFloat = availableWidth * 0.35
+                let reservedCenterWidth: CGFloat = compact ? availableWidth : 320
+                let remainingWidthForTeams: CGFloat = compact
+                    ? max(0, (availableWidth - cardSpacing) / 2)
+                    : (availableWidth - (cardSpacing * 2) - reservedCenterWidth) / 2
+                let clampedTeamCardWidth = min(preferredTeamCardWidth, remainingWidthForTeams)
+                let teamCardWidth = compact ? remainingWidthForTeams : max(280, clampedTeamCardWidth)
+                let timerWidth = compact ? availableWidth : max(280, availableWidth - (teamCardWidth * 2) - (cardSpacing * 2))
+                let scoreboardHeight = compact ? 298 : max(382, proxy.size.height * 0.45)
+                let supportingCardHeight: CGFloat = compact ? 260 : 286
 
-                    ScrollView {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: cardSpacing) {
                         if compact {
-                            self.compactScoreboardLayout(
-                                width: proxy.size.width,
+                            compactScoreboardLayout(
+                                width: availableWidth,
                                 cardSpacing: cardSpacing,
-                                sharedCardHeight: sharedCardHeight,
-                                secondaryRowCardHeight: secondaryRowCardHeight
+                                sharedCardHeight: scoreboardHeight,
+                                secondaryRowCardHeight: supportingCardHeight
                             )
                         } else {
-                            self.regularScoreboardLayout(
+                            regularScoreboardLayout(
                                 cardSpacing: cardSpacing,
                                 teamCardWidth: teamCardWidth,
                                 timerWidth: timerWidth,
-                                sharedCardHeight: sharedCardHeight,
-                                secondaryRowCardHeight: secondaryRowCardHeight,
-                                scoreWormWidth: availableWidth
+                                sharedCardHeight: scoreboardHeight,
+                                secondaryRowCardHeight: supportingCardHeight
                             )
                         }
                     }
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, 4)
+                    .padding(.bottom, 28)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-                .padding(.bottom, 22)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(liveGameBackdrop.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -4558,10 +4652,73 @@ struct NewGameWizardView: View {
             }
         }
 
+        private var liveGameBackdrop: some View {
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color.black,
+                        Color(red: 0.06, green: 0.09, blue: 0.16),
+                        Color(red: 0.11, green: 0.14, blue: 0.24)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Circle()
+                    .fill(ourStyle.background.opacity(0.24))
+                    .frame(width: 320, height: 320)
+                    .blur(radius: 70)
+                    .offset(x: -180, y: -190)
+
+                Circle()
+                    .fill(oppStyle.background.opacity(0.22))
+                    .frame(width: 340, height: 340)
+                    .blur(radius: 80)
+                    .offset(x: 210, y: -120)
+
+                RoundedRectangle(cornerRadius: 44, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+        }
+
+        private var currentPeriodDisplayLabel: String {
+            switch liveSession.periodSnapshots.count {
+            case 0: return "Q1"
+            case 1: return "Q2"
+            case 2: return "Q3"
+            case 3: return "Q4"
+            default: return "FT"
+            }
+        }
+
+        private var marginText: String {
+            let margin = ourScore - theirScore
+            return "\(margin > 0 ? "+" : "")\(margin)"
+        }
+
+        private var shouldShowLiveStatsSummary: Bool {
+            showsSyncedStatsSummary
+        }
+
+        private func glassPanelBackground(cornerRadius: CGFloat = 22) -> some View {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+        }
+
         private func timerCard(height: CGFloat, width: CGFloat, compact: Bool = false) -> some View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Text("Timer")
+                    Label(currentPeriodDisplayLabel, systemImage: "clock.fill")
                         .font(compact ? .headline.weight(.semibold) : .title3.weight(.semibold))
                     Spacer()
                     Text("\(liveSession.periodMinutes) min")
@@ -4699,7 +4856,7 @@ struct NewGameWizardView: View {
             }
             .padding(compact ? 16 : 18)
             .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .background(glassPanelBackground(cornerRadius: 24))
         }
 
         private func periodScoresSection(compact: Bool) -> some View {
@@ -4748,7 +4905,6 @@ struct NewGameWizardView: View {
             let scoreCardWidth = max(((width - cardSpacing) / 2) - 2, 0)
 
             VStack(spacing: cardSpacing) {
-                timerCard(height: 308, width: width, compact: true)
                 HStack(alignment: .top, spacing: cardSpacing) {
                     teamScoreCard(
                         title: ourTeamName,
@@ -4787,8 +4943,20 @@ struct NewGameWizardView: View {
                     )
                     .frame(width: scoreCardWidth, alignment: .topLeading)
                 }
+
+                timerCard(height: sharedCardHeight, width: width, compact: true)
+
                 goalKickerSummaryCard(width: width, height: secondaryRowCardHeight)
-                scoreWormCard(width: width)
+
+                if shouldShowLiveStatsSummary {
+                    liveStatsBreakdownCard(
+                        metrics: syncedStatsSummaryMetrics,
+                        snapshot: linkedLiveStatsSnapshot,
+                        compact: true,
+                        height: max(secondaryRowCardHeight + 12, 220),
+                        width: width
+                    )
+                }
             }
         }
 
@@ -4798,81 +4966,73 @@ struct NewGameWizardView: View {
             teamCardWidth: CGFloat,
             timerWidth: CGFloat,
             sharedCardHeight: CGFloat,
-            secondaryRowCardHeight: CGFloat,
-            scoreWormWidth: CGFloat
+            secondaryRowCardHeight: CGFloat
         ) -> some View {
-            VStack(spacing: 0) {
+            VStack(spacing: cardSpacing) {
                 HStack(alignment: .top, spacing: cardSpacing) {
-                    VStack(spacing: cardSpacing) {
-                        teamScoreCard(
-                            title: ourTeamName,
-                            style: ourStyle,
-                            goals: $ourGoals,
-                            behinds: $ourBehinds,
-                            score: ourScore,
-                            goalAction: { showPlayerPicker = true },
-                            pointAction: { showPointPicker = true },
-                            showUndoButtons: true,
-                            showManualAdjusters: false,
-                            goalUndoAction: { confirmUndoGoal() },
-                            pointUndoAction: { confirmUndoPoint() },
-                            canUndoGoal: canUndoGoal,
-                            canUndoPoint: canUndoPoint,
-                            minHeight: sharedCardHeight
-                        )
-                        if showsSyncedStatsSummary {
-                            syncedStatsSummaryCard(
-                                metrics: leftSyncedStatsSummaryMetrics,
-                                height: secondaryRowCardHeight,
-                                width: teamCardWidth
-                            )
-                        }
-                    }
+                    teamScoreCard(
+                        title: ourTeamName,
+                        style: ourStyle,
+                        goals: $ourGoals,
+                        behinds: $ourBehinds,
+                        score: ourScore,
+                        goalAction: { showPlayerPicker = true },
+                        pointAction: { showPointPicker = true },
+                        showUndoButtons: true,
+                        showManualAdjusters: false,
+                        goalUndoAction: { confirmUndoGoal() },
+                        pointUndoAction: { confirmUndoPoint() },
+                        canUndoGoal: canUndoGoal,
+                        canUndoPoint: canUndoPoint,
+                        minHeight: sharedCardHeight
+                    )
                     .frame(width: teamCardWidth, alignment: .topLeading)
 
-                    VStack(spacing: cardSpacing) {
-                        timerCard(height: sharedCardHeight, width: timerWidth)
-                        goalKickerSummaryCard(width: timerWidth, height: secondaryRowCardHeight)
-                    }
+                    timerCard(height: sharedCardHeight, width: timerWidth)
                     .frame(width: timerWidth, alignment: .top)
 
-                    VStack(spacing: cardSpacing) {
-                        teamScoreCard(
-                            title: oppTeamName,
-                            style: oppStyle,
-                            goals: $theirGoals,
-                            behinds: $theirBehinds,
-                            score: theirScore,
-                            goalAction: { recordOpponentGoal() },
-                            pointAction: { recordOpponentPoint() },
-                            showUndoButtons: true,
-                            showManualAdjusters: false,
-                            goalUndoAction: { confirmUndoOpponentGoal() },
-                            pointUndoAction: { confirmUndoOpponentPoint() },
-                            canUndoGoal: canUndoOpponentGoal,
-                            canUndoPoint: canUndoOpponentPoint,
-                            minHeight: sharedCardHeight
-                        )
-                        if showsSyncedStatsSummary {
-                            syncedStatsSummaryCard(
-                                metrics: rightSyncedStatsSummaryMetrics,
-                                height: secondaryRowCardHeight,
-                                width: teamCardWidth
-                            )
-                        }
-                    }
+                    teamScoreCard(
+                        title: oppTeamName,
+                        style: oppStyle,
+                        goals: $theirGoals,
+                        behinds: $theirBehinds,
+                        score: theirScore,
+                        goalAction: { recordOpponentGoal() },
+                        pointAction: { recordOpponentPoint() },
+                        showUndoButtons: true,
+                        showManualAdjusters: false,
+                        goalUndoAction: { confirmUndoOpponentGoal() },
+                        pointUndoAction: { confirmUndoOpponentPoint() },
+                        canUndoGoal: canUndoOpponentGoal,
+                        canUndoPoint: canUndoOpponentPoint,
+                        minHeight: sharedCardHeight
+                    )
                     .frame(width: teamCardWidth, alignment: .topTrailing)
                 }
-                scoreWormCard(width: scoreWormWidth)
-                    .padding(.top, cardSpacing)
+
+                if shouldShowLiveStatsSummary {
+                    syncedLiveStatsLowerSection(
+                        metrics: syncedStatsSummaryMetrics,
+                        height: max(secondaryRowCardHeight + 24, 300),
+                        width: (teamCardWidth * 2) + timerWidth + (cardSpacing * 2)
+                    )
+                } else {
+                    goalKickerSummaryCard(
+                        width: (teamCardWidth * 2) + timerWidth + (cardSpacing * 2),
+                        height: secondaryRowCardHeight
+                    )
+                }
             }
         }
 
         private func goalKickerSummaryCard(width: CGFloat, height: CGFloat) -> some View {
-            let hasManyGoalKickers = scorerTally.count + (liveSession.rushedPoints > 0 ? 1 : 0) > 5
+            let visibleRows = 5
+            let hasManyGoalKickers = scorerTally.count + (liveSession.rushedPoints > 0 ? 1 : 0) > visibleRows
             return VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    ScorePill("Goal Kickers", style: ourStyle)
+                    Label("Goal Kickers", systemImage: "list.bullet.rectangle.portrait.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
                     Spacer()
                     Button {
                         showGoalKickerEditor = true
@@ -4892,26 +5052,23 @@ struct NewGameWizardView: View {
                     ScrollView(showsIndicators: true) {
                         VStack(spacing: 8) {
                             ForEach(scorerTally, id: \.id) { scorer in
-                                HStack {
-                                    Text(playerName(scorer.id))
-                                    Spacer()
-                                    Text(playerContribution(goals: scorer.goals, points: scorer.points))
-                                        .font(.headline)
-                                        .monospacedDigit()
-                                }
+                                leaderboardLine(
+                                    title: playerName(scorer.id),
+                                    value: playerContribution(goals: scorer.goals, points: scorer.points),
+                                    secondaryValue: nil
+                                )
                             }
                             if liveSession.rushedPoints > 0 {
-                                HStack {
-                                    Text("Rushed")
-                                    Spacer()
-                                    Text(playerContribution(goals: 0, points: liveSession.rushedPoints))
-                                        .font(.headline)
-                                        .monospacedDigit()
-                                }
+                                leaderboardLine(
+                                    title: "Rushed",
+                                    value: playerContribution(goals: 0, points: liveSession.rushedPoints),
+                                    secondaryValue: nil
+                                )
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
+                    .frame(maxHeight: 5 * 42)
                     if hasManyGoalKickers {
                         Label("Scroll to see all goal kickers", systemImage: "arrow.up.and.down")
                             .font(.caption.weight(.semibold))
@@ -4921,94 +5078,361 @@ struct NewGameWizardView: View {
             }
             .padding()
             .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background(glassPanelBackground(cornerRadius: 22))
         }
 
-        private func syncedStatsSummaryCard(
+        @ViewBuilder
+        private func syncedLiveStatsLowerSection(
             metrics: [LiveStatsSummaryMetric],
             height: CGFloat,
             width: CGFloat
         ) -> some View {
-            VStack(alignment: .leading, spacing: 10) {
-                ScorePill("Stats Summary", style: ourStyle)
+            let leaderboardHeight: CGFloat = 286
+            let lowerWidth = (width - 12) / 2
+            let statsHeight = max(120, height - leaderboardHeight - 12)
 
-                if metrics.isEmpty {
-                    Text("No synced stats yet.")
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    goalKickerSummaryCard(width: lowerWidth, height: leaderboardHeight)
+                    possessionLeadersCard(width: lowerWidth, height: leaderboardHeight)
+                }
+
+                liveStatsCompactGridCard(
+                    metrics: metrics,
+                    height: statsHeight,
+                    width: width
+                )
+            }
+        }
+
+        private func possessionLeadersCard(width: CGFloat, height: CGFloat) -> some View {
+            let visibleRows = 5
+            let hasManyLeaders = syncedPossessionLeaders.count > visibleRows
+            return VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Possession Getters", systemImage: "figure.australian.football")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("Live Stats")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.62))
+                }
+
+                if syncedPossessionLeaders.isEmpty {
+                    Text("No possession data yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    VStack(spacing: 8) {
+                    ScrollView(showsIndicators: true) {
+                        VStack(spacing: 8) {
+                            ForEach(syncedPossessionLeaders) { leader in
+                                leaderboardLine(
+                                    title: leader.playerName,
+                                    value: "\(leader.possessions)",
+                                    secondaryValue: playerContribution(goals: leader.goals, points: leader.points)
+                                )
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .frame(maxHeight: 5 * 42)
+                    if hasManyLeaders {
+                        Label("Scroll to see all possession leaders", systemImage: "arrow.up.and.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding()
+            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
+            .background(glassPanelBackground(cornerRadius: 22))
+        }
+
+        private func liveStatsBreakdownCard(
+            metrics: [LiveStatsSummaryMetric],
+            snapshot: LiveStatsInviteSnapshot?,
+            compact: Bool,
+            height: CGFloat,
+            width: CGFloat
+        ) -> some View {
+            return VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Live Stats", systemImage: "waveform.path.ecg.rectangle.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("Synced live feed · view only")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.66))
+                }
+
+                if let snapshot {
+                    HStack(spacing: 12) {
+                        liveStatsQuickPill(
+                            title: snapshot.currentQuarter,
+                            value: timeText(snapshot.remainingSeconds),
+                            systemImage: snapshot.isTimerRunning ? "play.circle.fill" : "pause.circle.fill"
+                        )
+                        liveStatsQuickPill(
+                            title: ourTeamName,
+                            value: "\(snapshot.ourPoints)",
+                            systemImage: "shield.lefthalf.filled"
+                        )
+                        liveStatsQuickPill(
+                            title: oppTeamName,
+                            value: "\(snapshot.theirPoints)",
+                            systemImage: "flag.2.crossed.fill"
+                        )
+                    }
+                }
+
+                if metrics.isEmpty {
+                    Text("Waiting for live stats to come through.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 10) {
                         ForEach(metrics) { metric in
-                            syncedStatsSummaryRow(metric)
+                            liveStatsMetricRow(metric, compact: compact)
                         }
                     }
                 }
             }
             .padding()
             .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .background(glassPanelBackground(cornerRadius: 22))
         }
 
-        private func syncedStatsSummaryRow(_ metric: LiveStatsSummaryMetric) -> some View {
-            let ourIsLeading = metric.ourNumeric > metric.oppositionNumeric
-            let oppositionIsLeading = metric.oppositionNumeric > metric.ourNumeric
-            let ourBackground = ourIsLeading ? Color.green.opacity(0.85) : (oppositionIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
-            let oppositionBackground = oppositionIsLeading ? Color.green.opacity(0.85) : (ourIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
-
-            return HStack(spacing: 8) {
-                syncedStatsSummarySide(
-                    label: metric.label,
-                    value: metric.ourValue,
-                    background: ourBackground,
-                    mirrored: false
-                )
-                syncedStatsSummarySide(
-                    label: metric.label,
-                    value: metric.oppositionValue,
-                    background: oppositionBackground,
-                    mirrored: true
-                )
-            }
-        }
-
-        private func syncedStatsSummarySide(
-            label: String,
-            value: String,
-            background: Color,
-            mirrored: Bool
+        private func liveStatsCompactGridCard(
+            metrics: [LiveStatsSummaryMetric],
+            height: CGFloat,
+            width: CGFloat
         ) -> some View {
-            HStack(spacing: 6) {
-                if mirrored {
-                    Text(value)
-                        .font(.title3.weight(.black))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                    Spacer(minLength: 6)
-                    Text(label)
+            let columns = [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ]
+
+            return VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("Live Stats", systemImage: "waveform.path.ecg.rectangle.fill")
                         .font(.headline.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.68)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("Us v Them")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.62))
+                }
+
+                if metrics.isEmpty {
+                    Text("Waiting for live stats to come through.")
+                        .foregroundStyle(.secondary)
+                        .frame(maxHeight: .infinity, alignment: .center)
                 } else {
-                    Text(label)
-                        .font(.headline.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.68)
-                    Spacer(minLength: 6)
-                    Text(value)
-                        .font(.title3.weight(.black))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                    ScrollView(showsIndicators: false) {
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(metrics) { metric in
+                                compactMetricTile(metric)
+                            }
+                        }
+                    }
                 }
             }
+            .padding()
+            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
+            .background(glassPanelBackground(cornerRadius: 22))
+        }
+
+        private func compactMetricTile(_ metric: LiveStatsSummaryMetric) -> some View {
+            let ourLeading = metric.ourNumeric > metric.oppositionNumeric
+            let oppositionLeading = metric.oppositionNumeric > metric.ourNumeric
+
+            return VStack(alignment: .leading, spacing: 10) {
+                Text(metric.label)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                HStack(spacing: 8) {
+                    compactMetricSide(
+                        teamName: ourTeamName,
+                        value: metric.ourValue,
+                        emphasized: ourLeading,
+                        subdued: oppositionLeading
+                    )
+                    compactMetricSide(
+                        teamName: oppTeamName,
+                        value: metric.oppositionValue,
+                        emphasized: oppositionLeading,
+                        subdued: ourLeading
+                    )
+                }
+            }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 88)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+        }
+
+        private func compactMetricSide(
+            teamName: String,
+            value: String,
+            emphasized: Bool,
+            subdued: Bool
+        ) -> some View {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(teamName)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+                Text(value)
+                    .font(.headline.weight(.black))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
             .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(
+                        emphasized ? Color.green.opacity(0.22) :
+                            (subdued ? Color.red.opacity(0.12) : Color.white.opacity(0.05))
+                    )
+            )
+        }
+
+        private func leaderboardLine(title: String, value: String, secondaryValue: String?) -> some View {
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let secondaryValue {
+                    Text(secondaryValue)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.68))
+                        .monospacedDigit()
+                }
+                Text(value)
+                    .font(.headline.weight(.black))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+            )
+        }
+
+        private func liveStatsQuickPill(title: String, value: String, systemImage: String) -> some View {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(title, systemImage: systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+                Text(value)
+                    .font(.title3.weight(.black))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
+        }
+
+        private func liveStatsMetricRow(_ metric: LiveStatsSummaryMetric, compact: Bool) -> some View {
+            let ourLeading = metric.ourNumeric > metric.oppositionNumeric
+            let oppositionLeading = metric.oppositionNumeric > metric.ourNumeric
+
+            return HStack(spacing: 12) {
+                liveStatsMetricSide(
+                    teamName: ourTeamName,
+                    value: metric.ourValue,
+                    emphasized: ourLeading,
+                    subdued: oppositionLeading
+                )
+
+                Text(metric.label)
+                    .font(compact ? .subheadline.weight(.bold) : .headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(minWidth: compact ? 88 : 120)
+
+                liveStatsMetricSide(
+                    teamName: oppTeamName,
+                    value: metric.oppositionValue,
+                    emphasized: oppositionLeading,
+                    subdued: ourLeading
+                )
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+        }
+
+        private func liveStatsMetricSide(
+            teamName: String,
+            value: String,
+            emphasized: Bool,
+            subdued: Bool
+        ) -> some View {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(teamName)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+                Text(value)
+                    .font(.title2.weight(.black))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(background, in: RoundedRectangle(cornerRadius: 10))
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(
+                        emphasized ? Color.green.opacity(0.28) :
+                            (subdued ? Color.red.opacity(0.16) : Color.white.opacity(0.06))
+                    )
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(emphasized ? 0.28 : 0.12), lineWidth: 1)
             )
         }
 
@@ -5384,7 +5808,7 @@ struct NewGameWizardView: View {
             }
             .padding(compact ? 14 : 20)
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .background(glassPanelBackground(cornerRadius: 24))
         }
 
         @ViewBuilder
@@ -5397,7 +5821,7 @@ struct NewGameWizardView: View {
             showManualAdjusters: Bool,
             compact: Bool
         ) -> some View {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: compact ? 14 : 10) {
                 VStack(spacing: compact ? 6 : 10) {
                     Text(title)
                         .font(compact ? .subheadline.weight(.bold) : .title3.weight(.bold))
@@ -5407,14 +5831,14 @@ struct NewGameWizardView: View {
 
                     if compact {
                         Text("\(score)")
-                            .font(.system(size: 42, weight: .black, design: .rounded))
+                            .font(.system(size: 64, weight: .black, design: .rounded))
                             .monospacedDigit()
-                            .minimumScaleFactor(0.72)
+                            .minimumScaleFactor(0.68)
                             .lineLimit(1)
                         Text("\(goals.wrappedValue).\(behinds.wrappedValue)")
-                            .font(.system(size: 26, weight: .semibold, design: .rounded))
+                            .font(.system(size: 38, weight: .bold, design: .rounded))
                             .monospacedDigit()
-                            .minimumScaleFactor(0.72)
+                            .minimumScaleFactor(0.68)
                             .lineLimit(1)
                     } else {
                         Text("\(score)")
@@ -5430,7 +5854,7 @@ struct NewGameWizardView: View {
                 .foregroundStyle(style.text)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, compact ? 10 : 16)
-                .padding(.vertical, compact ? 12 : 16)
+                .padding(.vertical, compact ? 18 : 16)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(style.background)
@@ -5510,13 +5934,18 @@ struct NewGameWizardView: View {
 
         private func undoActionButton(action: @escaping () -> Void, isEnabled: Bool, compact: Bool) -> some View {
             Button(action: action) {
-                Image(systemName: "arrow.uturn.backward.circle.fill")
-                    .font(.system(size: compact ? 20 : 24, weight: .semibold))
+                Label("Undo", systemImage: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: compact ? 16 : 18, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, compact ? 8 : 10)
+                    .padding(.vertical, compact ? 10 : 12)
             }
             .buttonStyle(.plain)
             .disabled(!isEnabled)
+            .foregroundStyle(.white.opacity(isEnabled ? 0.88 : 0.38))
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(isEnabled ? 0.08 : 0.04))
+            )
         }
 
         private func prominentActionButton(
@@ -5527,15 +5956,25 @@ struct NewGameWizardView: View {
             action: @escaping () -> Void
         ) -> some View {
             Button(action: action) {
-                Text(title)
-                    .font(.system(size: compact ? 20 : 28, weight: compact ? .bold : .heavy, design: .rounded))
+                VStack(spacing: 4) {
+                    Text(title)
+                        .font(.system(size: compact ? 20 : 28, weight: compact ? .bold : .heavy, design: .rounded))
+                    Text(title == "Goal" ? "+6" : "+1")
+                        .font(.caption.weight(.bold))
+                        .opacity(0.78)
+                }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, compact ? 14 : 18)
+                    .frame(minHeight: compact ? 78 : 92)
             }
             .buttonStyle(.plain)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(background.opacity(0.95))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                    )
             )
             .foregroundStyle(textColor)
         }

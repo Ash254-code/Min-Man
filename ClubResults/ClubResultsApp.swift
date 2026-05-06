@@ -27,6 +27,7 @@ struct ClubResultsApp: App {
     private static let modelStoreDirectoryName = "ClubResultsSwiftData"
     private static let modelStoreFileName = "ClubResults.store"
     private static let cloudKitContainerIdentifier = "iCloud.MINMAN.ClubResults"
+    private static let emergencyStoreDirectoryName = "ClubResultsSwiftData-Emergency"
 
     @State private var showSplash = true
     @StateObject private var navigationState = AppNavigationState()
@@ -59,35 +60,51 @@ struct ClubResultsApp: App {
 
     private static func makeModelContainer(schema: Schema) -> ModelContainer {
         let storeURL = modelStoreURL()
-        let inMemoryConfiguration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let recoveryStoreURL = recoveryStoreURL()
+        let emergencyStoreURL = emergencyStoreURL()
 
         do {
             return try makeCloudContainer(schema: schema, storeURL: storeURL)
         } catch let cloudError {
-            do {
-                try resetStoreDirectory(for: storeURL)
-                return try makeCloudContainer(schema: schema, storeURL: storeURL)
-            } catch let cloudRetryError {
-                do {
-                    debugPrint("CloudKit container unavailable. Falling back to local storage. First error: \(cloudError). Retry error: \(cloudRetryError)")
-                    return try makeLocalContainer(schema: schema, storeURL: storeURL)
-                } catch let localError {
-                    do {
-                        let recoveryStoreURL = recoveryStoreURL()
-                        try resetStoreDirectory(for: recoveryStoreURL)
-                        debugPrint("Local disk container unavailable at primary store. Retrying with a clean recovery store. Error: \(localError)")
-                        return try makeLocalContainer(schema: schema, storeURL: recoveryStoreURL)
-                    } catch let recoveryError {
-                        do {
-                            debugPrint("Recovery disk container unavailable. Falling back to in-memory store. Error: \(recoveryError)")
-                        return try ModelContainer(for: schema, configurations: inMemoryConfiguration)
-                        } catch {
-                            fatalError("Failed to create any SwiftData container: \(error)")
-                        }
-                    }
-                }
+            if let container = try? retryCloudContainer(schema: schema, storeURL: storeURL) {
+                return container
             }
+
+            debugPrint("CloudKit container unavailable. Falling back to local storage. Error: \(cloudError)")
+
+            if let container = try? makeLocalContainer(schema: schema, storeURL: storeURL) {
+                return container
+            }
+
+            debugPrint("Local disk container unavailable at primary store. Retrying with a clean recovery store.")
+
+            if let container = try? retryRecoveryLocalContainer(schema: schema, recoveryStoreURL: recoveryStoreURL) {
+                return container
+            }
+
+            debugPrint("Recovery disk container unavailable. Falling back to a clean emergency local store.")
+
+            if let container = try? retryEmergencyLocalContainer(schema: schema, emergencyStoreURL: emergencyStoreURL) {
+                return container
+            }
+
+            fatalError("Failed to create any SwiftData container.")
         }
+    }
+
+    private static func retryCloudContainer(schema: Schema, storeURL: URL) throws -> ModelContainer {
+        try resetStoreDirectory(for: storeURL)
+        return try makeCloudContainer(schema: schema, storeURL: storeURL)
+    }
+
+    private static func retryRecoveryLocalContainer(schema: Schema, recoveryStoreURL: URL) throws -> ModelContainer {
+        try resetStoreDirectory(for: recoveryStoreURL)
+        return try makeLocalContainer(schema: schema, storeURL: recoveryStoreURL)
+    }
+
+    private static func retryEmergencyLocalContainer(schema: Schema, emergencyStoreURL: URL) throws -> ModelContainer {
+        try resetStoreDirectory(for: emergencyStoreURL)
+        return try makeLocalContainer(schema: schema, storeURL: emergencyStoreURL)
     }
 
     private static func makeCloudContainer(schema: Schema, storeURL: URL) throws -> ModelContainer {
@@ -132,6 +149,20 @@ struct ClubResultsApp: App {
             fatalError("Failed to prepare recovery app support directory: \(error)")
         }
         return applicationSupportURL.appending(path: modelStoreFileName)
+    }
+
+    private static func emergencyStoreURL() -> URL {
+        let cachesURL = URL.cachesDirectory
+            .appending(path: emergencyStoreDirectoryName, directoryHint: .isDirectory)
+        do {
+            try FileManager.default.createDirectory(
+                at: cachesURL,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            fatalError("Failed to prepare emergency cache directory: \(error)")
+        }
+        return cachesURL.appending(path: modelStoreFileName)
     }
 
     private static func resetStoreDirectory(for storeURL: URL) throws {

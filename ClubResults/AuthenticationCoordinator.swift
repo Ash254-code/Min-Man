@@ -612,9 +612,9 @@ struct AuthenticationGateView<Content: View>: View {
                 }
 
                 if authCoordinator.isRestoringSession {
-                    ProgressView("Checking your access…")
+                    LoadingFootballView("Checking your access…")
                 } else if authCoordinator.isSigningIn {
-                    ProgressView("Signing you in…")
+                    LoadingFootballView("Signing you in…")
                 } else {
                     SignInWithAppleButton(.continue) { request in
                         authCoordinator.prepare(request)
