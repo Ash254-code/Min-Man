@@ -370,6 +370,27 @@ struct NewGameWizardView: View {
     @State private var promptedStatsSessionIDForLiveGame: UUID?
     @State private var remoteInviteTallies: [CloudStatsInviteTally] = []
     @State private var remoteInvitePlayerEvents: [CloudStatsInvitePlayerEvent] = []
+    @State private var showSelectedPlayersPicker = false
+    @State private var draftSelectedPlayerIDs: Set<UUID> = []
+    @State private var savedSelectedPlayerIDs: Set<UUID> = []
+    @State private var hasSavedSelectedPlayers = false
+    @State private var selectedPlayersOverrideEnabled = false
+
+    private enum LastWeekTeamStore {
+        private static let keyPrefix = "newGameWizard.lastWeekTeam."
+
+        static func save(playerIDs: Set<UUID>, for gradeID: UUID) {
+            let payload = Array(playerIDs).map(\.uuidString)
+            UserDefaults.standard.set(payload, forKey: keyPrefix + gradeID.uuidString)
+        }
+
+        static func load(for gradeID: UUID) -> Set<UUID> {
+            guard let payload = UserDefaults.standard.array(forKey: keyPrefix + gradeID.uuidString) as? [String] else {
+                return []
+            }
+            return Set(payload.compactMap(UUID.init(uuidString:)))
+        }
+    }
 
     private enum LiveDraftResumeStore {
         private static let statePrefix = "liveDraft.state."
@@ -778,6 +799,22 @@ struct NewGameWizardView: View {
         assign(lastSelected ?? roleDefault ?? "")
     }
 
+    private func applyLastWeekTeamIfAvailable(for gradeID: UUID?) {
+        guard let gradeID else {
+            draftSelectedPlayerIDs = []
+            savedSelectedPlayerIDs = []
+            hasSavedSelectedPlayers = false
+            return
+        }
+
+        let allIDs = Set(allEligiblePlayersForGrade.map(\.id))
+        let stored = LastWeekTeamStore.load(for: gradeID).intersection(allIDs)
+        let resolved = stored.isEmpty ? allIDs : stored
+        draftSelectedPlayerIDs = resolved
+        savedSelectedPlayerIDs = resolved
+        hasSavedSelectedPlayers = !resolved.isEmpty
+    }
+
     private func applyDefaults(for gradeID: UUID?) {
         visibleWaterBoySlots = 0
         visibleTrainerSlots = 0
@@ -901,12 +938,34 @@ struct NewGameWizardView: View {
         return resolvedGrades.first(where: { $0.id == gid })?.name ?? "Unknown grade"
     }
 
-    private var eligiblePlayers: [Player] {
+    private var allEligiblePlayersForGrade: [Player] {
         if isPreviewMode {
             return previewPlayers
         }
         guard let gid = gradeID else { return [] }
         return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
+    }
+
+    private var effectiveSelectedPlayerIDs: Set<UUID> {
+        if hasSavedSelectedPlayers {
+            return savedSelectedPlayerIDs
+        }
+        if !draftSelectedPlayerIDs.isEmpty {
+            return draftSelectedPlayerIDs
+        }
+        return Set(allEligiblePlayersForGrade.map(\.id))
+    }
+
+    private var eligiblePlayers: [Player] {
+        allEligiblePlayersForGrade.filter { effectiveSelectedPlayerIDs.contains($0.id) }
+    }
+
+    private var selectedPlayersForGame: [Player] {
+        allEligiblePlayersForGrade.filter { savedSelectedPlayerIDs.contains($0.id) }
+    }
+
+    private var selectedPlayersLabelText: String {
+        "\(selectedPlayersForGame.count) selected players"
     }
 
     private var isCompactLayout: Bool { horizontalSizeClass == .compact }
@@ -988,6 +1047,10 @@ struct NewGameWizardView: View {
 
     private var requiredBestPlayersCount: Int {
         min(max(selectedGrade?.bestPlayersCount ?? 6, 0), 10)
+    }
+
+    private var requiredPlayersPerTeam: Int {
+        min(max(selectedGrade?.playersPerTeam ?? 22, 1), 60)
     }
 
     private var shouldAskGuestVotes: Bool {
@@ -1577,6 +1640,9 @@ struct NewGameWizardView: View {
             return gradeID != nil &&
                    !finalOpponent.isEmpty &&
                    !finalVenue.isEmpty &&
+                   hasSavedSelectedPlayers &&
+                   !savedSelectedPlayerIDs.isEmpty &&
+                   (selectedPlayersOverrideEnabled || savedSelectedPlayerIDs.count <= requiredPlayersPerTeam) &&
                    (!shouldAskGameCount || gameCountSelection != nil) &&
                    (!shouldAskForEntryMode || dataEntrySelection != nil)
 
@@ -1930,6 +1996,8 @@ struct NewGameWizardView: View {
             guestVotesRanked = Array(repeating: nil, count: requiredGuestBestPlayersCount)
             guestVotesRankedGame2 = Array(repeating: nil, count: requiredGuestBestPlayersCount)
             hasAutoPromptedVotesScanner = false
+            applyLastWeekTeamIfAvailable(for: newGrade)
+            selectedPlayersOverrideEnabled = false
         }
         .onAppear {
             guard !hasAppliedInitialGrade else { return }
@@ -1943,6 +2011,9 @@ struct NewGameWizardView: View {
             applyPreviewStateIfNeeded()
             restoreDraftIfNeeded()
             refreshLiveGameSyncSnapshot()
+            if draftSelectedPlayerIDs.isEmpty {
+                applyLastWeekTeamIfAvailable(for: gradeID)
+            }
         }
         .task(id: liveGameSyncRefreshToken) {
             refreshLiveGameSyncSnapshot()
@@ -2026,6 +2097,25 @@ struct NewGameWizardView: View {
                 hasAutoPromptedVotesScanner = true
                 if step == .votes {
                     proceedFromVotesStep()
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showSelectedPlayersPicker) {
+            NavigationStack {
+                PlayerSelectionView(
+                    players: allEligiblePlayersForGrade,
+                    selectedPlayerIDs: $draftSelectedPlayerIDs,
+                    isOverrideEnabled: $selectedPlayersOverrideEnabled,
+                    maxSelectionCount: requiredPlayersPerTeam
+                ) {
+                    savedSelectedPlayerIDs = draftSelectedPlayerIDs
+                    if let gradeID {
+                        LastWeekTeamStore.save(playerIDs: savedSelectedPlayerIDs, for: gradeID)
+                    }
+                    hasSavedSelectedPlayers = true
+                    showSelectedPlayersPicker = false
+                } onCancel: {
+                    showSelectedPlayersPicker = false
                 }
             }
         }
@@ -2422,13 +2512,16 @@ struct NewGameWizardView: View {
             VStack(spacing: 14) {
                 if let _ = gradeID {
                     StaffCard(title: "Players", systemImage: "person.3.fill") {
-                        Text(
-                            eligiblePlayers.isEmpty
-                                ? "No active players assigned to this grade yet. Add players first."
-                                : "\(eligiblePlayers.count) eligible players"
-                        )
-                        .font(wizardBodyFont)
-                        .foregroundStyle(.secondary)
+                        if eligiblePlayers.isEmpty {
+                            Text("No active players assigned to this grade yet. Add players first.")
+                                .font(wizardBodyFont)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            HStack(spacing: 8) {
+                                setupCountPill(title: "\(allEligiblePlayersForGrade.count) eligible players")
+                                setupCountPill(title: selectedPlayersLabelText)
+                            }
+                        }
                     }
                 }
 
@@ -2465,6 +2558,21 @@ struct NewGameWizardView: View {
                                     venueName = venue
                                 }
                             }
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        rowLabel("Current Players")
+                        Spacer()
+                        setupPickerButton(title: selectedPlayersForGame.isEmpty ? "Select…" : selectedPlayersLabelText) {
+                            if draftSelectedPlayerIDs.isEmpty {
+                                if savedSelectedPlayerIDs.isEmpty {
+                                    draftSelectedPlayerIDs = Set(eligiblePlayers.map(\.id))
+                                } else {
+                                    draftSelectedPlayerIDs = savedSelectedPlayerIDs
+                                }
+                            }
+                            showSelectedPlayersPicker = true
                         }
                     }
 
@@ -2539,6 +2647,33 @@ struct NewGameWizardView: View {
         .disabled(isDisabled)
     }
 
+    private func setupPickerButton(
+        title: String,
+        isDisabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(wizardBodyFont)
+                    .foregroundStyle(title == "Select…" ? .secondary : .primary)
+                    .lineLimit(1)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: isCompactLayout ? 13 : 16, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, isCompactLayout ? 14 : 18)
+            .padding(.vertical, isCompactLayout ? 10 : 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ClubTheme.subCardFill)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+
     private func setupChoiceButton(
         title: String,
         isSelected: Bool,
@@ -2557,6 +2692,18 @@ struct NewGameWizardView: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    private func setupCountPill(title: String) -> some View {
+        Text(title)
+            .font(wizardBodyFont)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, isCompactLayout ? 14 : 18)
+            .padding(.vertical, isCompactLayout ? 10 : 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ClubTheme.subCardFill)
+            )
     }
 
     // Staff step (coaching only)
@@ -4293,6 +4440,7 @@ struct NewGameWizardView: View {
         @State private var showDeleteCodePrompt = false
         @State private var deleteCodePromptValue = ""
         @State private var showWrongDeleteCodeAlert = false
+        @State private var autoSaveAfterZeroTask: Task<Void, Never>? = nil
 
         init(
             date: Binding<Date>,
@@ -4584,14 +4732,7 @@ struct NewGameWizardView: View {
                 applyConfiguredInitialPeriod()
             }
             .task(id: liveSession.timerAnchorDate) {
-                guard liveSession.isTimerRunning else { return }
-                while !Task.isCancelled && liveSession.isTimerRunning {
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        handleTimerTick()
-                    }
-                }
+                await runTimerTickLoop()
             }
             .sheet(isPresented: $showPlayerPicker) {
                 NavigationStack {
@@ -4651,6 +4792,7 @@ struct NewGameWizardView: View {
             .onDisappear {
                 let isPresentingOverlaySheet = showPlayerPicker || showPointPicker || showGoalKickerEditor
                 guard !isPresentingOverlaySheet else { return }
+                cancelAutoSaveAfterZero()
                 liveSession.syncTimer()
             }
             .alert("Save and reset?", isPresented: $showManualSavePrompt) {
@@ -6169,6 +6311,7 @@ struct NewGameWizardView: View {
         }
 
         private func saveAndResetPeriod() {
+            cancelAutoSaveAfterZero()
             guard nextPeriodLabel != nil else { return }
             saveCurrentPeriodSnapshot()
             pauseTimer()
@@ -6205,13 +6348,47 @@ struct NewGameWizardView: View {
             liveSession.timerAnchorSecondsRemaining = liveSession.secondsRemaining
         }
 
+        private func runTimerTickLoop() async {
+            guard liveSession.isTimerRunning else { return }
+            while !Task.isCancelled && liveSession.isTimerRunning {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                handleTimerTick()
+            }
+        }
+
         private func handleTimerTick() {
             let crossedZero = liveSession.syncTimer()
             if crossedZero && !liveSession.timeOnEnabled {
                 pendingAutoAdvanceSave = true
                 AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                scheduleAutoSaveAfterZeroIfNeeded()
             }
+        }
+
+        private func scheduleAutoSaveAfterZeroIfNeeded() {
+            guard !liveSession.timeOnEnabled else { return }
+            guard liveSession.secondsRemaining <= 0 else { return }
+            guard nextPeriodLabel != nil else { return }
+            guard autoSaveAfterZeroTask == nil else { return }
+
+            autoSaveAfterZeroTask = Task {
+                try? await Task.sleep(nanoseconds: 180_000_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    autoSaveAfterZeroTask = nil
+                    guard !liveSession.timeOnEnabled else { return }
+                    guard liveSession.secondsRemaining <= 0 else { return }
+                    guard nextPeriodLabel != nil else { return }
+                    saveAndResetPeriod()
+                }
+            }
+        }
+
+        private func cancelAutoSaveAfterZero() {
+            autoSaveAfterZeroTask?.cancel()
+            autoSaveAfterZeroTask = nil
         }
 
         private func submitDeleteCode() {
@@ -6315,6 +6492,160 @@ struct NewGameWizardView: View {
                 controller.dismiss(animated: true)
                 onFinish()
             }
+        }
+    }
+
+    private struct PlayerSelectionView: View {
+        let players: [Player]
+        @Binding var selectedPlayerIDs: Set<UUID>
+        @Binding var isOverrideEnabled: Bool
+        let maxSelectionCount: Int
+        let onSave: () -> Void
+        let onCancel: () -> Void
+
+        private let columns = [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ]
+
+        private var isSelectionComplete: Bool {
+            selectedPlayerIDs.count == maxSelectionCount
+        }
+
+        private var canSaveSelection: Bool {
+            isSelectionComplete || isOverrideEnabled
+        }
+
+        var body: some View {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Player Selection")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(.primary)
+
+                        HStack(spacing: 12) {
+                            countCard(title: "Available Players", valueText: "\(players.count)", isHighlighted: false)
+                            selectedCountCard
+                        }
+                    }
+                    .padding(16)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(players) { player in
+                            Button {
+                                toggle(player.id)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: selectedPlayerIDs.contains(player.id) ? "checkmark.square.fill" : "square")
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .foregroundStyle(selectedPlayerIDs.contains(player.id) ? Color.accentColor : .secondary)
+                                    Text(player.name)
+                                        .font(.system(size: 28, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                        .multilineTextAlignment(.leading)
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 14)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(selectedPlayerIDs.contains(player.id) ? Color.accentColor.opacity(0.14) : Color(.secondarySystemBackground))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 20)
+            }
+            .navigationTitle("Selected Players")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel", action: onCancel)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save", action: onSave)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .disabled(!canSaveSelection)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Text("Selected Players: \(selectedPlayerIDs.count) of \(maxSelectionCount)")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(isSelectionComplete ? .white : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(isSelectionComplete ? Color.blue : Color.clear)
+                    .background(.ultraThinMaterial)
+            }
+        }
+
+        private var selectedCountCard: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    Text("Selected Players")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(isSelectionComplete ? .white.opacity(0.9) : .secondary)
+
+                    Spacer()
+
+                    Button {
+                        isOverrideEnabled.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isOverrideEnabled ? "checkmark.square.fill" : "square")
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("Override")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .foregroundStyle(isSelectionComplete ? .white : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("\(selectedPlayerIDs.count) of \(maxSelectionCount)")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(isSelectionComplete ? .white : .primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelectionComplete ? Color.blue : Color(.secondarySystemBackground))
+            )
+        }
+
+        private func countCard(title: String, valueText: String, isHighlighted: Bool) -> some View {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isHighlighted ? .white.opacity(0.9) : .secondary)
+                Text(valueText)
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(isHighlighted ? .white : .primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isHighlighted ? Color.blue : Color(.secondarySystemBackground))
+            )
+        }
+
+        private func toggle(_ playerID: UUID) {
+            if selectedPlayerIDs.contains(playerID) {
+                selectedPlayerIDs.remove(playerID)
+                return
+            }
+            guard isOverrideEnabled || selectedPlayerIDs.count < maxSelectionCount else { return }
+            selectedPlayerIDs.insert(playerID)
         }
     }
 

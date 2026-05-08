@@ -297,6 +297,7 @@ struct GradeRecord: Codable {
     let asksScore: Bool
     let asksLiveGameView: Bool
     let asksGoalKickers: Bool
+    let playersPerTeam: Int
     let bestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
     let guestBestPlayersCount: Int
@@ -313,7 +314,7 @@ struct GradeRecord: Codable {
         case asksWaterBoy1, asksWaterBoy2, asksWaterBoy3, asksWaterBoy4
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
-        case bestPlayersCount, guestBestPlayersCount
+        case playersPerTeam, bestPlayersCount, guestBestPlayersCount
         case bestPlayersVotes, guestBestPlayersVotes
         case asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes, timeOnEnabled
     }
@@ -345,6 +346,7 @@ struct GradeRecord: Codable {
         asksScore = grade.asksScore
         asksLiveGameView = grade.asksLiveGameView
         asksGoalKickers = grade.asksGoalKickers
+        playersPerTeam = grade.playersPerTeam
         bestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         guestBestPlayersCount = grade.guestBestPlayersCount
@@ -383,6 +385,7 @@ struct GradeRecord: Codable {
         asksScore = try c.decodeIfPresent(Bool.self, forKey: .asksScore) ?? true
         asksLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .asksLiveGameView) ?? true
         asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
+        playersPerTeam = min(max(try c.decodeIfPresent(Int.self, forKey: .playersPerTeam) ?? Grade.defaultPlayersPerTeam(for: name), 1), 60)
         bestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) ?? 6
         guestBestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? 3
         bestPlayersVotes = Grade.normalizedVotes(try c.decodeIfPresent([Int].self, forKey: .bestPlayersVotes), count: bestPlayersCount)
@@ -1250,6 +1253,7 @@ enum AppBackupService {
                     asksScore: $0.asksScore,
                     asksLiveGameView: $0.asksLiveGameView,
                     asksGoalKickers: $0.asksGoalKickers,
+                    playersPerTeam: $0.playersPerTeam,
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                     guestBestPlayersCount: $0.guestBestPlayersCount,

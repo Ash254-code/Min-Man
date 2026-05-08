@@ -1060,6 +1060,7 @@ private struct ClubGradesSettingsView: View {
                     Section {
                         Label("Settings", systemImage: "gearshape.fill")
                             .font(.subheadline.weight(.semibold))
+                        Stepper("Players per team: \(editGradeDraft.playersPerTeam)", value: bind(\.playersPerTeam), in: 1...60)
                         Toggle("Notes", isOn: bind(\.asksNotes))
                         Toggle("Live Game View", isOn: bind(\.allowsLiveGameView))
                         Picker(
@@ -1128,7 +1129,15 @@ private struct ClubGradesSettingsView: View {
     private func bind(_ keyPath: WritableKeyPath<EditGradeDraft, Int>) -> Binding<Int> {
         Binding(
             get: { editGradeDraft[keyPath: keyPath] },
-            set: { editGradeDraft[keyPath: keyPath] = keyPath == \.quarterLengthMinutes ? min(max($0, 10), 30) : min(max($0, 1), 10) }
+            set: {
+                if keyPath == \.quarterLengthMinutes {
+                    editGradeDraft[keyPath: keyPath] = min(max($0, 10), 30)
+                } else if keyPath == \.playersPerTeam {
+                    editGradeDraft[keyPath: keyPath] = min(max($0, 1), 60)
+                } else {
+                    editGradeDraft[keyPath: keyPath] = min(max($0, 1), 10)
+                }
+            }
         )
     }
 
@@ -1169,6 +1178,7 @@ private struct ClubGradesSettingsView: View {
             asksTrainer4: draft.asksTrainer4,
             asksNotes: draft.asksNotes,
             asksGoalKickers: draft.asksGoalKickers,
+            playersPerTeam: draft.playersPerTeam,
             bestPlayersCount: draft.bestPlayersCount,
             asksGuestBestFairestVotesScan: draft.asksGuestBestFairestVotesScan,
             guestBestPlayersCount: draft.guestBestPlayersCount,
@@ -1214,6 +1224,7 @@ private struct ClubGradesSettingsView: View {
         gradeEditing.asksTrainers = editGradeDraft.hasAnyTrainerEnabled
         gradeEditing.asksScore = editGradeDraft.asksScore
         gradeEditing.asksGoalKickers = editGradeDraft.asksGoalKickers
+        gradeEditing.playersPerTeam = editGradeDraft.playersPerTeam
         gradeEditing.bestPlayersCount = editGradeDraft.bestPlayersCount
         gradeEditing.asksGuestBestFairestVotesScan = editGradeDraft.asksGuestBestFairestVotesScan
         gradeEditing.guestBestPlayersCount = editGradeDraft.guestBestPlayersCount
@@ -1259,6 +1270,7 @@ private struct ClubGradesSettingsView: View {
             || editGradeDraft.asksTrainer4 != gradeEditing.asksTrainer4
             || editGradeDraft.asksScore != gradeEditing.asksScore
             || editGradeDraft.asksGoalKickers != gradeEditing.asksGoalKickers
+            || editGradeDraft.playersPerTeam != gradeEditing.playersPerTeam
             || editGradeDraft.bestPlayersCount != gradeEditing.bestPlayersCount
             || editGradeDraft.asksGuestBestFairestVotesScan != gradeEditing.asksGuestBestFairestVotesScan
             || editGradeDraft.guestBestPlayersCount != gradeEditing.guestBestPlayersCount
@@ -1365,6 +1377,7 @@ private struct ClubGradesSettingsView: View {
                             asksScore: $0.asksScore,
                             asksLiveGameView: $0.asksLiveGameView,
                             asksGoalKickers: $0.asksGoalKickers,
+                            playersPerTeam: $0.playersPerTeam,
                             bestPlayersCount: $0.bestPlayersCount,
                             asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                             guestBestPlayersCount: $0.guestBestPlayersCount,
@@ -1404,6 +1417,7 @@ private struct ClubGradesSettingsView: View {
                                 asksScore: item.asksScore,
                                 asksLiveGameView: item.asksLiveGameView,
                                 asksGoalKickers: item.asksGoalKickers,
+                                playersPerTeam: item.playersPerTeam,
                                 bestPlayersCount: item.bestPlayersCount,
                                 asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan,
                                 guestBestPlayersCount: item.guestBestPlayersCount,
@@ -1610,6 +1624,7 @@ private struct EditGradeDraft {
     var asksTrainer4 = true
     var asksScore = true
     var asksGoalKickers = true
+    var playersPerTeam = 22
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = true
     var guestBestPlayersCount = 3
@@ -1642,6 +1657,7 @@ private struct EditGradeDraft {
         asksTrainer4 = grade.asksTrainer4
         asksScore = grade.asksScore
         asksGoalKickers = grade.asksGoalKickers
+        playersPerTeam = grade.playersPerTeam
         bestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         guestBestPlayersCount = grade.guestBestPlayersCount
@@ -1682,6 +1698,7 @@ private struct NewGradeDraft {
     var asksTrainer4 = true
     var asksNotes = true
     var asksGoalKickers = true
+    var playersPerTeam = 22
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = true
     var guestBestPlayersCount = 3
@@ -1719,6 +1736,9 @@ private struct AddGradeWizardView: View {
                     Section {
                         TextField("Grade name", text: $draft.name)
                             .textInputAutocapitalization(.words)
+                            .onChange(of: draft.name) { _, newName in
+                                draft.playersPerTeam = Grade.defaultPlayersPerTeam(for: newName)
+                            }
                     } header: {
                         Text("Grade")
                     }
@@ -1785,6 +1805,7 @@ private struct AddGradeWizardView: View {
                     }
                 case .settings:
                     Section {
+                        Stepper("Players per team: \(draft.playersPerTeam)", value: $draft.playersPerTeam, in: 1...60)
                         Toggle("Notes", isOn: $draft.asksNotes)
                         Toggle("Live Game View", isOn: $draft.allowsLiveGameView)
                         Picker("Length of Quarters", selection: $draft.quarterLengthMinutes) {
