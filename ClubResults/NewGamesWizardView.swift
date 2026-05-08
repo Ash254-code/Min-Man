@@ -4441,6 +4441,7 @@ struct NewGameWizardView: View {
         @State private var deleteCodePromptValue = ""
         @State private var showWrongDeleteCodeAlert = false
         @State private var autoSaveAfterZeroTask: Task<Void, Never>? = nil
+        @State private var autoSaveCountdownSeconds: Int? = nil
 
         init(
             date: Binding<Date>,
@@ -4942,7 +4943,7 @@ struct NewGameWizardView: View {
                             Button {
                                 showManualSavePrompt = true
                             } label: {
-                                Text("Save/reset")
+                                saveAndResetButtonLabel(compactTitle: true)
                                     .frame(maxWidth: .infinity, minHeight: 52)
                             }
                             .accessibilityLabel("Save and reset")
@@ -4994,7 +4995,7 @@ struct NewGameWizardView: View {
                             Button {
                                 showManualSavePrompt = true
                             } label: {
-                                Text("Save and reset")
+                                saveAndResetButtonLabel(compactTitle: false)
                                     .frame(maxWidth: .infinity, minHeight: 52)
                             }
                             .accessibilityLabel("Save and reset")
@@ -6317,6 +6318,7 @@ struct NewGameWizardView: View {
             pauseTimer()
             liveSession.secondsRemaining = liveSession.periodMinutes * 60
             pendingAutoAdvanceSave = false
+            autoSaveCountdownSeconds = nil
         }
 
         private func timeText(_ seconds: Int) -> String {
@@ -6374,7 +6376,27 @@ struct NewGameWizardView: View {
             guard autoSaveAfterZeroTask == nil else { return }
 
             autoSaveAfterZeroTask = Task {
-                try? await Task.sleep(nanoseconds: 180_000_000_000)
+                await MainActor.run {
+                    autoSaveCountdownSeconds = 120
+                }
+
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard !Task.isCancelled else { return }
+
+                    let reachedZero = await MainActor.run { () -> Bool in
+                        guard let remaining = autoSaveCountdownSeconds else { return false }
+                        if remaining <= 1 {
+                            autoSaveCountdownSeconds = 0
+                            return true
+                        }
+                        autoSaveCountdownSeconds = remaining - 1
+                        return false
+                    }
+
+                    if reachedZero { break }
+                }
+
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     autoSaveAfterZeroTask = nil
@@ -6389,6 +6411,19 @@ struct NewGameWizardView: View {
         private func cancelAutoSaveAfterZero() {
             autoSaveAfterZeroTask?.cancel()
             autoSaveAfterZeroTask = nil
+            autoSaveCountdownSeconds = nil
+        }
+
+        @ViewBuilder
+        private func saveAndResetButtonLabel(compactTitle: Bool) -> some View {
+            VStack(spacing: 2) {
+                Text(compactTitle ? "Save/reset" : "Save and reset")
+                if !liveSession.timeOnEnabled, let seconds = autoSaveCountdownSeconds {
+                    Text("Auto Save in \(timeText(seconds))")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
 
         private func submitDeleteCode() {

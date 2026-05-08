@@ -1025,26 +1025,24 @@ private struct ClubGradesSettingsView: View {
                     Section {
                         let bestPlayersCountBinding = bind(\.bestPlayersCount)
                         let guestBestPlayersCountBinding = bind(\.guestBestPlayersCount)
-                        let bestPlayersVotesBinding = bind(\.bestPlayersVotes)
-                        let guestBestPlayersVotesBinding = bind(\.guestBestPlayersVotes)
 
                         Label("Awards", systemImage: "rosette")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Score", isOn: bind(\.asksScore))
                         Toggle("Goal Kickers", isOn: bind(\.asksGoalKickers))
-                        Picker("Best Players", selection: bestPlayersCountBinding) {
-                            ForEach(1...10, id: \.self) { count in
-                                Text("\(count)").tag(count)
-                            }
-                        }
+                        oneToTenPicker("Best Players", selection: bestPlayersCountBinding)
                         Toggle("Guest Best Players", isOn: bind(\.asksGuestBestFairestVotesScan))
                         if editGradeDraft.asksGuestBestFairestVotesScan {
-                            Picker("Guest Best Players Quantity", selection: guestBestPlayersCountBinding) {
-                                ForEach(1...10, id: \.self) { count in
-                                    Text("\(count)").tag(count)
-                                }
-                            }
+                            oneToTenPicker("Guest Best Players Quantity", selection: guestBestPlayersCountBinding)
                         }
+                    }
+
+                    Section {
+                        let bestPlayersCountBinding = bind(\.bestPlayersCount)
+                        let guestBestPlayersCountBinding = bind(\.guestBestPlayersCount)
+                        let bestPlayersVotesBinding = bind(\.bestPlayersVotes)
+                        let guestBestPlayersVotesBinding = bind(\.guestBestPlayersVotes)
+
                         NavigationLink {
                             VoteAllocationEditorView(
                                 bestPlayersCount: bestPlayersCountBinding,
@@ -1057,21 +1055,7 @@ private struct ClubGradesSettingsView: View {
                         }
                     }
 
-                    Section {
-                        Label("Settings", systemImage: "gearshape.fill")
-                            .font(.subheadline.weight(.semibold))
-                        Stepper("Players per team: \(editGradeDraft.playersPerTeam)", value: bind(\.playersPerTeam), in: 1...60)
-                        Toggle("Notes", isOn: bind(\.asksNotes))
-                        Toggle("Live Game View", isOn: bind(\.allowsLiveGameView))
-                        Picker(
-                            "Length of Quarters",
-                            selection: bind(\.quarterLengthMinutes)
-                        ) {
-                            ForEach(10...30, id: \.self) { minute in
-                                Text("\(minute) min").tag(minute)
-                            }
-                        }
-                    }
+                    editGradeSettingsSection()
 
                     Section {
                         Button(role: .destructive) {
@@ -1148,6 +1132,42 @@ private struct ClubGradesSettingsView: View {
         )
     }
 
+    @ViewBuilder
+    private func oneToTenPicker(_ title: String, selection: Binding<Int>) -> some View {
+        Picker(title, selection: selection) {
+            Text("1").tag(1)
+            Text("2").tag(2)
+            Text("3").tag(3)
+            Text("4").tag(4)
+            Text("5").tag(5)
+            Text("6").tag(6)
+            Text("7").tag(7)
+            Text("8").tag(8)
+            Text("9").tag(9)
+            Text("10").tag(10)
+        }
+    }
+
+    @ViewBuilder
+    private func editGradeSettingsSection() -> some View {
+        let playersPerTeamBinding = bind(\.playersPerTeam)
+        let quarterLengthBinding = bind(\.quarterLengthMinutes)
+
+        Section {
+            Label("Settings", systemImage: "gearshape.fill")
+                .font(.subheadline.weight(.semibold))
+            Stepper("Players per team: \(editGradeDraft.playersPerTeam)", value: playersPerTeamBinding, in: 1...60)
+            Toggle("Notes", isOn: bind(\.asksNotes))
+            Toggle("Live Game View", isOn: bind(\.allowsLiveGameView))
+            Picker("Length of Quarters", selection: quarterLengthBinding) {
+                ForEach(10...30, id: \.self) { minute in
+                    Text("\(minute) min").tag(minute)
+                }
+            }
+            Toggle("Time on", isOn: bind(\.timeOnEnabled))
+        }
+    }
+
     private func addGrade(using draft: NewGradeDraft) -> Bool {
         let name = clean(draft.name)
         guard !name.isEmpty else { return false }
@@ -1185,7 +1205,8 @@ private struct ClubGradesSettingsView: View {
             bestPlayersVotes: draft.bestPlayersVotes,
             guestBestPlayersVotes: draft.guestBestPlayersVotes,
             allowsLiveGameView: draft.allowsLiveGameView,
-            quarterLengthMinutes: draft.quarterLengthMinutes
+            quarterLengthMinutes: draft.quarterLengthMinutes,
+            timeOnEnabled: draft.timeOnEnabled
         )
         dataContext.insert(newGrade)
         grades.append(newGrade)
@@ -1233,6 +1254,7 @@ private struct ClubGradesSettingsView: View {
         gradeEditing.asksNotes = editGradeDraft.asksNotes
         gradeEditing.allowsLiveGameView = editGradeDraft.allowsLiveGameView
         gradeEditing.quarterLengthMinutes = editGradeDraft.quarterLengthMinutes
+        gradeEditing.timeOnEnabled = editGradeDraft.timeOnEnabled
         SettingsBackupStore.saveGrades(grades)
         saveContext()
         reloadGrades()
@@ -1279,6 +1301,7 @@ private struct ClubGradesSettingsView: View {
             || editGradeDraft.asksNotes != gradeEditing.asksNotes
             || editGradeDraft.allowsLiveGameView != gradeEditing.allowsLiveGameView
             || editGradeDraft.quarterLengthMinutes != gradeEditing.quarterLengthMinutes
+            || editGradeDraft.timeOnEnabled != gradeEditing.timeOnEnabled
     }
 
     private func moveGrades(from source: IndexSet, to destination: Int) {
@@ -1633,6 +1656,7 @@ private struct EditGradeDraft {
     var asksNotes = true
     var allowsLiveGameView = true
     var quarterLengthMinutes = 20
+    var timeOnEnabled = false
 
     init() {}
 
@@ -1666,6 +1690,7 @@ private struct EditGradeDraft {
         asksNotes = grade.asksNotes
         allowsLiveGameView = grade.allowsLiveGameView
         quarterLengthMinutes = grade.quarterLengthMinutes
+        timeOnEnabled = grade.timeOnEnabled
     }
 
     var hasAnyTrainerEnabled: Bool {
@@ -1706,6 +1731,7 @@ private struct NewGradeDraft {
     var guestBestPlayersVotes = Grade.normalizedGuestVotes(nil, count: 3)
     var allowsLiveGameView = true
     var quarterLengthMinutes = 20
+    var timeOnEnabled = false
 
     var hasAnyTrainerEnabled: Bool {
         asksTrainer1 || asksTrainer2 || asksTrainer3 || asksTrainer4
