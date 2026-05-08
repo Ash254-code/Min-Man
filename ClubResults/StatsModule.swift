@@ -10320,8 +10320,9 @@ private struct StatsInviteLivePreviewView: View {
                                 .foregroundStyle(.red)
                         }
                     }
-                    .padding(20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, minHeight: 182, alignment: .leading)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
 
                     if selections.isEmpty {
