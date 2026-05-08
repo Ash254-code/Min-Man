@@ -34,6 +34,7 @@ struct GradeBackup: Codable {
     let guestBestPlayersVotes: [Int]
     let allowsLiveGameView: Bool
     let quarterLengthMinutes: Int
+    let timeOnEnabled: Bool
 
     init(
         id: UUID,
@@ -68,7 +69,8 @@ struct GradeBackup: Codable {
         bestPlayersVotes: [Int]? = nil,
         guestBestPlayersVotes: [Int]? = nil,
         allowsLiveGameView: Bool = true,
-        quarterLengthMinutes: Int = 20
+        quarterLengthMinutes: Int = 20,
+        timeOnEnabled: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -105,6 +107,7 @@ struct GradeBackup: Codable {
         self.guestBestPlayersVotes = Grade.normalizedGuestVotes(guestBestPlayersVotes, count: normalizedGuestBestPlayersCount)
         self.allowsLiveGameView = allowsLiveGameView
         self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
+        self.timeOnEnabled = timeOnEnabled
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -117,7 +120,7 @@ struct GradeBackup: Codable {
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
         case bestPlayersCount, asksBestPlayers
         case bestPlayersVotes, guestBestPlayersVotes
-        case asksGuestBestFairestVotesScan, guestBestPlayersCount, allowsLiveGameView, quarterLengthMinutes
+        case asksGuestBestFairestVotesScan, guestBestPlayersCount, allowsLiveGameView, quarterLengthMinutes, timeOnEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -162,6 +165,7 @@ struct GradeBackup: Codable {
         guestBestPlayersVotes = Grade.normalizedGuestVotes(try c.decodeIfPresent([Int].self, forKey: .guestBestPlayersVotes), count: guestBestPlayersCount)
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? true
         quarterLengthMinutes = min(max(try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20, 10), 30)
+        timeOnEnabled = try c.decodeIfPresent(Bool.self, forKey: .timeOnEnabled) ?? Grade.defaultTimeOnEnabled(for: name)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -199,6 +203,7 @@ struct GradeBackup: Codable {
         try c.encode(guestBestPlayersVotes, forKey: .guestBestPlayersVotes)
         try c.encode(allowsLiveGameView, forKey: .allowsLiveGameView)
         try c.encode(quarterLengthMinutes, forKey: .quarterLengthMinutes)
+        try c.encode(timeOnEnabled, forKey: .timeOnEnabled)
     }
 }
 
@@ -259,7 +264,8 @@ enum SettingsBackupStore {
                 bestPlayersVotes: $0.bestPlayersVotes,
                 guestBestPlayersVotes: $0.guestBestPlayersVotes,
                 allowsLiveGameView: $0.allowsLiveGameView,
-                quarterLengthMinutes: $0.quarterLengthMinutes
+                quarterLengthMinutes: $0.quarterLengthMinutes,
+                timeOnEnabled: $0.timeOnEnabled
             )
         }
         guard let data = try? JSONEncoder().encode(payload) else { return }
@@ -378,7 +384,8 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 bestPlayersVotes: backup.bestPlayersVotes,
                 guestBestPlayersVotes: backup.guestBestPlayersVotes,
                 allowsLiveGameView: backup.allowsLiveGameView,
-                quarterLengthMinutes: backup.quarterLengthMinutes
+                quarterLengthMinutes: backup.quarterLengthMinutes,
+                timeOnEnabled: backup.timeOnEnabled
             )
         )
 

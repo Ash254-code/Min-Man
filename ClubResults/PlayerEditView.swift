@@ -158,6 +158,8 @@ struct PlayerEditView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .clubGlassBackground()
         .navigationTitle("Edit Player")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

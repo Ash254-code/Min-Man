@@ -87,6 +87,9 @@ struct PlayerAddView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
+            .clubGlassBackground()
             .navigationTitle("Add Player")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

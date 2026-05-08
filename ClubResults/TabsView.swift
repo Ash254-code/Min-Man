@@ -17,39 +17,51 @@ struct TabsView: View {
 
             TabView(selection: selectionBinding) {
                 if navigationState.canAccess(tab: .games) {
-                    GamesView()
-                        .tag(AppTab.games)
-                        .tabItem { tabItemLabel(for: .games, isPortrait: isPortrait) }
+                    gradientPage {
+                        GamesView()
+                    }
+                    .tag(AppTab.games)
+                    .tabItem { tabItemLabel(for: .games, isPortrait: isPortrait) }
                 }
 
                 if navigationState.canAccess(tab: .game) {
-                    GameTabRootView()
-                        .tag(AppTab.game)
-                        .tabItem { tabItemLabel(for: .game, isPortrait: isPortrait) }
+                    gradientPage {
+                        GameTabRootView()
+                    }
+                    .tag(AppTab.game)
+                    .tabItem { tabItemLabel(for: .game, isPortrait: isPortrait) }
                 }
 
                 if navigationState.canAccess(tab: .stats) {
-                    statsTabView
-                        .tag(AppTab.stats)
-                        .tabItem { tabItemLabel(for: .stats, isPortrait: isPortrait) }
+                    gradientPage {
+                        statsTabView
+                    }
+                    .tag(AppTab.stats)
+                    .tabItem { tabItemLabel(for: .stats, isPortrait: isPortrait) }
                 }
 
                 if navigationState.canAccess(tab: .totals) {
-                    TotalsView()
-                        .tag(AppTab.totals)
-                        .tabItem { tabItemLabel(for: .totals, isPortrait: isPortrait) }
+                    gradientPage {
+                        TotalsView()
+                    }
+                    .tag(AppTab.totals)
+                    .tabItem { tabItemLabel(for: .totals, isPortrait: isPortrait) }
                 }
 
                 if navigationState.canAccess(tab: .pres) && !hidesPresentationTabForIPhoneAdmin {
-                    PresView()
-                        .tag(AppTab.pres)
-                        .tabItem { tabItemLabel(for: .pres, isPortrait: isPortrait) }
+                    gradientPage {
+                        PresView()
+                    }
+                    .tag(AppTab.pres)
+                    .tabItem { tabItemLabel(for: .pres, isPortrait: isPortrait) }
                 }
 
                 if navigationState.canAccess(tab: .settings) {
-                    SettingsView(resetToken: settingsResetToken)
-                        .tag(AppTab.settings)
-                        .tabItem { tabItemLabel(for: .settings, isPortrait: isPortrait) }
+                    gradientPage {
+                        SettingsView(resetToken: settingsResetToken)
+                    }
+                    .tag(AppTab.settings)
+                    .tabItem { tabItemLabel(for: .settings, isPortrait: isPortrait) }
                 }
             }
             .task {
@@ -82,6 +94,16 @@ struct TabsView: View {
             StatTakerStatsView()
         } else {
             StatsRootView()
+        }
+    }
+
+    private func gradientPage<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ZStack {
+            ClubTheme.bgGradient
+                .ignoresSafeArea()
+            content()
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
         }
     }
 

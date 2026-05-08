@@ -50,7 +50,8 @@ enum LockedGradeSeed {
             name: name,
             isActive: true,
             displayOrder: displayOrder,
-            asksTimeKeeper: Grade.defaultAsksTimeKeeper(for: name)
+            asksTimeKeeper: Grade.defaultAsksTimeKeeper(for: name),
+            timeOnEnabled: Grade.defaultTimeOnEnabled(for: name)
         )
         _ = applyDefaultPromptSettings(to: grade)
         return grade

@@ -38,6 +38,7 @@ final class Grade {
     var guestBestPlayersVotes: [Int]
     var allowsLiveGameView: Bool
     var quarterLengthMinutes: Int
+    var timeOnEnabled: Bool
 
     init(
         id: UUID = UUID(),
@@ -72,7 +73,8 @@ final class Grade {
         bestPlayersVotes: [Int]? = nil,
         guestBestPlayersVotes: [Int]? = nil,
         allowsLiveGameView: Bool = true,
-        quarterLengthMinutes: Int = 20
+        quarterLengthMinutes: Int = 20,
+        timeOnEnabled: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -109,6 +111,7 @@ final class Grade {
         self.guestBestPlayersVotes = Grade.normalizedGuestVotes(guestBestPlayersVotes, count: normalizedGuestBestPlayersCount)
         self.allowsLiveGameView = allowsLiveGameView
         self.quarterLengthMinutes = min(max(quarterLengthMinutes, 10), 30)
+        self.timeOnEnabled = timeOnEnabled
     }
 
     static func normalizedVotes(_ votes: [Int]?, count: Int) -> [Int] {
@@ -137,5 +140,15 @@ final class Grade {
             .replacingOccurrences(of: "’", with: "")
             .replacingOccurrences(of: "-", with: " ")
         return !normalizedName.contains("under 9") && !normalizedName.contains("under 12")
+    }
+
+    static func defaultTimeOnEnabled(for gradeName: String) -> Bool {
+        let normalizedName = gradeName
+            .lowercased()
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "’", with: "")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedName == "a grade"
     }
 }

@@ -140,42 +140,57 @@ struct PresView: View {
 
     @ViewBuilder
     private var presentationList: some View {
-        List {
-            Section("Last 5 Days") {
-                if sortedGames.isEmpty {
-                    ContentUnavailableView(
-                        "No games in the last 5 days",
-                        systemImage: "calendar",
-                        description: Text("Recent games will appear here.")
-                    )
-                } else {
-                    ForEach(gradeSections) { section in
-                        Button {
-                            selectedPresentationGrade = section
-                        } label: {
-                            PresGradeRow(
-                                gradeName: section.grade.name,
-                                gameCount: section.games.count
-                            )
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Last 5 Days")
+                        .font(.title3.weight(.bold))
+
+                    if sortedGames.isEmpty {
+                        ContentUnavailableView(
+                            "No games in the last 5 days",
+                            systemImage: "calendar",
+                            description: Text("Recent games will appear here.")
+                        )
+                    } else {
+                        ForEach(gradeSections) { section in
+                            Button {
+                                selectedPresentationGrade = section
+                            } label: {
+                                PresGradeRow(
+                                    gradeName: section.grade.name,
+                                    gameCount: section.games.count
+                                )
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-            }
+                .padding(14)
 
-            Section("Announcements") {
-                TextField("Welcome message", text: $welcomeMessage, axis: .vertical)
-                    .lineLimit(2...4)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Announcements")
+                        .font(.title3.weight(.bold))
 
-                ForEach(gradeSections) { section in
-                    TextField("\(section.grade.name) announcement", text: gradeAnnouncementBinding(for: section.grade.id), axis: .vertical)
+                    TextField("Welcome message", text: $welcomeMessage, axis: .vertical)
+                        .lineLimit(2...4)
+
+                    ForEach(gradeSections) { section in
+                        TextField("\(section.grade.name) announcement", text: gradeAnnouncementBinding(for: section.grade.id), axis: .vertical)
+                            .lineLimit(2...4)
+                    }
+
+                    TextField("Closing Message", text: $closingAnnouncement, axis: .vertical)
                         .lineLimit(2...4)
                 }
-
-                TextField("Closing Message", text: $closingAnnouncement, axis: .vertical)
-                    .lineLimit(2...4)
+                .padding(14)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
+        .background(Color.clear)
     }
 
     @ViewBuilder
@@ -603,7 +618,12 @@ struct PresView: View {
 
     var body: some View {
         NavigationStack {
-            contentStack
+            ZStack {
+                ClubTheme.bgGradient
+                    .ignoresSafeArea()
+
+                contentStack
+            }
             .navigationTitle("Pres")
             .toolbar {
                 if showsIPhoneBackButton {

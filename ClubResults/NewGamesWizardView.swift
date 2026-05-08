@@ -378,6 +378,7 @@ struct NewGameWizardView: View {
             var periodMinutes: Int
             var secondsRemaining: Int
             var isTimerRunning: Bool?
+            var timeOnEnabled: Bool?
             var pointScorers: [UUID: Int]
             var rushedPoints: Int
             var periodSnapshots: [StoredSnapshot]
@@ -407,6 +408,7 @@ struct NewGameWizardView: View {
                 periodMinutes: session.periodMinutes,
                 secondsRemaining: session.secondsRemaining,
                 isTimerRunning: session.isTimerRunning,
+                timeOnEnabled: session.timeOnEnabled,
                 pointScorers: session.pointScorers,
                 rushedPoints: session.rushedPoints,
                 periodSnapshots: session.periodSnapshots.map {
@@ -440,6 +442,7 @@ struct NewGameWizardView: View {
             session.periodMinutes = stored.periodMinutes
             session.secondsRemaining = stored.secondsRemaining
             session.isTimerRunning = stored.isTimerRunning ?? false
+            session.timeOnEnabled = stored.timeOnEnabled ?? false
             session.pointScorers = stored.pointScorers
             session.rushedPoints = stored.rushedPoints
             session.periodSnapshots = stored.periodSnapshots.map {
@@ -460,8 +463,9 @@ struct NewGameWizardView: View {
 
             if let start = stored.backgroundCountdownStart {
                 let elapsed = Int(Date().timeIntervalSince(start))
-                session.secondsRemaining = max(0, session.secondsRemaining - max(0, elapsed))
-                if session.secondsRemaining > 0 {
+                let updatedSeconds = session.secondsRemaining - max(0, elapsed)
+                session.secondsRemaining = session.timeOnEnabled ? updatedSeconds : max(0, updatedSeconds)
+                if session.timeOnEnabled || session.secondsRemaining > 0 {
                     session.isTimerRunning = true
                     session.timerAnchorDate = Date()
                     session.timerAnchorSecondsRemaining = session.secondsRemaining
@@ -1782,7 +1786,8 @@ struct NewGameWizardView: View {
 
     private func startLiveSessionIfNeeded() {
         let configuredPeriod = min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30)
-        liveGameSession.configureIfNeeded(initialPeriodMinutes: configuredPeriod)
+        let configuredTimeOn = selectedGrade?.timeOnEnabled ?? Grade.defaultTimeOnEnabled(for: selectedGrade?.name ?? "")
+        liveGameSession.configureIfNeeded(initialPeriodMinutes: configuredPeriod, timeOnEnabled: configuredTimeOn)
     }
 
     private var displayedSteps: [Step] {
@@ -1818,7 +1823,11 @@ struct NewGameWizardView: View {
     // MARK: Body
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            ZStack {
+                ClubTheme.bgGradient
+                    .ignoresSafeArea()
+
+                VStack(spacing: 0) {
                 if currentStep != .score {
                     wizardHeader
                 }
@@ -1877,14 +1886,17 @@ struct NewGameWizardView: View {
                     .background(.ultraThinMaterial)
                 }
             }
+            }
             .navigationTitle(
                 currentStep == .score
                     ? (entryMode == .live ? "Live Game View" : "Final Score")
                     : ""
             )
+            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
 
         }
+        .clubGlassBackground()
         .animation(.easeInOut(duration: 0.26), value: currentStep)
         // ✅ Seed staff + defaults once
         .onAppear {
@@ -2494,7 +2506,7 @@ struct NewGameWizardView: View {
             .padding(.bottom, 28)
         }
         .dynamicTypeSize(.large ... .accessibility2)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.clear)
     }
 
     @ViewBuilder
@@ -2520,7 +2532,7 @@ struct NewGameWizardView: View {
             .padding(.vertical, isCompactLayout ? 10 : 14)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(ClubTheme.subCardFill)
             )
         }
         .buttonStyle(.plain)
@@ -2541,7 +2553,7 @@ struct NewGameWizardView: View {
                 .padding(.vertical, isCompactLayout ? 8 : 10)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
+                        .fill(isSelected ? Color.accentColor : ClubTheme.subCardFill)
                 )
         }
         .buttonStyle(.plain)
@@ -2588,7 +2600,7 @@ struct NewGameWizardView: View {
             .padding(.top, 10)
             .padding(.bottom, 28)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.clear)
     }
 
     private var officialsStep: some View {
@@ -2729,7 +2741,7 @@ struct NewGameWizardView: View {
         }
         .font(wizardBodyFont)
         .dynamicTypeSize(.large ... .accessibility2)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.clear)
     }
 
     private var medicalStep: some View {
@@ -2798,7 +2810,7 @@ struct NewGameWizardView: View {
                         TextField("Notes (optional)", text: $notes, axis: .vertical)
                             .lineLimit(3...6)
                             .padding(12)
-                            .background(Color(.systemBackground))
+                            .background(ClubTheme.subCardFill)
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                 }
@@ -2809,7 +2821,7 @@ struct NewGameWizardView: View {
         }
         .font(wizardBodyFont)
         .dynamicTypeSize(.large ... .accessibility2)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.clear)
     }
 
     @ViewBuilder
@@ -3284,6 +3296,7 @@ struct NewGameWizardView: View {
                     }
                 }
             }
+            .clubGlassBackground()
             .presentationDetents([.height(goalKickerPickerHeight), setupPickerExpandedDetent], selection: $goalKickerPickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
@@ -3671,6 +3684,7 @@ struct NewGameWizardView: View {
                     }
                 }
             }
+            .clubGlassBackground()
             .presentationDetents([.height(bestPlayerPickerHeight), setupPickerExpandedDetent], selection: $guestVotePickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
@@ -4159,6 +4173,7 @@ struct NewGameWizardView: View {
     private struct LiveGameSessionState {
         var periodMinutes: Int = 20
         var secondsRemaining: Int = 20 * 60
+        var timeOnEnabled: Bool = false
         var isTimerRunning: Bool = false
         var timerAnchorDate: Date?
         var timerAnchorSecondsRemaining: Int?
@@ -4172,7 +4187,8 @@ struct NewGameWizardView: View {
         var scoreEvents: [ScoreEvent] = []
         var isInitialized = false
 
-        mutating func configureIfNeeded(initialPeriodMinutes: Int) {
+        mutating func configureIfNeeded(initialPeriodMinutes: Int, timeOnEnabled: Bool) {
+            self.timeOnEnabled = timeOnEnabled
             guard !isInitialized else { return }
             let bounded = min(max(initialPeriodMinutes, 1), 30)
             periodMinutes = bounded
@@ -4197,9 +4213,15 @@ struct NewGameWizardView: View {
                   let timerAnchorDate,
                   let timerAnchorSecondsRemaining else { return false }
             let elapsed = max(0, Int(date.timeIntervalSince(timerAnchorDate)))
-            let updatedSeconds = timerAnchorSecondsRemaining - elapsed
+            let rawUpdatedSeconds = timerAnchorSecondsRemaining - elapsed
+            let updatedSeconds = timeOnEnabled ? rawUpdatedSeconds : max(0, rawUpdatedSeconds)
             let crossedZero = secondsRemaining > 0 && updatedSeconds <= 0
             secondsRemaining = updatedSeconds
+            if !timeOnEnabled && secondsRemaining <= 0 {
+                isTimerRunning = false
+                self.timerAnchorDate = nil
+                self.timerAnchorSecondsRemaining = nil
+            }
             return crossedZero
         }
 
@@ -4339,7 +4361,12 @@ struct NewGameWizardView: View {
 
         private var ourScore: Int { ourGoals * 6 + ourBehinds }
         private var theirScore: Int { theirGoals * 6 + theirBehinds }
-        private var isDangerTime: Bool { liveSession.secondsRemaining <= (2 * 60) }
+        private var isDangerTime: Bool {
+            if liveSession.timeOnEnabled {
+                return liveSession.secondsRemaining <= 0
+            }
+            return liveSession.secondsRemaining <= (2 * 60)
+        }
         private var canSaveAndContinue: Bool { liveSession.periodSnapshots.count == 4 }
         private var nextPeriodLabel: String? {
             switch liveSession.periodSnapshots.count {
@@ -4434,16 +4461,11 @@ struct NewGameWizardView: View {
                 let cardSpacing: CGFloat = compact ? 14 : 18
                 let horizontalPadding: CGFloat = compact ? 14 : 18
                 let availableWidth = max(0, proxy.size.width - (horizontalPadding * 2))
-                let preferredTeamCardWidth: CGFloat = availableWidth * 0.35
-                let reservedCenterWidth: CGFloat = compact ? availableWidth : 320
-                let remainingWidthForTeams: CGFloat = compact
-                    ? max(0, (availableWidth - cardSpacing) / 2)
-                    : (availableWidth - (cardSpacing * 2) - reservedCenterWidth) / 2
-                let clampedTeamCardWidth = min(preferredTeamCardWidth, remainingWidthForTeams)
-                let teamCardWidth = compact ? remainingWidthForTeams : max(280, clampedTeamCardWidth)
-                let timerWidth = compact ? availableWidth : max(280, availableWidth - (teamCardWidth * 2) - (cardSpacing * 2))
-                let scoreboardHeight = compact ? 298 : max(382, proxy.size.height * 0.45)
-                let supportingCardHeight: CGFloat = compact ? 260 : 286
+                let topRowSpacing: CGFloat = cardSpacing * 2
+                let rawTopCardWidth: CGFloat = (availableWidth - topRowSpacing) / 3
+                let topCardWidth: CGFloat = max(rawTopCardWidth, 0)
+                let scoreboardHeight: CGFloat = compact ? 298 : 300
+                let supportingCardHeight: CGFloat = compact ? 284 : 308
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: cardSpacing) {
@@ -4457,8 +4479,7 @@ struct NewGameWizardView: View {
                         } else {
                             regularScoreboardLayout(
                                 cardSpacing: cardSpacing,
-                                teamCardWidth: teamCardWidth,
-                                timerWidth: timerWidth,
+                                topCardWidth: topCardWidth,
                                 sharedCardHeight: scoreboardHeight,
                                 secondaryRowCardHeight: supportingCardHeight
                             )
@@ -4654,15 +4675,7 @@ struct NewGameWizardView: View {
 
         private var liveGameBackdrop: some View {
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color.black,
-                        Color(red: 0.06, green: 0.09, blue: 0.16),
-                        Color(red: 0.11, green: 0.14, blue: 0.24)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                ClubTheme.bgGradient
 
                 Circle()
                     .fill(ourStyle.background.opacity(0.24))
@@ -4704,19 +4717,21 @@ struct NewGameWizardView: View {
 
         private func glassPanelBackground(cornerRadius: CGFloat = 22) -> some View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(ClubTheme.cardFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
+                        .fill(ClubTheme.cardOverlay)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(ClubTheme.cardStroke, lineWidth: 1)
                 )
         }
 
         private func timerCard(height: CGFloat, width: CGFloat, compact: Bool = false) -> some View {
-            VStack(alignment: .leading, spacing: 18) {
+            let periodScoresReservedHeight: CGFloat = compact ? 152 : 122
+
+            return VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     Label(currentPeriodDisplayLabel, systemImage: "clock.fill")
                         .font(compact ? .headline.weight(.semibold) : .title3.weight(.semibold))
@@ -4798,7 +4813,7 @@ struct NewGameWizardView: View {
 
                         periodScoresSection(compact: true)
                             .frame(width: scoreColumnWidth, alignment: .topLeading)
-                            .frame(maxHeight: .infinity, alignment: .topLeading)
+                            .frame(minHeight: periodScoresReservedHeight, maxHeight: periodScoresReservedHeight, alignment: .topLeading)
                     }
                     .font(.subheadline.weight(.semibold))
                     .controlSize(.regular)
@@ -4852,10 +4867,11 @@ struct NewGameWizardView: View {
                     Divider()
 
                     periodScoresSection(compact: false)
+                        .frame(minHeight: periodScoresReservedHeight, maxHeight: periodScoresReservedHeight, alignment: .topLeading)
                 }
             }
             .padding(compact ? 16 : 18)
-            .frame(maxWidth: width, minHeight: height, maxHeight: height, alignment: .topLeading)
+            .frame(maxWidth: width, minHeight: height, alignment: .topLeading)
             .background(glassPanelBackground(cornerRadius: 24))
         }
 
@@ -4963,8 +4979,7 @@ struct NewGameWizardView: View {
         @ViewBuilder
         private func regularScoreboardLayout(
             cardSpacing: CGFloat,
-            teamCardWidth: CGFloat,
-            timerWidth: CGFloat,
+            topCardWidth: CGFloat,
             sharedCardHeight: CGFloat,
             secondaryRowCardHeight: CGFloat
         ) -> some View {
@@ -4986,10 +5001,12 @@ struct NewGameWizardView: View {
                         canUndoPoint: canUndoPoint,
                         minHeight: sharedCardHeight
                     )
-                    .frame(width: teamCardWidth, alignment: .topLeading)
+                    .frame(width: topCardWidth, alignment: .topLeading)
+                    .frame(maxHeight: .infinity, alignment: .top)
 
-                    timerCard(height: sharedCardHeight, width: timerWidth)
-                    .frame(width: timerWidth, alignment: .top)
+                    timerCard(height: sharedCardHeight, width: topCardWidth)
+                    .frame(width: topCardWidth, alignment: .top)
+                    .frame(maxHeight: .infinity, alignment: .top)
 
                     teamScoreCard(
                         title: oppTeamName,
@@ -5007,18 +5024,20 @@ struct NewGameWizardView: View {
                         canUndoPoint: canUndoOpponentPoint,
                         minHeight: sharedCardHeight
                     )
-                    .frame(width: teamCardWidth, alignment: .topTrailing)
+                    .frame(width: topCardWidth, alignment: .topTrailing)
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
                 if shouldShowLiveStatsSummary {
                     syncedLiveStatsLowerSection(
                         metrics: syncedStatsSummaryMetrics,
                         height: max(secondaryRowCardHeight + 24, 300),
-                        width: (teamCardWidth * 2) + timerWidth + (cardSpacing * 2)
+                        width: (topCardWidth * 3) + (cardSpacing * 2)
                     )
                 } else {
                     goalKickerSummaryCard(
-                        width: (teamCardWidth * 2) + timerWidth + (cardSpacing * 2),
+                        width: (topCardWidth * 3) + (cardSpacing * 2),
                         height: secondaryRowCardHeight
                     )
                 }
@@ -5027,6 +5046,9 @@ struct NewGameWizardView: View {
 
         private func goalKickerSummaryCard(width: CGFloat, height: CGFloat) -> some View {
             let visibleRows = 5
+            let leaderboardRowHeight: CGFloat = 42
+            let leaderboardRowSpacing: CGFloat = 8
+            let leaderboardViewportHeight: CGFloat = (CGFloat(visibleRows) * leaderboardRowHeight) + (CGFloat(visibleRows - 1) * leaderboardRowSpacing)
             let hasManyGoalKickers = scorerTally.count + (liveSession.rushedPoints > 0 ? 1 : 0) > visibleRows
             return VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -5049,7 +5071,7 @@ struct NewGameWizardView: View {
                     Text("No scorers yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ScrollView(showsIndicators: true) {
+                    ScrollView(showsIndicators: false) {
                         VStack(spacing: 8) {
                             ForEach(scorerTally, id: \.id) { scorer in
                                 leaderboardLine(
@@ -5068,7 +5090,8 @@ struct NewGameWizardView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    .frame(maxHeight: 5 * 42)
+                    .frame(height: leaderboardViewportHeight)
+                    .clipped()
                     if hasManyGoalKickers {
                         Label("Scroll to see all goal kickers", systemImage: "arrow.up.and.down")
                             .font(.caption.weight(.semibold))
@@ -5107,6 +5130,9 @@ struct NewGameWizardView: View {
 
         private func possessionLeadersCard(width: CGFloat, height: CGFloat) -> some View {
             let visibleRows = 5
+            let leaderboardRowHeight: CGFloat = 42
+            let leaderboardRowSpacing: CGFloat = 8
+            let leaderboardViewportHeight: CGFloat = (CGFloat(visibleRows) * leaderboardRowHeight) + (CGFloat(visibleRows - 1) * leaderboardRowSpacing)
             let hasManyLeaders = syncedPossessionLeaders.count > visibleRows
             return VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -5123,7 +5149,7 @@ struct NewGameWizardView: View {
                     Text("No possession data yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ScrollView(showsIndicators: true) {
+                    ScrollView(showsIndicators: false) {
                         VStack(spacing: 8) {
                             ForEach(syncedPossessionLeaders) { leader in
                                 leaderboardLine(
@@ -5135,7 +5161,8 @@ struct NewGameWizardView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    .frame(maxHeight: 5 * 42)
+                    .frame(height: leaderboardViewportHeight)
+                    .clipped()
                     if hasManyLeaders {
                         Label("Scroll to see all possession leaders", systemImage: "arrow.up.and.down")
                             .font(.caption.weight(.semibold))
@@ -6180,7 +6207,7 @@ struct NewGameWizardView: View {
 
         private func handleTimerTick() {
             let crossedZero = liveSession.syncTimer()
-            if crossedZero {
+            if crossedZero && !liveSession.timeOnEnabled {
                 pendingAutoAdvanceSave = true
                 AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -6312,12 +6339,7 @@ struct NewGameWizardView: View {
                     content
                 }
                 .padding(16)
-                .background(Color(.systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
-                )
+                .clubGlassSurface(cornerRadius: 18)
             }
         }
     }

@@ -304,6 +304,7 @@ struct GradeRecord: Codable {
     let guestBestPlayersVotes: [Int]
     let allowsLiveGameView: Bool
     let quarterLengthMinutes: Int
+    let timeOnEnabled: Bool
 
     private enum CodingKeys: String, CodingKey {
         case id, name, isActive, displayOrder
@@ -314,7 +315,7 @@ struct GradeRecord: Codable {
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
         case bestPlayersCount, guestBestPlayersCount
         case bestPlayersVotes, guestBestPlayersVotes
-        case asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes
+        case asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes, timeOnEnabled
     }
 
     init(_ grade: Grade) {
@@ -351,6 +352,7 @@ struct GradeRecord: Codable {
         guestBestPlayersVotes = grade.guestBestPlayersVotes
         allowsLiveGameView = grade.allowsLiveGameView
         quarterLengthMinutes = grade.quarterLengthMinutes
+        timeOnEnabled = grade.timeOnEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -388,6 +390,7 @@ struct GradeRecord: Codable {
         asksGuestBestFairestVotesScan = try c.decodeIfPresent(Bool.self, forKey: .asksGuestBestFairestVotesScan) ?? false
         allowsLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .allowsLiveGameView) ?? false
         quarterLengthMinutes = try c.decodeIfPresent(Int.self, forKey: .quarterLengthMinutes) ?? 20
+        timeOnEnabled = try c.decodeIfPresent(Bool.self, forKey: .timeOnEnabled) ?? Grade.defaultTimeOnEnabled(for: name)
     }
 }
 
@@ -1253,7 +1256,8 @@ enum AppBackupService {
                     bestPlayersVotes: $0.bestPlayersVotes,
                     guestBestPlayersVotes: $0.guestBestPlayersVotes,
                     allowsLiveGameView: $0.allowsLiveGameView,
-                    quarterLengthMinutes: $0.quarterLengthMinutes
+                    quarterLengthMinutes: $0.quarterLengthMinutes,
+                    timeOnEnabled: $0.timeOnEnabled
                 )
             )
         }

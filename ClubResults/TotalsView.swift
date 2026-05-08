@@ -14,6 +14,14 @@ struct TotalsView: View {
     @State private var topCount: TopCountOption = .top3
     @State private var combineAllGrades = false
 
+    private var clubConfiguration: ClubConfiguration {
+        ClubConfigurationStore.load()
+    }
+
+    private var clubStyle: ClubStyle.Style {
+        ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration)
+    }
+
     private enum TopCountOption: String, CaseIterable, Identifiable {
         case top3 = "Top 3"
         case top5 = "Top 5"
@@ -163,7 +171,7 @@ struct TotalsView: View {
                                 VStack(alignment: .leading, spacing: 14) {
                                     HStack {
                                         Spacer()
-                                        ClubPill(text: group.title, bg: ClubTheme.navy, fg: ClubTheme.yellow)
+                                        ClubPill(text: group.title, bg: clubStyle.background, fg: clubStyle.text)
                                         Spacer()
                                     }
 
@@ -221,6 +229,7 @@ struct TotalsView: View {
                         .zIndex(2)
                 }
             }
+            .clubGlassBackground()
         }
     }
 
@@ -330,7 +339,7 @@ struct TotalsView: View {
                 .frame(height: 44)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isSelected ? Color.blue : Color.gray.opacity(0.22))
+                        .fill(isSelected ? Color.accentColor.opacity(0.35) : ClubTheme.cardFill)
                 )
         }
         .buttonStyle(.plain)
@@ -374,14 +383,19 @@ private extension TotalsView {
 
     // Large header pill used INSIDE each leaderboard card (club colours)
     func bigPillHeader(_ text: String) -> some View {
-        Text(text)
+        let style = ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration)
+        return Text(text)
             .font(.headline.weight(.semibold))
-            .foregroundStyle(ClubTheme.yellow)
+            .foregroundStyle(style.text)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(
                 Capsule(style: .continuous)
-                    .fill(ClubTheme.navy)
+                    .fill(style.background)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(style.border.opacity(0.55), lineWidth: 1)
             )
             .textCase(nil)
     }
@@ -408,22 +422,47 @@ private extension TotalsView {
 
                     Text(row.name)
                         .lineLimit(1)
-
-                    Spacer()
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text(row.valueText)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-                .padding(.vertical, 4)
-
-                if row.id != rows.last?.id {
-                    Divider().opacity(0.25)
-                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
-        .premiumGlassCard()      // ✅ premium glass everywhere
-        .padding(.vertical, 2)   // spacing between cards
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(ClubTheme.cardFill.opacity(0.96))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(ClubTheme.cardOverlay)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(ClubTheme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.28), radius: 16, y: 8)
+        .padding(.vertical, 2)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     func playerName(for id: UUID) -> String {
@@ -585,10 +624,6 @@ private extension View {
         self
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-            )
+            .clubGlassSurface(cornerRadius: 16)
     }
 }

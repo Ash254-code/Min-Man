@@ -626,59 +626,106 @@ struct StatsRootView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if navigationState.currentRole.canStartStatsSessions {
-                    Section {
-                        Button {
-                            openNewSessionIfAllowed()
-                        } label: {
-                            Label("New Stats Session", systemImage: "plus.circle.fill")
-                        }
-                    }
-                }
+            ZStack {
+                ClubTheme.bgGradient
+                    .ignoresSafeArea()
 
-                Section("Recent Sessions") {
-                    if sessions.isEmpty {
-                        Text("No sessions yet")
-                            .foregroundStyle(.secondary)
-                    }
-
-                    ForEach(sessions) { session in
-                        Button {
-                            selectedSession = session
-                        } label: {
-                            HStack(alignment: .center, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(gradeName(for: session.gradeId))
-                                        .font(.headline)
-                                    Text("vs \(session.opposition) • \(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(sessionStatusText(for: session))
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(session.isSaved ? .green : .orange)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(session.isSaved ? Color.green.opacity(0.14) : Color.orange.opacity(0.14))
-                                    .clipShape(Capsule())
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                sessionPendingDeletion = session
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if navigationState.currentRole.canStartStatsSessions {
+                            Button {
+                                openNewSessionIfAllowed()
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                HStack {
+                                    Label("New Stats Session", systemImage: "plus.circle.fill")
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            Capsule(style: .continuous)
+                                                .fill(Color.white.opacity(0.08))
+                                        )
+                                        .overlay(
+                                            Capsule(style: .continuous)
+                                                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                                        )
+                                    Spacer()
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Recent Sessions")
+                                .font(.title3.weight(.bold))
+
+                            if sessions.isEmpty {
+                                Text("No sessions yet")
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 10)
+                            } else {
+                                VStack(spacing: 10) {
+                                    ForEach(sessions) { session in
+                                        Button {
+                                            selectedSession = session
+                                        } label: {
+                                            HStack(alignment: .center, spacing: 12) {
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text(gradeName(for: session.gradeId))
+                                                        .font(.headline)
+                                                        .lineLimit(1)
+                                                        .truncationMode(.tail)
+                                                    Text("vs \(session.opposition) • \(session.date, format: Date.FormatStyle(date: .abbreviated, time: .omitted))")
+                                                        .font(.subheadline)
+                                                        .foregroundStyle(.secondary)
+                                                        .lineLimit(1)
+                                                        .truncationMode(.tail)
+                                                }
+                                                Spacer(minLength: 8)
+                                                Text(sessionStatusText(for: session))
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(.primary)
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 6)
+                                                    .background(
+                                                        Capsule(style: .continuous)
+                                                            .fill(ClubTheme.subCardFill)
+                                                    )
+                                                    .overlay(
+                                                        Capsule(style: .continuous)
+                                                            .stroke(ClubTheme.subCardStroke, lineWidth: 1)
+                                                    )
+                                            }
+                                            .padding(12)
+                                            .frame(maxWidth: .infinity)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                    .fill(ClubTheme.subCardFill)
+                                            )
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                    .stroke(ClubTheme.subCardStroke, lineWidth: 1)
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
                             }
                         }
+                        .padding(14)
+                        .clubGlassSurface(cornerRadius: 20)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
             }
             .navigationTitle("Stats")
             .navigationDestination(isPresented: $showNewSession) {
                 StatsSessionSetupView()
+                    .clubGlassBackground()
             }
             .navigationDestination(item: $selectedSession) { session in
                 LiveStatsView(
@@ -1478,8 +1525,9 @@ struct StatsSessionSetupView: View {
             .padding(.vertical, isIPhoneWizardLayout ? 10 : (isCompactLayout ? 14 : 18))
             .background(.ultraThinMaterial)
         }
-        .background(Color(.systemGroupedBackground))
+        .clubGlassBackground()
         .navigationTitle("")
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showLiveStats) {
             if let startedSession {
@@ -1755,7 +1803,7 @@ struct StatsSessionSetupView: View {
             .padding(.bottom, 28)
         }
         .dynamicTypeSize(.large ... .accessibility2)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.clear)
     }
 
     private var statsCollectionStep: some View {
@@ -1800,7 +1848,7 @@ struct StatsSessionSetupView: View {
             .padding(.bottom, 28)
         }
         .dynamicTypeSize(.large ... .accessibility2)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.clear)
     }
 
     private var inviteUsersStep: some View {
@@ -1820,7 +1868,7 @@ struct StatsSessionSetupView: View {
             .padding(.bottom, 28)
         }
         .dynamicTypeSize(.large ... .accessibility2)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.clear)
         .sheet(isPresented: $showWizardStatPicker) {
             NavigationStack {
                 List {
@@ -2284,7 +2332,7 @@ struct StatsSessionSetupView: View {
             .padding(.bottom, 28)
         }
         .dynamicTypeSize(.large ... .accessibility2)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.clear)
     }
 
     private var enabledWizardInviteSelections: [StatsInviteSelection] {
@@ -3076,12 +3124,7 @@ private struct StatsWizardCard<Content: View>: View {
                 content
             }
             .padding(compactStyle ? 12 : 16)
-            .background(Color(.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: compactStyle ? 14 : 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: compactStyle ? 14 : 18, style: .continuous)
-                    .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
-            )
+            .clubGlassSurface(cornerRadius: compactStyle ? 14 : 18)
         }
     }
 }
@@ -3616,7 +3659,11 @@ struct LiveStatsView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
+        ZStack {
+            ClubTheme.bgGradient
+                .ignoresSafeArea()
+
+            GeometryReader { proxy in
             let _: CGFloat = 8
             let availableWidth = max(proxy.size.width - 24, 640)
             let leftWidthRatio: CGFloat = oppositionTrackPossessions ? 0.72 : 0.62
@@ -3666,7 +3713,8 @@ struct LiveStatsView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        }
+        .clubGlassBackground()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -4903,8 +4951,6 @@ struct LiveStatsView: View {
 
     private var headerBannerArea: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.thinMaterial)
             HStack(alignment: .center, spacing: isIPhoneStatsLayout ? 10 : 14) {
                 timerBadge
 
@@ -4991,6 +5037,7 @@ struct LiveStatsView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .clubGlassSurface(cornerRadius: 12)
         .animation(.spring(response: 0.4, dampingFraction: 0.86), value: statusBanner)
         .confirmationDialog("Select Quarter", isPresented: $showQuarterPickerDialog, titleVisibility: .visible) {
             ForEach(["Q1", "Q2", "Q3", "Q4"], id: \.self) { quarter in
@@ -5211,7 +5258,7 @@ struct LiveStatsView: View {
         }
         .padding(.horizontal, isIPhoneStatsLayout ? 10 : 14)
         .padding(.vertical, isIPhoneStatsLayout ? 8 : 12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .clubGlassSurface(cornerRadius: 10)
     }
 
     private func edgeTeamScoreBlock(name: String, scoreText: String, style: ClubStyle.Style) -> some View {
@@ -5244,29 +5291,39 @@ struct LiveStatsView: View {
 
     private var edgeComparisonMetricsPanel: some View {
         let metrics = scoreComparisonMetrics
+        let verticalPadding: CGFloat = isIPhoneStatsLayout ? 6 : 12
+        let rowSpacing: CGFloat = isIPhoneStatsLayout ? 4 : 8
         return Group {
-            if isIPhoneStatsLayout {
-                VStack(spacing: 4) {
-                    ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
-                        comparisonMetricRow(metric)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-            } else {
-                ScrollView {
-                    VStack(spacing: 8) {
+            GeometryReader { proxy in
+                let rowCount = max(metrics.count, 1)
+                let totalSpacing = rowSpacing * CGFloat(max(0, rowCount - 1))
+                let availableHeight = max(0, proxy.size.height - (verticalPadding * 2) - totalSpacing)
+                let fittedRowHeight = max(20, floor(availableHeight / CGFloat(rowCount)))
+
+                if isIPhoneStatsLayout {
+                    VStack(spacing: rowSpacing) {
                         ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
-                            comparisonMetricRow(metric)
+                            comparisonMetricRow(metric, rowHeight: fittedRowHeight)
                         }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, verticalPadding)
+                } else {
+                    ScrollView {
+                        VStack(spacing: rowSpacing) {
+                            ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
+                                comparisonMetricRow(metric, rowHeight: fittedRowHeight)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, verticalPadding)
+                    }
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
         }
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .clubGlassSurface(cornerRadius: 10)
     }
 
     private var scoreComparisonMetrics: [(label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double)] {
@@ -5461,11 +5518,11 @@ struct LiveStatsView: View {
         sessionTracksContestedPossessions
     }
 
-    private func comparisonMetricRow(_ metric: (label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double)) -> some View {
-        let ourIsLeading = metric.ourNumeric > metric.oppositionNumeric
-        let oppositionIsLeading = metric.oppositionNumeric > metric.ourNumeric
-        let ourBackground = ourIsLeading ? Color.green.opacity(0.85) : (oppositionIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
-        let oppositionBackground = oppositionIsLeading ? Color.green.opacity(0.85) : (ourIsLeading ? Color.red.opacity(0.78) : Color.gray.opacity(0.45))
+    private func comparisonMetricRow(
+        _ metric: (label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double),
+        rowHeight: CGFloat
+    ) -> some View {
+        let neutralPillBackground = Color.white.opacity(0.06)
         let tappableMetrics = Set(["Inside 50", "Clearance", "Hit Out", "Free Kick", "Turnover", "Intercept"])
         let isTappableMetric = tappableMetrics.contains(metric.label)
 
@@ -5474,18 +5531,20 @@ struct LiveStatsView: View {
                 label: metric.label,
                 value: metric.ourValue,
                 isOpposition: false,
-                background: ourBackground,
+                background: neutralPillBackground,
                 mirrored: false,
-                isTappableMetric: isTappableMetric
+                isTappableMetric: isTappableMetric,
+                rowHeight: rowHeight
             )
 
             comparisonMetricSide(
                 label: metric.label,
                 value: metric.oppositionValue,
                 isOpposition: true,
-                background: oppositionBackground,
+                background: neutralPillBackground,
                 mirrored: true,
-                isTappableMetric: isTappableMetric
+                isTappableMetric: isTappableMetric,
+                rowHeight: rowHeight
             )
         }
     }
@@ -5496,7 +5555,8 @@ struct LiveStatsView: View {
         isOpposition: Bool,
         background: Color,
         mirrored: Bool,
-        isTappableMetric: Bool
+        isTappableMetric: Bool,
+        rowHeight: CGFloat
     ) -> some View {
         let content = HStack(spacing: isIPhoneStatsLayout ? 3 : 6) {
             if mirrored {
@@ -5524,13 +5584,13 @@ struct LiveStatsView: View {
             }
         }
         .foregroundStyle(.white)
-        .padding(.vertical, isIPhoneStatsLayout ? 6 : 10)
         .padding(.horizontal, isIPhoneStatsLayout ? 8 : 12)
+        .frame(height: rowHeight, alignment: .center)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(background, in: RoundedRectangle(cornerRadius: 10))
+        .background(background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
 
         return Group {
@@ -6896,6 +6956,7 @@ struct LiveStatsView: View {
         HStack(alignment: .top, spacing: 12) {
             liveLeaderboardColumn(
                 title: "Top 5 Goal Kickers",
+                systemImage: "list.bullet.rectangle.portrait.fill",
                 entries: topGoalKickers.map {
                     ($0.playerLabel, "\($0.goals)", nil)
                 },
@@ -6903,6 +6964,7 @@ struct LiveStatsView: View {
             )
             liveLeaderboardColumn(
                 title: "Top 5 Possession Getters",
+                systemImage: "figure.australian.football",
                 entries: topPossessionGetters.map {
                     ($0.playerLabel, "\($0.possessions)", nil)
                 },
@@ -6913,40 +6975,41 @@ struct LiveStatsView: View {
 
     private func liveLeaderboardColumn(
         title: String,
+        systemImage: String,
         entries: [(name: String, value: String, detail: String?)],
         emptyText: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title2.weight(.black))
-                .frame(maxWidth: .infinity, alignment: .center)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
+        let topEntries = Array(entries.prefix(5))
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(title, systemImage: systemImage)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer()
+            }
 
-            if entries.isEmpty {
+            if topEntries.isEmpty {
                 Spacer(minLength: 0)
                 Text(emptyText)
-                    .font(.title3.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 0)
             } else {
-                ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                ForEach(Array(topEntries.enumerated()), id: \.offset) { _, entry in
                     HStack(alignment: .center, spacing: 10) {
-                        Text("\(index + 1).")
-                            .font(.title3.weight(.black))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 28, alignment: .leading)
-
                         VStack(alignment: .leading, spacing: 2) {
                             Text(entry.name)
-                                .font(.title3.weight(.bold))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.78)
+                                .minimumScaleFactor(0.8)
                             if let detail = entry.detail, !detail.isEmpty {
                                 Text(detail)
-                                    .font(.headline.weight(.medium))
-                                    .foregroundStyle(.secondary)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white.opacity(0.68))
+                                    .monospacedDigit()
                                     .lineLimit(1)
                             }
                         }
@@ -6954,18 +7017,28 @@ struct LiveStatsView: View {
                         Spacer(minLength: 8)
 
                         Text(entry.value)
-                            .font(.system(size: 38, weight: .black, design: .rounded))
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(.white)
                             .monospacedDigit()
                             .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                            .minimumScaleFactor(0.85)
                     }
-                    .frame(height: 46)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            )
+                    )
                 }
             }
         }
         .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 286, maxHeight: 286, alignment: .topLeading)
+        .clubGlassSurface(cornerRadius: 22)
     }
 
     private struct PlayerQuickStatOption: Identifiable {
@@ -9100,22 +9173,26 @@ private struct StatsTotalsView: View {
 
                     HStack(alignment: .top, spacing: 12) {
                         leaderboardPool(
-                            title: "Top 5 Possession Getters",
-                            entries: topPossessionRows.map {
-                                ("\($0.playerLabel)", "\($0.possessions)", nil)
-                            }
-                        )
-                        leaderboardPool(
                             title: "Top 5 Goal Kickers",
+                            systemImage: "list.bullet.rectangle.portrait.fill",
                             entries: topGoalKickers.map {
                                 ("\($0.playerLabel)", "\($0.goals)", nil)
-                            }
+                            },
+                            emptyText: "No goals yet."
+                        )
+                        leaderboardPool(
+                            title: "Top 5 Possession Getters",
+                            systemImage: "figure.australian.football",
+                            entries: topPossessionRows.map {
+                                ("\($0.playerLabel)", "\($0.possessions)", nil)
+                            },
+                            emptyText: "No possession data yet."
                         )
                     }
                 }
                 .padding(16)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color.clear)
             .navigationTitle("Game Totals")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -9291,52 +9368,69 @@ private struct StatsTotalsView: View {
         )
     }
 
-    private func leaderboardPool(title: String, entries: [(name: String, mainValue: String, subValue: String?)]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title2.weight(.black))
-                .frame(maxWidth: .infinity, alignment: .center)
-                .multilineTextAlignment(.center)
-            if entries.isEmpty {
+    private func leaderboardPool(
+        title: String,
+        systemImage: String,
+        entries: [(name: String, mainValue: String, subValue: String?)],
+        emptyText: String
+    ) -> some View {
+        let topEntries = Array(entries.prefix(5))
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(title, systemImage: systemImage)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer()
+            }
+            if topEntries.isEmpty {
                 Spacer(minLength: 0)
-                Text("No data yet.")
-                    .font(.title3.weight(.semibold))
+                Text(emptyText)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 0)
             } else {
-                ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                ForEach(Array(topEntries.enumerated()), id: \.offset) { _, entry in
                     HStack(alignment: .center, spacing: 10) {
-                        Text("\(index + 1).")
-                            .font(.title3.weight(.black))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 26, alignment: .leading)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(entry.name)
-                                .font(.title3.weight(.bold))
+                                .font(.subheadline.weight(.semibold))
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.78)
+                                .foregroundStyle(.white)
+                                .minimumScaleFactor(0.8)
                             if let subValue = entry.subValue, !subValue.isEmpty {
                                 Text(subValue)
-                                    .font(.headline)
-                                    .foregroundStyle(.secondary)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white.opacity(0.68))
+                                    .monospacedDigit()
                                     .lineLimit(1)
                             }
                         }
                         Spacer(minLength: 8)
                         Text(entry.mainValue)
-                            .font(.system(size: 38, weight: .black, design: .rounded))
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(.white)
                             .monospacedDigit()
                             .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                            .minimumScaleFactor(0.85)
                     }
-                    .frame(height: 46)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            )
+                    )
                 }
             }
         }
         .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 350, alignment: .topLeading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 286, maxHeight: 286, alignment: .topLeading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
@@ -11415,39 +11509,50 @@ struct StatTakerStatsView: View {
 
     var body: some View {
         NavigationStack {
-            if isLoadingAssignments && cloudAssignments.isEmpty {
-                LoadingFootballView("Loading assignments…")
+            ZStack {
+                ClubTheme.bgGradient
+                    .ignoresSafeArea()
+
+                if isLoadingAssignments && cloudAssignments.isEmpty {
+                    LoadingFootballView("Loading assignments…")
+                        .navigationTitle("Stats View")
+                } else if let loadError {
+                    ContentUnavailableView(
+                        "Unable to Load Assignments",
+                        systemImage: "icloud.slash",
+                        description: Text(loadError)
+                    )
                     .navigationTitle("Stats View")
-            } else if let loadError {
-                ContentUnavailableView(
-                    "Unable to Load Assignments",
-                    systemImage: "icloud.slash",
-                    description: Text(loadError)
-                )
-                .navigationTitle("Stats View")
-            } else if orderedAssignments.isEmpty {
-                ContentUnavailableView(
-                    "No live stat sessions",
-                    systemImage: "rectangle.grid.2x2",
-                    description: Text("This view only shows sessions with an active live feed. When one is running, it will appear here with a green Join button.")
-                )
-                .navigationTitle("Stats View")
-            } else {
-                List {
-                    Section("Available Stat Sessions") {
-                        ForEach(orderedAssignments) { assignment in
-                            Button {
-                                selectedAssignment = assignment
-                            } label: {
-                                statSessionRow(for: assignment)
+                } else if orderedAssignments.isEmpty {
+                    ContentUnavailableView(
+                        "No live stat sessions",
+                        systemImage: "rectangle.grid.2x2",
+                        description: Text("This view only shows sessions with an active live feed. When one is running, it will appear here with a green Join button.")
+                    )
+                    .navigationTitle("Stats View")
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Available Stat Sessions")
+                                .font(.title3.weight(.bold))
+
+                            ForEach(orderedAssignments) { assignment in
+                                Button {
+                                    selectedAssignment = assignment
+                                } label: {
+                                    statSessionRow(for: assignment)
+                                        .padding(12)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                     }
-                }
-                .navigationTitle("Stats View")
-                .navigationDestination(item: $selectedAssignment) { assignment in
-                    statsDetailView(for: assignment)
+                    .navigationTitle("Stats View")
+                    .navigationDestination(item: $selectedAssignment) { assignment in
+                        statsDetailView(for: assignment)
+                    }
                 }
             }
         }

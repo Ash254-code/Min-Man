@@ -8,6 +8,7 @@ final class ClubResultsAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         application.registerForRemoteNotifications()
+
         return true
     }
 
@@ -24,6 +25,10 @@ final class ClubResultsAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct ClubResultsApp: App {
     @UIApplicationDelegateAdaptor(ClubResultsAppDelegate.self) private var appDelegate
+
+    init() {
+        Self.configureGlobalBackgroundAppearance()
+    }
     private static let modelStoreDirectoryName = "ClubResultsSwiftData"
     private static let modelStoreFileName = "ClubResults.store"
     private static let cloudKitContainerIdentifier = "iCloud.MINMAN.ClubResults"
@@ -185,6 +190,15 @@ struct ClubResultsApp: App {
         )
     }
 
+    private static func configureGlobalBackgroundAppearance() {
+        UITableView.appearance().backgroundColor = .clear
+        UITableViewCell.appearance().backgroundColor = .clear
+        UITableViewHeaderFooterView.appearance().tintColor = .clear
+        UICollectionView.appearance().backgroundColor = .clear
+        UICollectionReusableView.appearance().backgroundColor = .clear
+        UIScrollView.appearance().backgroundColor = .clear
+    }
+
     private var preferredScheme: ColorScheme? {
         switch AppAppearance(rawValue: appAppearance) ?? .system {
         case .system: return nil
@@ -202,18 +216,18 @@ struct ClubResultsApp: App {
 
                 // subtle glow layers (same as AppScreenStyle)
                 RadialGradient(
-                    gradient: Gradient(colors: [Color.white.opacity(0.12), Color.clear]),
-                    center: .topTrailing,
-                    startRadius: 40,
-                    endRadius: 380
+                    gradient: Gradient(colors: [Color.white.opacity(0.06), Color.clear]),
+                    center: .bottomTrailing,
+                    startRadius: 36,
+                    endRadius: 340
                 )
                 .ignoresSafeArea()
 
                 RadialGradient(
-                    gradient: Gradient(colors: [Color.white.opacity(0.08), Color.clear]),
-                    center: .bottomLeading,
+                    gradient: Gradient(colors: [Color.white.opacity(0.02), Color.clear]),
+                    center: .topLeading,
                     startRadius: 40,
-                    endRadius: 420
+                    endRadius: 440
                 )
                 .ignoresSafeArea()
 
