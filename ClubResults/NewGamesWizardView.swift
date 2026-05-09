@@ -372,6 +372,8 @@ struct NewGameWizardView: View {
     @State private var remoteInvitePlayerEvents: [CloudStatsInvitePlayerEvent] = []
     @State private var showSelectedPlayersPicker = false
     @State private var showEditPlayersFromSelection = false
+    @State private var showEditPlayersFromGoalKickerPicker = false
+    @State private var showEditPlayersFromRankingPicker = false
     @State private var draftSelectedPlayerIDs: Set<UUID> = []
     @State private var savedSelectedPlayerIDs: Set<UUID> = []
     @State private var hasSavedSelectedPlayers = false
@@ -1581,6 +1583,28 @@ struct NewGameWizardView: View {
         .contentShape(Rectangle())
     }
 
+    private func playerPopupToolbarButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if title == "<" {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                } else {
+                    Text(title)
+                        .font(.system(size: 16, weight: .semibold))
+                }
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color(.systemGray3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: Goal allocation helpers
     private var totalAllocatedGoals: Int { goalKickers.reduce(0) { $0 + $1.goals } }
 
@@ -2121,6 +2145,18 @@ struct NewGameWizardView: View {
                     showSelectedPlayersPicker = false
                 } onCancel: {
                     showSelectedPlayersPicker = false
+                }
+            }
+            .sheet(isPresented: $showEditPlayersFromSelection) {
+                NavigationStack {
+                    PlayersView()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                playerPopupToolbarButton("<") {
+                                    showEditPlayersFromSelection = false
+                                }
+                            }
+                        }
                 }
             }
         }
@@ -3426,6 +3462,7 @@ struct NewGameWizardView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(Color(.secondarySystemBackground))
 
                     ForEach(eligiblePlayers) { player in
                         Button {
@@ -3438,6 +3475,7 @@ struct NewGameWizardView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(Color(.secondarySystemBackground))
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -3445,12 +3483,29 @@ struct NewGameWizardView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { goalKickerPickerPrompt = nil }
+                    ToolbarItem(placement: .topBarLeading) {
+                        playerPopupToolbarButton("<") { goalKickerPickerPrompt = nil }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        playerPopupToolbarButton("Edit Players") {
+                            showEditPlayersFromGoalKickerPicker = true
+                        }
+                    }
+                }
+                .sheet(isPresented: $showEditPlayersFromGoalKickerPicker) {
+                    NavigationStack {
+                        PlayersView()
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    playerPopupToolbarButton("<") {
+                                        showEditPlayersFromGoalKickerPicker = false
+                                    }
+                                }
+                            }
                     }
                 }
             }
-            .clubGlassBackground()
+            .presentationBackground(.regularMaterial)
             .presentationDetents([.height(goalKickerPickerHeight), setupPickerExpandedDetent], selection: $goalKickerPickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
@@ -3634,6 +3689,7 @@ struct NewGameWizardView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(Color(.secondarySystemBackground))
 
                     ForEach(eligiblePlayers) { player in
                         Button {
@@ -3648,6 +3704,7 @@ struct NewGameWizardView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(Color(.secondarySystemBackground))
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -3655,26 +3712,26 @@ struct NewGameWizardView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { bestPlayerPickerPrompt = nil }
+                    ToolbarItem(placement: .topBarLeading) {
+                        playerPopupToolbarButton("<") { bestPlayerPickerPrompt = nil }
                     }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            showAddPlayerFromBestPicker = true
-                        } label: {
-                            Image(systemName: "plus")
+                    ToolbarItem(placement: .topBarTrailing) {
+                        playerPopupToolbarButton("Edit Players") {
+                            showEditPlayersFromRankingPicker = true
                         }
-                        .accessibilityLabel("Add Player")
-                        .disabled(isPreviewMode)
                     }
                 }
-                .sheet(isPresented: $showAddPlayerFromBestPicker) {
-                    PlayerAddView(
-                        activeGrades: resolvedGrades.filter(\.isActive),
-                        existingPlayers: players,
-                        preselectedGradeID: gradeID,
-                        onSave: createAndSavePlayerFromBestPicker(firstName:lastName:preferredName:number:gradeIDs:)
-                    )
+                .sheet(isPresented: $showEditPlayersFromRankingPicker) {
+                    NavigationStack {
+                        PlayersView()
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    playerPopupToolbarButton("<") {
+                                        showEditPlayersFromRankingPicker = false
+                                    }
+                                }
+                            }
+                    }
                 }
                 .alert("Could not save player", isPresented: $showAddPlayerError) {
                     Button("OK", role: .cancel) { }
@@ -3682,6 +3739,7 @@ struct NewGameWizardView: View {
                     Text(addPlayerErrorMessage ?? "Please try again.")
                 }
             }
+            .presentationBackground(.regularMaterial)
             .presentationDetents([.height(bestPlayerPickerHeight), setupPickerExpandedDetent], selection: $bestPlayerPickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
@@ -3812,6 +3870,7 @@ struct NewGameWizardView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(Color(.secondarySystemBackground))
 
                     ForEach(eligiblePlayers) { player in
                         Button {
@@ -3826,6 +3885,7 @@ struct NewGameWizardView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(Color(.secondarySystemBackground))
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -3833,12 +3893,29 @@ struct NewGameWizardView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .environment(\.defaultMinListRowHeight, isCompactLayout ? 56 : 72)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { guestVotePickerPrompt = nil }
+                    ToolbarItem(placement: .topBarLeading) {
+                        playerPopupToolbarButton("<") { guestVotePickerPrompt = nil }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        playerPopupToolbarButton("Edit Players") {
+                            showEditPlayersFromRankingPicker = true
+                        }
+                    }
+                }
+                .sheet(isPresented: $showEditPlayersFromRankingPicker) {
+                    NavigationStack {
+                        PlayersView()
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    playerPopupToolbarButton("<") {
+                                        showEditPlayersFromRankingPicker = false
+                                    }
+                                }
+                            }
                     }
                 }
             }
-            .clubGlassBackground()
+            .presentationBackground(.regularMaterial)
             .presentationDetents([.height(bestPlayerPickerHeight), setupPickerExpandedDetent], selection: $guestVotePickerDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
@@ -4450,6 +4527,7 @@ struct NewGameWizardView: View {
         @State private var showWrongDeleteCodeAlert = false
         @State private var autoSaveAfterZeroTask: Task<Void, Never>? = nil
         @State private var autoSaveCountdownSeconds: Int? = nil
+        @State private var showEditPlayersSheet = false
 
         init(
             date: Binding<Date>,
@@ -4760,12 +4838,30 @@ struct NewGameWizardView: View {
                             recordGoal(for: player.id)
                             showPlayerPicker = false
                         }
+                        .foregroundStyle(.primary)
                     }
                     .navigationTitle("Who kicked the goal?")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showPlayerPicker = false }
+                            playerPopupToolbarButton("<") { showPlayerPicker = false }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            playerPopupToolbarButton("Edit Players") {
+                                showEditPlayersSheet = true
+                            }
+                        }
+                    }
+                    .sheet(isPresented: $showEditPlayersSheet) {
+                        NavigationStack {
+                            PlayersView()
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        playerPopupToolbarButton("<") {
+                                            showEditPlayersSheet = false
+                                        }
+                                    }
+                                }
                         }
                     }
                 }
@@ -4787,6 +4883,7 @@ struct NewGameWizardView: View {
                                     recordPoint(for: player.id)
                                     showPointPicker = false
                                 }
+                                .foregroundStyle(.primary)
                             }
                         }
                     }
@@ -4794,7 +4891,7 @@ struct NewGameWizardView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showPointPicker = false }
+                            playerPopupToolbarButton("<") { showPointPicker = false }
                         }
                     }
                 }
@@ -6150,6 +6247,28 @@ struct NewGameWizardView: View {
             )
         }
 
+        private func playerPopupToolbarButton(_ title: String, action: @escaping () -> Void) -> some View {
+            Button(action: action) {
+                Group {
+                    if title == "<" {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .semibold))
+                    } else {
+                        Text(title)
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(Color(.systemGray3), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+
         private func prominentActionButton(
             title: String,
             background: Color,
@@ -6608,9 +6727,6 @@ struct NewGameWizardView: View {
                             Text("Player Selection")
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundStyle(.primary)
-                            Spacer()
-                            Button("Edit Players", action: onEditPlayers)
-                                .font(.system(size: 16, weight: .semibold))
                         }
 
                         HStack(spacing: 12) {
@@ -6658,9 +6774,11 @@ struct NewGameWizardView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel", action: onCancel)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button("Edit Players", action: onEditPlayers)
                     Button("Save", action: onSave)
                         .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
                         .tint(.blue)
                         .disabled(!canSaveSelection)
                 }
