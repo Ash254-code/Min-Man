@@ -7,7 +7,6 @@ struct ContentView: View {
 
     var body: some View {
         TabsView()
-            .clubGlassBackground()
             .task {
                 guard !hasNormalizedPlayers else { return }
                 hasNormalizedPlayers = true

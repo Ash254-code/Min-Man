@@ -31,6 +31,7 @@ final class Grade {
     var asksScore: Bool
     var asksLiveGameView: Bool
     var asksGoalKickers: Bool
+    var tracksPlayersPerTeam: Bool
     var playersPerTeam: Int
     var bestPlayersCount: Int
     var asksGuestBestFairestVotesScan: Bool
@@ -68,6 +69,7 @@ final class Grade {
         asksScore: Bool = true,
         asksLiveGameView: Bool = true,
         asksGoalKickers: Bool = true,
+        tracksPlayersPerTeam: Bool? = nil,
         playersPerTeam: Int? = nil,
         bestPlayersCount: Int = 6,
         asksGuestBestFairestVotesScan: Bool = true,
@@ -104,6 +106,7 @@ final class Grade {
         self.asksScore = asksScore
         self.asksLiveGameView = asksLiveGameView
         self.asksGoalKickers = asksGoalKickers
+        self.tracksPlayersPerTeam = tracksPlayersPerTeam ?? Grade.defaultTracksPlayersPerTeam(for: name)
         let resolvedPlayersPerTeam = playersPerTeam ?? Grade.defaultPlayersPerTeam(for: name)
         self.playersPerTeam = min(max(resolvedPlayersPerTeam, 1), 60)
         let normalizedBestPlayersCount = min(max(bestPlayersCount, 0), 10)
@@ -154,6 +157,21 @@ final class Grade {
             .replacingOccurrences(of: "-", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return normalizedName == "a grade"
+    }
+
+    static func defaultTracksPlayersPerTeam(for gradeName: String) -> Bool {
+        let normalizedName = gradeName
+            .lowercased()
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "’", with: "")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if normalizedName.contains("under 9") || normalizedName.contains("under 12") {
+            return false
+        }
+
+        return true
     }
 
     static func defaultPlayersPerTeam(for gradeName: String) -> Int {

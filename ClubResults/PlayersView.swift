@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct PlayersView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Player.name) private var queriedPlayers: [Player]
     @Query private var grades: [Grade]
@@ -40,8 +41,16 @@ struct PlayersView: View {
     @State private var showExportError = false
     @State private var addErrorMessage: String? = nil
     @State private var showAddError = false
+    let returnToCallerOnSave: Bool
+    let onSaveAndClose: (() -> Void)?
+
     @State private var pendingDuplicateGroup: DuplicatePlayerGroup?
     @State private var mergeErrorMessage: String?
+
+    init(returnToCallerOnSave: Bool = false, onSaveAndClose: (() -> Void)? = nil) {
+        self.returnToCallerOnSave = returnToCallerOnSave
+        self.onSaveAndClose = onSaveAndClose
+    }
 
     // MARK: - Grade Ordering
 
@@ -124,16 +133,7 @@ struct PlayersView: View {
     private var playersList: some View {
         playersListBase
             .sheet(isPresented: $showAdd) {
-                NavigationStack {
-                    PlayerAddView(
-                        activeGrades: activeGrades,
-                        existingPlayers: playersForDisplay,
-                        preselectedGradeID: effectiveSelectedGradeID,
-                        onSave: createAndSavePlayer(firstName:lastName:preferredName:number:gradeIDs:)
-                    )
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                }
-                .appPopupStyle()
+                addPlayerSheetContent
             }
             .fileImporter(
                 isPresented: $showImporter,
@@ -243,6 +243,28 @@ struct PlayersView: View {
             }
     }
 
+    private var addPlayerSheetContent: some View {
+        NavigationStack {
+            PlayerAddView(
+                activeGrades: activeGrades,
+                existingPlayers: playersForDisplay,
+                preselectedGradeID: effectiveSelectedGradeID,
+                onSave: { firstName, lastName, preferredName, number, gradeIDs in
+                    createAndSavePlayer(
+                        firstName: firstName,
+                        lastName: lastName,
+                        preferredName: preferredName,
+                        number: number,
+                        gradeIDs: gradeIDs
+                    )
+                },
+                onSaveComplete: handleExternalSaveCompletion
+            )
+            .toolbarBackground(.hidden, for: .navigationBar)
+        }
+        .appPopupStyle()
+    }
+
     private var playersListBase: some View {
         List {
             playersSection
@@ -314,7 +336,8 @@ struct PlayersView: View {
                 PlayerEditView(
                     player: player,
                     orderedGrades: orderedGrades,
-                    existingPlayers: playersForDisplay
+                    existingPlayers: playersForDisplay,
+                    onSaveComplete: handleExternalSaveCompletion
                 )
             } label: {
                 playerRowCard(for: player, isDuplicate: false)
@@ -415,6 +438,15 @@ struct PlayersView: View {
         deleteCode = ""
         showDeleteReferenceWarning = false
         showDeletePrompt = false
+    }
+
+    private func handleExternalSaveCompletion() {
+        guard returnToCallerOnSave else { return }
+        if let onSaveAndClose {
+            onSaveAndClose()
+        } else {
+            dismiss()
+        }
     }
 
     private func playerAppearsInSavedGames(_ player: Player) -> Bool {

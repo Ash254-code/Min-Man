@@ -7,6 +7,7 @@ struct PlayerAddView: View {
     let existingPlayers: [Player]
     let preselectedGradeID: UUID?
     let onSave: (String, String, String, Int?, [UUID]) -> Void
+    let onSaveComplete: (() -> Void)?
 
     @State private var firstName: String = ""
     @State private var lastName: String = ""
@@ -14,6 +15,20 @@ struct PlayerAddView: View {
     @State private var numberText: String = ""
     @State private var selectedGradeIDs: Set<UUID> = []
     @State private var nameValidationMessage: String?
+
+    init(
+        activeGrades: [Grade],
+        existingPlayers: [Player],
+        preselectedGradeID: UUID?,
+        onSave: @escaping (String, String, String, Int?, [UUID]) -> Void,
+        onSaveComplete: (() -> Void)? = nil
+    ) {
+        self.activeGrades = activeGrades
+        self.existingPlayers = existingPlayers
+        self.preselectedGradeID = preselectedGradeID
+        self.onSave = onSave
+        self.onSaveComplete = onSaveComplete
+    }
 
     private var parsedNumber: Int? {
         let trimmed = numberText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -153,6 +168,7 @@ struct PlayerAddView: View {
             parsedNumber,
             Array(selectedGradeIDs)
         )
+        onSaveComplete?()
         dismiss()
     }
 }

@@ -10,6 +10,7 @@ struct PlayerEditView: View {
     // These let PlayersView pass context.
     let orderedGrades: [Grade]
     let existingPlayers: [Player]
+    let onSaveComplete: (() -> Void)?
 
     @State private var draftFirstName: String = ""
     @State private var draftLastName: String = ""
@@ -25,12 +26,14 @@ struct PlayerEditView: View {
     init(
         player: Player,
         orderedGrades: [Grade],
-        existingPlayers: [Player]
+        existingPlayers: [Player],
+        onSaveComplete: (() -> Void)? = nil
     ) {
         let split = Player.splitName(player.name)
         self.player = player
         self.orderedGrades = orderedGrades
         self.existingPlayers = existingPlayers
+        self.onSaveComplete = onSaveComplete
 
         _draftFirstName = State(initialValue: player.firstName.isEmpty ? split.first : player.firstName)
         _draftLastName = State(initialValue: player.lastName.isEmpty ? split.last : player.lastName)
@@ -174,6 +177,7 @@ struct PlayerEditView: View {
                     player.isActive = draftIsActive
                     player.gradeIDs = draftGradeIDs
                     try? dataContext.save()
+                    onSaveComplete?()
                     dismiss()
                 }
                 .saveButtonBehavior(isEnabled: canSave && hasChanges)

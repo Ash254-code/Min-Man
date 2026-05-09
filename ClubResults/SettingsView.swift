@@ -1156,7 +1156,10 @@ private struct ClubGradesSettingsView: View {
         Section {
             Label("Settings", systemImage: "gearshape.fill")
                 .font(.subheadline.weight(.semibold))
-            Stepper("Players per team: \(editGradeDraft.playersPerTeam)", value: playersPerTeamBinding, in: 1...60)
+            Toggle("Track players per team", isOn: bind(\.tracksPlayersPerTeam))
+            if editGradeDraft.tracksPlayersPerTeam {
+                Stepper("Players per team: \(editGradeDraft.playersPerTeam)", value: playersPerTeamBinding, in: 1...60)
+            }
             Toggle("Notes", isOn: bind(\.asksNotes))
             Toggle("Live Game View", isOn: bind(\.allowsLiveGameView))
             Picker("Length of Quarters", selection: quarterLengthBinding) {
@@ -1198,6 +1201,7 @@ private struct ClubGradesSettingsView: View {
             asksTrainer4: draft.asksTrainer4,
             asksNotes: draft.asksNotes,
             asksGoalKickers: draft.asksGoalKickers,
+            tracksPlayersPerTeam: draft.tracksPlayersPerTeam,
             playersPerTeam: draft.playersPerTeam,
             bestPlayersCount: draft.bestPlayersCount,
             asksGuestBestFairestVotesScan: draft.asksGuestBestFairestVotesScan,
@@ -1245,6 +1249,7 @@ private struct ClubGradesSettingsView: View {
         gradeEditing.asksTrainers = editGradeDraft.hasAnyTrainerEnabled
         gradeEditing.asksScore = editGradeDraft.asksScore
         gradeEditing.asksGoalKickers = editGradeDraft.asksGoalKickers
+        gradeEditing.tracksPlayersPerTeam = editGradeDraft.tracksPlayersPerTeam
         gradeEditing.playersPerTeam = editGradeDraft.playersPerTeam
         gradeEditing.bestPlayersCount = editGradeDraft.bestPlayersCount
         gradeEditing.asksGuestBestFairestVotesScan = editGradeDraft.asksGuestBestFairestVotesScan
@@ -1292,6 +1297,7 @@ private struct ClubGradesSettingsView: View {
             || editGradeDraft.asksTrainer4 != gradeEditing.asksTrainer4
             || editGradeDraft.asksScore != gradeEditing.asksScore
             || editGradeDraft.asksGoalKickers != gradeEditing.asksGoalKickers
+            || editGradeDraft.tracksPlayersPerTeam != gradeEditing.tracksPlayersPerTeam
             || editGradeDraft.playersPerTeam != gradeEditing.playersPerTeam
             || editGradeDraft.bestPlayersCount != gradeEditing.bestPlayersCount
             || editGradeDraft.asksGuestBestFairestVotesScan != gradeEditing.asksGuestBestFairestVotesScan
@@ -1647,6 +1653,7 @@ private struct EditGradeDraft {
     var asksTrainer4 = true
     var asksScore = true
     var asksGoalKickers = true
+    var tracksPlayersPerTeam = true
     var playersPerTeam = 22
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = true
@@ -1681,6 +1688,7 @@ private struct EditGradeDraft {
         asksTrainer4 = grade.asksTrainer4
         asksScore = grade.asksScore
         asksGoalKickers = grade.asksGoalKickers
+        tracksPlayersPerTeam = grade.tracksPlayersPerTeam
         playersPerTeam = grade.playersPerTeam
         bestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
@@ -1723,6 +1731,7 @@ private struct NewGradeDraft {
     var asksTrainer4 = true
     var asksNotes = true
     var asksGoalKickers = true
+    var tracksPlayersPerTeam = true
     var playersPerTeam = 22
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = true
@@ -1763,6 +1772,7 @@ private struct AddGradeWizardView: View {
                         TextField("Grade name", text: $draft.name)
                             .textInputAutocapitalization(.words)
                             .onChange(of: draft.name) { _, newName in
+                                draft.tracksPlayersPerTeam = Grade.defaultTracksPlayersPerTeam(for: newName)
                                 draft.playersPerTeam = Grade.defaultPlayersPerTeam(for: newName)
                             }
                     } header: {
@@ -1831,7 +1841,10 @@ private struct AddGradeWizardView: View {
                     }
                 case .settings:
                     Section {
-                        Stepper("Players per team: \(draft.playersPerTeam)", value: $draft.playersPerTeam, in: 1...60)
+                        Toggle("Track players per team", isOn: $draft.tracksPlayersPerTeam)
+                        if draft.tracksPlayersPerTeam {
+                            Stepper("Players per team: \(draft.playersPerTeam)", value: $draft.playersPerTeam, in: 1...60)
+                        }
                         Toggle("Notes", isOn: $draft.asksNotes)
                         Toggle("Live Game View", isOn: $draft.allowsLiveGameView)
                         Picker("Length of Quarters", selection: $draft.quarterLengthMinutes) {

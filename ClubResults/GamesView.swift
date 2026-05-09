@@ -721,49 +721,49 @@ struct GamesView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
 
-                    // Header
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("Home")
-                            .font(.system(size: 44, weight: .bold))
+                        // Header
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text("Home")
+                                .font(.system(size: 44, weight: .bold))
 
-                        Spacer()
+                            Spacer()
 
-                        if isIPhoneAdminLayout {
-                            Button {
-                                showPresentationView = true
-                            } label: {
-                                Image(systemName: "rectangle.stack.fill")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .frame(width: 36, height: 36)
+                            if isIPhoneAdminLayout {
+                                Button {
+                                    showPresentationView = true
+                                } label: {
+                                    Image(systemName: "rectangle.stack.fill")
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .frame(width: 36, height: 36)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.primary)
+                                .accessibilityLabel("Presentation")
                             }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.primary)
-                            .accessibilityLabel("Presentation")
                         }
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 6)
-
-                    if navigationState.currentRole.canStartGames {
-                        NewGameQuickStartSection(
-                            grades: orderedGrades,
-                            availableWidth: geometry.size.width,
-                            minHeight: geometry.size.height * 0.33,
-                            statusForGrade: gradeStatus(for:),
-                            onStartNewGame: startNewGame(for:)
-                        )
                         .padding(.horizontal)
-                    }
+                        .padding(.top, 6)
 
-                    GamesListSection(
-                        minHeight: geometry.size.height * 0.33,
-                        outcomeGradeHeaders: selectedRoundID == nil ? outcomeGradeHeaders : []
-                    ) {
-                        gamesListContent
-                    }
-                    .padding(.horizontal)
+                        if navigationState.currentRole.canStartGames {
+                            NewGameQuickStartSection(
+                                grades: orderedGrades,
+                                availableWidth: geometry.size.width,
+                                minHeight: geometry.size.height * 0.33,
+                                statusForGrade: gradeStatus(for:),
+                                onStartNewGame: startNewGame(for:)
+                            )
+                            .padding(.horizontal)
+                        }
 
-                    Spacer(minLength: 20)
+                        GamesListSection(
+                            minHeight: geometry.size.height * 0.33,
+                            outcomeGradeHeaders: selectedRoundID == nil ? outcomeGradeHeaders : []
+                        ) {
+                            gamesListContent
+                        }
+                        .padding(.horizontal)
+
+                        Spacer(minLength: 20)
                     }
                 }
             }
@@ -773,13 +773,9 @@ struct GamesView: View {
     var body: some View {
         NavigationStack {
             gamesHomeContent
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
         }
         .background(Color.clear)
-        .containerBackground(for: .navigation) {
-            ClubTheme.bgGradient
-        }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
 
             // ✅ EXACT "other pages" style: one capsule containing filter + plus
@@ -844,9 +840,7 @@ struct GamesView: View {
             } message: { game in
                 Text("Delete \(game.opponent) permanently? This cannot be undone.")
             }
-            .clubGlassBackground()
     }
-
 
     private func startNewGame(for gradeID: UUID) {
         if let draft = latestDraft(for: gradeID) {
@@ -906,24 +900,6 @@ struct GamesView: View {
         return games.first { candidate in
             candidate.id != game.id && arePairedTwoGames(game, candidate)
         }
-    }
-}
-
-private extension View {
-    func homeGlassSurface(cornerRadius: CGFloat = 22) -> some View {
-        self.clubGlassSurface(cornerRadius: cornerRadius)
-    }
-
-    func homeSubCardSurface(cornerRadius: CGFloat = 22) -> some View {
-        self
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(ClubTheme.subCardFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(ClubTheme.subCardStroke, lineWidth: 1)
-                    )
-            )
     }
 }
 
@@ -1019,7 +995,14 @@ struct NewGameQuickStartSection: View {
                             }
                             .frame(maxWidth: .infinity, minHeight: cardMinHeight)
                             .padding(.horizontal, cardHorizontalPadding)
-                            .homeSubCardSurface(cornerRadius: 18)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(ClubTheme.subCardFill)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(ClubTheme.subCardStroke, lineWidth: 1)
+                            )
                             .overlay(alignment: .topTrailing) {
                                 statusDot(statusForGrade(grade.id))
                                     .padding(10)
@@ -1032,7 +1015,18 @@ struct NewGameQuickStartSection: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-        .homeGlassSurface(cornerRadius: 24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(ClubTheme.cardFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(ClubTheme.cardOverlay)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(ClubTheme.cardStroke, lineWidth: 1)
+        )
     }
 
     @ViewBuilder
@@ -1096,7 +1090,18 @@ private struct GamesListSection<Content: View>: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-        .homeGlassSurface(cornerRadius: 24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(ClubTheme.cardFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(ClubTheme.cardOverlay)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(ClubTheme.cardStroke, lineWidth: 1)
+        )
     }
 }
 
@@ -1123,17 +1128,12 @@ private struct FilterCapsule: View {
         .foregroundStyle(.primary)
         .background(
             Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .fill(Color.white.opacity(0.05))
-                )
+                .fill(ClubTheme.subCardFill)
         )
         .overlay(
             Capsule(style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
     }
 }
 
@@ -1206,7 +1206,14 @@ private struct GameCardRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .homeSubCardSurface(cornerRadius: 22)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(ClubTheme.subCardFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
+        )
         .overlay {
             if game.isDraft {
                 Text("DRAFT")
@@ -1429,7 +1436,14 @@ private struct RoundCardRow: View {
             minHeight: horizontalSizeClass == .compact ? 110 : nil,
             alignment: .topLeading
         )
-        .homeSubCardSurface(cornerRadius: 22)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(ClubTheme.subCardFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
+        )
     }
 }
 
@@ -1456,7 +1470,14 @@ private struct RoundDetailHeaderCard: View {
             minHeight: horizontalSizeClass == .compact ? 110 : nil,
             alignment: .topLeading
         )
-        .homeSubCardSurface(cornerRadius: 22)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(ClubTheme.subCardFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
+        )
     }
 }
 

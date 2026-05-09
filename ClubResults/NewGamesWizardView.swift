@@ -371,6 +371,7 @@ struct NewGameWizardView: View {
     @State private var remoteInviteTallies: [CloudStatsInviteTally] = []
     @State private var remoteInvitePlayerEvents: [CloudStatsInvitePlayerEvent] = []
     @State private var showSelectedPlayersPicker = false
+    @State private var showEditPlayersFromSelection = false
     @State private var draftSelectedPlayerIDs: Set<UUID> = []
     @State private var savedSelectedPlayerIDs: Set<UUID> = []
     @State private var hasSavedSelectedPlayers = false
@@ -1053,6 +1054,10 @@ struct NewGameWizardView: View {
         min(max(selectedGrade?.playersPerTeam ?? 22, 1), 60)
     }
 
+    private var shouldTrackPlayersPerTeam: Bool {
+        selectedGrade?.tracksPlayersPerTeam ?? true
+    }
+
     private var shouldAskGuestVotes: Bool {
         guard let grade = selectedGrade else { return false }
         return grade.asksGuestBestFairestVotesScan && grade.guestBestPlayersCount > 0
@@ -1640,9 +1645,8 @@ struct NewGameWizardView: View {
             return gradeID != nil &&
                    !finalOpponent.isEmpty &&
                    !finalVenue.isEmpty &&
-                   hasSavedSelectedPlayers &&
-                   !savedSelectedPlayerIDs.isEmpty &&
-                   (selectedPlayersOverrideEnabled || savedSelectedPlayerIDs.count <= requiredPlayersPerTeam) &&
+                   (!shouldTrackPlayersPerTeam || (hasSavedSelectedPlayers && !savedSelectedPlayerIDs.isEmpty)) &&
+                   (!shouldTrackPlayersPerTeam || selectedPlayersOverrideEnabled || savedSelectedPlayerIDs.count <= requiredPlayersPerTeam) &&
                    (!shouldAskGameCount || gameCountSelection != nil) &&
                    (!shouldAskForEntryMode || dataEntrySelection != nil)
 
@@ -2106,7 +2110,8 @@ struct NewGameWizardView: View {
                     players: allEligiblePlayersForGrade,
                     selectedPlayerIDs: $draftSelectedPlayerIDs,
                     isOverrideEnabled: $selectedPlayersOverrideEnabled,
-                    maxSelectionCount: requiredPlayersPerTeam
+                    maxSelectionCount: shouldTrackPlayersPerTeam ? requiredPlayersPerTeam : nil,
+                    onEditPlayers: { showEditPlayersFromSelection = true }
                 ) {
                     savedSelectedPlayerIDs = draftSelectedPlayerIDs
                     if let gradeID {
@@ -2561,18 +2566,20 @@ struct NewGameWizardView: View {
                         }
                     }
 
-                    HStack(spacing: 12) {
-                        rowLabel("Current Players")
-                        Spacer()
-                        setupPickerButton(title: selectedPlayersForGame.isEmpty ? "Select…" : selectedPlayersLabelText) {
-                            if draftSelectedPlayerIDs.isEmpty {
-                                if savedSelectedPlayerIDs.isEmpty {
-                                    draftSelectedPlayerIDs = Set(eligiblePlayers.map(\.id))
-                                } else {
-                                    draftSelectedPlayerIDs = savedSelectedPlayerIDs
+                    if shouldTrackPlayersPerTeam {
+                        HStack(spacing: 12) {
+                            rowLabel("Current Players")
+                            Spacer()
+                            setupPickerButton(title: selectedPlayersForGame.isEmpty ? "Select…" : selectedPlayersLabelText) {
+                                if draftSelectedPlayerIDs.isEmpty {
+                                    if savedSelectedPlayerIDs.isEmpty {
+                                        draftSelectedPlayerIDs = Set(eligiblePlayers.map(\.id))
+                                    } else {
+                                        draftSelectedPlayerIDs = savedSelectedPlayerIDs
+                                    }
                                 }
+                                showSelectedPlayersPicker = true
                             }
-                            showSelectedPlayersPicker = true
                         }
                     }
 
@@ -4436,6 +4443,7 @@ struct NewGameWizardView: View {
         @State private var opponentPointUndoCount = 0
         @State private var pendingUndoAction: UndoAction?
         @State private var showUndoConfirmation = false
+        @State private var showUndoLastPeriodSavePrompt = false
         @State private var showDeleteDraftConfirmation = false
         @State private var showDeleteCodePrompt = false
         @State private var deleteCodePromptValue = ""
@@ -4525,6 +4533,16 @@ struct NewGameWizardView: View {
             case 3: return "FT"
             default: return nil
             }
+        }
+        private var lastSavedPeriodLabel: String {
+            liveSession.periodSnapshots.last?.label ?? "this period"
+        }
+        private var undoLastSavedPeriodMessage: String {
+            "Do you want to undo the last \(lastSavedPeriodLabel) save?"
+        }
+
+        private var isPresentingOverlaySheet: Bool {
+            showPlayerPicker || showPointPicker || showGoalKickerEditor
         }
 
         private var scorerTally: [(id: UUID, goals: Int, points: Int)] {
@@ -4791,7 +4809,6 @@ struct NewGameWizardView: View {
                 }
             }
             .onDisappear {
-                let isPresentingOverlaySheet = showPlayerPicker || showPointPicker || showGoalKickerEditor
                 guard !isPresentingOverlaySheet else { return }
                 cancelAutoSaveAfterZero()
                 liveSession.syncTimer()
@@ -4813,6 +4830,16 @@ struct NewGameWizardView: View {
                 }
             } message: {
                 Text(undoConfirmationMessage)
+            }
+            .confirmationDialog(
+                undoLastSavedPeriodMessage,
+                isPresented: $showUndoLastPeriodSavePrompt,
+                titleVisibility: .visible
+            ) {
+                Button("Yes") {
+                    undoLastSavedPeriod()
+                }
+                Button("Back", role: .cancel) {}
             }
         }
 
@@ -5051,6 +5078,11 @@ struct NewGameWizardView: View {
                         }
                     }
                 }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard !liveSession.periodSnapshots.isEmpty else { return }
+                showUndoLastPeriodSavePrompt = true
             }
         }
 
@@ -6343,6 +6375,19 @@ struct NewGameWizardView: View {
             pendingAutoAdvanceSave = false
         }
 
+        private func undoLastSavedPeriod() {
+            guard let lastSnapshot = liveSession.periodSnapshots.popLast() else { return }
+            pauseTimer()
+            ourGoals = lastSnapshot.ourGoals
+            ourBehinds = lastSnapshot.ourBehinds
+            theirGoals = lastSnapshot.theirGoals
+            theirBehinds = lastSnapshot.theirBehinds
+            liveSession.secondsRemaining = liveSession.periodMinutes * 60
+            liveSession.timerAnchorSecondsRemaining = liveSession.secondsRemaining
+            pendingAutoAdvanceSave = false
+            autoSaveCountdownSeconds = nil
+        }
+
         private func applyConfiguredInitialPeriod() {
             guard !liveSession.isTimerRunning, !liveSession.isInitialized, liveSession.periodSnapshots.isEmpty else { return }
             liveSession.periodMinutes = initialPeriodMinutes
@@ -6534,7 +6579,8 @@ struct NewGameWizardView: View {
         let players: [Player]
         @Binding var selectedPlayerIDs: Set<UUID>
         @Binding var isOverrideEnabled: Bool
-        let maxSelectionCount: Int
+        let maxSelectionCount: Int?
+        let onEditPlayers: () -> Void
         let onSave: () -> Void
         let onCancel: () -> Void
 
@@ -6544,7 +6590,10 @@ struct NewGameWizardView: View {
         ]
 
         private var isSelectionComplete: Bool {
-            selectedPlayerIDs.count == maxSelectionCount
+            if let maxSelectionCount {
+                return selectedPlayerIDs.count == maxSelectionCount
+            }
+            return !selectedPlayerIDs.isEmpty
         }
 
         private var canSaveSelection: Bool {
@@ -6555,9 +6604,14 @@ struct NewGameWizardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Player Selection")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundStyle(.primary)
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("Player Selection")
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Button("Edit Players", action: onEditPlayers)
+                                .font(.system(size: 16, weight: .semibold))
+                        }
 
                         HStack(spacing: 12) {
                             countCard(title: "Available Players", valueText: "\(players.count)", isHighlighted: false)
@@ -6612,7 +6666,7 @@ struct NewGameWizardView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Text("Selected Players: \(selectedPlayerIDs.count) of \(maxSelectionCount)")
+                Text("Selected Players: \(selectedPlayersCountText)")
                     .font(.system(size: 19, weight: .semibold))
                     .foregroundStyle(isSelectionComplete ? .white : .secondary)
                     .frame(maxWidth: .infinity)
@@ -6631,21 +6685,23 @@ struct NewGameWizardView: View {
 
                     Spacer()
 
-                    Button {
-                        isOverrideEnabled.toggle()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: isOverrideEnabled ? "checkmark.square.fill" : "square")
-                                .font(.system(size: 15, weight: .semibold))
-                            Text("Override")
-                                .font(.system(size: 14, weight: .semibold))
+                    if maxSelectionCount != nil {
+                        Button {
+                            isOverrideEnabled.toggle()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: isOverrideEnabled ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 15, weight: .semibold))
+                                Text("Override")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundStyle(isSelectionComplete ? .white : .secondary)
                         }
-                        .foregroundStyle(isSelectionComplete ? .white : .secondary)
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
 
-                Text("\(selectedPlayerIDs.count) of \(maxSelectionCount)")
+                Text(selectedPlayersCountText)
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(isSelectionComplete ? .white : .primary)
             }
@@ -6679,8 +6735,17 @@ struct NewGameWizardView: View {
                 selectedPlayerIDs.remove(playerID)
                 return
             }
-            guard isOverrideEnabled || selectedPlayerIDs.count < maxSelectionCount else { return }
+            if let maxSelectionCount {
+                guard isOverrideEnabled || selectedPlayerIDs.count < maxSelectionCount else { return }
+            }
             selectedPlayerIDs.insert(playerID)
+        }
+
+        private var selectedPlayersCountText: String {
+            if let maxSelectionCount {
+                return "\(selectedPlayerIDs.count) of \(maxSelectionCount)"
+            }
+            return "\(selectedPlayerIDs.count)"
         }
     }
 
