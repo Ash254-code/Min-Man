@@ -8,6 +8,7 @@ struct PlayersView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @EnvironmentObject private var navigationState: AppNavigationState
     @Query(sort: \Player.name) private var queriedPlayers: [Player]
     @Query private var grades: [Grade]
     @State private var playersForDisplay: [Player] = []
@@ -123,7 +124,6 @@ struct PlayersView: View {
         NavigationStack {
             playersList
         }
-        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search players")
         .onAppear { reloadPlayersFromStore() }
         .onChange(of: queriedPlayers.count) { _, _ in
             reloadPlayersFromStore()
@@ -172,7 +172,11 @@ struct PlayersView: View {
             }
             .alert("Player used in saved games", isPresented: $showDeleteReferenceWarning) {
                 Button("Delete", role: .destructive) {
-                    showDeletePrompt = true
+                    if navigationState.currentRole.bypassesEditDeleteCode {
+                        deletePendingPlayer()
+                    } else {
+                        showDeletePrompt = true
+                    }
                 }
                 Button("Cancel", role: .cancel) {
                     cancelDelete()
@@ -267,6 +271,7 @@ struct PlayersView: View {
 
     private var playersListBase: some View {
         List {
+            searchBarRow
             playersSection
         }
         .listStyle(.insetGrouped)
@@ -281,6 +286,36 @@ struct PlayersView: View {
     }
 
     // MARK: - Players Section
+
+    private var searchBarRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+
+            TextField("Search players", text: $searchText)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .foregroundStyle(.white)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.white.opacity(0.65))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear player search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .premiumGlassCard(cornerRadius: 16)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 4, trailing: 16))
+    }
 
     private var playersSection: some View {
         Section {
@@ -356,8 +391,23 @@ struct PlayersView: View {
             number: player.number,
             gradeNames: gradeNamesArray(for: player),
             isActive: player.isActive,
-            isDuplicate: isDuplicate
+            isDuplicate: isDuplicate,
+            onNumberTap: {
+                togglePlayerActive(player)
+            }
         )
+    }
+
+    private func togglePlayerActive(_ player: Player) {
+        player.isActive.toggle()
+        do {
+            try dataContext.save()
+            reloadPlayersFromStore()
+        } catch {
+            dataContext.rollback()
+            addErrorMessage = error.localizedDescription
+            showAddError = true
+        }
     }
 
     private func deletePlayerButton(for player: Player) -> some View {
@@ -412,6 +462,8 @@ struct PlayersView: View {
         deleteCode = ""
         if playerAppearsInSavedGames(player) {
             showDeleteReferenceWarning = true
+        } else if navigationState.currentRole.bypassesEditDeleteCode {
+            deletePendingPlayer()
         } else {
             showDeletePrompt = true
         }
@@ -419,18 +471,25 @@ struct PlayersView: View {
 
     private func confirmDelete() {
         let trimmedCode = deleteCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard DeleteCodeStore.verify(trimmedCode), let player = playerPendingDelete else {
+        guard DeleteCodeStore.verify(trimmedCode), playerPendingDelete != nil else {
             showDeletePrompt = false
             showWrongCode = true
             return
         }
 
+        deletePendingPlayer()
+    }
+
+    private func deletePendingPlayer() {
+        guard let player = playerPendingDelete else { return }
+        CloudDeletedRecordStore.recordDeletedPlayerID(player.id)
         dataContext.delete(player)
         try? dataContext.save()
         reloadPlayersFromStore()
 
         playerPendingDelete = nil
         showDeletePrompt = false
+        showDeleteReferenceWarning = false
     }
 
     private func cancelDelete() {
@@ -503,7 +562,7 @@ struct PlayersView: View {
     }
 
     private func gradeNamesArray(for player: Player) -> [String] {
-        let map = Dictionary(uniqueKeysWithValues: orderedGrades.map { ($0.id, $0.name) })
+        let map = Dictionary(orderedGrades.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         return player.gradeIDs.compactMap { map[$0] }
     }
 
@@ -654,7 +713,10 @@ struct PlayersView: View {
         }
 
         if mode == .replaceAll {
-            for p in persistedPlayers { dataContext.delete(p) }
+            for p in persistedPlayers {
+                CloudDeletedRecordStore.recordDeletedPlayerID(p.id)
+                dataContext.delete(p)
+            }
         }
 
         for row in parsedRows {
@@ -801,17 +863,12 @@ private struct PlayerRowAFL: View {
     let gradeNames: [String]
     let isActive: Bool
     let isDuplicate: Bool
+    let onNumberTap: () -> Void
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(numberPillColor)
-                Text(numberText)
-                    .font(.system(size: 14, weight: .heavy, design: .rounded))
-                    .foregroundStyle(numberTextColor)
-            }
-            .frame(width: 36, height: 36)
+            numberBadge
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
@@ -847,6 +904,25 @@ private struct PlayerRowAFL: View {
                 .stroke(isDuplicate ? Color.red.opacity(0.65) : Color.clear, lineWidth: 1.5)
         )
         .contentShape(Rectangle())
+    }
+
+    private var numberBadge: some View {
+        ZStack {
+            Circle().fill(numberPillColor)
+            Text(numberText)
+                .font(.system(size: 14, weight: .heavy, design: .rounded))
+                .foregroundStyle(numberTextColor)
+        }
+        .frame(width: 36, height: 36)
+        .contentShape(Circle())
+        .highPriorityGesture(
+            TapGesture().onEnded {
+                onNumberTap()
+            }
+        )
+        .accessibilityLabel("\(name) active status")
+        .accessibilityValue(isActive ? "Active" : "Inactive")
+        .accessibilityHint("Double tap to toggle active status")
     }
 
     private var numberText: String {

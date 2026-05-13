@@ -36,6 +36,22 @@ private struct SyncedPossessionLeader: Identifiable, Equatable {
     let points: Int
 }
 
+enum NewGameSelectedPlayersStore {
+    private static let keyPrefix = "newGameWizard.lastWeekTeam."
+
+    static func save(playerIDs: Set<UUID>, for gradeID: UUID) {
+        let payload = Array(playerIDs).map(\.uuidString)
+        UserDefaults.standard.set(payload, forKey: keyPrefix + gradeID.uuidString)
+    }
+
+    static func load(for gradeID: UUID) -> Set<UUID> {
+        guard let payload = UserDefaults.standard.array(forKey: keyPrefix + gradeID.uuidString) as? [String] else {
+            return []
+        }
+        return Set(payload.compactMap(UUID.init(uuidString:)))
+    }
+}
+
 struct NewGameWizardPreviewData {
     static let minimal = (
         venue: "Main Oval",
@@ -379,22 +395,6 @@ struct NewGameWizardView: View {
     @State private var hasSavedSelectedPlayers = false
     @State private var selectedPlayersOverrideEnabled = false
 
-    private enum LastWeekTeamStore {
-        private static let keyPrefix = "newGameWizard.lastWeekTeam."
-
-        static func save(playerIDs: Set<UUID>, for gradeID: UUID) {
-            let payload = Array(playerIDs).map(\.uuidString)
-            UserDefaults.standard.set(payload, forKey: keyPrefix + gradeID.uuidString)
-        }
-
-        static func load(for gradeID: UUID) -> Set<UUID> {
-            guard let payload = UserDefaults.standard.array(forKey: keyPrefix + gradeID.uuidString) as? [String] else {
-                return []
-            }
-            return Set(payload.compactMap(UUID.init(uuidString:)))
-        }
-    }
-
     private enum LiveDraftResumeStore {
         private static let statePrefix = "liveDraft.state."
 
@@ -404,7 +404,10 @@ struct NewGameWizardView: View {
             var isTimerRunning: Bool?
             var timeOnEnabled: Bool?
             var pointScorers: [UUID: Int]
+            var oppositionGoalsForOurPlayers: [UUID: Int]?
+            var oppositionPointsForOurPlayers: [UUID: Int]?
             var rushedPoints: Int
+            var ourGoalsByOpposition: Int?
             var periodSnapshots: [StoredSnapshot]
             var scoreEvents: [StoredScoreEvent]?
             var backgroundCountdownStart: Date?
@@ -434,7 +437,10 @@ struct NewGameWizardView: View {
                 isTimerRunning: session.isTimerRunning,
                 timeOnEnabled: session.timeOnEnabled,
                 pointScorers: session.pointScorers,
+                oppositionGoalsForOurPlayers: session.oppositionGoalsForOurPlayers,
+                oppositionPointsForOurPlayers: session.oppositionPointsForOurPlayers,
                 rushedPoints: session.rushedPoints,
+                ourGoalsByOpposition: session.ourGoalsByOpposition,
                 periodSnapshots: session.periodSnapshots.map {
                     StoredSnapshot(
                         label: $0.label,
@@ -468,7 +474,10 @@ struct NewGameWizardView: View {
             session.isTimerRunning = stored.isTimerRunning ?? false
             session.timeOnEnabled = stored.timeOnEnabled ?? false
             session.pointScorers = stored.pointScorers
+            session.oppositionGoalsForOurPlayers = stored.oppositionGoalsForOurPlayers ?? [:]
+            session.oppositionPointsForOurPlayers = stored.oppositionPointsForOurPlayers ?? [:]
             session.rushedPoints = stored.rushedPoints
+            session.ourGoalsByOpposition = stored.ourGoalsByOpposition ?? 0
             session.periodSnapshots = stored.periodSnapshots.map {
                 PeriodSnapshot(
                     label: $0.label,
@@ -643,7 +652,7 @@ struct NewGameWizardView: View {
     }
 
     private var opponentNames: [String] {
-        clubConfiguration.sortedOppositions.map(\.name)
+        uniqueStringsPreservingOrder(clubConfiguration.sortedOppositions.map(\.name))
     }
 
     private var selectedOpposition: OppositionTeamProfile? {
@@ -756,11 +765,30 @@ struct NewGameWizardView: View {
         case trainer2
         case trainer3
         case trainer4
+        case game2HeadCoach
+        case game2AssistantCoach
+        case game2TeamManager
+        case game2Runner
+        case game2GoalUmpire
+        case game2TimeKeeper
+        case game2FieldUmpire
+        case game2BoundaryUmpire1
+        case game2BoundaryUmpire2
+        case game2WaterBoy1
+        case game2WaterBoy2
+        case game2WaterBoy3
+        case game2WaterBoy4
+        case game2Trainer1
+        case game2Trainer2
+        case game2Trainer3
+        case game2Trainer4
 
         var usesRememberedSelection: Bool {
             switch self {
             case .timeKeeper, .fieldUmpire, .boundaryUmpire1, .boundaryUmpire2,
-                 .waterBoy1, .waterBoy2, .waterBoy3, .waterBoy4:
+                 .waterBoy1, .waterBoy2, .waterBoy3, .waterBoy4,
+                 .game2TimeKeeper, .game2FieldUmpire, .game2BoundaryUmpire1, .game2BoundaryUmpire2,
+                 .game2WaterBoy1, .game2WaterBoy2, .game2WaterBoy3, .game2WaterBoy4:
                 return false
             default:
                 return true
@@ -811,7 +839,7 @@ struct NewGameWizardView: View {
         }
 
         let allIDs = Set(allEligiblePlayersForGrade.map(\.id))
-        let stored = LastWeekTeamStore.load(for: gradeID).intersection(allIDs)
+        let stored = NewGameSelectedPlayersStore.load(for: gradeID).intersection(allIDs)
         let resolved = stored.isEmpty ? allIDs : stored
         draftSelectedPlayerIDs = resolved
         savedSelectedPlayerIDs = resolved
@@ -840,23 +868,23 @@ struct NewGameWizardView: View {
         assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { trainer2Name = $0 }
         assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { trainer3Name = $0 }
         assignDefault(for: .trainer4, role: .trainer, gradeID: gradeID) { trainer4Name = $0 }
-        assignDefault(for: .headCoach, role: .headCoach, gradeID: gradeID) { game2HeadCoachName = $0 }
-        assignDefault(for: .assistantCoach, role: .assistantCoach, gradeID: gradeID) { game2AssCoachName = $0 }
-        assignDefault(for: .teamManager, role: .teamManager, gradeID: gradeID) { game2TeamManagerName = $0 }
-        assignDefault(for: .runner, role: .runner, gradeID: gradeID) { game2RunnerName = $0 }
-        assignDefault(for: .goalUmpire, role: .goalUmpire, gradeID: gradeID) { game2GoalUmpireName = $0 }
-        assignDefault(for: .timeKeeper, role: .timeKeeper, gradeID: gradeID) { game2TimeKeeperName = $0 }
-        assignDefault(for: .fieldUmpire, role: .fieldUmpire, gradeID: gradeID) { game2FieldUmpireName = $0 }
-        assignDefault(for: .boundaryUmpire1, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire1Name = $0 }
-        assignDefault(for: .boundaryUmpire2, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire2Name = $0 }
-        assignDefault(for: .waterBoy1, role: .waterBoy, gradeID: gradeID) { game2WaterBoy1Name = $0 }
-        assignDefault(for: .waterBoy2, role: .waterBoy, gradeID: gradeID) { game2WaterBoy2Name = $0 }
-        assignDefault(for: .waterBoy3, role: .waterBoy, gradeID: gradeID) { game2WaterBoy3Name = $0 }
-        assignDefault(for: .waterBoy4, role: .waterBoy, gradeID: gradeID) { game2WaterBoy4Name = $0 }
-        assignDefault(for: .trainer1, role: .trainer, gradeID: gradeID) { game2Trainer1Name = $0 }
-        assignDefault(for: .trainer2, role: .trainer, gradeID: gradeID) { game2Trainer2Name = $0 }
-        assignDefault(for: .trainer3, role: .trainer, gradeID: gradeID) { game2Trainer3Name = $0 }
-        assignDefault(for: .trainer4, role: .trainer, gradeID: gradeID) { game2Trainer4Name = $0 }
+        assignDefault(for: .game2HeadCoach, role: .headCoach, gradeID: gradeID) { game2HeadCoachName = $0 }
+        assignDefault(for: .game2AssistantCoach, role: .assistantCoach, gradeID: gradeID) { game2AssCoachName = $0 }
+        assignDefault(for: .game2TeamManager, role: .teamManager, gradeID: gradeID) { game2TeamManagerName = $0 }
+        assignDefault(for: .game2Runner, role: .runner, gradeID: gradeID) { game2RunnerName = $0 }
+        assignDefault(for: .game2GoalUmpire, role: .goalUmpire, gradeID: gradeID) { game2GoalUmpireName = $0 }
+        assignDefault(for: .game2TimeKeeper, role: .timeKeeper, gradeID: gradeID) { game2TimeKeeperName = $0 }
+        assignDefault(for: .game2FieldUmpire, role: .fieldUmpire, gradeID: gradeID) { game2FieldUmpireName = $0 }
+        assignDefault(for: .game2BoundaryUmpire1, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire1Name = $0 }
+        assignDefault(for: .game2BoundaryUmpire2, role: .boundaryUmpire, gradeID: gradeID) { game2BoundaryUmpire2Name = $0 }
+        assignDefault(for: .game2WaterBoy1, role: .waterBoy, gradeID: gradeID) { game2WaterBoy1Name = $0 }
+        assignDefault(for: .game2WaterBoy2, role: .waterBoy, gradeID: gradeID) { game2WaterBoy2Name = $0 }
+        assignDefault(for: .game2WaterBoy3, role: .waterBoy, gradeID: gradeID) { game2WaterBoy3Name = $0 }
+        assignDefault(for: .game2WaterBoy4, role: .waterBoy, gradeID: gradeID) { game2WaterBoy4Name = $0 }
+        assignDefault(for: .game2Trainer1, role: .trainer, gradeID: gradeID) { game2Trainer1Name = $0 }
+        assignDefault(for: .game2Trainer2, role: .trainer, gradeID: gradeID) { game2Trainer2Name = $0 }
+        assignDefault(for: .game2Trainer3, role: .trainer, gradeID: gradeID) { game2Trainer3Name = $0 }
+        assignDefault(for: .game2Trainer4, role: .trainer, gradeID: gradeID) { game2Trainer4Name = $0 }
         if let gradeID, let grade = resolvedGrades.first(where: { $0.id == gradeID }) {
             periodMinutes = min(max(grade.quarterLengthMinutes, 10), 30)
             if !isTimerRunning {
@@ -911,23 +939,23 @@ struct NewGameWizardView: View {
         saveLastSelection(trainer3Name, for: .trainer3, gradeID: gradeID)
         saveLastSelection(trainer4Name, for: .trainer4, gradeID: gradeID)
         if isTwoGameFlow {
-            saveLastSelection(game2HeadCoachName, for: .headCoach, gradeID: gradeID)
-            saveLastSelection(game2AssCoachName, for: .assistantCoach, gradeID: gradeID)
-            saveLastSelection(game2TeamManagerName, for: .teamManager, gradeID: gradeID)
-            saveLastSelection(game2RunnerName, for: .runner, gradeID: gradeID)
-            saveLastSelection(game2GoalUmpireName, for: .goalUmpire, gradeID: gradeID)
-            saveLastSelection(game2TimeKeeperName, for: .timeKeeper, gradeID: gradeID)
-            saveLastSelection(game2FieldUmpireName, for: .fieldUmpire, gradeID: gradeID)
-            saveLastSelection(game2BoundaryUmpire1Name, for: .boundaryUmpire1, gradeID: gradeID)
-            saveLastSelection(game2BoundaryUmpire2Name, for: .boundaryUmpire2, gradeID: gradeID)
-            saveLastSelection(game2WaterBoy1Name, for: .waterBoy1, gradeID: gradeID)
-            saveLastSelection(game2WaterBoy2Name, for: .waterBoy2, gradeID: gradeID)
-            saveLastSelection(game2WaterBoy3Name, for: .waterBoy3, gradeID: gradeID)
-            saveLastSelection(game2WaterBoy4Name, for: .waterBoy4, gradeID: gradeID)
-            saveLastSelection(game2Trainer1Name, for: .trainer1, gradeID: gradeID)
-            saveLastSelection(game2Trainer2Name, for: .trainer2, gradeID: gradeID)
-            saveLastSelection(game2Trainer3Name, for: .trainer3, gradeID: gradeID)
-            saveLastSelection(game2Trainer4Name, for: .trainer4, gradeID: gradeID)
+            saveLastSelection(game2HeadCoachName, for: .game2HeadCoach, gradeID: gradeID)
+            saveLastSelection(game2AssCoachName, for: .game2AssistantCoach, gradeID: gradeID)
+            saveLastSelection(game2TeamManagerName, for: .game2TeamManager, gradeID: gradeID)
+            saveLastSelection(game2RunnerName, for: .game2Runner, gradeID: gradeID)
+            saveLastSelection(game2GoalUmpireName, for: .game2GoalUmpire, gradeID: gradeID)
+            saveLastSelection(game2TimeKeeperName, for: .game2TimeKeeper, gradeID: gradeID)
+            saveLastSelection(game2FieldUmpireName, for: .game2FieldUmpire, gradeID: gradeID)
+            saveLastSelection(game2BoundaryUmpire1Name, for: .game2BoundaryUmpire1, gradeID: gradeID)
+            saveLastSelection(game2BoundaryUmpire2Name, for: .game2BoundaryUmpire2, gradeID: gradeID)
+            saveLastSelection(game2WaterBoy1Name, for: .game2WaterBoy1, gradeID: gradeID)
+            saveLastSelection(game2WaterBoy2Name, for: .game2WaterBoy2, gradeID: gradeID)
+            saveLastSelection(game2WaterBoy3Name, for: .game2WaterBoy3, gradeID: gradeID)
+            saveLastSelection(game2WaterBoy4Name, for: .game2WaterBoy4, gradeID: gradeID)
+            saveLastSelection(game2Trainer1Name, for: .game2Trainer1, gradeID: gradeID)
+            saveLastSelection(game2Trainer2Name, for: .game2Trainer2, gradeID: gradeID)
+            saveLastSelection(game2Trainer3Name, for: .game2Trainer3, gradeID: gradeID)
+            saveLastSelection(game2Trainer4Name, for: .game2Trainer4, gradeID: gradeID)
         }
     }
 
@@ -943,10 +971,10 @@ struct NewGameWizardView: View {
 
     private var allEligiblePlayersForGrade: [Player] {
         if isPreviewMode {
-            return previewPlayers
+            return uniquePlayersPreservingOrder(previewPlayers)
         }
         guard let gid = gradeID else { return [] }
-        return players.filter { $0.isActive && $0.gradeIDs.contains(gid) }
+        return uniquePlayersPreservingOrder(players.filter { $0.isActive && $0.gradeIDs.contains(gid) })
     }
 
     private var effectiveSelectedPlayerIDs: Set<UUID> {
@@ -960,15 +988,25 @@ struct NewGameWizardView: View {
     }
 
     private var eligiblePlayers: [Player] {
-        allEligiblePlayersForGrade.filter { effectiveSelectedPlayerIDs.contains($0.id) }
+        uniquePlayersPreservingOrder(allEligiblePlayersForGrade.filter { effectiveSelectedPlayerIDs.contains($0.id) })
     }
 
     private var selectedPlayersForGame: [Player] {
-        allEligiblePlayersForGrade.filter { savedSelectedPlayerIDs.contains($0.id) }
+        uniquePlayersPreservingOrder(allEligiblePlayersForGrade.filter { savedSelectedPlayerIDs.contains($0.id) })
     }
 
     private var selectedPlayersLabelText: String {
         "\(selectedPlayersForGame.count) selected players"
+    }
+
+    private func uniquePlayersPreservingOrder(_ source: [Player]) -> [Player] {
+        var seen = Set<UUID>()
+        return source.filter { seen.insert($0.id).inserted }
+    }
+
+    private func uniqueStringsPreservingOrder(_ source: [String]) -> [String] {
+        var seen = Set<String>()
+        return source.filter { seen.insert($0).inserted }
     }
 
     private var isCompactLayout: Bool { horizontalSizeClass == .compact }
@@ -1141,7 +1179,10 @@ struct NewGameWizardView: View {
 
     private var liveGameSyncSnapshot: LiveGameSyncSnapshot? {
         guard isLiveGameScreenActive, let gradeID else { return nil }
-        let scorerIDs = Set(goalKickers.compactMap(\.playerID)).union(liveGameSession.pointScorers.keys)
+        let scorerIDs = Set(goalKickers.compactMap(\.playerID))
+            .union(liveGameSession.pointScorers.keys)
+            .union(liveGameSession.oppositionGoalsForOurPlayers.keys)
+            .union(liveGameSession.oppositionPointsForOurPlayers.keys)
         return LiveGameSyncSnapshot(
             gradeID: gradeID,
             date: date,
@@ -1157,16 +1198,17 @@ struct NewGameWizardView: View {
             theirGoals: theirGoals,
             theirBehinds: theirBehinds,
             goalKickers: scorerIDs.compactMap { playerID in
-                let goals = goalKickers.first(where: { $0.playerID == playerID })?.goals ?? 0
-                let points = liveGameSession.pointScorers[playerID, default: 0]
+                let goals = (goalKickers.first(where: { $0.playerID == playerID })?.goals ?? 0) + liveGameSession.oppositionGoalsForOurPlayers[playerID, default: 0]
+                let points = liveGameSession.pointScorers[playerID, default: 0] + liveGameSession.oppositionPointsForOurPlayers[playerID, default: 0]
                 guard goals > 0 || points > 0 else { return nil }
                 return LiveGameSyncGoalKicker(playerID: playerID, goals: goals, points: points)
             }
         )
     }
 
-    private func refreshLiveGameSyncSnapshot() {
+    private func refreshLiveGameSyncSnapshot(clearsWhenInactive: Bool = false) {
         guard let snapshot = liveGameSyncSnapshot else {
+            guard clearsWhenInactive else { return }
             navigationState.clearActiveLiveGameSnapshot()
             promptedStatsSessionIDForLiveGame = nil
             showLiveStatsSyncPrompt = false
@@ -1174,7 +1216,39 @@ struct NewGameWizardView: View {
         }
 
         navigationState.updateLiveGameSnapshot(snapshot)
+        publishLinkedLiveStatsSnapshot(from: snapshot)
         maybePromptToSyncLiveGameWithStats()
+    }
+
+    private func publishLinkedLiveStatsSnapshot(from snapshot: LiveGameSyncSnapshot) {
+        guard let sessionID = navigationState.syncedStatsSessionID,
+              let session = statsSessions.first(where: { $0.sessionId == sessionID }),
+              canSyncLiveGame(with: session) else { return }
+
+        let inviteSnapshot = LiveStatsInviteSnapshot(
+            sessionID: sessionID,
+            currentQuarter: snapshot.currentQuarter,
+            remainingSeconds: snapshot.syncedRemainingSeconds(),
+            isTimerRunning: snapshot.isTimerActive(),
+            ourPoints: snapshot.ourPoints,
+            theirPoints: snapshot.theirPoints
+        )
+        navigationState.updateLiveStatsInviteSnapshot(inviteSnapshot)
+
+        Task {
+            do {
+                _ = try await CloudKitStatsInviteService.shared.saveSessionState(
+                    sessionID: sessionID,
+                    currentQuarter: inviteSnapshot.currentQuarter,
+                    remainingSeconds: inviteSnapshot.remainingSeconds,
+                    isTimerRunning: inviteSnapshot.isTimerRunning,
+                    ourPoints: inviteSnapshot.ourPoints,
+                    theirPoints: inviteSnapshot.theirPoints
+                )
+            } catch {
+                // Stats view will surface CloudKit sync errors through its regular publisher.
+            }
+        }
     }
 
     private func maybePromptToSyncLiveGameWithStats() {
@@ -1240,7 +1314,7 @@ struct NewGameWizardView: View {
         let handballIDs = Set(statTypes.filter { normalizedLiveStatsName($0.name) == "handball" }.map(\.id))
         guard !kickIDs.isEmpty || !handballIDs.isEmpty else { return [] }
 
-        let goalMap = Dictionary(uniqueKeysWithValues: liveGameSyncSnapshot?.goalKickers.map { ($0.playerID, (goals: $0.goals, points: $0.points)) } ?? [])
+        let goalMap = Dictionary(liveGameSyncSnapshot?.goalKickers.map { ($0.playerID, (goals: $0.goals, points: $0.points)) } ?? [], uniquingKeysWith: { first, _ in first })
 
         var possessionCounts: [UUID: Int] = [:]
         for event in localEvents {
@@ -2139,7 +2213,7 @@ struct NewGameWizardView: View {
                 ) {
                     savedSelectedPlayerIDs = draftSelectedPlayerIDs
                     if let gradeID {
-                        LastWeekTeamStore.save(playerIDs: savedSelectedPlayerIDs, for: gradeID)
+                        NewGameSelectedPlayersStore.save(playerIDs: savedSelectedPlayerIDs, for: gradeID)
                     }
                     hasSavedSelectedPlayers = true
                     showSelectedPlayersPicker = false
@@ -2478,8 +2552,18 @@ struct NewGameWizardView: View {
         ourBehinds = draft.ourBehinds
         theirGoals = draft.theirGoals
         theirBehinds = draft.theirBehinds
-        goalKickers = draft.goalKickers.map { kickerEntry in
-            WizardGoalKickerEntry(playerID: kickerEntry.playerID, goals: kickerEntry.goals)
+        goalKickers = draft.goalKickers.compactMap { kickerEntry in
+            let goalsForUs = max(0, kickerEntry.goals - kickerEntry.oppositionGoals)
+            guard goalsForUs > 0 else { return nil }
+            return WizardGoalKickerEntry(playerID: kickerEntry.playerID, goals: goalsForUs)
+        }
+        liveGameSession.pointScorers = draft.goalKickers.reduce(into: [UUID: Int]()) { partialResult, entry in
+            guard let playerID = entry.playerID, entry.points > 0 else { return }
+            partialResult[playerID, default: 0] += entry.points
+        }
+        liveGameSession.oppositionGoalsForOurPlayers = draft.goalKickers.reduce(into: [UUID: Int]()) { partialResult, entry in
+            guard let playerID = entry.playerID, entry.oppositionGoals > 0 else { return }
+            partialResult[playerID, default: 0] += entry.oppositionGoals
         }
         headCoachName = draft.headCoachName
         assCoachName = draft.assistantCoachName
@@ -2508,7 +2592,7 @@ struct NewGameWizardView: View {
             bestRanked[idx] = bestIDs.indices.contains(idx) ? bestIDs[idx] : nil
         }
         syncGuestVotesSelectionCount()
-        let guestVotesByRank = Dictionary(uniqueKeysWithValues: draft.guestVotesRanked.map { ($0.rank, $0.playerID) })
+        let guestVotesByRank = Dictionary(draft.guestVotesRanked.map { ($0.rank, $0.playerID) }, uniquingKeysWith: { first, _ in first })
         for idx in guestVotesRanked.indices {
             guestVotesRanked[idx] = guestVotesByRank[idx + 1]
         }
@@ -3035,13 +3119,17 @@ struct NewGameWizardView: View {
             liveSession: $liveGameSession,
             initialPeriodMinutes: min(max(selectedGrade?.quarterLengthMinutes ?? 20, 10), 30),
             requiredBestPlayersCount: requiredBestPlayersCount,
+            showsPlayerSwapScoringControls: selectedGrade?.playerSwapsEnabled ?? false,
             ourTeamName: clubConfiguration.clubTeam.name,
             oppTeamName: finalOpponent.isEmpty ? "Opponent" : finalOpponent,
             ourStyle: ClubStyle.style(for: clubConfiguration.clubTeam.name, configuration: clubConfiguration),
             oppStyle: ClubStyle.style(for: finalOpponent.isEmpty ? "Opponent" : finalOpponent, configuration: clubConfiguration),
             eligiblePlayers: eligiblePlayers,
             playerName: { playerID in
-                players.first(where: { $0.id == playerID })?.name ?? "Unknown"
+                if playerID == GameGoalKickerEntry.oppositionPlayerID {
+                    return GameGoalKickerEntry.oppositionPlayerName
+                }
+                return players.first(where: { $0.id == playerID })?.name ?? "Unknown"
             },
             showsSyncedStatsSummary: showsSyncedLiveStatsSummary,
             syncedStatsSummaryMetrics: syncedLiveStatsSummaryMetrics,
@@ -3051,6 +3139,9 @@ struct NewGameWizardView: View {
             syncStatusTint: liveGameSyncStatusTint,
             syncStatusAccessibilityLabel: liveGameSyncAccessibilityLabel,
             isSyncStatusDisabled: isLiveGameSyncStatusDisabled,
+            onLiveSyncStateChanged: {
+                refreshLiveGameSyncSnapshot()
+            },
             onSyncStatusTapped: {
                 if liveGameSyncStatus.state != .green {
                     showLiveStatsSyncIssues = true
@@ -4127,10 +4218,29 @@ struct NewGameWizardView: View {
 
         let modelGoalKickers: [GameGoalKickerEntry]
         if asksGoalKickers {
-            modelGoalKickers = goalKickers
-                .compactMap { entry -> GameGoalKickerEntry? in
-                    guard entry.goals > 0, let playerID = entry.playerID else { return nil }
-                    return GameGoalKickerEntry(playerID: playerID, goals: entry.goals)
+            var scorerTotals: [UUID: (goals: Int, points: Int, oppositionGoals: Int)] = [:]
+            for entry in goalKickers {
+                guard entry.goals > 0, let playerID = entry.playerID else { continue }
+                scorerTotals[playerID, default: (goals: 0, points: 0, oppositionGoals: 0)].goals += entry.goals
+            }
+            for (playerID, points) in liveGameSession.pointScorers where points > 0 {
+                scorerTotals[playerID, default: (goals: 0, points: 0, oppositionGoals: 0)].points += points
+            }
+            for (playerID, goals) in liveGameSession.oppositionGoalsForOurPlayers where goals > 0 {
+                scorerTotals[playerID, default: (goals: 0, points: 0, oppositionGoals: 0)].goals += goals
+                scorerTotals[playerID, default: (goals: 0, points: 0, oppositionGoals: 0)].oppositionGoals += goals
+            }
+            for (playerID, points) in liveGameSession.oppositionPointsForOurPlayers where points > 0 {
+                scorerTotals[playerID, default: (goals: 0, points: 0, oppositionGoals: 0)].points += points
+            }
+            if liveGameSession.ourGoalsByOpposition > 0 {
+                scorerTotals[GameGoalKickerEntry.oppositionPlayerID, default: (goals: 0, points: 0, oppositionGoals: 0)].goals += liveGameSession.ourGoalsByOpposition
+            }
+
+            modelGoalKickers = scorerTotals
+                .compactMap { playerID, totals -> GameGoalKickerEntry? in
+                    guard totals.goals > 0 || totals.points > 0 else { return nil }
+                    return GameGoalKickerEntry(playerID: playerID, goals: totals.goals, points: totals.points, oppositionGoals: totals.oppositionGoals)
                 }
         } else {
             modelGoalKickers = []
@@ -4409,7 +4519,10 @@ struct NewGameWizardView: View {
         var timerAnchorDate: Date?
         var timerAnchorSecondsRemaining: Int?
         var pointScorers: [UUID: Int] = [:]
+        var oppositionGoalsForOurPlayers: [UUID: Int] = [:]
+        var oppositionPointsForOurPlayers: [UUID: Int] = [:]
         var rushedPoints: Int = 0
+        var ourGoalsByOpposition: Int = 0
         var ourClearances: Int = 0
         var ourInside50s: Int = 0
         var theirClearances: Int = 0
@@ -4428,7 +4541,10 @@ struct NewGameWizardView: View {
             timerAnchorDate = nil
             timerAnchorSecondsRemaining = secondsRemaining
             pointScorers = [:]
+            oppositionGoalsForOurPlayers = [:]
+            oppositionPointsForOurPlayers = [:]
             rushedPoints = 0
+            ourGoalsByOpposition = 0
             ourClearances = 0
             ourInside50s = 0
             theirClearances = 0
@@ -4473,7 +4589,7 @@ struct NewGameWizardView: View {
     }
 
     // MARK: - AFL-ish card container
-    private static let liveStatsOppositionTeamPlayerID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB") ?? UUID()
+    private static let liveStatsOppositionTeamPlayerID = GameGoalKickerEntry.oppositionPlayerID
 
     private struct LiveGameView: View {
         @Binding var date: Date
@@ -4487,6 +4603,7 @@ struct NewGameWizardView: View {
 
         let initialPeriodMinutes: Int
         let requiredBestPlayersCount: Int
+        let showsPlayerSwapScoringControls: Bool
         let ourTeamName: String
         let oppTeamName: String
         let ourStyle: ClubStyle.Style
@@ -4501,6 +4618,7 @@ struct NewGameWizardView: View {
         let syncStatusTint: Color
         let syncStatusAccessibilityLabel: String
         let isSyncStatusDisabled: Bool
+        let onLiveSyncStateChanged: () -> Void
         let onSyncStatusTapped: () -> Void
         let onSaveAndContinue: () -> Void
         let onBackToHome: () -> Void
@@ -4516,8 +4634,8 @@ struct NewGameWizardView: View {
         @State private var pendingAutoAdvanceSave = false
         @State private var goalUndoHistory: [UUID] = []
         @State private var pointUndoHistory: [UUID?] = []
-        @State private var opponentGoalUndoCount = 0
-        @State private var opponentPointUndoCount = 0
+        @State private var opponentGoalUndoHistory: [UUID?] = []
+        @State private var opponentPointUndoHistory: [UUID?] = []
         @State private var pendingUndoAction: UndoAction?
         @State private var showUndoConfirmation = false
         @State private var showUndoLastPeriodSavePrompt = false
@@ -4528,6 +4646,11 @@ struct NewGameWizardView: View {
         @State private var autoSaveAfterZeroTask: Task<Void, Never>? = nil
         @State private var autoSaveCountdownSeconds: Int? = nil
         @State private var showEditPlayersSheet = false
+        @State private var pendingOppositionScorerAction: OppositionScorerAction?
+        @State private var showOppositionScorerConfirmation = false
+        @State private var showOppositionScorerPicker = false
+        @State private var oppositionGoalsInfoMessage = ""
+        @State private var showOppositionGoalsInfoAlert = false
 
         init(
             date: Binding<Date>,
@@ -4540,6 +4663,7 @@ struct NewGameWizardView: View {
             liveSession: Binding<LiveGameSessionState>,
             initialPeriodMinutes: Int,
             requiredBestPlayersCount: Int,
+            showsPlayerSwapScoringControls: Bool,
             ourTeamName: String,
             oppTeamName: String,
             ourStyle: ClubStyle.Style,
@@ -4554,6 +4678,7 @@ struct NewGameWizardView: View {
             syncStatusTint: Color,
             syncStatusAccessibilityLabel: String,
             isSyncStatusDisabled: Bool,
+            onLiveSyncStateChanged: @escaping () -> Void,
             onSyncStatusTapped: @escaping () -> Void,
             onSaveAndContinue: @escaping () -> Void,
             onBackToHome: @escaping () -> Void,
@@ -4573,6 +4698,7 @@ struct NewGameWizardView: View {
             self.initialPeriodMinutes = boundedPeriodMinutes
 
             self.requiredBestPlayersCount = requiredBestPlayersCount
+            self.showsPlayerSwapScoringControls = showsPlayerSwapScoringControls
             self.ourTeamName = ourTeamName
             self.oppTeamName = oppTeamName
             self.ourStyle = ourStyle
@@ -4587,6 +4713,7 @@ struct NewGameWizardView: View {
             self.syncStatusTint = syncStatusTint
             self.syncStatusAccessibilityLabel = syncStatusAccessibilityLabel
             self.isSyncStatusDisabled = isSyncStatusDisabled
+            self.onLiveSyncStateChanged = onLiveSyncStateChanged
             self.onSyncStatusTapped = onSyncStatusTapped
             self.onSaveAndContinue = onSaveAndContinue
             self.onBackToHome = onBackToHome
@@ -4612,6 +4739,20 @@ struct NewGameWizardView: View {
             default: return nil
             }
         }
+        private var manualSavePromptMessage: String {
+            "Do you wish to save current \(currentPeriodDisplayLabel) scores and \(manualSaveDestinationText)"
+        }
+
+        private var manualSaveDestinationText: String {
+            switch liveSession.periodSnapshots.count {
+            case 0: return "start Q2"
+            case 1: return "start Q3"
+            case 2: return "start Q4"
+            case 3: return "finish the game"
+            default: return "continue"
+            }
+        }
+
         private var lastSavedPeriodLabel: String {
             liveSession.periodSnapshots.last?.label ?? "this period"
         }
@@ -4623,6 +4764,11 @@ struct NewGameWizardView: View {
             showPlayerPicker || showPointPicker || showGoalKickerEditor
         }
 
+        private var uniqueEligiblePlayers: [Player] {
+            var seen = Set<UUID>()
+            return eligiblePlayers.filter { seen.insert($0.id).inserted }
+        }
+
         private var scorerTally: [(id: UUID, goals: Int, points: Int)] {
             var goalCounts: [UUID: Int] = [:]
             for entry in goalKickers {
@@ -4630,10 +4776,40 @@ struct NewGameWizardView: View {
                 goalCounts[id, default: 0] += entry.goals
             }
 
-            let ids = Set(goalCounts.keys).union(liveSession.pointScorers.keys)
+            let ids = Set(goalCounts.keys)
+                .union(liveSession.pointScorers.keys)
+                .union(liveSession.oppositionPointsForOurPlayers.keys)
             return ids
                 .map { id in
-                    (id: id, goals: goalCounts[id, default: 0], points: liveSession.pointScorers[id, default: 0])
+                    (
+                        id: id,
+                        goals: goalCounts[id, default: 0],
+                        points: liveSession.pointScorers[id, default: 0] + liveSession.oppositionPointsForOurPlayers[id, default: 0]
+                    )
+                }
+                .filter { $0.goals > 0 || $0.points > 0 }
+                .sorted { lhs, rhs in
+                    let lhsTotal = lhs.goals * 6 + lhs.points
+                    let rhsTotal = rhs.goals * 6 + rhs.points
+                    if lhsTotal != rhsTotal { return lhsTotal > rhsTotal }
+                    return playerName(lhs.id) < playerName(rhs.id)
+                }
+        }
+
+        private var displayScorerTally: [(id: UUID, goals: Int, points: Int, oppositionGoals: Int)] {
+            let baseMap = Dictionary(scorerTally.map { ($0.id, (goals: $0.goals, points: $0.points)) }, uniquingKeysWith: { first, _ in first })
+            let ids = Set(baseMap.keys).union(liveSession.oppositionGoalsForOurPlayers.keys)
+
+            return ids
+                .map { id in
+                    let base = baseMap[id] ?? (goals: 0, points: 0)
+                    let oppositionGoals = liveSession.oppositionGoalsForOurPlayers[id, default: 0]
+                    return (
+                        id: id,
+                        goals: base.goals + oppositionGoals,
+                        points: base.points,
+                        oppositionGoals: oppositionGoals
+                    )
                 }
                 .filter { $0.goals > 0 || $0.points > 0 }
                 .sorted { lhs, rhs in
@@ -4660,6 +4836,13 @@ struct NewGameWizardView: View {
             case point(UUID?)
             case opponentGoal
             case opponentPoint
+        }
+
+        private enum OppositionScorerAction {
+            case ourGoal
+            case ourPoint
+            case theirGoal
+            case theirPoint
         }
 
         private func makeGoalKickerEditorState() -> GoalKickerEditorState {
@@ -4690,51 +4873,20 @@ struct NewGameWizardView: View {
                 guard row.points > 0 else { return nil }
                 return (row.id, row.points)
             })
+            liveSession.oppositionPointsForOurPlayers = [:]
 
             liveSession.rushedPoints = max(0, state.rushedPoints)
             ourGoals = goalKickers.reduce(0) { $0 + $1.goals }
             ourBehinds = liveSession.pointScorers.values.reduce(0, +) + liveSession.rushedPoints
             goalUndoHistory.removeAll()
             pointUndoHistory.removeAll()
-            opponentGoalUndoCount = 0
-            opponentPointUndoCount = 0
+            opponentGoalUndoHistory.removeAll()
+            opponentPointUndoHistory.removeAll()
+            notifyLiveSyncStateChanged()
         }
 
         var body: some View {
-            GeometryReader { proxy in
-                let compact = proxy.size.width < 980
-                let cardSpacing: CGFloat = compact ? 14 : 18
-                let horizontalPadding: CGFloat = compact ? 14 : 18
-                let availableWidth = max(0, proxy.size.width - (horizontalPadding * 2))
-                let topRowSpacing: CGFloat = cardSpacing * 2
-                let rawTopCardWidth: CGFloat = (availableWidth - topRowSpacing) / 3
-                let topCardWidth: CGFloat = max(rawTopCardWidth, 0)
-                let scoreboardHeight: CGFloat = compact ? 298 : 300
-                let supportingCardHeight: CGFloat = compact ? 284 : 308
-
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: cardSpacing) {
-                        if compact {
-                            compactScoreboardLayout(
-                                width: availableWidth,
-                                cardSpacing: cardSpacing,
-                                sharedCardHeight: scoreboardHeight,
-                                secondaryRowCardHeight: supportingCardHeight
-                            )
-                        } else {
-                            regularScoreboardLayout(
-                                cardSpacing: cardSpacing,
-                                topCardWidth: topCardWidth,
-                                sharedCardHeight: scoreboardHeight,
-                                secondaryRowCardHeight: supportingCardHeight
-                            )
-                        }
-                    }
-                    .padding(.horizontal, horizontalPadding)
-                    .padding(.top, 4)
-                    .padding(.bottom, 28)
-                }
-            }
+            GeometryReader(content: liveGeometryContent)
             .background(liveGameBackdrop.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -4754,14 +4906,6 @@ struct NewGameWizardView: View {
                     }
                     .disabled(isSyncStatusDisabled)
                     .accessibilityLabel(syncStatusAccessibilityLabel)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        pauseTimer()
-                        onSaveAndContinue()
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .saveButtonBehavior(isEnabled: canSaveAndContinue)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -4809,11 +4953,10 @@ struct NewGameWizardView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
-            .onChange(of: liveSession.periodMinutes) { _, newValue in
-                if !liveSession.isTimerRunning {
-                    liveSession.secondsRemaining = max(1, newValue) * 60
-                    liveSession.timerAnchorSecondsRemaining = liveSession.secondsRemaining
-                }
+            .task(id: liveSession.periodMinutes) {
+                guard !liveSession.isTimerRunning else { return }
+                liveSession.secondsRemaining = max(1, liveSession.periodMinutes) * 60
+                liveSession.timerAnchorSecondsRemaining = liveSession.secondsRemaining
             }
             .onChange(of: ourScore) { oldValue, newValue in
                 trackScoreChange(oldScore: oldValue, newScore: newValue, isOurTeam: true)
@@ -4833,7 +4976,7 @@ struct NewGameWizardView: View {
             }
             .sheet(isPresented: $showPlayerPicker) {
                 NavigationStack {
-                    List(eligiblePlayers) { player in
+                    List(uniqueEligiblePlayers) { player in
                         Button(player.name) {
                             recordGoal(for: player.id)
                             showPlayerPicker = false
@@ -4878,7 +5021,7 @@ struct NewGameWizardView: View {
                         }
 
                         Section("Players") {
-                            ForEach(eligiblePlayers) { player in
+                            ForEach(uniqueEligiblePlayers) { player in
                                 Button(player.name) {
                                     recordPoint(for: player.id)
                                     showPointPicker = false
@@ -4896,27 +5039,36 @@ struct NewGameWizardView: View {
                     }
                 }
             }
+            .confirmationDialog(
+                oppositionScorerConfirmationTitle,
+                isPresented: $showOppositionScorerConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Yes") {
+                    proceedWithOppositionScorerAction()
+                }
+                Button("No", role: .cancel) {
+                    pendingOppositionScorerAction = nil
+                }
+            }
+            .sheet(isPresented: $showOppositionScorerPicker, content: oppositionScorerPickerSheet)
             .sheet(isPresented: $showGoalKickerEditor) {
                 GoalKickerEditorSheet(
-                    eligiblePlayers: eligiblePlayers,
+                    eligiblePlayers: uniqueEligiblePlayers,
                     playerName: playerName,
                     initialState: makeGoalKickerEditorState()
                 ) { updatedState in
                     applyGoalKickerEditorState(updatedState)
                 }
             }
-            .onDisappear {
-                guard !isPresentingOverlaySheet else { return }
-                cancelAutoSaveAfterZero()
-                liveSession.syncTimer()
-            }
+            .onDisappear(perform: handleLiveViewDisappear)
             .alert("Save and reset?", isPresented: $showManualSavePrompt) {
                 Button("Back", role: .cancel) {}
                 Button("Confirm") {
                     saveAndResetPeriod()
                 }
             } message: {
-                Text("Do you wish to change \(nextPeriodLabel ?? "this period") scores?")
+                Text(manualSavePromptMessage)
             }
             .alert("Confirm undo", isPresented: $showUndoConfirmation) {
                 Button("Cancel", role: .cancel) {
@@ -4928,6 +5080,11 @@ struct NewGameWizardView: View {
             } message: {
                 Text(undoConfirmationMessage)
             }
+            .alert("Opposition Goals", isPresented: $showOppositionGoalsInfoAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(oppositionGoalsInfoMessage)
+            }
             .confirmationDialog(
                 undoLastSavedPeriodMessage,
                 isPresented: $showUndoLastPeriodSavePrompt,
@@ -4937,6 +5094,54 @@ struct NewGameWizardView: View {
                     undoLastSavedPeriod()
                 }
                 Button("Back", role: .cancel) {}
+            }
+        }
+
+        @ViewBuilder
+        private func liveGeometryContent(_ proxy: GeometryProxy) -> some View {
+            let compact = proxy.size.width < 980
+            let cardSpacing: CGFloat = compact ? 14 : 18
+            let horizontalPadding: CGFloat = compact ? 14 : 18
+            let topPadding: CGFloat = 4
+            let bottomPadding: CGFloat = 28
+            let availableWidth = max(0, proxy.size.width - (horizontalPadding * 2))
+            let availableHeight = max(0, proxy.size.height - topPadding - bottomPadding)
+            let topRowSpacing: CGFloat = cardSpacing * 2
+            let topCardWidth: CGFloat = max((availableWidth - topRowSpacing) / 3, 0)
+            let scoreboardHeight: CGFloat = compact ? 298 : 300
+            let supportingCardHeight: CGFloat = compact ? 284 : 308
+            let regularLiveStatsHeight = max(
+                supportingCardHeight,
+                availableHeight - scoreboardHeight - cardSpacing
+            )
+            let compactLiveStatsHeight = max(
+                supportingCardHeight + 12,
+                availableHeight - (scoreboardHeight * 2) - supportingCardHeight - (cardSpacing * 3)
+            )
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: cardSpacing) {
+                    if compact {
+                        compactScoreboardLayout(
+                            width: availableWidth,
+                            cardSpacing: cardSpacing,
+                            sharedCardHeight: scoreboardHeight,
+                            secondaryRowCardHeight: supportingCardHeight,
+                            liveStatsCardHeight: compactLiveStatsHeight
+                        )
+                    } else {
+                        regularScoreboardLayout(
+                            cardSpacing: cardSpacing,
+                            topCardWidth: topCardWidth,
+                            sharedCardHeight: scoreboardHeight,
+                            secondaryRowCardHeight: supportingCardHeight,
+                            liveStatsSectionHeight: regularLiveStatsHeight
+                        )
+                    }
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.top, topPadding)
+                .padding(.bottom, bottomPadding)
             }
         }
 
@@ -5062,17 +5267,11 @@ struct NewGameWizardView: View {
                             }
                             .accessibilityLabel(liveSession.isTimerRunning ? "Pause" : "Start")
                             .buttonStyle(.borderedProminent)
+                            .tint(canSaveAndContinue ? .gray : .accentColor)
                             .clipShape(Circle())
+                            .disabled(canSaveAndContinue)
 
-                            Button {
-                                showManualSavePrompt = true
-                            } label: {
-                                saveAndResetButtonLabel(compactTitle: true)
-                                    .frame(maxWidth: .infinity, minHeight: 52)
-                            }
-                            .accessibilityLabel("Save and reset")
-                            .buttonStyle(.bordered)
-                            .disabled(nextPeriodLabel == nil)
+                            periodActionButton(compactTitle: true)
                         }
                         .frame(width: timerColumnWidth, alignment: .top)
 
@@ -5114,17 +5313,11 @@ struct NewGameWizardView: View {
                             }
                             .accessibilityLabel(liveSession.isTimerRunning ? "Pause" : "Start")
                             .buttonStyle(.borderedProminent)
+                            .tint(canSaveAndContinue ? .gray : .accentColor)
                             .clipShape(Circle())
+                            .disabled(canSaveAndContinue)
 
-                            Button {
-                                showManualSavePrompt = true
-                            } label: {
-                                saveAndResetButtonLabel(compactTitle: false)
-                                    .frame(maxWidth: .infinity, minHeight: 52)
-                            }
-                            .accessibilityLabel("Save and reset")
-                            .buttonStyle(.bordered)
-                            .disabled(nextPeriodLabel == nil)
+                            periodActionButton(compactTitle: false)
                         }
                     }
                     .font(.title3.weight(.semibold))
@@ -5188,7 +5381,8 @@ struct NewGameWizardView: View {
             width: CGFloat,
             cardSpacing: CGFloat,
             sharedCardHeight: CGFloat,
-            secondaryRowCardHeight: CGFloat
+            secondaryRowCardHeight: CGFloat,
+            liveStatsCardHeight: CGFloat
         ) -> some View {
             let scoreCardWidth = max(((width - cardSpacing) / 2) - 2, 0)
 
@@ -5202,6 +5396,9 @@ struct NewGameWizardView: View {
                         score: ourScore,
                         goalAction: { showPlayerPicker = true },
                         pointAction: { showPointPicker = true },
+                        goalCornerAction: { requestOppositionScorerAction(.ourGoal) },
+                        pointCornerAction: { requestOppositionScorerAction(.ourPoint) },
+                        showsCornerActions: showsPlayerSwapScoringControls,
                         showUndoButtons: true,
                         showManualAdjusters: false,
                         goalUndoAction: { confirmUndoGoal() },
@@ -5220,6 +5417,9 @@ struct NewGameWizardView: View {
                         score: theirScore,
                         goalAction: { recordOpponentGoal() },
                         pointAction: { recordOpponentPoint() },
+                        goalCornerAction: { requestOppositionScorerAction(.theirGoal) },
+                        pointCornerAction: { requestOppositionScorerAction(.theirPoint) },
+                        showsCornerActions: showsPlayerSwapScoringControls,
                         showUndoButtons: true,
                         showManualAdjusters: false,
                         goalUndoAction: { confirmUndoOpponentGoal() },
@@ -5241,7 +5441,7 @@ struct NewGameWizardView: View {
                         metrics: syncedStatsSummaryMetrics,
                         snapshot: linkedLiveStatsSnapshot,
                         compact: true,
-                        height: max(secondaryRowCardHeight + 12, 220),
+                        height: max(liveStatsCardHeight, 220),
                         width: width
                     )
                 }
@@ -5253,7 +5453,8 @@ struct NewGameWizardView: View {
             cardSpacing: CGFloat,
             topCardWidth: CGFloat,
             sharedCardHeight: CGFloat,
-            secondaryRowCardHeight: CGFloat
+            secondaryRowCardHeight: CGFloat,
+            liveStatsSectionHeight: CGFloat
         ) -> some View {
             VStack(spacing: cardSpacing) {
                 HStack(alignment: .top, spacing: cardSpacing) {
@@ -5265,6 +5466,9 @@ struct NewGameWizardView: View {
                         score: ourScore,
                         goalAction: { showPlayerPicker = true },
                         pointAction: { showPointPicker = true },
+                        goalCornerAction: { requestOppositionScorerAction(.ourGoal) },
+                        pointCornerAction: { requestOppositionScorerAction(.ourPoint) },
+                        showsCornerActions: showsPlayerSwapScoringControls,
                         showUndoButtons: true,
                         showManualAdjusters: false,
                         goalUndoAction: { confirmUndoGoal() },
@@ -5288,6 +5492,9 @@ struct NewGameWizardView: View {
                         score: theirScore,
                         goalAction: { recordOpponentGoal() },
                         pointAction: { recordOpponentPoint() },
+                        goalCornerAction: { requestOppositionScorerAction(.theirGoal) },
+                        pointCornerAction: { requestOppositionScorerAction(.theirPoint) },
+                        showsCornerActions: showsPlayerSwapScoringControls,
                         showUndoButtons: true,
                         showManualAdjusters: false,
                         goalUndoAction: { confirmUndoOpponentGoal() },
@@ -5304,7 +5511,7 @@ struct NewGameWizardView: View {
                 if shouldShowLiveStatsSummary {
                     syncedLiveStatsLowerSection(
                         metrics: syncedStatsSummaryMetrics,
-                        height: max(secondaryRowCardHeight + 24, 300),
+                        height: max(liveStatsSectionHeight, 300),
                         width: (topCardWidth * 3) + (cardSpacing * 2)
                     )
                 } else {
@@ -5321,7 +5528,7 @@ struct NewGameWizardView: View {
             let leaderboardRowHeight: CGFloat = 42
             let leaderboardRowSpacing: CGFloat = 8
             let leaderboardViewportHeight: CGFloat = (CGFloat(visibleRows) * leaderboardRowHeight) + (CGFloat(visibleRows - 1) * leaderboardRowSpacing)
-            let hasManyGoalKickers = scorerTally.count + (liveSession.rushedPoints > 0 ? 1 : 0) > visibleRows
+            let hasManyGoalKickers = displayScorerTally.count + (liveSession.rushedPoints > 0 ? 1 : 0) + (liveSession.ourGoalsByOpposition > 0 ? 1 : 0) > visibleRows
             return VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Label("Goal Kickers", systemImage: "list.bullet.rectangle.portrait.fill")
@@ -5339,16 +5546,31 @@ struct NewGameWizardView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Edit goal kickers")
                 }
-                if scorerTally.isEmpty, liveSession.rushedPoints == 0 {
+                if displayScorerTally.isEmpty, liveSession.rushedPoints == 0, liveSession.ourGoalsByOpposition == 0 {
                     Text("No scorers yet.")
                         .foregroundStyle(.secondary)
                 } else {
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 8) {
-                            ForEach(scorerTally, id: \.id) { scorer in
+                            ForEach(displayScorerTally, id: \.id) { scorer in
+                                let oppositionMarker = scorer.oppositionGoals > 0 ? "*" : ""
+                                Button {
+                                    guard scorer.oppositionGoals > 0 else { return }
+                                    oppositionGoalsInfoMessage = "\(scorer.oppositionGoals) of these goals scored were playing for opposition"
+                                    showOppositionGoalsInfoAlert = true
+                                } label: {
+                                    leaderboardLine(
+                                        title: playerName(scorer.id) + oppositionMarker,
+                                        value: playerContribution(goals: scorer.goals, points: scorer.points),
+                                        secondaryValue: nil
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            if liveSession.ourGoalsByOpposition > 0 {
                                 leaderboardLine(
-                                    title: playerName(scorer.id),
-                                    value: playerContribution(goals: scorer.goals, points: scorer.points),
+                                    title: "Opposition",
+                                    value: playerContribution(goals: liveSession.ourGoalsByOpposition, points: 0),
                                     secondaryValue: nil
                                 )
                             }
@@ -5792,7 +6014,9 @@ struct NewGameWizardView: View {
                     background: style.background,
                     textColor: style.text,
                     compact: false,
-                    action: action
+                    action: action,
+                    cornerAction: {},
+                    showsCornerAction: false
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -6074,6 +6298,9 @@ struct NewGameWizardView: View {
             score: Int,
             goalAction: @escaping () -> Void,
             pointAction: @escaping () -> Void,
+            goalCornerAction: @escaping () -> Void,
+            pointCornerAction: @escaping () -> Void,
+            showsCornerActions: Bool,
             showUndoButtons: Bool,
             showManualAdjusters: Bool,
             goalUndoAction: @escaping () -> Void,
@@ -6097,6 +6324,9 @@ struct NewGameWizardView: View {
                     style: style,
                     goalAction: goalAction,
                     pointAction: pointAction,
+                    goalCornerAction: goalCornerAction,
+                    pointCornerAction: pointCornerAction,
+                    showsCornerActions: showsCornerActions,
                     showUndoButtons: showUndoButtons,
                     goalUndoAction: goalUndoAction,
                     pointUndoAction: pointUndoAction,
@@ -6209,6 +6439,9 @@ struct NewGameWizardView: View {
             style: ClubStyle.Style,
             goalAction: @escaping () -> Void,
             pointAction: @escaping () -> Void,
+            goalCornerAction: @escaping () -> Void,
+            pointCornerAction: @escaping () -> Void,
+            showsCornerActions: Bool,
             showUndoButtons: Bool,
             goalUndoAction: @escaping () -> Void,
             pointUndoAction: @escaping () -> Void,
@@ -6218,8 +6451,8 @@ struct NewGameWizardView: View {
         ) -> some View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    prominentActionButton(title: "Goal", background: style.background, textColor: style.text, compact: compact, action: goalAction)
-                    prominentActionButton(title: "Point", background: style.background, textColor: style.text, compact: compact, action: pointAction)
+                    prominentActionButton(title: "Goal", background: style.background, textColor: style.text, compact: compact, action: goalAction, cornerAction: goalCornerAction, showsCornerAction: showsCornerActions)
+                    prominentActionButton(title: "Point", background: style.background, textColor: style.text, compact: compact, action: pointAction, cornerAction: pointCornerAction, showsCornerAction: showsCornerActions)
                 }
                 if showUndoButtons {
                     HStack(spacing: 10) {
@@ -6274,19 +6507,38 @@ struct NewGameWizardView: View {
             background: Color,
             textColor: Color,
             compact: Bool,
-            action: @escaping () -> Void
+            action: @escaping () -> Void,
+            cornerAction: @escaping () -> Void,
+            showsCornerAction: Bool
         ) -> some View {
             Button(action: action) {
-                VStack(spacing: 4) {
-                    Text(title)
-                        .font(.system(size: compact ? 20 : 28, weight: compact ? .bold : .heavy, design: .rounded))
-                    Text(title == "Goal" ? "+6" : "+1")
-                        .font(.caption.weight(.bold))
-                        .opacity(0.78)
-                }
+                ZStack(alignment: .topTrailing) {
+                    VStack(spacing: 4) {
+                        Text(title)
+                            .font(.system(size: compact ? 20 : 28, weight: compact ? .bold : .heavy, design: .rounded))
+                        Text(title == "Goal" ? "+6" : "+1")
+                            .font(.caption.weight(.bold))
+                            .opacity(0.78)
+                    }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, compact ? 14 : 18)
                     .frame(minHeight: compact ? 78 : 92)
+
+                    if showsCornerAction {
+                        Button(action: cornerAction) {
+                            Circle()
+                                .fill(Color.white.opacity(0.22))
+                                .frame(width: 24, height: 24)
+                                .overlay(
+                                    Image(systemName: "person.crop.circle.badge.plus")
+                                        .font(.system(size: 12, weight: .bold))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(8)
+                        .accessibilityLabel("Record for opposition")
+                    }
+                }
             }
             .buttonStyle(.plain)
             .background(
@@ -6311,6 +6563,12 @@ struct NewGameWizardView: View {
             }
         }
 
+        private func notifyLiveSyncStateChanged() {
+            DispatchQueue.main.async {
+                onLiveSyncStateChanged()
+            }
+        }
+
         private func recordGoal(for playerID: UUID) {
             ourGoals += 1
             if let index = goalKickers.firstIndex(where: { $0.playerID == playerID }) {
@@ -6319,6 +6577,7 @@ struct NewGameWizardView: View {
                 goalKickers.append(WizardGoalKickerEntry(playerID: playerID, goals: 1))
             }
             goalUndoHistory.append(playerID)
+            notifyLiveSyncStateChanged()
         }
 
         private func recordPoint(for playerID: UUID?) {
@@ -6326,20 +6585,90 @@ struct NewGameWizardView: View {
             guard let playerID else {
                 liveSession.rushedPoints += 1
                 pointUndoHistory.append(nil)
+                notifyLiveSyncStateChanged()
                 return
             }
             liveSession.pointScorers[playerID, default: 0] += 1
             pointUndoHistory.append(playerID)
+            notifyLiveSyncStateChanged()
         }
 
-        private func recordOpponentGoal() {
+        private func recordOpponentGoal(attributedToOurPlayer playerID: UUID? = nil) {
             theirGoals += 1
-            opponentGoalUndoCount += 1
+            if let playerID {
+                liveSession.oppositionGoalsForOurPlayers[playerID, default: 0] += 1
+            }
+            opponentGoalUndoHistory.append(playerID)
+            notifyLiveSyncStateChanged()
         }
 
-        private func recordOpponentPoint() {
+        private func recordOpponentPoint(attributedToOurPlayer playerID: UUID? = nil) {
             theirBehinds += 1
-            opponentPointUndoCount += 1
+            if let playerID {
+                liveSession.oppositionPointsForOurPlayers[playerID, default: 0] += 1
+            }
+            opponentPointUndoHistory.append(playerID)
+            notifyLiveSyncStateChanged()
+        }
+
+        private func requestOppositionScorerAction(_ action: OppositionScorerAction) {
+            pendingOppositionScorerAction = action
+            showOppositionScorerConfirmation = true
+        }
+
+        private func proceedWithOppositionScorerAction() {
+            guard let action = pendingOppositionScorerAction else { return }
+            switch action {
+            case .theirGoal:
+                showOppositionScorerPicker = true
+            case .theirPoint:
+                showOppositionScorerPicker = true
+            case .ourGoal:
+                recordGoal(for: GameGoalKickerEntry.oppositionPlayerID)
+                pendingOppositionScorerAction = nil
+            case .ourPoint:
+                recordPoint(for: GameGoalKickerEntry.oppositionPlayerID)
+                pendingOppositionScorerAction = nil
+            }
+        }
+
+        private func handleLiveViewDisappear() {
+            guard !isPresentingOverlaySheet else { return }
+            cancelAutoSaveAfterZero()
+            liveSession.syncTimer()
+        }
+
+        @ViewBuilder
+        private func oppositionScorerPickerSheet() -> some View {
+            NavigationStack {
+                List(uniqueEligiblePlayers) { player in
+                    Button(player.name) {
+                        recordOppositionScoreAttributed(to: player.id)
+                        showOppositionScorerPicker = false
+                        pendingOppositionScorerAction = nil
+                    }
+                    .foregroundStyle(.primary)
+                }
+                .navigationTitle("Select Player")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        playerPopupToolbarButton("<") {
+                            showOppositionScorerPicker = false
+                            pendingOppositionScorerAction = nil
+                        }
+                    }
+                }
+            }
+        }
+
+        private func recordOppositionScoreAttributed(to playerID: UUID) {
+            switch pendingOppositionScorerAction {
+            case .theirPoint:
+                recordOpponentPoint(attributedToOurPlayer: playerID)
+            default:
+                recordOpponentGoal(attributedToOurPlayer: playerID)
+            }
         }
 
         private var canUndoGoal: Bool {
@@ -6351,11 +6680,20 @@ struct NewGameWizardView: View {
         }
 
         private var canUndoOpponentGoal: Bool {
-            opponentGoalUndoCount > 0 && theirGoals > 0
+            !opponentGoalUndoHistory.isEmpty && theirGoals > 0
         }
 
         private var canUndoOpponentPoint: Bool {
-            opponentPointUndoCount > 0 && theirBehinds > 0
+            !opponentPointUndoHistory.isEmpty && theirBehinds > 0
+        }
+
+        private var oppositionScorerConfirmationTitle: String {
+            switch pendingOppositionScorerAction {
+            case .ourPoint, .theirPoint:
+                return "Record point to Opposition Player"
+            default:
+                return "Record goal to Opposition Player"
+            }
         }
 
         private var undoConfirmationMessage: String {
@@ -6412,12 +6750,18 @@ struct NewGameWizardView: View {
                 undoOpponentPoint()
             }
             self.pendingUndoAction = nil
+            notifyLiveSyncStateChanged()
         }
 
         private func undoGoal(for playerID: UUID) {
             guard ourGoals > 0 else { return }
             _ = goalUndoHistory.popLast()
             ourGoals = max(0, ourGoals - 1)
+
+            if playerID == GameGoalKickerEntry.oppositionPlayerID {
+                liveSession.ourGoalsByOpposition = max(0, liveSession.ourGoalsByOpposition - 1)
+            }
+
             guard let index = goalKickers.firstIndex(where: { $0.playerID == playerID }) else { return }
             goalKickers[index].goals = max(0, goalKickers[index].goals - 1)
             if goalKickers[index].goals == 0 {
@@ -6442,18 +6786,31 @@ struct NewGameWizardView: View {
         }
 
         private func undoOpponentGoal() {
-            guard theirGoals > 0, opponentGoalUndoCount > 0 else { return }
+            guard theirGoals > 0, let attributedPlayerID = opponentGoalUndoHistory.popLast() else { return }
             theirGoals = max(0, theirGoals - 1)
-            opponentGoalUndoCount = max(0, opponentGoalUndoCount - 1)
+            guard let attributedPlayerID else { return }
+            let current = liveSession.oppositionGoalsForOurPlayers[attributedPlayerID, default: 0]
+            if current <= 1 {
+                liveSession.oppositionGoalsForOurPlayers.removeValue(forKey: attributedPlayerID)
+            } else {
+                liveSession.oppositionGoalsForOurPlayers[attributedPlayerID] = current - 1
+            }
         }
 
         private func undoOpponentPoint() {
-            guard theirBehinds > 0, opponentPointUndoCount > 0 else { return }
+            guard theirBehinds > 0, let attributedPlayerID = opponentPointUndoHistory.popLast() else { return }
             theirBehinds = max(0, theirBehinds - 1)
-            opponentPointUndoCount = max(0, opponentPointUndoCount - 1)
+            guard let attributedPlayerID else { return }
+            let current = liveSession.oppositionPointsForOurPlayers[attributedPlayerID, default: 0]
+            if current <= 1 {
+                liveSession.oppositionPointsForOurPlayers.removeValue(forKey: attributedPlayerID)
+            } else {
+                liveSession.oppositionPointsForOurPlayers[attributedPlayerID] = current - 1
+            }
         }
 
         private func startTimer() {
+            guard !canSaveAndContinue else { return }
             liveSession.startTimer()
             handleTimerTick()
         }
@@ -6579,10 +6936,36 @@ struct NewGameWizardView: View {
         }
 
         @ViewBuilder
-        private func saveAndResetButtonLabel(compactTitle: Bool) -> some View {
+        private func periodActionButton(compactTitle: Bool) -> some View {
+            if canSaveAndContinue {
+                Button {
+                    pauseTimer()
+                    onSaveAndContinue()
+                } label: {
+                    saveAndResetButtonLabel(compactTitle: compactTitle, overrideTitle: "Next")
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .accessibilityLabel("Next")
+                .buttonStyle(.borderedProminent)
+                .tint(.appleBlue)
+            } else {
+                Button {
+                    showManualSavePrompt = true
+                } label: {
+                    saveAndResetButtonLabel(compactTitle: compactTitle)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .accessibilityLabel("Save and reset")
+                .buttonStyle(.bordered)
+                .disabled(nextPeriodLabel == nil)
+            }
+        }
+
+        @ViewBuilder
+        private func saveAndResetButtonLabel(compactTitle: Bool, overrideTitle: String? = nil) -> some View {
             VStack(spacing: 2) {
-                Text(compactTitle ? "Save/reset" : "Save and reset")
-                if !liveSession.timeOnEnabled, let seconds = autoSaveCountdownSeconds {
+                Text(overrideTitle ?? (compactTitle ? "Save/reset" : "Save and reset"))
+                if !liveSession.timeOnEnabled, overrideTitle == nil, let seconds = autoSaveCountdownSeconds {
                     Text("Auto Save in \(timeText(seconds))")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -6738,7 +7121,7 @@ struct NewGameWizardView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
                     LazyVGrid(columns: columns, spacing: 10) {
-                        ForEach(players) { player in
+                        ForEach(Array(players.enumerated()), id: \.offset) { _, player in
                             Button {
                                 toggle(player.id)
                             } label: {

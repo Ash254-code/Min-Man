@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SwiftData
 import UIKit
 import UniformTypeIdentifiers
@@ -297,6 +298,7 @@ struct GradeRecord: Codable {
     let asksScore: Bool
     let asksLiveGameView: Bool
     let asksGoalKickers: Bool
+    let playerSwapsEnabled: Bool
     let playersPerTeam: Int
     let bestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
@@ -314,7 +316,7 @@ struct GradeRecord: Codable {
         case asksWaterBoy1, asksWaterBoy2, asksWaterBoy3, asksWaterBoy4
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
-        case playersPerTeam, bestPlayersCount, guestBestPlayersCount
+        case playersPerTeam, playerSwapsEnabled, bestPlayersCount, guestBestPlayersCount
         case bestPlayersVotes, guestBestPlayersVotes
         case asksGuestBestFairestVotesScan, allowsLiveGameView, quarterLengthMinutes, timeOnEnabled
     }
@@ -346,6 +348,7 @@ struct GradeRecord: Codable {
         asksScore = grade.asksScore
         asksLiveGameView = grade.asksLiveGameView
         asksGoalKickers = grade.asksGoalKickers
+        playerSwapsEnabled = grade.playerSwapsEnabled
         playersPerTeam = grade.playersPerTeam
         bestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
@@ -385,6 +388,7 @@ struct GradeRecord: Codable {
         asksScore = try c.decodeIfPresent(Bool.self, forKey: .asksScore) ?? true
         asksLiveGameView = try c.decodeIfPresent(Bool.self, forKey: .asksLiveGameView) ?? true
         asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
+        playerSwapsEnabled = try c.decodeIfPresent(Bool.self, forKey: .playerSwapsEnabled) ?? Grade.defaultPlayerSwapsEnabled(for: name)
         playersPerTeam = min(max(try c.decodeIfPresent(Int.self, forKey: .playersPerTeam) ?? Grade.defaultPlayersPerTeam(for: name), 1), 60)
         bestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) ?? 6
         guestBestPlayersCount = try c.decodeIfPresent(Int.self, forKey: .guestBestPlayersCount) ?? 3
@@ -441,11 +445,28 @@ struct GameGoalKickerRecord: Codable {
     let id: UUID
     let playerID: UUID?
     let goals: Int
+    let points: Int
+    let oppositionGoals: Int
 
     init(_ item: GameGoalKickerEntry) {
         id = item.id
         playerID = item.playerID
         goals = item.goals
+        points = item.points
+        oppositionGoals = item.oppositionGoals
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, playerID, goals, points, oppositionGoals
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        playerID = try c.decodeIfPresent(UUID.self, forKey: .playerID)
+        goals = try c.decodeIfPresent(Int.self, forKey: .goals) ?? 0
+        points = try c.decodeIfPresent(Int.self, forKey: .points) ?? 0
+        oppositionGoals = try c.decodeIfPresent(Int.self, forKey: .oppositionGoals) ?? 0
     }
 }
 
@@ -969,6 +990,14 @@ struct FullBackupImportResult {
     let itemCounts: AppBackupItemCounts
 }
 
+struct FullBackupDataResult {
+    let data: Data
+    let envelope: AppBackupEnvelope
+    let itemCounts: AppBackupItemCounts
+    let exportedAt: Date
+    let fileSizeBytes: UInt64
+}
+
 struct ImportDebugCounts {
     let afterInsertPlayers: Int
     let afterInsertGames: Int
@@ -1020,6 +1049,56 @@ enum AppBackupService {
 
     @MainActor
     static func createFullBackupFile(modelContext: ModelContext) throws -> FullBackupExportResult {
+        let backup = try createFullBackupData(modelContext: modelContext)
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(makeFilename())
+        try backup.data.write(to: fileURL, options: Data.WritingOptions.atomic)
+
+        guard let fileSize = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64 else {
+            throw AppBackupExportError.failedToReadFileSize
+        }
+
+        return FullBackupExportResult(
+            fileURL: fileURL,
+            itemCounts: backup.itemCounts,
+            exportedAt: backup.exportedAt,
+            fileSizeBytes: fileSize
+        )
+    }
+
+    @MainActor
+    static func createFullBackupData(modelContext: ModelContext) throws -> FullBackupDataResult {
+        let envelope = try makeBackupEnvelope(modelContext: modelContext)
+        let data = try encodeEnvelope(envelope)
+        return FullBackupDataResult(
+            data: data,
+            envelope: envelope,
+            itemCounts: envelope.itemCounts,
+            exportedAt: envelope.exportedAt,
+            fileSizeBytes: UInt64(data.count)
+        )
+    }
+
+    @MainActor
+    static func createFullBackupFingerprint(modelContext: ModelContext) throws -> String {
+        try fingerprint(for: makeBackupEnvelope(modelContext: modelContext).payload)
+    }
+
+    @MainActor
+    static func fingerprint(forBackupData data: Data) throws -> String {
+        try fingerprint(for: decodeBackupData(data).payload)
+    }
+
+    @MainActor
+    static func decodeBackupData(_ data: Data) throws -> AppBackupEnvelope {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let envelope = try decoder.decode(AppBackupEnvelope.self, from: data)
+        try validateEnvelope(envelope)
+        return normalizedEnvelope(envelope)
+    }
+
+    @MainActor
+    private static func makeBackupEnvelope(modelContext: ModelContext) throws -> AppBackupEnvelope {
         // Flush pending edits so export reflects what the user currently sees.
         try modelContext.save()
 
@@ -1041,7 +1120,6 @@ enum AppBackupService {
         let statsSessions = try modelContext.fetch(FetchDescriptor<StatsSession>())
         let statEvents = try modelContext.fetch(FetchDescriptor<StatEvent>())
 
-        let settings = exportSettings()
         let payload = AppBackupPayload(
             grades: grades.map { GradeRecord($0) },
             players: players.map { PlayerRecord($0) },
@@ -1060,54 +1138,39 @@ enum AppBackupService {
             customReportRecipientContacts: customReportRecipientContacts.map { CustomReportRecipientContactRecord($0) },
             statsSessions: statsSessions.map { StatsSessionRecord($0) },
             statEvents: statEvents.map { StatEventRecord($0) },
-            appSettings: settings
+            appSettings: exportSettings()
         )
 
-        let counts = AppBackupItemCounts.fromPayload(payload)
-
-        let now = Date()
-        let envelope = AppBackupEnvelope(
+        return AppBackupEnvelope(
             appName: appName,
             backupFormatVersion: backupFormatVersion,
-            exportedAt: now,
+            exportedAt: Date(),
             appVersion: appVersion,
             buildNumber: buildNumber,
             platform: platformDescription,
             schemaVersion: backupFormatVersion,
-            itemCounts: counts,
+            itemCounts: AppBackupItemCounts.fromPayload(payload),
             payload: payload
         )
+    }
 
+    private static func encodeEnvelope(_ envelope: AppBackupEnvelope) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-
-        let data = try encoder.encode(envelope)
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(makeFilename())
-        try data.write(to: fileURL, options: Data.WritingOptions.atomic)
-
-        guard let fileSize = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64 else {
-            throw AppBackupExportError.failedToReadFileSize
-        }
-
-        return FullBackupExportResult(fileURL: fileURL, itemCounts: counts, exportedAt: now, fileSizeBytes: fileSize)
+        return try encoder.encode(envelope)
     }
 
-    @MainActor
-    static func previewBackupFile(url: URL) throws -> AppBackupEnvelope {
-        guard url.pathExtension.lowercased() == "json"
-                || UTType(filenameExtension: url.pathExtension)?.conforms(to: .json) == true else {
-            throw AppBackupImportError.invalidFileType
-        }
+    private static func fingerprint(for payload: AppBackupPayload) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(payload)
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
 
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let envelope = try decoder.decode(AppBackupEnvelope.self, from: data)
-        try validateEnvelope(envelope)
-
-        // Trust payload as the source of truth and recompute summary counts so
-        // import previews/results stay accurate even if serialized metadata is stale.
+    private static func normalizedEnvelope(_ envelope: AppBackupEnvelope) -> AppBackupEnvelope {
         let payloadCounts = AppBackupItemCounts.fromPayload(envelope.payload)
         return AppBackupEnvelope(
             appName: envelope.appName,
@@ -1123,13 +1186,35 @@ enum AppBackupService {
     }
 
     @MainActor
+    static func previewBackupFile(url: URL) throws -> AppBackupEnvelope {
+        guard url.pathExtension.lowercased() == "json"
+                || UTType(filenameExtension: url.pathExtension)?.conforms(to: .json) == true else {
+            throw AppBackupImportError.invalidFileType
+        }
+
+        let data = try Data(contentsOf: url)
+        return try decodeBackupData(data)
+    }
+
+    @MainActor
     static func importFullBackupFile(url: URL, modelContext: ModelContext) throws -> FullBackupImportResult {
-        let envelope = try previewBackupFile(url: url)
+        try importEnvelope(previewBackupFile(url: url), modelContext: modelContext)
+    }
+
+    @MainActor
+    static func importFullBackupData(_ data: Data, modelContext: ModelContext) throws -> FullBackupImportResult {
+        try importEnvelope(decodeBackupData(data), modelContext: modelContext)
+    }
+
+    @MainActor
+    private static func importEnvelope(_ envelope: AppBackupEnvelope, modelContext: ModelContext) throws -> FullBackupImportResult {
         let deleteContext = ModelContext(modelContext.container)
+        let payloadToImport = filteredPayload(envelope.payload, removingDeletedPlayerIDs: CloudDeletedRecordStore.deletedPlayerIDs())
+        let expectedCounts = AppBackupItemCounts.fromPayload(payloadToImport)
 
         try clearExistingData(modelContext: deleteContext)
         let importContext = ModelContext(modelContext.container)
-        importPayload(envelope.payload, into: importContext)
+        importPayload(payloadToImport, into: importContext)
         let countsAfterInsert = try persistedItemCounts(modelContext: importContext)
         applySettings(envelope.payload.appSettings)
         try importContext.save()
@@ -1137,11 +1222,11 @@ enum AppBackupService {
 
         let verificationContext = ModelContext(modelContext.container)
         let persistedCounts = try persistedItemCounts(modelContext: verificationContext)
-        guard persistedCounts.players == envelope.itemCounts.players,
-              persistedCounts.games == envelope.itemCounts.games,
-              persistedCounts.grades == envelope.itemCounts.grades else {
+        guard persistedCounts.players == expectedCounts.players,
+              persistedCounts.games == expectedCounts.games,
+              persistedCounts.grades == expectedCounts.grades else {
             throw AppBackupImportError.restoreVerificationFailed(
-                expected: envelope.itemCounts,
+                expected: expectedCounts,
                 actual: persistedCounts,
                 debug: ImportDebugCounts(
                     afterInsertPlayers: countsAfterInsert.players,
@@ -1162,6 +1247,31 @@ enum AppBackupService {
         guard envelope.schemaVersion <= backupFormatVersion else {
             throw AppBackupImportError.unsupportedSchema(version: envelope.schemaVersion)
         }
+    }
+
+    private static func filteredPayload(_ payload: AppBackupPayload, removingDeletedPlayerIDs deletedPlayerIDs: Set<UUID>) -> AppBackupPayload {
+        guard !deletedPlayerIDs.isEmpty else { return payload }
+
+        return AppBackupPayload(
+            grades: payload.grades,
+            players: payload.players.filter { !deletedPlayerIDs.contains($0.id) },
+            games: payload.games,
+            contacts: payload.contacts,
+            reportRecipients: payload.reportRecipients,
+            customReportTemplates: payload.customReportTemplates,
+            staffMembers: payload.staffMembers,
+            staffDefaults: payload.staffDefaults,
+            contactGroups: payload.contactGroups,
+            contactGroupMemberships: payload.contactGroupMemberships,
+            contactSectionMemberships: payload.contactSectionMemberships,
+            reportRecipientGroups: payload.reportRecipientGroups,
+            customReportRecipientSections: payload.customReportRecipientSections,
+            customReportRecipientGroups: payload.customReportRecipientGroups,
+            customReportRecipientContacts: payload.customReportRecipientContacts,
+            statsSessions: payload.statsSessions,
+            statEvents: payload.statEvents,
+            appSettings: payload.appSettings
+        )
     }
 
     @MainActor
@@ -1254,6 +1364,7 @@ enum AppBackupService {
                     asksLiveGameView: $0.asksLiveGameView,
                     asksGoalKickers: $0.asksGoalKickers,
                     playersPerTeam: $0.playersPerTeam,
+                    playerSwapsEnabled: $0.playerSwapsEnabled,
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                     guestBestPlayersCount: $0.guestBestPlayersCount,
@@ -1293,7 +1404,7 @@ enum AppBackupService {
                     theirGoals: $0.theirGoals,
                     theirBehinds: $0.theirBehinds,
                     goalKickers: $0.goalKickers.map {
-                        GameGoalKickerEntry(id: $0.id, playerID: $0.playerID, goals: $0.goals)
+                        GameGoalKickerEntry(id: $0.id, playerID: $0.playerID, goals: $0.goals, points: $0.points, oppositionGoals: $0.oppositionGoals)
                     },
                     bestPlayersRanked: $0.bestPlayersRanked,
                     guestVotesRanked: $0.guestVotesRanked,

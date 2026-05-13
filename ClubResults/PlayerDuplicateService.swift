@@ -99,6 +99,7 @@ enum PlayerDuplicateService {
         }
 
         for player in orderedPlayers.dropFirst() {
+            CloudDeletedRecordStore.recordDeletedPlayerID(player.id)
             modelContext.delete(player)
         }
 
@@ -159,6 +160,7 @@ enum PlayerDuplicateService {
             if let existingIndex = indexByPlayerID[resolvedPlayerID] {
                 combinedEntries[existingIndex].goals += entry.goals
                 combinedEntries[existingIndex].points += entry.points
+                combinedEntries[existingIndex].oppositionGoals += entry.oppositionGoals
             } else {
                 indexByPlayerID[resolvedPlayerID] = combinedEntries.count
                 combinedEntries.append(
@@ -166,7 +168,8 @@ enum PlayerDuplicateService {
                         id: entry.id,
                         playerID: resolvedPlayerID,
                         goals: entry.goals,
-                        points: entry.points
+                        points: entry.points,
+                        oppositionGoals: entry.oppositionGoals
                     )
                 )
             }

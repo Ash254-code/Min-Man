@@ -18,6 +18,7 @@ struct StaffPickerField: View {
     @State private var showChooser = false
     @State private var newName = ""
     @State private var chooserDetent: PresentationDetent = .large
+    @State private var pendingDeletedOptionName: String?
 
     private var options: [String] {
         let savedForRole = StaffPickerNameStore.persistedNames(for: role, gradeID: gradeID)
@@ -123,7 +124,7 @@ struct StaffPickerField: View {
             .disabled(gradeID == nil)
         }
         .padding(.vertical, horizontalSizeClass == .compact ? 6 : 10)
-        .sheet(isPresented: $showChooser) {
+        .sheet(isPresented: $showChooser, onDismiss: handleChooserDismissed) {
             NavigationStack {
                 List {
                     Button {
@@ -142,9 +143,9 @@ struct StaffPickerField: View {
                             chooserRow(title: name, selected: value == name)
                         }
                         .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button("Delete", role: .destructive) {
-                                deleteOption(name)
+                                requestDeleteOption(name)
                             }
                         }
                     }
@@ -263,6 +264,17 @@ struct StaffPickerField: View {
         if value.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame {
             value = ""
         }
+    }
+
+    private func requestDeleteOption(_ name: String) {
+        pendingDeletedOptionName = name
+        showChooser = false
+    }
+
+    private func handleChooserDismissed() {
+        guard let name = pendingDeletedOptionName else { return }
+        pendingDeletedOptionName = nil
+        deleteOption(name)
     }
 
     @ViewBuilder

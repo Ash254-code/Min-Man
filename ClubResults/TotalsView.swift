@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct TotalsView: View {
     @EnvironmentObject private var navigationState: AppNavigationState
@@ -13,6 +14,7 @@ struct TotalsView: View {
     @State private var showFilterSheet = false
     @State private var topCount: TopCountOption = .top3
     @State private var combineAllGrades = false
+    @State private var selectedCategories: Set<CategoryOption> = [.all]
 
     private var clubConfiguration: ClubConfiguration {
         ClubConfigurationStore.load()
@@ -35,6 +37,26 @@ struct TotalsView: View {
             case .top5: return 5
             case .top10: return 10
             case .all: return nil
+            }
+        }
+    }
+
+    private enum CategoryOption: String, CaseIterable, Identifiable {
+        case all = "All"
+        case bestPlayers = "Best Players"
+        case guestVotes = "Guest Votes"
+        case bestAndFairest = "Best & Fairest"
+        case goalKickers = "Goal Kickers"
+
+        var id: String { rawValue }
+
+        var sectionTitle: String? {
+            switch self {
+            case .all: return nil
+            case .bestPlayers: return "Best Player"
+            case .guestVotes: return "Guest Votes"
+            case .bestAndFairest: return "Best & Fairest"
+            case .goalKickers: return "Goal Kickers"
             }
         }
     }
@@ -88,11 +110,19 @@ struct TotalsView: View {
     }
 
     private var visibleSections: [String] {
+        let allowedSections: [String]
         if !navigationState.currentRole.canViewVoteDetails {
-            return ["Best Player", "Goal Kickers"]
+            allowedSections = ["Best Player", "Goal Kickers"]
+        } else {
+            allowedSections = ["Best Player", "Guest Votes", "Best & Fairest", "Goal Kickers"]
         }
 
-        return ["Best Player", "Guest Votes", "Best & Fairest", "Goal Kickers"]
+        if selectedCategories.contains(.all) || selectedCategories.isEmpty {
+            return allowedSections
+        }
+
+        let selectedSections = selectedCategories.compactMap(\.sectionTitle)
+        return allowedSections.filter { selectedSections.contains($0) }
     }
 
     private struct LeaderboardGroup: Identifiable {
@@ -150,6 +180,33 @@ struct TotalsView: View {
         includeAllGrades || selectedGradeIDs.contains(gradeID)
     }
 
+    private func isCategorySelected(_ category: CategoryOption) -> Bool {
+        selectedCategories.contains(.all) || selectedCategories.contains(category)
+    }
+
+    private func toggleCategory(_ category: CategoryOption) {
+        if category == .all {
+            selectedCategories = [.all]
+            return
+        }
+
+        if selectedCategories.contains(.all) {
+            var allSpecific = Set(CategoryOption.allCases.filter { $0 != .all })
+            allSpecific.remove(category)
+            selectedCategories = allSpecific
+            return
+        }
+
+        if selectedCategories.contains(category) {
+            selectedCategories.remove(category)
+            if selectedCategories.isEmpty {
+                selectedCategories = [.all]
+            }
+        } else {
+            selectedCategories.insert(category)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
@@ -193,6 +250,7 @@ struct TotalsView: View {
 
             .navigationTitle("Totals")
             .navigationBarTitleDisplayMode(horizontalSizeClass == .compact ? .inline : .large)
+            .iPhoneTransparentTopChrome()
 
             .toolbar {
                 if horizontalSizeClass != .compact {
@@ -231,6 +289,7 @@ struct TotalsView: View {
             }
             .clubGlassBackground()
         }
+        .toolbarBackground(UIDevice.current.userInterfaceIdiom == .phone ? .hidden : .automatic, for: .navigationBar)
     }
 
     private var filterOverlay: some View {
@@ -270,6 +329,20 @@ struct TotalsView: View {
                                         title: grade.name,
                                         isSelected: isGradeSelected(grade.id),
                                         action: { toggleGradeSelection(grade.id) }
+                                    )
+                                }
+                            }
+                        }
+                        .panelSection()
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            sectionLabel("Categories")
+                            UniformPillGrid {
+                                ForEach(CategoryOption.allCases) { option in
+                                    filterPill(
+                                        title: option.rawValue,
+                                        isSelected: isCategorySelected(option),
+                                        action: { toggleCategory(option) }
                                     )
                                 }
                             }
@@ -340,7 +413,16 @@ struct TotalsView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(isSelected ? Color.accentColor.opacity(0.35) : ClubTheme.cardFill)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(isSelected ? Color.clear : ClubTheme.cardOverlay)
+                        )
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(ClubTheme.cardStroke, lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 5)
         }
         .buttonStyle(.plain)
     }
@@ -435,38 +517,20 @@ private extension TotalsView {
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.08))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clubGlassSurface(cornerRadius: 12)
             }
         }
         .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(ClubTheme.cardFill.opacity(0.96))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(ClubTheme.cardOverlay)
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(ClubTheme.cardStroke, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.28), radius: 16, y: 8)
+        .clubGlassSurface(cornerRadius: 26)
         .padding(.vertical, 2)
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     func playerName(for id: UUID) -> String {
-        players.first(where: { $0.id == id })?.name ?? "Unknown"
+        if id == GameGoalKickerEntry.oppositionPlayerID {
+            return GameGoalKickerEntry.oppositionPlayerName
+        }
+        return players.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
     func grade(for id: UUID) -> Grade? {
@@ -514,13 +578,14 @@ private extension TotalsView {
 
     // Goal Kickers leaderboard: sum goals and points (behinds) across games
     func topGoalKickers(in gradeIDs: Set<UUID>) -> [LeaderRow] {
-        var totals: [UUID: (goals: Int, points: Int)] = [:]
+        var totals: [UUID: (goals: Int, points: Int, oppositionGoals: Int)] = [:]
 
         for g in filteredGames(in: gradeIDs) {
             for entry in g.goalKickers {
                 if let pid = entry.playerID {
-                    totals[pid, default: (goals: 0, points: 0)].goals += entry.goals
-                    totals[pid, default: (goals: 0, points: 0)].points += entry.points
+                    totals[pid, default: (goals: 0, points: 0, oppositionGoals: 0)].goals += entry.goals
+                    totals[pid, default: (goals: 0, points: 0, oppositionGoals: 0)].points += entry.points
+                    totals[pid, default: (goals: 0, points: 0, oppositionGoals: 0)].oppositionGoals += entry.oppositionGoals
                 }
             }
         }
@@ -537,7 +602,7 @@ private extension TotalsView {
             LeaderRow(
                 rank: i + 1,
                 name: playerName(for: item.key),
-                valueText: "\(item.value.goals).\(item.value.points)"
+                valueText: GameGoalKickerEntry(playerID: item.key, goals: item.value.goals, points: item.value.points, oppositionGoals: item.value.oppositionGoals).scoreDisplayText
             )
         }
     }

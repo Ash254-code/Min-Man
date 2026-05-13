@@ -317,7 +317,7 @@ private struct SingleGameEditForm: View {
     }
 
     private var shouldShowFieldUmpire: Bool {
-        (selectedGrade?.asksFieldUmpire ?? false) && isHomeGame
+        selectedGrade?.asksFieldUmpire ?? false
     }
 
     private var shouldShowTrainersSection: Bool {

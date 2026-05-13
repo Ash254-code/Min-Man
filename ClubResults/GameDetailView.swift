@@ -52,11 +52,17 @@ struct GameDetailView: View {
 
     private func playerName(for id: UUID?) -> String {
         guard let id else { return "Unknown" }
+        if id == GameGoalKickerEntry.oppositionPlayerID {
+            return GameGoalKickerEntry.oppositionPlayerName
+        }
         return players.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
     private func playerName(for id: UUID) -> String {
-        players.first(where: { $0.id == id })?.name ?? "Unknown"
+        if id == GameGoalKickerEntry.oppositionPlayerID {
+            return GameGoalKickerEntry.oppositionPlayerName
+        }
+        return players.first(where: { $0.id == id })?.name ?? "Unknown"
     }
 
     private var sortedGoalKickers: [GameGoalKickerEntry] {
@@ -72,7 +78,7 @@ struct GameDetailView: View {
 
     private func normalizedGoalKickerSignature(_ candidateGame: Game) -> [String] {
         candidateGame.goalKickers
-            .map { "\($0.playerID?.uuidString ?? "nil"):\($0.goals)" }
+            .map { "\($0.playerID?.uuidString ?? "nil"):\($0.goals):\($0.points):\($0.oppositionGoals)" }
             .sorted()
     }
 
@@ -114,6 +120,7 @@ struct GameDetailView: View {
                         twoGameColumn(title: "Game 1", game: game)
                         twoGameColumn(title: "Game 2", game: partnerGame)
                     }
+                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                 }
             } else {
                 Section(header: Text("Match Info")) {
@@ -293,48 +300,93 @@ struct GameDetailView: View {
 
     @ViewBuilder
     private func twoGameColumn(title: String, game: Game) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.headline)
-            if shouldShowScore {
-                Text("Score")
-                    .font(.subheadline.weight(.semibold))
-                Text("\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))")
-                Text("\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
-                    .foregroundStyle(.secondary)
-            }
-            if !game.goalKickers.isEmpty {
-                Text("Goal Kickers")
-                    .font(.subheadline.weight(.semibold))
-                ForEach(game.goalKickers.sorted { $0.goals > $1.goals }) { entry in
-                    Text("• \(playerName(for: entry.playerID)) \(entry.goals)")
-                        .font(.subheadline)
+
+            if shouldShowScore || !game.goalKickers.isEmpty {
+                twoGameNestedCard(title: "Score") {
+                    if shouldShowScore {
+                        Text("\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))")
+                            .font(.subheadline)
+                        Text("\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !game.goalKickers.isEmpty {
+                        ForEach(game.goalKickers.sorted { $0.goals > $1.goals }) { entry in
+                            Text("• \(playerName(for: entry.playerID)) \(entry.goalsDisplayText)")
+                                .font(.subheadline)
+                        }
+                    }
                 }
             }
-            if !game.bestPlayersRanked.isEmpty {
-                Text("Best Players")
-                    .font(.subheadline.weight(.semibold))
-                ForEach(Array(game.bestPlayersRanked.enumerated()), id: \.offset) { idx, pid in
-                    Text("\(placeLabel(idx)) \(playerName(for: pid))")
+
+            twoGameNestedCard(title: "Best Players") {
+                if game.bestPlayersRanked.isEmpty {
+                    Text("No best players recorded")
                         .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(game.bestPlayersRanked.enumerated()), id: \.offset) { idx, pid in
+                        Text("\(placeLabel(idx)) \(playerName(for: pid))")
+                            .font(.subheadline)
+                    }
                 }
             }
-            if !game.headCoachName.isEmpty || !game.assistantCoachName.isEmpty || !game.teamManagerName.isEmpty || !game.runnerName.isEmpty {
-                Text("Coaching Staff")
-                    .font(.subheadline.weight(.semibold))
-                if !game.headCoachName.isEmpty { Text("Head Coach: \(game.headCoachName)").font(.subheadline) }
-                if !game.assistantCoachName.isEmpty { Text("Assistant: \(game.assistantCoachName)").font(.subheadline) }
-                if !game.teamManagerName.isEmpty { Text("Team Manager: \(game.teamManagerName)").font(.subheadline) }
-                if !game.runnerName.isEmpty { Text("Runner: \(game.runnerName)").font(.subheadline) }
+
+            twoGameNestedCard(title: "Coaching Staff") {
+                if hasCoachingStaff(for: game) {
+                    if !game.headCoachName.isEmpty { Text("Head Coach: \(game.headCoachName)").font(.subheadline) }
+                    if !game.assistantCoachName.isEmpty { Text("Assistant: \(game.assistantCoachName)").font(.subheadline) }
+                    if !game.teamManagerName.isEmpty { Text("Team Manager: \(game.teamManagerName)").font(.subheadline) }
+                    if !game.runnerName.isEmpty { Text("Runner: \(game.runnerName)").font(.subheadline) }
+                } else {
+                    Text("No coaching staff recorded")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
+
+            twoGameNestedCard(title: "Officials") {
+                if !game.fieldUmpireName.isEmpty {
+                    Text("Field Umpire: \(game.fieldUmpireName)")
+                        .font(.subheadline)
+                } else {
+                    Text("No field umpire recorded")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if !game.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Notes")
-                    .font(.subheadline.weight(.semibold))
-                Text(game.notes)
-                    .font(.subheadline)
+                twoGameNestedCard(title: "Notes") {
+                    Text(game.notes)
+                        .font(.subheadline)
+                }
             }
         }
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func twoGameNestedCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            content()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func hasCoachingStaff(for game: Game) -> Bool {
+        !game.headCoachName.isEmpty ||
+        !game.assistantCoachName.isEmpty ||
+        !game.teamManagerName.isEmpty ||
+        !game.runnerName.isEmpty
     }
 
     private func prepareShareReport() {
@@ -364,6 +416,24 @@ struct GameDetailView: View {
                 )
             )
 
+            let gameLabel: String? = {
+                guard let partnerGame else { return nil }
+                let ordered = [game, partnerGame].sorted { $0.id.uuidString < $1.id.uuidString }
+                guard let index = ordered.firstIndex(where: { $0.id == game.id }) else { return nil }
+                return "Game \(index + 1)"
+            }()
+
+            items.append(
+                try ExportService.makeGameSummaryPDF(
+                    game: game,
+                    gradeName: gradeName,
+                    includeScore: shouldShowScoreInSummary,
+                    includeRestrictedVotes: includeRestrictedVotes,
+                    gameLabel: gameLabel,
+                    playerName: playerLookup
+                )
+            )
+
             if includeRestrictedVotes, let scanData = game.guestBestFairestVotesScanPDF {
                 let pdfName = "GuestVotes_\(gradeName)_\(game.date.formatted(date: .numeric, time: .omitted)).pdf"
                 let pdfURL = FileManager.default.temporaryDirectory.appendingPathComponent(pdfName.replacingOccurrences(of: "/", with: "-"))
@@ -388,6 +458,11 @@ struct GameDetailView: View {
     }
 
     private func requestProtectedAction(_ action: ProtectedGameAction) {
+        if navigationState.currentRole.bypassesEditDeleteCode {
+            performProtectedAction(action)
+            return
+        }
+
         pendingProtectedAction = action
         protectedCode = ""
         showProtectedCodePrompt = true
@@ -400,15 +475,19 @@ struct GameDetailView: View {
             return
         }
 
-        switch pendingProtectedAction {
+        if let pendingProtectedAction {
+            performProtectedAction(pendingProtectedAction)
+        }
+        pendingProtectedAction = nil
+    }
+
+    private func performProtectedAction(_ action: ProtectedGameAction) {
+        switch action {
         case .edit:
             showEditSheet = true
         case .delete:
             showDeleteConfirmation = true
-        case .none:
-            break
         }
-        pendingProtectedAction = nil
     }
 }
 

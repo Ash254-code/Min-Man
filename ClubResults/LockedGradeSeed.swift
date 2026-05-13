@@ -2,6 +2,8 @@ import Foundation
 import SwiftData
 
 enum LockedGradeSeed {
+    private static let playerSwapsDefaultsAppliedKey = "LockedGradeSeed.playerSwapsDefaultsApplied.v1"
+
     /// Normalizes grade names for comparison (case/whitespace-insensitive)
     static func norm(_ s: String) -> String {
         return s
@@ -25,19 +27,35 @@ enum LockedGradeSeed {
     static func ensureGradesExist(modelContext: ModelContext) {
         let descriptor = FetchDescriptor<Grade>()
         let existing = (try? modelContext.fetch(descriptor)) ?? []
+        let shouldApplyPlayerSwapDefaults = !UserDefaults.standard.bool(forKey: playerSwapsDefaultsAppliedKey)
 
-        let existingByNormalizedName = Dictionary(uniqueKeysWithValues: existing.map { (Self.norm($0.name), $0) })
+        let existingByNormalizedName = existing.reduce(into: [String: Grade]()) { result, grade in
+            let normalizedName = Self.norm(grade.name)
+            guard result[normalizedName] == nil else { return }
+            result[normalizedName] = grade
+        }
         var didChange = false
 
         for (index, name) in orderedGradeNames.enumerated() {
             let normalizedName = Self.norm(name)
             if let grade = existingByNormalizedName[normalizedName] {
                 didChange = applyDefaultPromptSettings(to: grade) || didChange
+                if shouldApplyPlayerSwapDefaults {
+                    let defaultPlayerSwapsEnabled = Grade.defaultPlayerSwapsEnabled(for: grade.name)
+                    if grade.playerSwapsEnabled != defaultPlayerSwapsEnabled {
+                        grade.playerSwapsEnabled = defaultPlayerSwapsEnabled
+                        didChange = true
+                    }
+                }
                 continue
             }
 
             modelContext.insert(makeDefaultGrade(name: name, displayOrder: index))
             didChange = true
+        }
+
+        if shouldApplyPlayerSwapDefaults {
+            UserDefaults.standard.set(true, forKey: playerSwapsDefaultsAppliedKey)
         }
 
         if didChange {

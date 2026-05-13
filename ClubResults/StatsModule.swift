@@ -493,7 +493,7 @@ private func statsInviteSelectionNames(
     for selections: [StatsInviteSelection],
     statTypes: [StatType]
 ) -> [String] {
-    let typeNames = Dictionary(uniqueKeysWithValues: statTypes.map { ($0.id, $0.name) })
+    let typeNames = Dictionary(statTypes.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     return selections.compactMap { selection in
         guard let name = typeNames[selection.statTypeID] else { return nil }
         return "\(selection.side.selectionPrefix) \(name)"
@@ -504,7 +504,7 @@ private func statsInviteSelectionDisplayNamesByRawValue(
     for selections: [StatsInviteSelection],
     statTypes: [StatType]
 ) -> [String: String] {
-    let typeNames = Dictionary(uniqueKeysWithValues: statTypes.map { ($0.id, $0.name) })
+    let typeNames = Dictionary(statTypes.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     return selections.reduce(into: [:]) { result, selection in
         guard let name = typeNames[selection.statTypeID] else { return }
         result[selection.rawValue] = "\(selection.side.selectionPrefix) \(name)"
@@ -516,7 +516,7 @@ private func statsInviteSelectionCollectionModesByRawValue(
     session: StatsSession,
     statTypes: [StatType]
 ) -> [String: String] {
-    let statNamesByID = Dictionary(uniqueKeysWithValues: statTypes.map { ($0.id, $0.name) })
+    let statNamesByID = Dictionary(statTypes.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     return selections.reduce(into: [:]) { result, selection in
         let defaultName = statNamesByID[selection.statTypeID] ?? ""
         let mode = session.statCollectionModes[selection.statTypeID] ?? defaultSessionStatCollectionMode(for: defaultName)
@@ -532,6 +532,13 @@ private func cloudRosterPlayers(from players: [Player]) -> [CloudStatsInviteRost
             number: player.number
         )
     }
+}
+
+private func selectedGameRosterPlayers(from players: [Player], gradeID: UUID) -> [Player] {
+    let gradePlayers = players.filter { $0.isActive && $0.gradeIDs.contains(gradeID) }
+    let selectedPlayerIDs = NewGameSelectedPlayersStore.load(for: gradeID)
+    guard !selectedPlayerIDs.isEmpty else { return gradePlayers }
+    return gradePlayers.filter { selectedPlayerIDs.contains($0.id) }
 }
 
 private enum StatsInviteDraftStore {
@@ -723,6 +730,7 @@ struct StatsRootView: View {
                 }
             }
             .navigationTitle("Stats")
+            .iPhoneTransparentTopChrome()
             .navigationDestination(isPresented: $showNewSession) {
                 StatsSessionSetupView()
                     .clubGlassBackground()
@@ -764,6 +772,7 @@ struct StatsRootView: View {
                 Text("Delete the \(gradeName(for: session.gradeId)) session vs \(session.opposition)? This will permanently remove the session and its recorded stats.")
             }
         }
+        .toolbarBackground(UIDevice.current.userInterfaceIdiom == .phone ? .hidden : .automatic, for: .navigationBar)
     }
 
     private var deleteConfirmationPresented: Binding<Bool> {
@@ -1402,6 +1411,7 @@ struct StatsSessionSetupView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var currentColorScheme
     @EnvironmentObject private var navigationState: AppNavigationState
     @AppStorage("app.testFlightURL") private var testFlightURL = ""
     @Query(sort: \Grade.displayOrder) private var grades: [Grade]
@@ -2877,7 +2887,7 @@ struct StatsSessionSetupView: View {
 
     private var selectedGradePlayers: [Player] {
         guard let selectedGradeId else { return [] }
-        return wizardPlayers.filter { $0.isActive && $0.gradeIDs.contains(selectedGradeId) }
+        return selectedGameRosterPlayers(from: wizardPlayers, gradeID: selectedGradeId)
     }
 
     private func persistWizardInviteAssignmentsAndBuildDispatchItems(session: StatsSession) async -> [WizardInviteDispatchItem] {
@@ -3547,6 +3557,7 @@ struct LiveStatsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var currentColorScheme
     @EnvironmentObject private var navigationState: AppNavigationState
     @AppStorage("trackDisposalEfficiency") private var trackDisposalEfficiency = true
     @AppStorage("trackContestedPossessions") private var trackContestedPossessions = true
@@ -3593,6 +3604,7 @@ struct LiveStatsView: View {
     @State private var statusBannerTask: Task<Void, Never>?
     @State private var showStatsSettings = false
     @State private var showStatTakers = false
+    @State private var showLiveStatsMoreMenu = false
     @State private var showStatDisplayOrderEditor = false
     @State private var showSyncStatusPopover = false
     @State private var selectedStatTakerAssignmentID: UUID?
@@ -3621,12 +3633,14 @@ struct LiveStatsView: View {
     @State private var lastHapticQuickStatName: String?
     @State private var lastHapticQuickContestedVote: ContestedPossessionVote?
     @State private var lastHapticQuickEfficiencyVote: EfficiencyVote?
+    @State private var showTop5LeadersSheet = false
     @State private var remoteInviteTallies: [CloudStatsInviteTally] = []
     @State private var remoteInviteCountsByTallyID: [String: Int] = [:]
     @State private var cloudInviteAssignmentsByRecordName: [String: CloudStatsInviteAssignment] = [:]
     @State private var lastRemoteInviteTallyUpdateAt: Date?
     @State private var lastRemoteInvitePlayerEventUpdateAt: Date?
     @State private var lastPublishedInviteSnapshotToken: String?
+    @State private var lastPublishedInviteSnapshotAt: Date?
     @State private var liveStatsInviteSyncError: String?
     @State private var quarterCountsUp = false
     @State private var activeSideSpeakPresses = 0
@@ -3640,6 +3654,7 @@ struct LiveStatsView: View {
     private let playerQuickStatsLongPressDuration: Double = 0.45
     private let remoteInvitePollIntervalNanoseconds: UInt64 = 250_000_000
     private let liveStatsInvitePublishIntervalNanoseconds: UInt64 = 250_000_000
+    private let liveStatsInviteHeartbeatInterval: TimeInterval = 3
     
     private var isSessionActive: Bool {
         navigationState.activeStatsSessionID == session.sessionId && !session.isSaved
@@ -3729,38 +3744,18 @@ struct LiveStatsView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 statsSyncStatusButton
             }
-            if !isReadOnlyMode {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(isSessionActive ? "Save" : "Resume") {
-                        if isSessionActive {
-                            saveSession()
-                        } else {
-                            resumeSession()
-                        }
-                    }
-                    .font(.subheadline.weight(.semibold))
-                }
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    if !isReadOnlyMode {
-                        Button("Settings") {
-                            showStatsSettings = true
-                        }
-                        Button("Stat Takers") {
-                            showStatTakers = true
-                        }
-                        Button("Display Order") {
-                            showStatDisplayOrderEditor = true
-                        }
-                    }
-                    Button("Generate Report") {
-                        generateReport()
-                    }
+                Button {
+                    showLiveStatsMoreMenu = true
                 } label: {
-                    Image(systemName: "ellipsis")
+                    Image(systemName: "ellipsis.circle.fill")
+                        .font(.title3.weight(.semibold))
+                        .symbolRenderingMode(.hierarchical)
                 }
                 .accessibilityLabel("More")
+                .popover(isPresented: $showLiveStatsMoreMenu, arrowEdge: .top) {
+                    liveStatsMoreMenu
+                }
             }
         }
         .onAppear {
@@ -3949,7 +3944,9 @@ struct LiveStatsView: View {
             stopQuarterTimer()
             activeSideSpeakPresses = 0
             navigationState.clearActiveLiveStatsSession(id: session.sessionId)
-            navigationState.updateLiveStatsInviteSnapshot(nil)
+            if navigationState.syncedStatsSessionID != session.sessionId {
+                navigationState.updateLiveStatsInviteSnapshot(nil)
+            }
             if speechService.isRecording {
                 speechService.stopListening()
             }
@@ -4010,6 +4007,87 @@ struct LiveStatsView: View {
         }
     }
 
+    private var liveStatsMoreMenu: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Live Stats")
+                .font(.headline.weight(.bold))
+                .padding(.bottom, 4)
+
+            if !isReadOnlyMode {
+                liveStatsMenuButton(
+                    title: isSessionActive ? "Save Session" : "Resume Session",
+                    subtitle: isSessionActive ? "Finish this stats session" : "Reopen this session for editing",
+                    systemImage: isSessionActive ? "checkmark.circle.fill" : "play.circle.fill"
+                ) {
+                    performLiveStatsMenuAction {
+                        if isSessionActive {
+                            saveSession()
+                        } else {
+                            resumeSession()
+                        }
+                    }
+                }
+
+                liveStatsMenuButton(title: "Stat Takers", subtitle: "Invite, resend and manage assignments", systemImage: "person.2.badge.gearshape") {
+                    performLiveStatsMenuAction { showStatTakers = true }
+                }
+                liveStatsMenuButton(title: "Settings", subtitle: "Change stats enabled for this session", systemImage: "slider.horizontal.3") {
+                    performLiveStatsMenuAction { showStatsSettings = true }
+                }
+                liveStatsMenuButton(title: "Display Order", subtitle: "Reorder stat buttons and totals", systemImage: "arrow.up.arrow.down.square") {
+                    performLiveStatsMenuAction { showStatDisplayOrderEditor = true }
+                }
+            }
+
+            liveStatsMenuButton(title: "Generate Report", subtitle: "Create the current stats report", systemImage: "doc.richtext") {
+                performLiveStatsMenuAction { generateReport() }
+            }
+        }
+        .padding(16)
+        .frame(width: 340, alignment: .leading)
+    }
+
+    private func performLiveStatsMenuAction(_ action: @escaping () -> Void) {
+        showLiveStatsMoreMenu = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            action()
+        }
+    }
+
+    private func liveStatsMenuButton(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.semibold))
+                    .frame(width: 30, height: 30)
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
     private func saveSession() {
         guard !isReadOnlyMode else { return }
         session.isSaved = true
@@ -4037,6 +4115,10 @@ struct LiveStatsView: View {
 
     private var playersForGrade: [Player] {
         allPlayers.filter { $0.isActive && $0.gradeIDs.contains(session.gradeId) }
+    }
+
+    private var inviteRosterPlayers: [Player] {
+        selectedGameRosterPlayers(from: allPlayers, gradeID: session.gradeId)
     }
 
     private var displayedPlayers: [Player] {
@@ -4347,7 +4429,7 @@ struct LiveStatsView: View {
                     sideRawValues: sideRawValues
                 )
                 remoteInviteTallies = tallies
-                remoteInviteCountsByTallyID = Dictionary(uniqueKeysWithValues: tallies.map { ($0.id, $0.count) })
+                remoteInviteCountsByTallyID = Dictionary(tallies.map { ($0.id, $0.count) }, uniquingKeysWith: { first, _ in first })
             } else if let lastRemoteInviteTallyUpdateAt {
                 tallies = try await CloudKitStatsInviteService.shared.fetchTallies(
                     sessionID: session.sessionId,
@@ -4384,7 +4466,7 @@ struct LiveStatsView: View {
     @MainActor
     private func mergeRemoteInviteTallies(_ tallies: [CloudStatsInviteTally]) {
         guard !tallies.isEmpty else { return }
-        var talliesByID = Dictionary(uniqueKeysWithValues: remoteInviteTallies.map { ($0.id, $0) })
+        var talliesByID = Dictionary(remoteInviteTallies.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for tally in tallies {
             let previousCount = remoteInviteCountsByTallyID[tally.id] ?? talliesByID[tally.id]?.count ?? 0
             talliesByID[tally.id] = tally
@@ -4395,7 +4477,7 @@ struct LiveStatsView: View {
         remoteInviteTallies = talliesByID.values.sorted { lhs, rhs in
             lhs.updatedAt > rhs.updatedAt
         }
-        remoteInviteCountsByTallyID = Dictionary(uniqueKeysWithValues: remoteInviteTallies.map { ($0.id, $0.count) })
+        remoteInviteCountsByTallyID = Dictionary(remoteInviteTallies.map { ($0.id, $0.count) }, uniquingKeysWith: { first, _ in first })
     }
 
     @MainActor
@@ -4721,12 +4803,19 @@ struct LiveStatsView: View {
     private func publishLiveStatsInviteSnapshotIfNeeded() async {
         navigationState.updateLiveStatsInviteSnapshot(liveStatsInviteSnapshot)
         let token = liveStatsInviteSnapshotToken
-        if token == lastPublishedInviteSnapshotToken, liveStatsInviteSyncError == nil {
+        let now = Date()
+        let shouldPublishHeartbeat = lastPublishedInviteSnapshotAt.map {
+            now.timeIntervalSince($0) >= liveStatsInviteHeartbeatInterval
+        } ?? true
+        if token == lastPublishedInviteSnapshotToken,
+           !shouldPublishHeartbeat,
+           liveStatsInviteSyncError == nil {
             return
         }
         do {
             try await pushLiveStatsInviteSnapshotToCloud()
             lastPublishedInviteSnapshotToken = token
+            lastPublishedInviteSnapshotAt = now
             liveStatsInviteSyncError = nil
         } catch {
             liveStatsInviteSyncError = "Live session sync failed: \(error.localizedDescription)"
@@ -4900,6 +4989,22 @@ struct LiveStatsView: View {
         Color(red: 0.0, green: 0.82, blue: 0.36)
     }
 
+    private var liveStatsPrimaryText: Color {
+        currentColorScheme == .dark ? .white : .primary
+    }
+
+    private var liveStatsSecondaryText: Color {
+        currentColorScheme == .dark ? .white.opacity(0.68) : .secondary
+    }
+
+    private var liveStatsNestedFill: Color {
+        currentColorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.045)
+    }
+
+    private var liveStatsNestedStroke: Color {
+        currentColorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)
+    }
+
     private var timerBackgroundColor: Color {
         if isQuarterTimerRunning {
             if !quarterCountsUp && remainingQuarterSeconds <= (2 * 60) {
@@ -4926,8 +5031,28 @@ struct LiveStatsView: View {
         horizontalSizeClass == .compact
     }
 
+    private var isIPadLandscapeStatsLayout: Bool {
+        horizontalSizeClass == .regular && interfaceScreenWidth > interfaceScreenHeight
+    }
+
+    private var isIPadPortraitStatsLayout: Bool {
+        horizontalSizeClass == .regular && interfaceScreenHeight >= interfaceScreenWidth
+    }
+
     private var headerBannerHeight: CGFloat {
-        isIPhoneStatsLayout ? 86 : 102
+        isIPhoneStatsLayout ? 88 : 108
+    }
+
+    private var headerControlHeight: CGFloat {
+        isIPhoneStatsLayout ? 54 : 60
+    }
+
+    private var comparisonMetricsPanelHeight: CGFloat {
+        isIPadLandscapeStatsLayout ? 344 : 280
+    }
+
+    private var liveLeadersPanelHeight: CGFloat {
+        isIPadPortraitStatsLayout ? 286 : 340
     }
 
     private var topPanelHeight: CGFloat {
@@ -5021,6 +5146,7 @@ struct LiveStatsView: View {
                 }
             }
             .padding(.horizontal, isIPhoneStatsLayout ? 14 : 18)
+            .padding(.vertical, isIPhoneStatsLayout ? 8 : 10)
 
             if let statusBanner {
                 RoundedRectangle(cornerRadius: 12)
@@ -5295,10 +5421,15 @@ struct LiveStatsView: View {
         let rowSpacing: CGFloat = isIPhoneStatsLayout ? 4 : 8
         return Group {
             GeometryReader { proxy in
-                let rowCount = max(metrics.count, 1)
+                let splitIndex = Int(ceil(Double(metrics.count) / 2.0))
+                let leftMetrics = Array(metrics.prefix(splitIndex))
+                let rightMetrics = Array(metrics.dropFirst(splitIndex))
+                let rowCount = isIPadLandscapeStatsLayout
+                    ? max(leftMetrics.count, rightMetrics.count, 1)
+                    : max(metrics.count, 1)
                 let totalSpacing = rowSpacing * CGFloat(max(0, rowCount - 1))
                 let availableHeight = max(0, proxy.size.height - (verticalPadding * 2) - totalSpacing)
-                let fittedRowHeight = max(20, floor(availableHeight / CGFloat(rowCount)))
+                let fittedRowHeight = max(isIPadLandscapeStatsLayout ? 36 : 20, floor(availableHeight / CGFloat(rowCount)))
 
                 if isIPhoneStatsLayout {
                     VStack(spacing: rowSpacing) {
@@ -5309,6 +5440,25 @@ struct LiveStatsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .padding(.horizontal, 10)
                     .padding(.vertical, verticalPadding)
+                } else if isIPadLandscapeStatsLayout {
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(spacing: rowSpacing) {
+                            ForEach(Array(leftMetrics.enumerated()), id: \.offset) { _, metric in
+                                comparisonMetricRow(metric, rowHeight: fittedRowHeight)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .top)
+
+                        VStack(spacing: rowSpacing) {
+                            ForEach(Array(rightMetrics.enumerated()), id: \.offset) { _, metric in
+                                comparisonMetricRow(metric, rowHeight: fittedRowHeight)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .top)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, verticalPadding)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 } else {
                     ScrollView {
                         VStack(spacing: rowSpacing) {
@@ -5522,7 +5672,14 @@ struct LiveStatsView: View {
         _ metric: (label: String, ourValue: String, oppositionValue: String, ourNumeric: Double, oppositionNumeric: Double),
         rowHeight: CGFloat
     ) -> some View {
-        let neutralPillBackground = Color.white.opacity(0.06)
+        let ourBackground = comparisonMetricBackground(
+            value: metric.ourNumeric,
+            opponentValue: metric.oppositionNumeric
+        )
+        let oppositionBackground = comparisonMetricBackground(
+            value: metric.oppositionNumeric,
+            opponentValue: metric.ourNumeric
+        )
         let tappableMetrics = Set(["Inside 50", "Clearance", "Hit Out", "Free Kick", "Turnover", "Intercept"])
         let isTappableMetric = tappableMetrics.contains(metric.label)
 
@@ -5531,7 +5688,7 @@ struct LiveStatsView: View {
                 label: metric.label,
                 value: metric.ourValue,
                 isOpposition: false,
-                background: neutralPillBackground,
+                background: ourBackground,
                 mirrored: false,
                 isTappableMetric: isTappableMetric,
                 rowHeight: rowHeight
@@ -5541,12 +5698,22 @@ struct LiveStatsView: View {
                 label: metric.label,
                 value: metric.oppositionValue,
                 isOpposition: true,
-                background: neutralPillBackground,
+                background: oppositionBackground,
                 mirrored: true,
                 isTappableMetric: isTappableMetric,
                 rowHeight: rowHeight
             )
         }
+    }
+
+    private func comparisonMetricBackground(value: Double, opponentValue: Double) -> Color {
+        if value > opponentValue {
+            return liveBrightGreen
+        }
+        if value < opponentValue {
+            return .red
+        }
+        return liveStatsNestedFill
     }
 
     private func comparisonMetricSide(
@@ -5583,14 +5750,14 @@ struct LiveStatsView: View {
                     .minimumScaleFactor(0.75)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(background == liveStatsNestedFill ? liveStatsPrimaryText : .white)
         .padding(.horizontal, isIPhoneStatsLayout ? 8 : 12)
         .frame(height: rowHeight, alignment: .center)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(liveStatsNestedStroke, lineWidth: 1)
         )
 
         return Group {
@@ -5699,7 +5866,7 @@ struct LiveStatsView: View {
     private var timerBadge: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(formattedQuarterTime)
-                .font(.system(size: isIPhoneStatsLayout ? 24 : 30, weight: .black, design: .rounded))
+                .font(.system(size: isIPhoneStatsLayout ? 23 : 28, weight: .black, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle((!quarterCountsUp && remainingQuarterSeconds <= (2 * 60)) ? .white : .primary)
             Text(quarterCountsUp ? "Count up" : "Count down")
@@ -5707,8 +5874,8 @@ struct LiveStatsView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, isIPhoneStatsLayout ? 10 : 12)
-        .padding(.vertical, isIPhoneStatsLayout ? 6 : 8)
-        .frame(minWidth: isIPhoneStatsLayout ? 92 : 112, minHeight: isIPhoneStatsLayout ? 58 : 68, alignment: .leading)
+        .padding(.vertical, isIPhoneStatsLayout ? 4 : 5)
+        .frame(minWidth: isIPhoneStatsLayout ? 92 : 112, minHeight: headerControlHeight, alignment: .leading)
         .background(timerBackgroundColor.opacity(0.22), in: RoundedRectangle(cornerRadius: 10))
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .onTapGesture {
@@ -5747,7 +5914,7 @@ struct LiveStatsView: View {
     private var quarterBadge: some View {
         Text(selectedQuarter)
             .font((isIPhoneStatsLayout ? Font.title3 : .title2).weight(.black))
-            .frame(minWidth: isIPhoneStatsLayout ? 92 : 112, minHeight: isIPhoneStatsLayout ? 58 : 68)
+            .frame(minWidth: isIPhoneStatsLayout ? 92 : 112, minHeight: headerControlHeight)
             .background(quarterBadgeBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))
             .onLongPressGesture {
@@ -6059,8 +6226,16 @@ struct LiveStatsView: View {
 
             if oppositionTrackPossessions {
                 edgeScoreSummaryPanel
-                edgeComparisonMetricsPanel
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                if isIPadPortraitStatsLayout {
+                    edgeComparisonMetricsPanel
+                        .frame(maxWidth: .infinity)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                } else {
+                    edgeComparisonMetricsPanel
+                        .frame(maxWidth: .infinity)
+                        .frame(height: comparisonMetricsPanelHeight, alignment: .top)
+                }
             } else {
                 combinedScoreAndActionsPanel
                     .frame(height: topPanelHeight)
@@ -6069,8 +6244,13 @@ struct LiveStatsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
 
-            liveLeadersPanel
-                .frame(height: 340)
+            if isIPhoneStatsLayout {
+                top5ButtonPanel
+            } else {
+                liveLeadersPanel
+                    .frame(height: isIPadPortraitStatsLayout ? liveLeadersPanelHeight : nil)
+                    .frame(maxWidth: .infinity, maxHeight: isIPadPortraitStatsLayout ? nil : .infinity, alignment: .top)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -6114,7 +6294,7 @@ struct LiveStatsView: View {
                         .frame(height: recentAreaHeight)
 
                     liveLeadersPanel
-                        .frame(height: 340)
+                        .frame(height: liveLeadersPanelHeight)
                 }
                 .frame(width: centerWidth)
                 .frame(maxHeight: .infinity, alignment: .top)
@@ -6952,6 +7132,94 @@ struct LiveStatsView: View {
         return player.lastName
     }
 
+    private var top5ButtonPanel: some View {
+        HStack {
+            Button {
+                showTop5LeadersSheet = true
+            } label: {
+                Label("Top 5", systemImage: "list.number")
+                    .font(.headline.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .sheet(isPresented: $showTop5LeadersSheet) {
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        top5SheetSection(
+                            title: "Top 5 Goal Kickers",
+                            systemImage: "list.bullet.rectangle.portrait.fill",
+                            entries: topGoalKickers.map { ($0.playerLabel, "\($0.goals)") },
+                            emptyText: "No goals yet."
+                        )
+                        top5SheetSection(
+                            title: "Top 5 Possession Getters",
+                            systemImage: "figure.australian.football",
+                            entries: topPossessionGetters.map { ($0.playerLabel, "\($0.possessions)") },
+                            emptyText: "No possessions yet."
+                        )
+                    }
+                    .padding(16)
+                }
+                .navigationTitle("Top 5")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            showTop5LeadersSheet = false
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func top5SheetSection(
+        title: String,
+        systemImage: String,
+        entries: [(name: String, value: String)],
+        emptyText: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: systemImage)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(liveStatsPrimaryText)
+            if entries.isEmpty {
+                Text(emptyText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(entries.prefix(5).enumerated()), id: \.offset) { _, entry in
+                    HStack(spacing: 8) {
+                        Text(entry.name)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(entry.value)
+                            .font(.headline.weight(.black))
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(liveStatsNestedFill)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(liveStatsNestedStroke, lineWidth: 1)
+                            )
+                    )
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clubGlassSurface(cornerRadius: 16)
+    }
+
     private var liveLeadersPanel: some View {
         HStack(alignment: .top, spacing: 12) {
             liveLeaderboardColumn(
@@ -6971,6 +7239,7 @@ struct LiveStatsView: View {
                 emptyText: "No possessions yet."
             )
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func liveLeaderboardColumn(
@@ -6984,7 +7253,7 @@ struct LiveStatsView: View {
             HStack {
                 Label(title, systemImage: systemImage)
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(liveStatsPrimaryText)
                     .lineLimit(1)
                 Spacer()
             }
@@ -7002,13 +7271,13 @@ struct LiveStatsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(entry.name)
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(liveStatsPrimaryText)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
                             if let detail = entry.detail, !detail.isEmpty {
                                 Text(detail)
                                     .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white.opacity(0.68))
+                                    .foregroundStyle(liveStatsSecondaryText)
                                     .monospacedDigit()
                                     .lineLimit(1)
                             }
@@ -7018,7 +7287,7 @@ struct LiveStatsView: View {
 
                         Text(entry.value)
                             .font(.headline.weight(.black))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(liveStatsPrimaryText)
                             .monospacedDigit()
                             .lineLimit(1)
                             .minimumScaleFactor(0.85)
@@ -7027,17 +7296,22 @@ struct LiveStatsView: View {
                     .padding(.vertical, 9)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
+                            .fill(liveStatsNestedFill)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                    .stroke(liveStatsNestedStroke, lineWidth: 1)
                             )
                     )
                 }
             }
         }
         .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 286, maxHeight: 286, alignment: .topLeading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: 286,
+            maxHeight: isIPadPortraitStatsLayout ? 286 : .infinity,
+            alignment: .topLeading
+        )
         .clubGlassSurface(cornerRadius: 22)
     }
 
@@ -7651,7 +7925,7 @@ struct LiveStatsView: View {
             for: orderedSelections,
             statTypes: enabledStatTypes
         )
-        let rosterPlayers = cloudRosterPlayers(from: playersForGrade)
+        let rosterPlayers = cloudRosterPlayers(from: inviteRosterPlayers)
         let availablePlayerPayloadJSON = encodeRosterPlayers(rosterPlayers)
 
         assignment.inviteeName = inviteeName
@@ -7734,7 +8008,25 @@ struct LiveStatsView: View {
             event.contestedVoteRaw = contestedVote.rawValue
         }
         modelContext.insert(event)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            showStatusBanner(text: "FAILED TO SAVE STAT LOCALLY • \(error.localizedDescription)", isSuccess: false)
+            feedbackToken = UUID()
+            return
+        }
+
+        let sideRawValue = currentSelectedPlayerId == oppositionTeamStatPlayerID
+            ? StatsInviteTeamSide.opposition.rawValue
+            : StatsInviteTeamSide.ourClub.rawValue
+        syncEventToCloudKit(
+            eventID: event.id,
+            statTypeID: statTypeId,
+            sideRawValue: sideRawValue,
+            playerID: currentSelectedPlayerId,
+            quarter: selectedQuarter,
+            timestamp: event.timestamp
+        )
 
         let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event, preselectedVote: efficiencyVote)
         if !isSimpleLayoutActive {
@@ -7771,13 +8063,60 @@ struct LiveStatsView: View {
             event.contestedVoteRaw = contestedVote.rawValue
         }
         modelContext.insert(event)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            showStatusBanner(text: "FAILED TO SAVE STAT LOCALLY • \(error.localizedDescription)", isSuccess: false)
+            feedbackToken = UUID()
+            return
+        }
+        let sideRawValue = isOpposition ? StatsInviteTeamSide.opposition.rawValue : StatsInviteTeamSide.ourClub.rawValue
+        syncEventToCloudKit(
+            eventID: event.id,
+            statTypeID: statTypeId,
+            sideRawValue: sideRawValue,
+            playerID: playerID,
+            quarter: selectedQuarter,
+            timestamp: event.timestamp
+        )
         lastMessage = "Added: \(statName(for: statTypeId)) — \(isOpposition ? session.opposition : ourTeamName) — \(selectedQuarter)"
         let shouldDelaySuccessBanner = promptEfficiencyVoteIfNeeded(for: event, preselectedVote: efficiencyVote)
         if !shouldDelaySuccessBanner {
             showSuccessBanner(for: event)
         }
         feedbackToken = UUID()
+    }
+
+    private func syncEventToCloudKit(
+        eventID: UUID,
+        statTypeID: UUID,
+        sideRawValue: String,
+        playerID: UUID,
+        quarter: String,
+        timestamp: Date
+    ) {
+        Task {
+            do {
+                _ = try await CloudKitStatsInviteService.shared.savePlayerEvent(
+                    eventID: eventID,
+                    sessionID: session.sessionId,
+                    statTypeID: statTypeID,
+                    sideRawValue: sideRawValue,
+                    playerID: playerID,
+                    quarter: quarter,
+                    timestamp: timestamp
+                )
+                _ = try await CloudKitStatsInviteService.shared.incrementTally(
+                    sessionID: session.sessionId,
+                    statTypeID: statTypeID,
+                    sideRawValue: sideRawValue,
+                    amount: 1
+                )
+            } catch {
+                // Keep local save as the source of truth; CloudKit retries happen on later updates.
+                debugPrint("CloudKit stat sync failed for event \(eventID): \(error.localizedDescription)")
+            }
+        }
     }
 
     private func sendInvite(contact: PhoneInviteContact, selections: Set<StatsInviteSelection>) {
@@ -7847,7 +8186,7 @@ struct LiveStatsView: View {
                 session: session,
                 statTypes: statTypes
             )
-            let rosterPlayers = cloudRosterPlayers(from: playersForGrade)
+            let rosterPlayers = cloudRosterPlayers(from: inviteRosterPlayers)
             let availablePlayerPayloadJSON = encodeRosterPlayers(rosterPlayers)
             do {
                 _ = try? await CloudKitStatsInviteService.shared.saveSessionRoster(
@@ -7950,7 +8289,7 @@ struct LiveStatsView: View {
         sessionAssignments: [StatsInviteAssignment],
         assignmentsByRecordName: [String: CloudStatsInviteAssignment]
     ) {
-        let rosterPlayers = cloudRosterPlayers(from: playersForGrade)
+        let rosterPlayers = cloudRosterPlayers(from: inviteRosterPlayers)
         guard !rosterPlayers.isEmpty else { return }
 
         let assignmentsNeedingBackfill = sessionAssignments.compactMap { assignment -> CloudStatsInviteAssignment? in
@@ -9446,6 +9785,7 @@ private struct StatsStatTakersView: View {
     let onSaveAssignments: (StatsInviteAssignment, [StatsInviteSelection]) -> Void
     let onReinviteAssignment: (StatsInviteAssignment) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         NavigationStack {
@@ -9473,6 +9813,61 @@ private struct StatsStatTakersView: View {
     }
 }
 
+private struct StatsInviteContactSheet: View {
+    let onSave: (PhoneInviteContact) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var email = ""
+    @State private var mobile = ""
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !mobile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Name", text: $name)
+                    .textInputAutocapitalization(.words)
+                TextField("Email", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("Mobile for text", text: $mobile)
+                    .keyboardType(.phonePad)
+            } header: {
+                Text("Contact")
+            } footer: {
+                Text("Saved contacts are available next time from Settings > Contacts.")
+            }
+        }
+        .navigationTitle("New Stat Taker")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
+                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    onSave(
+                        PhoneInviteContact(
+                            email: email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                            displayName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                            mobileNumber: mobile.formattedMobileNumber
+                        )
+                    )
+                    dismiss()
+                }
+                .disabled(!canSave)
+            }
+        }
+    }
+}
+
 private struct StatsInviteComposerContent: View {
     let contacts: [Contact]
     let inviteAssignments: [StatsInviteAssignment]
@@ -9487,6 +9882,7 @@ private struct StatsInviteComposerContent: View {
     var onReinviteAssignment: (StatsInviteAssignment) -> Void = { _ in }
     var dismissAfterSMS = false
     var onSMSDismiss: () -> Void = {}
+    @Environment(\.modelContext) private var modelContext
 
     @AppStorage("app.testFlightURL") private var testFlightURL = ""
     @State private var inviteeName = ""
@@ -9496,6 +9892,8 @@ private struct StatsInviteComposerContent: View {
     @State private var shareDraft: ShareDraft?
     @State private var editingInvite: StatsInviteAssignment?
     @State private var showPreview = false
+    @State private var selectedSavedContactID = ""
+    @State private var showNewContactSheet = false
 
     private var sortedStatTypes: [StatType] {
         statTypes.sorted(by: { $0.sortOrder < $1.sortOrder })
@@ -9503,6 +9901,15 @@ private struct StatsInviteComposerContent: View {
 
     private var hasActiveSession: Bool {
         activeSession != nil
+    }
+
+    private var sessionInviteAssignments: [StatsInviteAssignment] {
+        guard let activeSession else { return [] }
+        return inviteAssignments
+            .filter { $0.sessionIDRaw == activeSession.sessionId.uuidString }
+            .sorted { lhs, rhs in
+                rhs.lastInvitedAt < lhs.lastInvitedAt
+            }
     }
 
     private var clubConfiguration: ClubConfiguration {
@@ -9529,7 +9936,7 @@ private struct StatsInviteComposerContent: View {
 
     private var lockedSelectionOwners: [String: String] {
         var result: [String: String] = [:]
-        for assignment in inviteAssignments {
+        for assignment in sessionInviteAssignments {
             let contactName = assignment.inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? assignment.inviteeEmail
                 : assignment.inviteeName
@@ -9571,62 +9978,13 @@ private struct StatsInviteComposerContent: View {
                 }
             }
 
-            Section("Invite Stat Taker") {
-                TextField("Stat taker name", text: $inviteeName)
-                    .textInputAutocapitalization(.words)
-
-                TextField("Invited email", text: $inviteeEmail)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                TextField("Mobile for text", text: $inviteeMobile)
-                    .keyboardType(.phonePad)
-                TextField("https://testflight.apple.com/join/...", text: $testFlightURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Text("Assignments sync through CloudKit. The text invite includes the TestFlight link so the recipient can install the app before opening the Stat Taker tab.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let selectedContact {
-                    Text(selectedContact.subtitle.isEmpty ? selectedContact.title : "\(selectedContact.title) • \(selectedContact.subtitle)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Button("Preview") {
-                    showPreview = true
-                }
-                .buttonStyle(.bordered)
-            }
-            .disabled(!hasActiveSession)
-            .opacity(hasActiveSession ? 1 : 0.4)
-
-            Section("Choose Stats To Collect") {
-                if sortedStatTypes.isEmpty {
-                    Text("No enabled stat types available.")
+            Section("Invited Stat Takers") {
+                if sessionInviteAssignments.isEmpty {
+                    Text("No stat takers invited for this session yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Text("Stat")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 110, alignment: .leading)
-                            teamPillHeader(title: clubName, style: ourTeamStyle)
-                            teamPillHeader(title: oppositionName, style: oppositionStyle)
-                        }
-
-                        ForEach(sortedStatTypes) { type in
-                            HStack(alignment: .top, spacing: 12) {
-                                Text(type.name)
-                                    .font(.subheadline.weight(.semibold))
-                                    .frame(width: 110, alignment: .leading)
-                                    .padding(.top, 10)
-                                selectionCell(for: type, side: .ourClub)
-                                selectionCell(for: type, side: .opposition)
-                            }
-                        }
+                    ForEach(sessionInviteAssignments) { assignment in
+                        invitedUserRow(assignment)
                     }
                 }
             }
@@ -9634,15 +9992,112 @@ private struct StatsInviteComposerContent: View {
             .opacity(hasActiveSession ? 1 : 0.4)
 
             Section {
-                Button("Generate Invite") {
-                    sendInviteLink()
+                VStack(alignment: .leading, spacing: 14) {
+                    Label("1. Pick a stat taker", systemImage: "person.crop.circle.badge.plus")
+                        .font(.headline)
+
+                    if savedInviteContacts.isEmpty {
+                        Text("No saved contacts yet. Add a new contact below to keep them available in Settings > Contacts.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Saved contact", selection: $selectedSavedContactID) {
+                            Text("Choose from Contacts").tag("")
+                            ForEach(savedInviteContacts) { contact in
+                                Text(contact.title).tag(contact.id)
+                            }
+                        }
+                    }
+
+                    Button {
+                        showNewContactSheet = true
+                    } label: {
+                        Label("Add New Contact", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(.bordered)
+
+                    if hasInviteIdentity {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.blue)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unnamed stat taker" : inviteeName)
+                                        .font(.headline)
+                                    Text(inviteeSubtitle)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+
+                            TextField("Name", text: $inviteeName)
+                                .textInputAutocapitalization(.words)
+                            TextField("Email", text: $inviteeEmail)
+                                .keyboardType(.emailAddress)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            TextField("Mobile for text", text: $inviteeMobile)
+                                .keyboardType(.phonePad)
+                        }
+                    }
+
+                    DisclosureGroup("Invite link") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("https://testflight.apple.com/join/...", text: $testFlightURL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            Text("The text invite includes this TestFlight link if the recipient needs to install the app first.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Button("Preview") {
+                        showPreview = true
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(selectedSelections.isEmpty)
                 }
-                .disabled(
-                    inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    inviteeMobile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    selectedSelections.isEmpty
-                )
+                .padding(.vertical, 4)
+            } header: {
+                Text("Add Stat Taker")
+            } footer: {
+                Text("Choose a saved contact or add someone new, then assign the stats they will collect.")
+            }
+            .disabled(!hasActiveSession)
+            .opacity(hasActiveSession ? 1 : 0.4)
+
+            Section {
+                if sortedStatTypes.isEmpty {
+                    Text("No enabled stat types available.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label("2. Choose stats", systemImage: "checklist")
+                            .font(.headline)
+
+                        ForEach(sortedStatTypes) { type in
+                            statSelectionRow(for: type)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: {
+                Text("Choose Stats To Collect")
+            }
+            .disabled(!hasActiveSession)
+            .opacity(hasActiveSession ? 1 : 0.4)
+
+            Section {
+                Button {
+                    sendInviteLink()
+                } label: {
+                    Label("Generate Invite", systemImage: "paperplane.fill")
+                }
+                .disabled(!canGenerateInvite)
 
                 if !selectedSelections.isEmpty {
                     Text("Assigned: \(selectedSelectionSummary)")
@@ -9654,19 +10109,6 @@ private struct StatsInviteComposerContent: View {
                     Text("TestFlight link is optional if the recipient already has ClubResults installed.")
                         .font(.caption)
                         .foregroundStyle(.orange)
-                }
-            }
-            .disabled(!hasActiveSession)
-            .opacity(hasActiveSession ? 1 : 0.4)
-
-            Section("Invited Users") {
-                if inviteAssignments.isEmpty {
-                    Text("No invited users yet.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(inviteAssignments) { assignment in
-                        invitedUserRow(assignment)
-                    }
                 }
             }
             .disabled(!hasActiveSession)
@@ -9686,6 +10128,16 @@ private struct StatsInviteComposerContent: View {
         }) { draft in
             StatsInviteMessageComposer(draft: draft)
         }
+        .sheet(isPresented: $showNewContactSheet) {
+            NavigationStack {
+                StatsInviteContactSheet { contact in
+                    saveInviteContact(contact)
+                    applyInviteContact(contact)
+                    selectedSavedContactID = contact.id
+                    showNewContactSheet = false
+                }
+            }
+        }
         .sheet(item: $editingInvite) { assignment in
             StatsInviteManagementSheet(
                 assignment: assignment,
@@ -9694,7 +10146,7 @@ private struct StatsInviteComposerContent: View {
                     onSaveAssignments(assignment, selections)
                 },
                 onReinvite: {
-                    onReinviteAssignment(assignment)
+                    resendInvite(for: assignment)
                 }
             )
         }
@@ -9725,10 +10177,13 @@ private struct StatsInviteComposerContent: View {
         .onChange(of: selectedSelections) { _, newValue in
             StatsInviteDraftStore.saveSelections(newValue)
         }
+        .onChange(of: selectedSavedContactID) { _, newValue in
+            applySavedInviteContact(id: newValue)
+        }
     }
 
     private var orderedSelections: [StatsInviteSelection] {
-        let sortOrderByID = Dictionary(uniqueKeysWithValues: sortedStatTypes.map { ($0.id, $0.sortOrder) })
+        let sortOrderByID = Dictionary(sortedStatTypes.map { ($0.id, $0.sortOrder) }, uniquingKeysWith: { first, _ in first })
         return selectedSelections.sorted {
             let leftIndex = sortOrderByID[$0.statTypeID] ?? 0
             let rightIndex = sortOrderByID[$1.statTypeID] ?? 0
@@ -9745,6 +10200,43 @@ private struct StatsInviteComposerContent: View {
     private var selectedSelectionSummary: String {
         let names = statsInviteSelectionNames(for: orderedSelections, statTypes: sortedStatTypes)
         return names.isEmpty ? "None" : names.joined(separator: ", ")
+    }
+
+    private var savedInviteContacts: [PhoneInviteContact] {
+        contacts
+            .map { contact in
+                PhoneInviteContact(
+                    email: contact.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                    displayName: contact.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    mobileNumber: contact.mobile.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+            .filter { !$0.email.isEmpty }
+            .sorted { lhs, rhs in
+                lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+    }
+
+    private var hasInviteIdentity: Bool {
+        !inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !inviteeMobile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var inviteeSubtitle: String {
+        let mobile = inviteeMobile.formattedMobileNumber
+        let email = inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !mobile.isEmpty && !email.isEmpty {
+            return "\(mobile) • \(email)"
+        }
+        return mobile.isEmpty ? email : mobile
+    }
+
+    private var canGenerateInvite: Bool {
+        !inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !inviteeMobile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !selectedSelections.isEmpty
     }
 
     private func loadDraftSelectionsIfNeeded() {
@@ -9764,6 +10256,28 @@ private struct StatsInviteComposerContent: View {
 
     private func lockedOwnerName(for selection: StatsInviteSelection) -> String? {
         lockedSelectionOwners[selection.id]
+    }
+
+    @ViewBuilder
+    private func statSelectionRow(for type: StatType) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(type.name)
+                .font(.subheadline.weight(.bold))
+
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    teamPillHeader(title: clubName, style: ourTeamStyle)
+                    selectionCell(for: type, side: .ourClub)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    teamPillHeader(title: oppositionName, style: oppositionStyle)
+                    selectionCell(for: type, side: .opposition)
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     @ViewBuilder
@@ -9820,6 +10334,59 @@ private struct StatsInviteComposerContent: View {
         .disabled(locked)
     }
 
+    private func applySavedInviteContact(id: String) {
+        guard !id.isEmpty, let contact = savedInviteContacts.first(where: { $0.id == id }) else { return }
+        applyInviteContact(contact)
+    }
+
+    private func applyInviteContact(_ contact: PhoneInviteContact) {
+        inviteeName = contact.displayName
+        inviteeEmail = contact.email
+        inviteeMobile = contact.mobileNumber.formattedMobileNumber
+        selectedContact = contact
+    }
+
+    private func saveInviteContact(_ contact: PhoneInviteContact) {
+        let normalizedEmail = contact.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedEmail.isEmpty else { return }
+
+        let trimmedName = contact.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let formattedMobile = contact.mobileNumber.formattedMobileNumber
+
+        if let existing = contacts.first(where: { $0.email.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(normalizedEmail) == .orderedSame }) {
+            if !trimmedName.isEmpty {
+                existing.name = trimmedName
+            }
+            if !formattedMobile.isEmpty {
+                existing.mobile = formattedMobile
+            }
+            existing.email = normalizedEmail
+        } else {
+            modelContext.insert(Contact(name: trimmedName, mobile: formattedMobile, email: normalizedEmail))
+        }
+
+        try? modelContext.save()
+        persistContactsBackup(including: contact)
+    }
+
+    private func persistContactsBackup(including contact: PhoneInviteContact) {
+        let normalizedEmail = contact.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var backupContacts = contacts
+        if !backupContacts.contains(where: { $0.email.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(normalizedEmail) == .orderedSame }) {
+            backupContacts.append(
+                Contact(
+                    name: contact.displayName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    mobile: contact.mobileNumber.formattedMobileNumber,
+                    email: normalizedEmail
+                )
+            )
+        }
+        backupContacts.sort {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+        SettingsBackupStore.saveContacts(backupContacts)
+    }
+
     private func toggleSelection(_ selection: StatsInviteSelection) {
         guard !isLocked(selection) else { return }
         if selectedSelections.contains(selection) {
@@ -9863,6 +10430,8 @@ private struct StatsInviteComposerContent: View {
             inviteeEmail: selectedContact.email
         )
 
+        let assignedSummary = selectedSelectionSummary
+        saveInviteContact(selectedContact)
         self.selectedContact = selectedContact
         onSendInvite(selectedContact, selectedSelections)
         selectedSelections.removeAll()
@@ -9871,7 +10440,7 @@ private struct StatsInviteComposerContent: View {
             sessionID: activeSession.sessionId,
             recordName: recordName,
             sessionLine: "\(activeSessionGradeName) vs \(activeSession.opposition) • \(activeSession.date.formatted(date: .abbreviated, time: .omitted))",
-            assignedNames: selectedSelectionSummary,
+            assignedNames: assignedSummary,
             testFlightURL: testFlightURL
         )
 
@@ -9885,43 +10454,110 @@ private struct StatsInviteComposerContent: View {
         }
     }
 
-    @ViewBuilder
-    private func invitedUserRow(_ assignment: StatsInviteAssignment) -> some View {
-        let contactName = assignment.inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? assignment.inviteeEmail
-            : assignment.inviteeName
-        let statusText = assignment.isConnected ? "Connected" : "Waiting"
+    private func resendInvite(for assignment: StatsInviteAssignment) {
+        guard let activeSession else { return }
+        onReinviteAssignment(assignment)
+
+        let recipient = StatsInviteRecipient(
+            email: assignment.inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+            displayName: assignment.inviteeName.trimmingCharacters(in: .whitespacesAndNewlines),
+            mobileNumber: ""
+        )
+        let recordName = assignment.cloudRecordName.isEmpty
+            ? CloudKitStatsInviteService.recordName(sessionID: activeSession.sessionId, inviteeEmail: recipient.email)
+            : assignment.cloudRecordName
         let assignedNames = statsInviteSelectionNames(
             for: assignment.assignedSelections,
             statTypes: sortedStatTypes
         ).joined(separator: ", ")
 
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        shareDraft = ShareDraft(text: buildStatsInviteMessage(
+            recipient: recipient,
+            sessionID: activeSession.sessionId,
+            recordName: recordName,
+            sessionLine: "\(activeSessionGradeName) vs \(activeSession.opposition) • \(activeSession.date.formatted(date: .abbreviated, time: .omitted))",
+            assignedNames: assignedNames,
+            testFlightURL: testFlightURL
+        ))
+    }
+
+    @ViewBuilder
+    private func invitedUserRow(_ assignment: StatsInviteAssignment) -> some View {
+        let contactName = assignment.inviteeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? assignment.inviteeEmail
+            : assignment.inviteeName
+        let isConnected = isAssignmentConnected(assignment)
+        let assignedNames = statsInviteSelectionNames(
+            for: assignment.assignedSelections,
+            statTypes: sortedStatTypes
+        ).joined(separator: ", ")
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 Circle()
-                    .fill(assignment.isConnected ? Color.green : Color.gray.opacity(0.5))
-                    .frame(width: 10, height: 10)
-                Text(contactName)
-                    .font(.headline)
-                Spacer()
-                Button("Manage") {
+                    .fill(isConnected ? Color.green : Color.orange)
+                    .frame(width: 11, height: 11)
+                    .padding(.top, 5)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(contactName)
+                        .font(.headline)
+                    Text(assignment.inviteeEmail.isEmpty ? "No email saved" : assignment.inviteeEmail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(isConnected ? "Connected" : "Waiting")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(isConnected ? .green : .orange)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background((isConnected ? Color.green : Color.orange).opacity(0.14), in: Capsule())
+            }
+
+            Text(statTakerStatusDetail(for: assignment, isConnected: isConnected))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("Allocated: \(assignedNames.isEmpty ? "None" : assignedNames)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                Button {
                     editingInvite = assignment
+                } label: {
+                    Label("Manage", systemImage: "slider.horizontal.3")
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button {
+                    resendInvite(for: assignment)
+                } label: {
+                    Label("Resend Invite", systemImage: "paperplane")
                 }
                 .buttonStyle(.bordered)
             }
-            Text(statusText)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(assignment.isConnected ? .green : .secondary)
-            Text("Collecting: \(assignedNames.isEmpty ? "None" : assignedNames)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            if !assignment.inviteeEmail.isEmpty {
-                Text(assignment.inviteeEmail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+    }
+
+    private func isAssignmentConnected(_ assignment: StatsInviteAssignment) -> Bool {
+        guard let lastConnectedAt = assignment.lastConnectedAt else { return assignment.isConnected }
+        return Date().timeIntervalSince(lastConnectedAt) <= 15
+    }
+
+    private func statTakerStatusDetail(for assignment: StatsInviteAssignment, isConnected: Bool) -> String {
+        if isConnected, let lastConnectedAt = assignment.lastConnectedAt {
+            return "Active now • last seen \(lastConnectedAt.formatted(date: .omitted, time: .shortened))"
+        }
+        if let lastConnectedAt = assignment.lastConnectedAt {
+            return "Offline • last seen \(lastConnectedAt.formatted(date: .abbreviated, time: .shortened))"
+        }
+        return "Invite sent \(assignment.lastInvitedAt.formatted(date: .abbreviated, time: .shortened))"
     }
 }
 
@@ -11423,7 +12059,7 @@ struct StatTakerStatsView: View {
 
     private func selections(for assignment: CloudStatsInviteAssignment) -> [StatsInviteSelection] {
         let selections = assignment.assignedSelectionRawValues.compactMap(StatsInviteSelection.init(rawValue:))
-        let sortOrderByID = Dictionary(uniqueKeysWithValues: enabledStatTypes.map { ($0.id, $0.sortOrder) })
+        let sortOrderByID = Dictionary(enabledStatTypes.map { ($0.id, $0.sortOrder) }, uniquingKeysWith: { first, _ in first })
         return selections.sorted {
             let leftOrder = sortOrderByID[$0.statTypeID] ?? 0
             let rightOrder = sortOrderByID[$1.statTypeID] ?? 0
@@ -11834,7 +12470,7 @@ struct StatsInvitePreviewSettingsView: View {
     }
 
     private var draftSelections: [StatsInviteSelection] {
-        let sortOrderByID = Dictionary(uniqueKeysWithValues: enabledStatTypes.map { ($0.id, $0.sortOrder) })
+        let sortOrderByID = Dictionary(enabledStatTypes.map { ($0.id, $0.sortOrder) }, uniquingKeysWith: { first, _ in first })
         return StatsInviteDraftStore.loadSelections().sorted {
             let leftOrder = sortOrderByID[$0.statTypeID] ?? 0
             let rightOrder = sortOrderByID[$1.statTypeID] ?? 0
@@ -12176,11 +12812,25 @@ private struct StatsInviteManagementSheet: View {
     let onSave: ([StatsInviteSelection]) -> Void
     let onReinvite: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var inviteeName = ""
+    @State private var inviteeEmail = ""
     @State private var selectedSelections: Set<StatsInviteSelection> = []
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Stat Taker") {
+                    TextField("Name", text: $inviteeName)
+                        .textInputAutocapitalization(.words)
+                    TextField("Email", text: $inviteeEmail)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Text("Status: \(assignment.isConnected ? "Connected" : "Waiting")")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(assignment.isConnected ? .green : .secondary)
+                }
+
                 Section("Assigned Stat Types") {
                     ForEach(allStatTypes) { type in
                         VStack(alignment: .leading, spacing: 10) {
@@ -12195,8 +12845,10 @@ private struct StatsInviteManagementSheet: View {
                     }
                 }
                 Section("Actions") {
-                    Button("Re-invite") {
+                    Button {
                         onReinvite()
+                    } label: {
+                        Label("Resend Invite", systemImage: "paperplane")
                     }
                 }
             }
@@ -12207,12 +12859,17 @@ private struct StatsInviteManagementSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        assignment.inviteeName = inviteeName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        assignment.inviteeEmail = inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                         onSave(orderedSelections)
                         dismiss()
                     }
+                    .disabled(inviteeEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .onAppear {
+                inviteeName = assignment.inviteeName
+                inviteeEmail = assignment.inviteeEmail
                 selectedSelections = Set(assignment.assignedSelections)
             }
         }
@@ -12253,7 +12910,7 @@ private struct InviteStatWebInterfaceView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var assignedSelections: [StatsInviteSelection] {
-        let sortOrderByID = Dictionary(uniqueKeysWithValues: statTypes.map { ($0.id, $0.sortOrder) })
+        let sortOrderByID = Dictionary(statTypes.map { ($0.id, $0.sortOrder) }, uniquingKeysWith: { first, _ in first })
         return assignment.assignedSelections.sorted {
             let leftOrder = sortOrderByID[$0.statTypeID] ?? 0
             let rightOrder = sortOrderByID[$1.statTypeID] ?? 0

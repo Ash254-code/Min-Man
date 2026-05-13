@@ -138,6 +138,15 @@ enum AppRole: String, CaseIterable, Identifiable {
         }
     }
 
+    var bypassesEditDeleteCode: Bool {
+        switch self {
+        case .admin, .restrictedAdmin:
+            return true
+        default:
+            return false
+        }
+    }
+
     var canViewVoteDetails: Bool {
         switch self {
         case .admin, .restrictedAdmin, .teamManager:
@@ -353,6 +362,9 @@ final class AppNavigationState: ObservableObject {
 
     func clearActiveLiveStatsSession(id: UUID? = nil) {
         guard id == nil || activeLiveStatsSessionID == id else { return }
+        if let id, syncedStatsSessionID == id, activeLiveGameSnapshot != nil {
+            return
+        }
         activeLiveStatsSessionID = nil
         activeLiveStatsSessionDescriptor = nil
         if id == nil || activeLiveStatsInviteSnapshot?.sessionID == id {

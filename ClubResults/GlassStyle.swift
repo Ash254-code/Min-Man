@@ -9,12 +9,12 @@ enum ClubTheme {
 
     // Shared main-card surface to match Settings-style grouped grey.
     static let cardFill = Color(uiColor: .secondarySystemGroupedBackground)
-    static let cardOverlay = Color.white.opacity(0.03)
-    static let cardStroke = Color.white.opacity(0.14)
+    static let cardOverlay = Color(uiColor: .systemGray6).opacity(0.22)
+    static let cardStroke = Color(uiColor: .separator).opacity(0.25)
 
-    // Sub-cards remain slightly lighter than main cards.
-    static let subCardFill = Color.white.opacity(0.08)
-    static let subCardStroke = Color.white.opacity(0.14)
+    // Shared secondary-card/button surface to keep nested controls in the global grey palette.
+    static let subCardFill = Color(uiColor: .tertiarySystemGroupedBackground)
+    static let subCardStroke = Color(uiColor: .separator).opacity(0.28)
 
     private static var clubPrimaryUIColor: UIColor {
         let configuration = ClubConfigurationStore.load()
@@ -38,13 +38,44 @@ enum ClubTheme {
         return UIColor(red: r, green: g, blue: b, alpha: alpha)
     }
 
+    private static func lightBackground(_ trait: UITraitCollection, navyBlend: CGFloat) -> UIColor {
+        let base = UIColor.systemGroupedBackground.resolvedColor(with: trait)
+        let navy = UIColor(red: 0.05, green: 0.15, blue: 0.35, alpha: 1)
+        return blended(base, with: navy, amount: navyBlend)
+    }
+
+    private static func blended(_ color: UIColor, with tint: UIColor, amount: CGFloat) -> UIColor {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        var tintRed: CGFloat = 0
+        var tintGreen: CGFloat = 0
+        var tintBlue: CGFloat = 0
+        var tintAlpha: CGFloat = 0
+
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha),
+              tint.getRed(&tintRed, green: &tintGreen, blue: &tintBlue, alpha: &tintAlpha) else {
+            return color
+        }
+
+        let clampedAmount = min(max(amount, 0), 1)
+        let baseAmount = 1 - clampedAmount
+        return UIColor(
+            red: (red * baseAmount) + (tintRed * clampedAmount),
+            green: (green * baseAmount) + (tintGreen * clampedAmount),
+            blue: (blue * baseAmount) + (tintBlue * clampedAmount),
+            alpha: alpha
+        )
+    }
+
     private static var bgTop: Color {
         Color(uiColor: UIColor { trait in
             let base = clubPrimaryUIColor
             if trait.userInterfaceStyle == .dark {
                 return adjusted(base, add: -0.04, multiply: 0.46)
             }
-            return adjusted(base, add: 0.08, multiply: 0.16)
+            return lightBackground(trait, navyBlend: 0.018)
         })
     }
 
@@ -54,7 +85,7 @@ enum ClubTheme {
             if trait.userInterfaceStyle == .dark {
                 return adjusted(base, add: -0.02, multiply: 0.52)
             }
-            return adjusted(base, add: 0.11, multiply: 0.18)
+            return lightBackground(trait, navyBlend: 0.026)
         })
     }
 
@@ -64,7 +95,7 @@ enum ClubTheme {
             if trait.userInterfaceStyle == .dark {
                 return adjusted(base, add: 0.01, multiply: 0.58)
             }
-            return adjusted(base, add: 0.15, multiply: 0.20)
+            return lightBackground(trait, navyBlend: 0.035)
         })
     }
 

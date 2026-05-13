@@ -114,16 +114,21 @@ final class Game: Identifiable {
 
 // Nested type representing a goal kicker entry stored with a game
 struct GameGoalKickerEntry: Identifiable, Codable, Hashable {
+    static let oppositionPlayerID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB") ?? UUID()
+    static let oppositionPlayerName = "Opposition Player"
+
     var id: UUID = UUID()
     var playerID: UUID?
     var goals: Int
     var points: Int = 0
+    var oppositionGoals: Int = 0
 
-    init(id: UUID = UUID(), playerID: UUID?, goals: Int, points: Int = 0) {
+    init(id: UUID = UUID(), playerID: UUID?, goals: Int, points: Int = 0, oppositionGoals: Int = 0) {
         self.id = id
         self.playerID = playerID
         self.goals = goals
         self.points = points
+        self.oppositionGoals = oppositionGoals
     }
 
     enum CodingKeys: String, CodingKey {
@@ -131,6 +136,7 @@ struct GameGoalKickerEntry: Identifiable, Codable, Hashable {
         case playerID
         case goals
         case points
+        case oppositionGoals
     }
 
     init(from decoder: Decoder) throws {
@@ -139,6 +145,7 @@ struct GameGoalKickerEntry: Identifiable, Codable, Hashable {
         playerID = try container.decodeIfPresent(UUID.self, forKey: .playerID)
         goals = try container.decodeIfPresent(Int.self, forKey: .goals) ?? 0
         points = try container.decodeIfPresent(Int.self, forKey: .points) ?? 0
+        oppositionGoals = try container.decodeIfPresent(Int.self, forKey: .oppositionGoals) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -147,6 +154,25 @@ struct GameGoalKickerEntry: Identifiable, Codable, Hashable {
         try container.encodeIfPresent(playerID, forKey: .playerID)
         try container.encode(goals, forKey: .goals)
         try container.encode(points, forKey: .points)
+        try container.encode(oppositionGoals, forKey: .oppositionGoals)
+    }
+
+    static func displayName(for playerID: UUID?, playerName: (UUID) -> String) -> String {
+        guard let playerID else { return "Unknown" }
+        if playerID == oppositionPlayerID {
+            return oppositionPlayerName
+        }
+        return playerName(playerID)
+    }
+
+    var goalsDisplayText: String {
+        let oppositionGoals = max(0, min(oppositionGoals, goals))
+        guard oppositionGoals > 0 else { return "\(goals)" }
+        return "\(goals) (\(oppositionGoals))"
+    }
+
+    var scoreDisplayText: String {
+        "\(goalsDisplayText).\(points)"
     }
 }
 

@@ -132,8 +132,12 @@ struct GamesView: View {
         case delete
     }
 
+    private var isIPhoneLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
+
     private var isIPhoneAdminLayout: Bool {
-        UIDevice.current.userInterfaceIdiom == .phone && navigationState.currentRole == .admin
+        isIPhoneLayout && navigationState.currentRole == .admin
     }
 
 
@@ -145,7 +149,7 @@ struct GamesView: View {
     }
 
     private var gradeNameByID: [UUID: String] {
-        Dictionary(uniqueKeysWithValues: orderedGrades.map { ($0.id, $0.name) })
+        Dictionary(orderedGrades.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     }
 
     private var selectedGradeName: String {
@@ -168,7 +172,7 @@ struct GamesView: View {
     }
 
     private var gradeByID: [UUID: Grade] {
-        Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
+        Dictionary(grades.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     private var playerIDs: Set<UUID> {
@@ -417,7 +421,19 @@ struct GamesView: View {
     }
 
     private func requiresFieldUmpire(for game: Game, grade: Grade) -> Bool {
-        grade.asksFieldUmpire && isHomeGame(game)
+        guard grade.asksFieldUmpire else { return false }
+        guard isHomeOnlyFieldUmpireGrade(grade) else { return true }
+        return isHomeGame(game)
+    }
+
+    private func isHomeOnlyFieldUmpireGrade(_ grade: Grade) -> Bool {
+        let normalizedName = normalizedGradeName(grade.name)
+        return normalizedName == "under 9's"
+            || normalizedName == "under 9s"
+            || normalizedName == "u9"
+            || normalizedName == "under 12's"
+            || normalizedName == "under 12s"
+            || normalizedName == "u12"
     }
 
     private func hasRequiredStaffFields(for game: Game, grade: Grade) -> Bool {
@@ -449,10 +465,11 @@ struct GamesView: View {
         guard game.ourGoals > 0 else { return true }
 
         let validEntries = game.goalKickers.filter { entry in
-            entry.goals > 0 && entry.playerID.map(playerIDs.contains) == true
+            entry.goals > 0 && entry.playerID.map { playerIDs.contains($0) || $0 == GameGoalKickerEntry.oppositionPlayerID } == true
         }
         let totalGoals = validEntries.reduce(0) { $0 + $1.goals }
-        return totalGoals == game.ourGoals
+        let oppositionGoals = validEntries.reduce(0) { $0 + $1.oppositionGoals }
+        return totalGoals == game.ourGoals + oppositionGoals
     }
 
     private func isGameComplete(_ game: Game, grade: Grade) -> Bool {
@@ -596,7 +613,7 @@ struct GamesView: View {
 
     private func normalizedGoalKickerSignature(_ game: Game) -> [String] {
         game.goalKickers
-            .map { "\($0.playerID?.uuidString ?? "nil"):\($0.goals)" }
+            .map { "\($0.playerID?.uuidString ?? "nil"):\($0.goals):\($0.points):\($0.oppositionGoals)" }
             .sorted()
     }
 
@@ -766,6 +783,7 @@ struct GamesView: View {
                         Spacer(minLength: 20)
                     }
                 }
+
             }
         }
     }
@@ -856,6 +874,11 @@ struct GamesView: View {
     }
 
     private func requestProtectedAction(_ action: ProtectedGameAction, for game: Game) {
+        if navigationState.currentRole.bypassesEditDeleteCode {
+            performProtectedAction(action, for: game)
+            return
+        }
+
         pendingProtectedAction = action
         codePromptGame = game
         codePromptValue = ""
@@ -870,6 +893,13 @@ struct GamesView: View {
         }
 
         guard let action = pendingProtectedAction, let game = codePromptGame else { return }
+        performProtectedAction(action, for: game)
+
+        pendingProtectedAction = nil
+        codePromptGame = nil
+    }
+
+    private func performProtectedAction(_ action: ProtectedGameAction, for game: Game) {
         switch action {
         case .edit:
             selectedGameForEdit = editPresentation(for: game)
@@ -877,9 +907,6 @@ struct GamesView: View {
             gamePendingDelete = game
             showDeleteConfirmAlert = true
         }
-
-        pendingProtectedAction = nil
-        codePromptGame = nil
     }
 
     private func delete(_ game: Game) {
@@ -995,14 +1022,7 @@ struct NewGameQuickStartSection: View {
                             }
                             .frame(maxWidth: .infinity, minHeight: cardMinHeight)
                             .padding(.horizontal, cardHorizontalPadding)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .fill(ClubTheme.subCardFill)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .stroke(ClubTheme.subCardStroke, lineWidth: 1)
-                            )
+                            .clubGlassSurface(cornerRadius: 18)
                             .overlay(alignment: .topTrailing) {
                                 statusDot(statusForGrade(grade.id))
                                     .padding(10)
@@ -1015,18 +1035,7 @@ struct NewGameQuickStartSection: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(ClubTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(ClubTheme.cardOverlay)
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(ClubTheme.cardStroke, lineWidth: 1)
-        )
+        .clubGlassSurface(cornerRadius: 24)
     }
 
     @ViewBuilder
@@ -1090,18 +1099,7 @@ private struct GamesListSection<Content: View>: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(ClubTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(ClubTheme.cardOverlay)
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(ClubTheme.cardStroke, lineWidth: 1)
-        )
+        .clubGlassSurface(cornerRadius: 24)
     }
 }
 
@@ -1128,12 +1126,17 @@ private struct FilterCapsule: View {
         .foregroundStyle(.primary)
         .background(
             Capsule(style: .continuous)
-                .fill(ClubTheme.subCardFill)
+                .fill(ClubTheme.cardFill)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .fill(ClubTheme.cardOverlay)
+                )
         )
         .overlay(
             Capsule(style: .continuous)
-                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
+                .stroke(ClubTheme.cardStroke, lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.22), radius: 16, y: 8)
     }
 }
 
@@ -1206,14 +1209,7 @@ private struct GameCardRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(ClubTheme.subCardFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
-        )
+        .clubGlassSurface(cornerRadius: 22)
         .overlay {
             if game.isDraft {
                 Text("DRAFT")
@@ -1436,14 +1432,7 @@ private struct RoundCardRow: View {
             minHeight: horizontalSizeClass == .compact ? 110 : nil,
             alignment: .topLeading
         )
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(ClubTheme.subCardFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
-        )
+        .clubGlassSurface(cornerRadius: 22)
     }
 }
 
@@ -1470,14 +1459,7 @@ private struct RoundDetailHeaderCard: View {
             minHeight: horizontalSizeClass == .compact ? 110 : nil,
             alignment: .topLeading
         )
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(ClubTheme.subCardFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
-        )
+        .clubGlassSurface(cornerRadius: 22)
     }
 }
 

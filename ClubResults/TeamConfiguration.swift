@@ -72,10 +72,17 @@ struct ClubConfiguration: Codable, Equatable {
 }
 
 enum ClubConfigurationStore {
-    private static let key = "settings.clubConfiguration.v1"
+    private static let key = CloudSyncedPreferenceKeys.clubConfiguration
 
     static func load() -> ClubConfiguration {
-        guard let data = UserDefaults.standard.data(forKey: key),
+        let storedData: Data?
+        if Thread.isMainThread {
+            storedData = CloudSyncedPreferencesStore.syncedData(forKey: key) ?? UserDefaults.standard.data(forKey: key)
+        } else {
+            storedData = UserDefaults.standard.data(forKey: key)
+        }
+
+        guard let data = storedData,
               let decoded = try? JSONDecoder().decode(ClubConfiguration.self, from: data) else {
             return defaults
         }
@@ -86,6 +93,14 @@ enum ClubConfigurationStore {
         let sanitized = sanitize(configuration)
         guard let data = try? JSONEncoder().encode(sanitized) else { return }
         UserDefaults.standard.set(data, forKey: key)
+
+        if Thread.isMainThread {
+            CloudSyncedPreferencesStore.persist(data, forKey: key)
+        } else {
+            DispatchQueue.main.async {
+                CloudSyncedPreferencesStore.persist(data, forKey: key)
+            }
+        }
     }
 
     private static func sanitize(_ configuration: ClubConfiguration) -> ClubConfiguration {

@@ -39,7 +39,36 @@ enum PickerSheetPresentation {
 }
 
 enum AppStyle {
-    static let background = Color("AppBackground")   // your global background
+    static let background = Color(uiColor: UIColor { trait in
+        guard trait.userInterfaceStyle != .dark else {
+            return .systemBackground
+        }
+
+        let base = UIColor.systemGroupedBackground.resolvedColor(with: trait)
+        let navy = UIColor(red: 0.05, green: 0.15, blue: 0.35, alpha: 1)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        var navyRed: CGFloat = 0
+        var navyGreen: CGFloat = 0
+        var navyBlue: CGFloat = 0
+        var navyAlpha: CGFloat = 0
+
+        guard base.getRed(&red, green: &green, blue: &blue, alpha: &alpha),
+              navy.getRed(&navyRed, green: &navyGreen, blue: &navyBlue, alpha: &navyAlpha) else {
+            return base
+        }
+
+        let navyBlend: CGFloat = 0.026
+        let baseBlend = 1 - navyBlend
+        return UIColor(
+            red: (red * baseBlend) + (navyRed * navyBlend),
+            green: (green * baseBlend) + (navyGreen * navyBlend),
+            blue: (blue * baseBlend) + (navyBlue * navyBlend),
+            alpha: alpha
+        )
+    })
     static let card = Color(.systemBackground)       // keeps cards readable in light/dark
 }
 
@@ -58,6 +87,17 @@ extension View {
 
     func appPopupStyle() -> some View {
         modifier(AppPopupPresentation())
+    }
+
+    @ViewBuilder
+    func iPhoneTransparentTopChrome() -> some View {
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            self
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .background(ClubTheme.bgGradient.ignoresSafeArea())
+        } else {
+            self
+        }
     }
 }
 

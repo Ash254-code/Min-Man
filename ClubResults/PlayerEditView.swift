@@ -4,6 +4,7 @@ import SwiftData
 struct PlayerEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
+    @EnvironmentObject private var navigationState: AppNavigationState
 
     @Bindable var player: Player
 
@@ -152,8 +153,12 @@ struct PlayerEditView: View {
 
             Section {
                 Button(role: .destructive) {
-                    deleteCode = ""
-                    showDeletePrompt = true
+                    if navigationState.currentRole.bypassesEditDeleteCode {
+                        deletePlayer()
+                    } else {
+                        deleteCode = ""
+                        showDeletePrompt = true
+                    }
                 } label: {
                     Label("Delete player", systemImage: "trash")
                 }
@@ -223,6 +228,11 @@ struct PlayerEditView: View {
             return
         }
 
+        deletePlayer()
+    }
+
+    private func deletePlayer() {
+        CloudDeletedRecordStore.recordDeletedPlayerID(player.id)
         dataContext.delete(player)
         try? dataContext.save()
         dismiss()

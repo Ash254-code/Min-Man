@@ -28,11 +28,15 @@ struct ClubResultsApp: App {
     private static let modelStoreFileName = "ClubResults.store"
     private static let cloudKitContainerIdentifier = "iCloud.MINMAN.ClubResults"
     private static let emergencyStoreDirectoryName = "ClubResultsSwiftData-Emergency"
+    private static let automaticCloudSyncInterval: UInt64 = 120_000_000_000
 
-    @State private var showSplash = true
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var navigationState = AppNavigationState()
     @StateObject private var authCoordinator = AuthenticationCoordinator()
     @AppStorage("appAppearance") private var appAppearance = AppAppearance.system.rawValue
+    @State private var hasRunAutomaticCloudSync = false
+    @State private var periodicCloudSyncTask: Task<Void, Never>?
+    @State private var isAutomaticCloudSyncRunning = false
     private let modelContainer: ModelContainer = {
         let schema = Schema([
             Player.self,
@@ -53,7 +57,8 @@ struct ClubResultsApp: App {
             StatType.self,
             StatsSession.self,
             StatEvent.self,
-            StatsInviteAssignment.self
+            StatsInviteAssignment.self,
+            CloudSyncedPreference.self
         ])
         return makeModelContainer(schema: schema)
     }()
@@ -218,16 +223,8 @@ struct ClubResultsApp: App {
                 .ignoresSafeArea()
 
                 // Your app content
-                ZStack {
-                    AuthenticationGateView {
-                        ContentView()
-                    }
-                        .opacity(showSplash ? 0 : 1)
-
-                    if showSplash {
-                        SplashView()
-                            .transition(.opacity)
-                    }
+                AuthenticationGateView {
+                    ContentView()
                 }
             }
             .environmentObject(authCoordinator)
@@ -240,11 +237,9 @@ struct ClubResultsApp: App {
             }
             .onAppear {
                 applicationDidAppear()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    withAnimation(.easeOut(duration: 0.5)) {
-                        showSplash = false
-                    }
-                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                handleScenePhaseChange(newPhase)
             }
         }
         .modelContainer(modelContainer)
@@ -252,8 +247,78 @@ struct ClubResultsApp: App {
 
     private func applicationDidAppear() {
         UIApplication.shared.registerForRemoteNotifications()
+        CloudSyncedPreferencesStore.configure(modelContext: modelContainer.mainContext)
+
+        if !hasRunAutomaticCloudSync {
+            hasRunAutomaticCloudSync = true
+            Task { @MainActor in
+                await runAutomaticCloudSyncOnOpen()
+            }
+        }
+        startPeriodicCloudSyncIfNeeded()
+
         Task {
             try? await CloudKitStatsInviteService.shared.ensureTallySubscription()
+        }
+    }
+
+    @MainActor
+    private func runAutomaticCloudSyncOnOpen() async {
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        await performAutomaticCloudSyncCycle()
+    }
+
+    @MainActor
+    private func handleScenePhaseChange(_ newPhase: ScenePhase) {
+        switch newPhase {
+        case .active:
+            startPeriodicCloudSyncIfNeeded()
+        case .inactive, .background:
+            stopPeriodicCloudSync()
+            Task { @MainActor in
+                await performAutomaticCloudSyncCycle()
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    @MainActor
+    private func startPeriodicCloudSyncIfNeeded() {
+        guard periodicCloudSyncTask == nil else { return }
+        periodicCloudSyncTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.automaticCloudSyncInterval)
+                guard !Task.isCancelled else { break }
+                await performAutomaticCloudSyncCycle()
+            }
+        }
+    }
+
+    @MainActor
+    private func stopPeriodicCloudSync() {
+        periodicCloudSyncTask?.cancel()
+        periodicCloudSyncTask = nil
+    }
+
+    @MainActor
+    private func performAutomaticCloudSyncCycle() async {
+        guard !isAutomaticCloudSyncRunning else { return }
+        isAutomaticCloudSyncRunning = true
+        defer { isAutomaticCloudSyncRunning = false }
+
+        let context = modelContainer.mainContext
+        try? context.save()
+        try? await CloudKitStatsInviteService.shared.ensureTallySubscription()
+
+        _ = try? await CloudFullBackupSyncService.syncFullBackupSnapshot(modelContext: context)
+
+        let hasLocalUserData = CloudFullBackupSyncService.localUserDataCount(modelContext: context) > 0
+
+        // Safety guard: do not push an empty install over the cloud backup snapshot.
+        if hasLocalUserData {
+            CloudSyncedPreferencesStore.pushAllLocalPreferencesToCloud()
+            try? context.save()
         }
     }
 }

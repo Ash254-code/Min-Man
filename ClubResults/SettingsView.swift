@@ -4,6 +4,7 @@ import PDFKit
 import MessageUI
 import UIKit
 import UniformTypeIdentifiers
+import CloudKit
 
 struct SettingsView: View {
     @Environment(\EnvironmentValues.modelContext) private var dataContext: ModelContext
@@ -13,6 +14,7 @@ struct SettingsView: View {
     @State private var saveErrorMessage: String?
     @State private var showContactsSettings = false
     @State private var showProfileSheet = false
+    @State private var showCloudSyncSheet = false
     var resetToken: UUID = UUID()
 
     var body: some View {
@@ -30,6 +32,7 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(Color.clear)
             .navigationTitle("Settings")
+            .iPhoneTransparentTopChrome()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     profileButton
@@ -50,6 +53,11 @@ struct SettingsView: View {
                     ProfileSheetView()
                 }
                 .clubGlassBackground()
+            }
+            .sheet(isPresented: $showCloudSyncSheet) {
+                NavigationStack {
+                    CloudSyncSheet()
+                }
             }
             .task {
                 seedInitialGradesIfNeeded()
@@ -74,6 +82,7 @@ struct SettingsView: View {
                 Text(saveErrorMessage ?? "An unknown error occurred.")
             }
         }
+        .toolbarBackground(UIDevice.current.userInterfaceIdiom == .phone ? .hidden : .automatic, for: .navigationBar)
         .id(resetToken)
     }
 
@@ -120,6 +129,20 @@ struct SettingsView: View {
                 settingsLink("User Invites", icon: "person.badge.plus", destination: AnyView(UserInviteSettingsView()))
             }
             if !navigationState.currentRole.hasRestrictedAdminSettings {
+                Button {
+                    showCloudSyncSheet = true
+                } label: {
+                    HStack(spacing: 12) {
+                        settingsRow(title: "Cloud Sync", icon: "arrow.triangle.2.circlepath.icloud")
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 settingsLink("Clear Saved Picker Names", icon: "trash", destination: AnyView(AdminNameResetView()))
                 settingsLink("Backup & Restore", icon: "externaldrive.badge.icloud", destination: AnyView(BackupAndRestoreSettingsView()))
                 settingsLink("PIN Code", icon: "number.square", destination: AnyView(PinCodeSettingsView()))
@@ -195,6 +218,308 @@ struct SettingsView: View {
             try dataContext.save()
         } catch {
             saveErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct CloudSyncSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    @AppStorage("cloud.sync.lastDate") private var cloudSyncLastDateInterval: Double = 0
+    @State private var isSyncing = false
+    @State private var syncMessage: String?
+    @State private var syncSummary: String?
+    @State private var accountStatus: CKAccountStatus = .couldNotDetermine
+    @State private var diagnostics = CloudSyncedPreferencesDiagnostics(
+        dataKeysInCloud: 0,
+        stringKeysInCloud: 0,
+        boolKeysInCloud: 0,
+        hasFullBackupInCloud: false
+    )
+    @State private var showSyncProgressPopup = false
+    @State private var syncPhaseMessage = "Preparing sync..."
+    @State private var showSyncSummaryPopup = false
+    @State private var syncSummaryPopupBody = ""
+
+    private var lastSyncDate: Date? {
+        guard cloudSyncLastDateInterval > 0 else { return nil }
+        return Date(timeIntervalSince1970: cloudSyncLastDateInterval)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("iCloud Account") {
+                    Text(accountStatusText)
+                        .foregroundStyle(accountStatusColor)
+                }
+                LabeledContent("Environment") {
+                    Text(cloudEnvironmentLabel)
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Last Sync") {
+                    Text(lastSyncDate?.formatted(date: .abbreviated, time: .shortened) ?? "Never")
+                        .foregroundStyle(.secondary)
+                }
+
+            } header: {
+                Text("CloudKit")
+            } footer: {
+                Text(syncMessage ?? "Forces a local save and CloudKit refresh for account sync.")
+                    .foregroundStyle(.secondary)
+                if let syncSummary {
+                    Text(syncSummary)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Sync Diagnostics") {
+                LabeledContent("Data Keys in Cloud") {
+                    Text("\(diagnostics.dataKeysInCloud)/\(CloudSyncedPreferenceKeys.dataKeys.count)")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("String Keys in Cloud") {
+                    Text("\(diagnostics.stringKeysInCloud)/\(CloudSyncedPreferenceKeys.stringKeys.count)")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Bool Keys in Cloud") {
+                    Text("\(diagnostics.boolKeysInCloud)/\(CloudSyncedPreferenceKeys.boolKeys.count)")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Full Backup Snapshot") {
+                    Text(diagnostics.hasFullBackupInCloud ? "Available" : "Missing")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Total Keys in Cloud") {
+                    Text("\(diagnostics.totalKeysInCloud)")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .task {
+            await refreshCloudAccountStatus()
+            refreshDiagnostics()
+        }
+        .refreshable {
+            await refreshCloudAccountStatus()
+            refreshDiagnostics()
+        }
+        .navigationTitle("Cloud Sync")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Back") { dismiss() }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(isSyncing ? "Syncing..." : "Sync Now") {
+                    forceSyncNow()
+                }
+                .disabled(isSyncing)
+            }
+        }
+        .overlay {
+            if showSyncProgressPopup {
+                ZStack {
+                    Color.black.opacity(0.35)
+                        .ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        LoadingFootballView(size: 42)
+                        Text("Syncing Cloud Data")
+                            .font(.headline)
+                        Text(syncPhaseMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(20)
+                    .frame(maxWidth: 320)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
+        }
+        .alert("Sync Complete", isPresented: $showSyncSummaryPopup) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(syncSummaryPopupBody)
+        }
+    }
+
+    private var accountStatusText: String {
+        switch accountStatus {
+        case .available:
+            return "Connected"
+        case .noAccount:
+            return "Not Signed In"
+        case .restricted:
+            return "Restricted"
+        case .temporarilyUnavailable:
+            return "Temporarily Unavailable"
+        case .couldNotDetermine:
+            return "Unknown"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    private var accountStatusColor: Color {
+        switch accountStatus {
+        case .available:
+            return .green
+        case .noAccount, .restricted, .temporarilyUnavailable:
+            return .orange
+        case .couldNotDetermine:
+            return .secondary
+        @unknown default:
+            return .secondary
+        }
+    }
+
+    private var cloudEnvironmentLabel: String {
+#if DEBUG
+        return "Development"
+#else
+        return "Production"
+#endif
+    }
+
+    private struct SyncSnapshot {
+        let players: Int
+        let games: Int
+        let grades: Int
+        let contacts: Int
+        let reports: Int
+        let statTypes: Int
+        let sessions: Int
+        let events: Int
+
+        var description: String {
+            "Players \(players), Games \(games), Grades \(grades), Contacts \(contacts), Reports \(reports), Stat Types \(statTypes), Sessions \(sessions), Events \(events)"
+        }
+    }
+
+    private func captureSnapshot() -> SyncSnapshot {
+        let players = (try? modelContext.fetch(FetchDescriptor<Player>()))?.count ?? 0
+        let games = (try? modelContext.fetch(FetchDescriptor<Game>()))?.count ?? 0
+        let grades = (try? modelContext.fetch(FetchDescriptor<Grade>()))?.count ?? 0
+        let contacts = (try? modelContext.fetch(FetchDescriptor<Contact>()))?.count ?? 0
+        let reports = (try? modelContext.fetch(FetchDescriptor<CustomReportTemplate>()))?.count ?? 0
+        let statTypes = (try? modelContext.fetch(FetchDescriptor<StatType>()))?.count ?? 0
+        let sessions = (try? modelContext.fetch(FetchDescriptor<StatsSession>()))?.count ?? 0
+        let events = (try? modelContext.fetch(FetchDescriptor<StatEvent>()))?.count ?? 0
+        return SyncSnapshot(
+            players: players,
+            games: games,
+            grades: grades,
+            contacts: contacts,
+            reports: reports,
+            statTypes: statTypes,
+            sessions: sessions,
+            events: events
+        )
+    }
+
+    private func refreshCloudAccountStatus() async {
+        accountStatus = await CloudKitStatsInviteService.shared.accountStatus()
+    }
+
+    private func refreshDiagnostics() {
+        diagnostics = CloudSyncedPreferencesStore.diagnostics()
+    }
+
+    private func importSummary(before: SyncSnapshot, pulled: SyncSnapshot, after: SyncSnapshot) -> String {
+        let beforeEntityTotal = before.players + before.games + before.contacts + before.reports + before.sessions + before.events
+        let afterEntityTotal = after.players + after.games + after.contacts + after.reports + after.sessions + after.events
+
+        if afterEntityTotal > beforeEntityTotal {
+            let delta = afterEntityTotal - beforeEntityTotal
+            return "Entity import: +\(delta) records pulled from cloud."
+        }
+
+        if afterEntityTotal == 0 && pulled.players == 0 && pulled.games == 0 && pulled.contacts == 0 && pulled.reports == 0 && pulled.sessions == 0 && pulled.events == 0 {
+            return "Entity import: no cloud entity data received. Check iCloud account, CloudKit environment (Development/Production), and whether this environment has uploaded entity records."
+        }
+
+        return "Entity import: no new entity changes detected during this sync window."
+    }
+
+    private func forceSyncNow() {
+        guard !isSyncing else { return }
+        isSyncing = true
+        showSyncProgressPopup = true
+        syncPhaseMessage = "Pulling latest CloudKit changes..."
+        syncMessage = "Pulling latest CloudKit changes..."
+        syncSummary = nil
+
+        let before = captureSnapshot()
+
+        Task { @MainActor in
+            do {
+                // Pull phase: wait for inbound sync windows, then restore or merge the cloud backup snapshot.
+                try modelContext.save()
+                try await CloudKitStatsInviteService.shared.ensureTallySubscription()
+                await refreshCloudAccountStatus()
+                try await Task.sleep(nanoseconds: 1_500_000_000)
+                try modelContext.save()
+                let fullBackupSyncResult = try await CloudFullBackupSyncService.syncFullBackupSnapshot(modelContext: modelContext)
+                let pulled = await MainActor.run { captureSnapshot() }
+                let hasLocalUserData = CloudFullBackupSyncService.localUserDataCount(modelContext: modelContext) > 0
+                let pushResult: String
+
+                // Push phase: upload settings plus a full backup snapshot when local user data exists.
+                await MainActor.run {
+                    syncPhaseMessage = "Uploading full backup snapshot..."
+                }
+                if hasLocalUserData {
+                    CloudSyncedPreferencesStore.pushAllLocalPreferencesToCloud()
+                    pushResult = "Preference upload: completed."
+                    try modelContext.save()
+                } else {
+                    pushResult = "Preference upload: skipped because this device has no user data."
+                }
+
+                await MainActor.run {
+                    syncPhaseMessage = "Finalizing sync summary..."
+                }
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+                try modelContext.save()
+
+                let after = await MainActor.run { captureSnapshot() }
+                let now = Date()
+                await MainActor.run {
+                    cloudSyncLastDateInterval = now.timeIntervalSince1970
+                    let restoreSummary: String
+                    switch fullBackupSyncResult.action {
+                    case .restored:
+                        let counts = fullBackupSyncResult.itemCounts
+                        restoreSummary = "Full app restore from cloud: completed (\(counts?.players ?? 0) players, \(counts?.games ?? 0) games, \(counts?.grades ?? 0) grades)."
+                    case .uploaded:
+                        let counts = fullBackupSyncResult.itemCounts
+                        restoreSummary = "Full app upload to cloud: completed (\(counts?.players ?? 0) players, \(counts?.games ?? 0) games, \(counts?.grades ?? 0) grades)."
+                    case .unchanged:
+                        restoreSummary = "Full app sync: no new changes detected."
+                    case .noCloudBackup:
+                        restoreSummary = "Full app sync: no cloud backup available."
+                    }
+                    let entityImportResult = importSummary(before: before, pulled: pulled, after: after)
+                    syncMessage = "Synced \(now.formatted(date: .abbreviated, time: .shortened))"
+                    syncSummary = "\(restoreSummary)\n\(entityImportResult)\n\(pushResult)\n\nBefore: \(before.description)\nPulled/Restored: \(pulled.description)\nAfter: \(after.description)"
+                    syncSummaryPopupBody = "\(restoreSummary)\n\(entityImportResult)\n\(pushResult)\n\nEnvironment: \(cloudEnvironmentLabel)\n\nBefore:\n\(before.description)\n\nAfter:\n\(after.description)"
+                    refreshDiagnostics()
+                    showSyncProgressPopup = false
+                    showSyncSummaryPopup = true
+                    isSyncing = false
+                }
+            } catch {
+                await MainActor.run {
+                    syncMessage = "Sync failed: \(error.localizedDescription)"
+                    syncSummaryPopupBody = "Sync failed.\n\n\(error.localizedDescription)"
+                    refreshDiagnostics()
+                    showSyncProgressPopup = false
+                    showSyncSummaryPopup = true
+                    isSyncing = false
+                }
+            }
         }
     }
 }
@@ -1160,6 +1485,7 @@ private struct ClubGradesSettingsView: View {
             if editGradeDraft.tracksPlayersPerTeam {
                 Stepper("Players per team: \(editGradeDraft.playersPerTeam)", value: playersPerTeamBinding, in: 1...60)
             }
+            Toggle("Player Swaps", isOn: bind(\.playerSwapsEnabled))
             Toggle("Notes", isOn: bind(\.asksNotes))
             Toggle("Live Game View", isOn: bind(\.allowsLiveGameView))
             Picker("Length of Quarters", selection: quarterLengthBinding) {
@@ -1203,6 +1529,7 @@ private struct ClubGradesSettingsView: View {
             asksGoalKickers: draft.asksGoalKickers,
             tracksPlayersPerTeam: draft.tracksPlayersPerTeam,
             playersPerTeam: draft.playersPerTeam,
+            playerSwapsEnabled: draft.playerSwapsEnabled,
             bestPlayersCount: draft.bestPlayersCount,
             asksGuestBestFairestVotesScan: draft.asksGuestBestFairestVotesScan,
             guestBestPlayersCount: draft.guestBestPlayersCount,
@@ -1251,6 +1578,7 @@ private struct ClubGradesSettingsView: View {
         gradeEditing.asksGoalKickers = editGradeDraft.asksGoalKickers
         gradeEditing.tracksPlayersPerTeam = editGradeDraft.tracksPlayersPerTeam
         gradeEditing.playersPerTeam = editGradeDraft.playersPerTeam
+        gradeEditing.playerSwapsEnabled = editGradeDraft.playerSwapsEnabled
         gradeEditing.bestPlayersCount = editGradeDraft.bestPlayersCount
         gradeEditing.asksGuestBestFairestVotesScan = editGradeDraft.asksGuestBestFairestVotesScan
         gradeEditing.guestBestPlayersCount = editGradeDraft.guestBestPlayersCount
@@ -1299,6 +1627,7 @@ private struct ClubGradesSettingsView: View {
             || editGradeDraft.asksGoalKickers != gradeEditing.asksGoalKickers
             || editGradeDraft.tracksPlayersPerTeam != gradeEditing.tracksPlayersPerTeam
             || editGradeDraft.playersPerTeam != gradeEditing.playersPerTeam
+            || editGradeDraft.playerSwapsEnabled != gradeEditing.playerSwapsEnabled
             || editGradeDraft.bestPlayersCount != gradeEditing.bestPlayersCount
             || editGradeDraft.asksGuestBestFairestVotesScan != gradeEditing.asksGuestBestFairestVotesScan
             || editGradeDraft.guestBestPlayersCount != gradeEditing.guestBestPlayersCount
@@ -1407,6 +1736,7 @@ private struct ClubGradesSettingsView: View {
                             asksLiveGameView: $0.asksLiveGameView,
                             asksGoalKickers: $0.asksGoalKickers,
                             playersPerTeam: $0.playersPerTeam,
+                            playerSwapsEnabled: $0.playerSwapsEnabled,
                             bestPlayersCount: $0.bestPlayersCount,
                             asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                             guestBestPlayersCount: $0.guestBestPlayersCount,
@@ -1447,6 +1777,7 @@ private struct ClubGradesSettingsView: View {
                                 asksLiveGameView: item.asksLiveGameView,
                                 asksGoalKickers: item.asksGoalKickers,
                                 playersPerTeam: item.playersPerTeam,
+                                playerSwapsEnabled: item.playerSwapsEnabled,
                                 bestPlayersCount: item.bestPlayersCount,
                                 asksGuestBestFairestVotesScan: item.asksGuestBestFairestVotesScan,
                                 guestBestPlayersCount: item.guestBestPlayersCount,
@@ -1501,6 +1832,7 @@ private struct ClubGradesSettingsView: View {
                     asksScore: $0.asksScore,
                     asksLiveGameView: $0.asksLiveGameView,
                     asksGoalKickers: $0.asksGoalKickers,
+                    playerSwapsEnabled: $0.playerSwapsEnabled,
                     bestPlayersCount: $0.bestPlayersCount,
                     asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                     guestBestPlayersCount: $0.guestBestPlayersCount,
@@ -1655,6 +1987,7 @@ private struct EditGradeDraft {
     var asksGoalKickers = true
     var tracksPlayersPerTeam = true
     var playersPerTeam = 22
+    var playerSwapsEnabled = true
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = true
     var guestBestPlayersCount = 3
@@ -1690,6 +2023,7 @@ private struct EditGradeDraft {
         asksGoalKickers = grade.asksGoalKickers
         tracksPlayersPerTeam = grade.tracksPlayersPerTeam
         playersPerTeam = grade.playersPerTeam
+        playerSwapsEnabled = grade.playerSwapsEnabled
         bestPlayersCount = grade.bestPlayersCount
         asksGuestBestFairestVotesScan = grade.asksGuestBestFairestVotesScan
         guestBestPlayersCount = grade.guestBestPlayersCount
@@ -1733,6 +2067,7 @@ private struct NewGradeDraft {
     var asksGoalKickers = true
     var tracksPlayersPerTeam = true
     var playersPerTeam = 22
+    var playerSwapsEnabled = true
     var bestPlayersCount = 6
     var asksGuestBestFairestVotesScan = true
     var guestBestPlayersCount = 3
@@ -1774,6 +2109,7 @@ private struct AddGradeWizardView: View {
                             .onChange(of: draft.name) { _, newName in
                                 draft.tracksPlayersPerTeam = Grade.defaultTracksPlayersPerTeam(for: newName)
                                 draft.playersPerTeam = Grade.defaultPlayersPerTeam(for: newName)
+                                draft.playerSwapsEnabled = Grade.defaultPlayerSwapsEnabled(for: newName)
                             }
                     } header: {
                         Text("Grade")
@@ -1845,6 +2181,7 @@ private struct AddGradeWizardView: View {
                         if draft.tracksPlayersPerTeam {
                             Stepper("Players per team: \(draft.playersPerTeam)", value: $draft.playersPerTeam, in: 1...60)
                         }
+                        Toggle("Player Swaps", isOn: $draft.playerSwapsEnabled)
                         Toggle("Notes", isOn: $draft.asksNotes)
                         Toggle("Live Game View", isOn: $draft.allowsLiveGameView)
                         Picker("Length of Quarters", selection: $draft.quarterLengthMinutes) {
@@ -2127,14 +2464,6 @@ private struct GroupsSettingsView: View {
                 } else {
                     singleColumnSectionsLayout
                 }
-
-                Section {
-                    NavigationLink {
-                        ReportsSettingsView()
-                    } label: {
-                        Label("Report Recipients", systemImage: "doc.text.magnifyingglass")
-                    }
-                }
             }
         }
         .navigationTitle("Groups")
@@ -2205,6 +2534,18 @@ private struct GroupsSettingsView: View {
                 },
                 onEditContact: { contact in
                     contactEditing = contact
+                },
+                onAddContact: { name, mobile, email in
+                    let contact = Contact(name: name, mobile: mobile, email: email)
+                    dataContext.insert(contact)
+                    assignContact(contact.id, toSection: selection.sectionKey)
+                    var updatedContacts = contacts + [contact]
+                    updatedContacts.sort {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
+                    SettingsBackupStore.saveContacts(updatedContacts)
+                    saveContext()
+                    return true
                 }
             )
             .appPopupStyle()
@@ -2287,31 +2628,46 @@ private struct GroupsSettingsView: View {
         }
     }
 
+    private var roleSections: [GroupSectionDescriptor] {
+        fixedSections + customSections
+    }
+
     private var coachingSections: [GroupSectionDescriptor] {
         baseSections.filter { $0.section == .coachesGrade }
     }
 
+    private let groupMainCardSpacing: CGFloat = 14
+    private let groupSubCardSpacing: CGFloat = 12
+    private let groupSubCardHeight: CGFloat = 168
+    private let groupMemberRowHeight: CGFloat = 28
+
+    private var groupMemberListHeight: CGFloat {
+        groupMemberRowHeight * 3
+    }
+
     @ViewBuilder
     private var singleColumnSectionsLayout: some View {
-        ForEach(fixedSections, id: \.sectionKey) { section in
-            sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+        if !roleSections.isEmpty {
+            groupMainCard(title: "Roles") {
+                VStack(spacing: groupSubCardSpacing) {
+                    ForEach(roleSections, id: \.sectionKey) { section in
+                        sectionCardView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+                    }
+                }
+            }
         }
 
-        Section {
+        groupMainCard(title: "Coaching Staff") {
             if orderedGrades.isEmpty {
                 Text("Add club grades in Settings > Club Grades to manage coach contacts by grade.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(coachingSections, id: \.sectionKey) { section in
-                    sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+                VStack(spacing: groupSubCardSpacing) {
+                    ForEach(coachingSections, id: \.sectionKey) { section in
+                        sectionCardView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
+                    }
                 }
             }
-        } header: {
-            Text("Coaching Staff")
-        }
-
-        ForEach(customSections, id: \.sectionKey) { section in
-            sectionView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
         }
     }
 
@@ -2321,11 +2677,13 @@ private struct GroupsSettingsView: View {
 
     @ViewBuilder
     private var twoColumnSectionsLayout: some View {
-        if !fixedSections.isEmpty {
-            twoColumnGridSection(for: fixedSections)
+        if !roleSections.isEmpty {
+            groupMainCard(title: "Roles") {
+                twoColumnGrid(for: roleSections)
+            }
         }
 
-        Section("Coaching Staff") {
+        groupMainCard(title: "Coaching Staff") {
             if orderedGrades.isEmpty {
                 Text("Add club grades in Settings > Club Grades to manage coach contacts by grade.")
                     .foregroundStyle(.secondary)
@@ -2333,18 +2691,24 @@ private struct GroupsSettingsView: View {
                 twoColumnGrid(for: coachingSections)
             }
         }
-
-        if !customSections.isEmpty {
-            Section("Custom Groups") {
-                twoColumnGrid(for: customSections)
-            }
-        }
     }
 
     @ViewBuilder
-    private func twoColumnGridSection(for sections: [GroupSectionDescriptor]) -> some View {
+    private func groupMainCard<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         Section {
-            twoColumnGrid(for: sections)
+            VStack(alignment: .leading, spacing: groupMainCardSpacing) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+
+                content()
+            }
+            .padding(14)
+            .clubGlassSurface(cornerRadius: 16)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -2359,8 +2723,6 @@ private struct GroupsSettingsView: View {
                 sectionCardView(fallbackTitle: section.fallbackTitle, sectionKey: section.sectionKey)
             }
         }
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-        .listRowBackground(Color.clear)
     }
 
     private func useTwoColumnLayout(in size: CGSize) -> Bool {
@@ -2409,35 +2771,67 @@ private struct GroupsSettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 Text(displayTitle(for: sectionKey, fallback: fallbackTitle))
-                    .font(.title3)
+                    .font(.headline)
                     .fontWeight(.semibold)
+                    .lineLimit(2)
                 Spacer()
                 Button("Edit") {
                     sectionEditing = GroupSectionSelection(sectionKey: sectionKey, fallbackTitle: fallbackTitle)
                 }
+                .buttonStyle(.borderless)
             }
 
             let members = contactsForSection(sectionKey)
-            if members.isEmpty {
-                Text("No contacts added.")
-                    .foregroundStyle(.secondary)
-                    .font(.subheadline)
-            } else {
-                ForEach(members) { contact in
-                    HStack {
-                        StandardListIcon(systemName: "person.crop.circle.badge.checkmark")
-                        Text(contact.name)
-                        Spacer()
+            Group {
+                if members.isEmpty {
+                    Text("No contacts added.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else if members.count > 3 {
+                    ScrollView {
+                        memberRows(members)
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        contactEditing = contact
-                    }
+                    .scrollIndicators(.visible)
+                } else {
+                    memberRows(members)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            }
+            .frame(height: groupMemberListHeight, alignment: .top)
+        }
+        .padding(12)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(ClubTheme.cardFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(ClubTheme.cardOverlay)
+                )
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(ClubTheme.cardStroke, lineWidth: 1)
+        }
+        .frame(maxWidth: .infinity, minHeight: groupSubCardHeight, maxHeight: groupSubCardHeight, alignment: .topLeading)
+    }
+
+    private func memberRows(_ members: [Contact]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(members) { contact in
+                HStack {
+                    StandardListIcon(systemName: "person.crop.circle.badge.checkmark")
+                    Text(contact.name)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .frame(height: groupMemberRowHeight)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    contactEditing = contact
                 }
             }
         }
-        .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func fallbackTitle(for sectionKey: String) -> String {
@@ -2597,12 +2991,15 @@ private struct GroupSectionEditorSheet: View {
     let selectedContactIDs: Set<UUID>
     let onToggleContact: (UUID, Bool) -> Void
     let onEditContact: (Contact) -> Void
+    let onAddContact: (String, String, String) -> Bool
+
+    @State private var showAddContact = false
 
     var body: some View {
         NavigationStack {
             List {
                 if contacts.isEmpty {
-                    Text("No contacts available. Add contacts in Settings > Contacts.")
+                    Text("No contacts available.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(contacts) { contact in
@@ -2656,7 +3053,25 @@ private struct GroupSectionEditorSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showAddContact = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add Contact")
+                }
             }
+        }
+        .sheet(isPresented: $showAddContact) {
+            ContactEditSheet(
+                title: "Add Contact",
+                allowsSaveAndAddAnother: false,
+                onSave: { name, mobile, email in
+                    onAddContact(name, mobile, email)
+                }
+            )
+            .appPopupStyle()
         }
     }
 }
@@ -3257,15 +3672,24 @@ struct ReportsSettingsView: View {
     @State private var draggingTranslation: CGSize = .zero
     @State private var draggingStartSlotIndex: Int?
     @State private var isDiscardMoveChangesAlertPresented = false
+    @State private var activeTemplateGridColumnCount = UIDevice.current.userInterfaceIdiom == .phone ? 1 : 4
     @AppStorage("reports.templateOrder.v1") private var templateOrderData = ""
     var onOpenContactsSettings: (() -> Void)? = nil
 
-    private let templateGridColumnCount = 4
+    private func templateGridColumnCount(for size: CGSize) -> Int {
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return size.height > size.width ? 1 : 2
+        }
+        if UIDevice.current.userInterfaceIdiom == .pad && size.height > size.width {
+            return 3
+        }
+        return 4
+    }
     private let templateGridSpacing: CGFloat = 12
     private let templateTileHeight: CGFloat = 118
 
     private var displayedTemplates: [CustomReportTemplate] {
-        let templateByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
+        let templateByID = Dictionary(templates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let activeOrder = activeTemplateOrderIDs()
         let orderedFromStore = activeOrder.compactMap { templateByID[$0] }
         let remaining = templates.filter { !activeOrder.contains($0.id) }
@@ -3273,17 +3697,17 @@ struct ReportsSettingsView: View {
         return orderedFromStore + remaining
     }
 
-    private var templateGridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: templateGridSpacing), count: templateGridColumnCount)
+    private func templateGridColumns(columnCount: Int) -> [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: templateGridSpacing), count: columnCount)
     }
 
-    private var placeholderSlotCount: Int {
-        let minimumSlots = templateGridColumnCount * 2
+    private func placeholderSlotCount(columnCount: Int) -> Int {
+        let minimumSlots = columnCount * 2
         let templateCount = displayedTemplates.count
-        if templateCount < minimumSlots { return minimumSlots }
-        if templateCount == minimumSlots { return minimumSlots + templateGridColumnCount }
-        let rowCount = Int(ceil(Double(templateCount) / Double(templateGridColumnCount)))
-        return rowCount * templateGridColumnCount
+        let requiredSlots = templateCount + (isMoveModeEnabled ? 0 : 1)
+        let visibleSlots = max(minimumSlots, requiredSlots)
+        let rowCount = Int(ceil(Double(visibleSlots) / Double(columnCount)))
+        return rowCount * columnCount
     }
 
     private var isTemplateActionDialogPresented: Binding<Bool> {
@@ -3313,8 +3737,11 @@ struct ReportsSettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+        GeometryReader { viewProxy in
+            let columnCount = templateGridColumnCount(for: viewProxy.size)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
                 if isMoveModeEnabled {
                     HStack {
                         Button("Back") {
@@ -3330,8 +3757,8 @@ struct ReportsSettingsView: View {
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(hasMoveOrderChanges ? Color.blue : Color.gray.opacity(0.4))
-                        .foregroundStyle(.white.opacity(hasMoveOrderChanges ? 1 : 0.7))
+                        .background(hasMoveOrderChanges ? Color(uiColor: .systemGray) : ClubTheme.subCardFill)
+                        .foregroundStyle(hasMoveOrderChanges ? Color.white : Color.secondary)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .buttonStyle(.plain)
                         .disabled(!hasMoveOrderChanges)
@@ -3339,35 +3766,42 @@ struct ReportsSettingsView: View {
                     .padding(.horizontal)
                 }
 
-                if templates.isEmpty {
-                    Text("No custom reports yet. Create one to save reusable report filters.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                }
-
-                GeometryReader { proxy in
-                    let tileWidth = max(
-                        0,
-                        (proxy.size.width - (templateGridSpacing * CGFloat(templateGridColumnCount - 1)))
-                        / CGFloat(templateGridColumnCount)
-                    )
-
-                    LazyVGrid(columns: templateGridColumns, spacing: templateGridSpacing) {
-                        ForEach(0..<placeholderSlotCount, id: \.self) { index in
-                            slotTile(at: index, tileWidth: tileWidth)
-                        }
+                VStack(alignment: .leading, spacing: 12) {
+                    if templates.isEmpty {
+                        Text("No custom reports yet. Create one to save reusable report filters.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    GeometryReader { proxy in
+                        let tileWidth = max(
+                            0,
+                            (proxy.size.width - (templateGridSpacing * CGFloat(columnCount - 1)))
+                            / CGFloat(columnCount)
+                        )
+
+                        LazyVGrid(columns: templateGridColumns(columnCount: columnCount), spacing: templateGridSpacing) {
+                            ForEach(0..<placeholderSlotCount(columnCount: columnCount), id: \.self) { index in
+                                slotTile(at: index, tileWidth: tileWidth, columnCount: columnCount)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: gridHeightEstimate(columnCount: columnCount))
                 }
-                .frame(minHeight: gridHeightEstimate())
+                .padding(14)
+                .clubGlassSurface(cornerRadius: 18)
                 .padding(.horizontal)
             }
             .padding(.vertical)
         }
         .navigationTitle("Reports")
         .onAppear {
+            updateActiveTemplateGridColumnCount(columnCount)
             syncTemplateOrderWithCurrentTemplates()
+        }
+        .onChange(of: viewProxy.size) { _, newSize in
+            updateActiveTemplateGridColumnCount(templateGridColumnCount(for: newSize))
         }
         .onChange(of: templates.map(\.id)) { _, _ in
             syncTemplateOrderWithCurrentTemplates()
@@ -3463,6 +3897,7 @@ struct ReportsSettingsView: View {
             }
         } message: {
             Text("You have unsaved report order changes. If you go back now, your changes will be lost.")
+        }
         }
     }
 
@@ -3609,10 +4044,10 @@ struct ReportsSettingsView: View {
     private func placeholderTile(at index: Int) -> some View {
         let isCreateSlot = !isMoveModeEnabled && index == displayedTemplates.count
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color.gray.opacity(0.14))
+            .fill(ClubTheme.subCardFill)
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.gray.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
+                    .stroke(ClubTheme.subCardStroke, style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
             )
             .overlay {
                 if isCreateSlot {
@@ -3640,9 +4075,9 @@ struct ReportsSettingsView: View {
     }
 
     @ViewBuilder
-    private func slotTile(at index: Int, tileWidth: CGFloat) -> some View {
+    private func slotTile(at index: Int, tileWidth: CGFloat, columnCount: Int) -> some View {
         if let template = templateForSlot(index) {
-            let tile = reportTile(for: template, tileWidth: tileWidth)
+            let tile = reportTile(for: template, tileWidth: tileWidth, columnCount: columnCount)
             if isMoveModeEnabled {
                 tile.zIndex(draggingTemplateID == template.id ? 2 : 1)
             } else {
@@ -3654,7 +4089,7 @@ struct ReportsSettingsView: View {
     }
 
     @ViewBuilder
-    private func reportTile(for template: CustomReportTemplate, tileWidth: CGFloat) -> some View {
+    private func reportTile(for template: CustomReportTemplate, tileWidth: CGFloat, columnCount: Int) -> some View {
         let baseTile = VStack(spacing: 6) {
             Text(template.name)
                 .font(.title.weight(.bold))
@@ -3695,11 +4130,18 @@ struct ReportsSettingsView: View {
         .shadow(color: .black.opacity(draggingTemplateID == template.id ? 0.2 : 0), radius: 12, y: 8)
         .frame(maxWidth: .infinity)
         .frame(height: templateTileHeight)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(ClubTheme.subCardFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
+        )
 
         if isMoveModeEnabled {
             baseTile
-                .gesture(templateMoveGesture(for: template.id, tileWidth: tileWidth))
+                .gesture(templateMoveGesture(for: template.id, tileWidth: tileWidth, columnCount: columnCount))
         } else {
             baseTile
         }
@@ -3774,8 +4216,9 @@ struct ReportsSettingsView: View {
         moveDraftOrder = persistedTemplateOrderIDs()
         moveInitialOrder = moveDraftOrder
         moveDraftSlots = moveDraftOrder.map { Optional($0) }
-        if moveDraftSlots.count < placeholderSlotCount {
-            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: placeholderSlotCount - moveDraftSlots.count))
+        let slotCount = placeholderSlotCount(columnCount: activeTemplateGridColumnCount)
+        if moveDraftSlots.count < slotCount {
+            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: slotCount - moveDraftSlots.count))
         }
         isMoveModeEnabled = true
     }
@@ -3794,8 +4237,9 @@ struct ReportsSettingsView: View {
     private func cancelMoveMode() {
         moveDraftOrder = moveInitialOrder
         moveDraftSlots = moveInitialOrder.map { Optional($0) }
-        if moveDraftSlots.count < placeholderSlotCount {
-            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: placeholderSlotCount - moveDraftSlots.count))
+        let slotCount = placeholderSlotCount(columnCount: activeTemplateGridColumnCount)
+        if moveDraftSlots.count < slotCount {
+            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: slotCount - moveDraftSlots.count))
         }
         isMoveModeEnabled = false
         draggingTemplateID = nil
@@ -3831,8 +4275,9 @@ struct ReportsSettingsView: View {
                 moveDraftSlots.append(id)
             }
         }
-        if isMoveModeEnabled && moveDraftSlots.count < placeholderSlotCount {
-            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: placeholderSlotCount - moveDraftSlots.count))
+        let slotCount = placeholderSlotCount(columnCount: activeTemplateGridColumnCount)
+        if isMoveModeEnabled && moveDraftSlots.count < slotCount {
+            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: slotCount - moveDraftSlots.count))
         }
     }
 
@@ -3858,6 +4303,17 @@ struct ReportsSettingsView: View {
         persistTemplateOrder(existingOrder + missingTemplateIDs)
     }
 
+    private func updateActiveTemplateGridColumnCount(_ columnCount: Int) {
+        guard activeTemplateGridColumnCount != columnCount else { return }
+        activeTemplateGridColumnCount = columnCount
+        guard isMoveModeEnabled else { return }
+
+        let slotCount = placeholderSlotCount(columnCount: columnCount)
+        if moveDraftSlots.count < slotCount {
+            moveDraftSlots.append(contentsOf: Array(repeating: nil, count: slotCount - moveDraftSlots.count))
+        }
+    }
+
     private func appendTemplateIDToOrder(_ id: UUID) {
         var order = persistedTemplateOrderIDs()
         order.removeAll { $0 == id }
@@ -3871,7 +4327,7 @@ struct ReportsSettingsView: View {
         persistTemplateOrder(order)
     }
 
-    private func templateMoveGesture(for templateID: UUID, tileWidth: CGFloat) -> some Gesture {
+    private func templateMoveGesture(for templateID: UUID, tileWidth: CGFloat, columnCount: Int) -> some Gesture {
         let hold = LongPressGesture(minimumDuration: 0.2)
         let drag = DragGesture(minimumDistance: 0)
 
@@ -3895,28 +4351,28 @@ struct ReportsSettingsView: View {
                 }
             }
             .onEnded { _ in
-                commitDragReorder(tileWidth: tileWidth)
+                commitDragReorder(tileWidth: tileWidth, columnCount: columnCount)
                 draggingTemplateID = nil
                 draggingTranslation = .zero
                 draggingStartSlotIndex = nil
             }
     }
 
-    private func nearestSlotIndex(for translation: CGSize, tileWidth: CGFloat) -> Int {
+    private func nearestSlotIndex(for translation: CGSize, tileWidth: CGFloat, columnCount: Int) -> Int {
         guard let startSlotIndex = draggingStartSlotIndex else { return 0 }
         let cellWidth = max(tileWidth + templateGridSpacing, 1)
         let cellHeight = templateTileHeight + templateGridSpacing
         let horizontalShift = Int((translation.width / cellWidth).rounded())
         let verticalShift = Int((translation.height / cellHeight).rounded())
-        let proposedTarget = startSlotIndex + horizontalShift + (verticalShift * templateGridColumnCount)
+        let proposedTarget = startSlotIndex + horizontalShift + (verticalShift * columnCount)
         return min(max(0, proposedTarget), max(moveDraftSlots.count - 1, 0))
     }
 
-    private func commitDragReorder(tileWidth: CGFloat) {
+    private func commitDragReorder(tileWidth: CGFloat, columnCount: Int) {
         guard let draggingTemplateID else { return }
         guard let sourceIndex = moveDraftSlots.firstIndex(of: draggingTemplateID) else { return }
 
-        let targetIndex = nearestSlotIndex(for: draggingTranslation, tileWidth: tileWidth)
+        let targetIndex = nearestSlotIndex(for: draggingTranslation, tileWidth: tileWidth, columnCount: columnCount)
         guard targetIndex != sourceIndex else { return }
 
         var currentSlots = moveDraftSlots
@@ -3926,12 +4382,12 @@ struct ReportsSettingsView: View {
         moveDraftSlots = currentSlots
     }
 
-    private func gridHeightEstimate() -> CGFloat {
+    private func gridHeightEstimate(columnCount: Int) -> CGFloat {
         let rowCount: Int = {
             if isMoveModeEnabled {
-                return max(1, Int(ceil(Double(placeholderSlotCount) / Double(templateGridColumnCount))))
+                return max(1, Int(ceil(Double(placeholderSlotCount(columnCount: columnCount)) / Double(columnCount))))
             }
-            return max(1, Int(ceil(Double(displayedTemplates.count + 1) / Double(templateGridColumnCount))))
+            return max(1, Int(ceil(Double(displayedTemplates.count + 1) / Double(columnCount))))
         }()
         return (CGFloat(rowCount) * templateTileHeight) + (CGFloat(max(0, rowCount - 1)) * templateGridSpacing)
     }
@@ -4096,8 +4552,6 @@ private struct CustomReportPreviewView: View {
     @State private var pdfURL: URL?
     @State private var errorMessage: String?
     @State private var showShareSheet = false
-    @State private var showMailComposer = false
-    @State private var showMailUnavailableAlert = false
 
     var body: some View {
         NavigationStack {
@@ -4122,16 +4576,11 @@ private struct CustomReportPreviewView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        if MFMailComposeViewController.canSendMail() {
-                            showMailComposer = true
-                        } else {
-                            showMailUnavailableAlert = true
-                            showShareSheet = true
-                        }
+                        showShareSheet = true
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
-                    .disabled(pdfURL == nil || emailRecipients.isEmpty)
+                    .disabled(pdfURL == nil)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -4141,25 +4590,10 @@ private struct CustomReportPreviewView: View {
             }
             .sheet(isPresented: $showShareSheet) {
                 if let pdfURL {
-                    ShareSheet(items: [pdfURL])
+                    ShareSheet(items: [pdfURL], subject: "Custom Report: \(template.name)")
                 } else {
                     ShareSheet(items: [])
                 }
-            }
-            .sheet(isPresented: $showMailComposer) {
-                if let pdfURL {
-                    ReportMailComposeView(
-                        recipients: emailRecipients,
-                        subject: "Custom Report: \(template.name)",
-                        body: "Attached is the custom report PDF.",
-                        attachmentURL: pdfURL
-                    )
-                }
-            }
-            .alert("Mail Not Configured", isPresented: $showMailUnavailableAlert) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("Mail is not configured on this device. We opened the share sheet so you can still export the PDF.")
             }
             .task {
                 guard pdfURL == nil, errorMessage == nil else { return }
@@ -4556,12 +4990,22 @@ func makeTemplatePreviewPDF(
         .filter { !template.includeOnlyActiveGrades || $0.isActive }
         .filter { template.gradeIDs.isEmpty || template.gradeIDs.contains($0.id) }
     let selectedGradeIDs = Set(selectedGrades.map(\.id))
+    let normalizedTemplateName = template.name
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        .lowercased()
+    let isRosterReport = normalizedTemplateName.contains("roster")
+        || (template.includePlayersOnly && (normalizedTemplateName.contains("senior") || normalizedTemplateName.contains("junior")))
+    let isMissingEntriesReport = normalizedTemplateName.contains("missing entries")
     let relevantGames = games
         .filter { selectedGradeIDs.isEmpty || selectedGradeIDs.contains($0.gradeID) }
         .filter { !$0.isDraft && $0.date <= Date() }
         .filter { dateRange.contains($0.date) }
         .sorted { $0.date > $1.date }
-    let playerLookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
+    let missingEntryGames = games
+        .filter { !$0.isDraft && $0.date <= Date() }
+        .sorted { $0.date > $1.date }
+    let playerLookup = Dictionary(players.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let playersOnlyGradeFilterIDs = Set(template.playersOnlyGradeFilterIDs)
     let playersInPlayersOnlyScope = players.filter { player in
         guard player.isActive else { return false }
@@ -4581,8 +5025,8 @@ func makeTemplatePreviewPDF(
             }
             .filter { !$0.isEmpty }
     )
-    let gradeLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0.name) })
-    let gradeConfigLookup = Dictionary(uniqueKeysWithValues: grades.map { ($0.id, $0) })
+    let gradeLookup = Dictionary(grades.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    let gradeConfigLookup = Dictionary(grades.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let selectedGradeNames = selectedGrades.map(\.name)
     let gradeSummary = selectedGradeNames.isEmpty ? "All grades" : selectedGradeNames.joined(separator: ", ")
     let dateSummary: String = {
@@ -4590,6 +5034,14 @@ func makeTemplatePreviewPDF(
         let end = dateRange.end.formatted(date: .abbreviated, time: .omitted)
         return start == end ? start : "\(start) – \(end)"
     }()
+    let reportGradeSummary = isMissingEntriesReport ? "All grades" : gradeSummary
+    let reportDateSummary = isMissingEntriesReport ? "All previous games" : dateSummary
+    let clubConfiguration = ClubConfigurationStore.load()
+    let homeVenueNames = Set(
+        clubConfiguration.clubTeam.sanitizedVenues.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+    )
     var gamesByPlayer: [UUID: Int] = [:]
 
     func guestVotePoints(for game: Game, rank: Int) -> Int {
@@ -4609,8 +5061,18 @@ func makeTemplatePreviewPDF(
     }
 
     func includePlayerID(_ id: UUID) -> Bool {
+        if id == GameGoalKickerEntry.oppositionPlayerID {
+            return !template.includePlayersOnly
+        }
         guard template.includePlayersOnly else { return true }
         return playersOnlyScopedPlayerIDs.contains(id)
+    }
+
+    func playerDisplayName(for id: UUID) -> String {
+        if id == GameGoalKickerEntry.oppositionPlayerID {
+            return GameGoalKickerEntry.oppositionPlayerName
+        }
+        return playerLookup[id]?.name ?? "Unknown Player"
     }
 
     func includeName(_ rawName: String) -> Bool {
@@ -4682,6 +5144,238 @@ func makeTemplatePreviewPDF(
         }
     }
 
+    struct MissingEntryReportRound: Identifiable {
+        let id: String
+        let roundNumber: Int
+        let opponent: String
+        let date: Date
+        let games: [Game]
+    }
+
+    struct MissingEntryReportRow {
+        let roundID: String
+        let gradeName: String
+        let role: String
+        let sortDate: Date
+        let gradeOrder: Int
+    }
+
+    let missingEntryRounds: [MissingEntryReportRound] = {
+        let sortedChronological = missingEntryGames.sorted { $0.date < $1.date }
+        guard !sortedChronological.isEmpty else { return [] }
+
+        struct RoundBucket {
+            var id: String
+            var opponentKey: String
+            var opponentLabel: String
+            var anchorDate: Date
+            var games: [Game]
+        }
+
+        var buckets: [RoundBucket] = []
+        let matchingWindow: TimeInterval = 60 * 60 * 24 * 3
+
+        for game in sortedChronological {
+            let opponentLabel = game.opponent.trimmingCharacters(in: .whitespacesAndNewlines)
+            let opponentKey = opponentLabel.lowercased()
+            if let index = buckets.firstIndex(where: { bucket in
+                bucket.opponentKey == opponentKey &&
+                abs(bucket.anchorDate.timeIntervalSince(game.date)) <= matchingWindow
+            }) {
+                buckets[index].games.append(game)
+                let sortedDates = buckets[index].games.map(\.date).sorted()
+                buckets[index].anchorDate = sortedDates[sortedDates.count / 2]
+            } else {
+                let dayKey = Calendar.current.startOfDay(for: game.date).timeIntervalSince1970
+                buckets.append(
+                    RoundBucket(
+                        id: "\(opponentKey)|\(Int(dayKey))",
+                        opponentKey: opponentKey,
+                        opponentLabel: opponentLabel.isEmpty ? "Unknown Opponent" : opponentLabel,
+                        anchorDate: game.date,
+                        games: [game]
+                    )
+                )
+            }
+        }
+
+        return buckets
+            .map { bucket in
+                (
+                    id: bucket.id,
+                    date: bucket.games.map(\.date).max() ?? bucket.anchorDate,
+                    opponent: bucket.opponentLabel,
+                    games: bucket.games.sorted { $0.date > $1.date }
+                )
+            }
+            .sorted { $0.date < $1.date }
+            .enumerated()
+            .map { index, round in
+                MissingEntryReportRound(
+                    id: round.id,
+                    roundNumber: index + 1,
+                    opponent: round.opponent,
+                    date: round.date,
+                    games: round.games
+                )
+            }
+    }()
+
+    let missingEntryRoundLookup = Dictionary(uniqueKeysWithValues: missingEntryRounds.map { ($0.id, $0) })
+    let missingEntryRoundIDByGameID = Dictionary(
+        uniqueKeysWithValues: missingEntryRounds.flatMap { round in
+            round.games.map { ($0.id, round.id) }
+        }
+    )
+    let validPlayerIDs = Set(players.map(\.id))
+    let missingEntriesGradeOrder = Dictionary(uniqueKeysWithValues: orderedGrades.enumerated().map { ($0.element.id, $0.offset) })
+
+    func hasReportTextValue(_ value: String) -> Bool {
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func reportIsHomeGame(_ game: Game) -> Bool {
+        let selectedVenue = game.venue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !selectedVenue.isEmpty else { return false }
+        return homeVenueNames.contains(selectedVenue)
+    }
+
+    func reportRequiresFieldUmpire(for game: Game, grade: Grade) -> Bool {
+        grade.asksFieldUmpire && reportIsHomeGame(game)
+    }
+
+    func requiredReportTrainerCount(for grade: Grade) -> Int {
+        [
+            grade.asksTrainer1,
+            grade.asksTrainer2,
+            grade.asksTrainer3,
+            grade.asksTrainer4
+        ].filter { $0 }.count
+    }
+
+    func requiredReportBestPlayersCount(for grade: Grade) -> Int {
+        min(max(grade.bestPlayersCount, 0), 10)
+    }
+
+    func requiredReportGuestVotesCount(for grade: Grade) -> Int {
+        grade.asksGuestBestFairestVotesScan ? grade.guestBestPlayersCount : 0
+    }
+
+    func reportHasRequiredGoalKickers(for game: Game, grade: Grade) -> Bool {
+        guard grade.asksGoalKickers else { return true }
+        guard game.ourGoals > 0 else { return true }
+
+        let validEntries = game.goalKickers.filter { entry in
+            guard entry.goals > 0, let playerID = entry.playerID else { return false }
+            return playerID == GameGoalKickerEntry.oppositionPlayerID || validPlayerIDs.contains(playerID)
+        }
+        let totalGoals = validEntries.reduce(0) { $0 + $1.goals }
+        let oppositionGoals = validEntries.reduce(0) { $0 + $1.oppositionGoals }
+        return totalGoals == game.ourGoals + oppositionGoals
+    }
+
+    func reportHasRequiredBestPlayers(for game: Game, grade: Grade) -> Bool {
+        let requiredCount = requiredReportBestPlayersCount(for: grade)
+        guard requiredCount > 0 else { return true }
+        let pickedIDs = Array(game.bestPlayersRanked.prefix(requiredCount))
+        guard pickedIDs.count == requiredCount else { return false }
+        return Set(pickedIDs).count == requiredCount && pickedIDs.allSatisfy { validPlayerIDs.contains($0) }
+    }
+
+    func reportHasRequiredGuestVotes(for game: Game, grade: Grade) -> Bool {
+        let requiredCount = requiredReportGuestVotesCount(for: grade)
+        guard requiredCount > 0 else { return true }
+        let votes = Array(game.guestVotesRanked.prefix(requiredCount))
+        let pickedIDs = votes.map(\.playerID)
+        guard pickedIDs.count == requiredCount else { return false }
+        return Set(pickedIDs).count == requiredCount && pickedIDs.allSatisfy { validPlayerIDs.contains($0) }
+    }
+
+    func missingEntryGameLabel(for game: Game, grade: Grade) -> String? {
+        let normalizedGradeName = grade.name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        guard normalizedGradeName == "under 9's" || normalizedGradeName == "under 12's" else { return nil }
+
+        let pairedGames = missingEntryGames
+            .filter {
+                $0.gradeID == game.gradeID &&
+                Calendar.current.isDate($0.date, inSameDayAs: game.date) &&
+                $0.opponent == game.opponent &&
+                $0.venue == game.venue
+            }
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+        guard pairedGames.count > 1, let gameIndex = pairedGames.firstIndex(where: { $0.id == game.id }) else { return nil }
+        return "Game \(gameIndex + 1)"
+    }
+
+    func missingEntryRoles(for game: Game, grade: Grade) -> [String] {
+        var roles: [String] = []
+
+        if grade.asksHeadCoach, !hasReportTextValue(game.headCoachName) { roles.append("Head Coach") }
+        if grade.asksAssistantCoach, !hasReportTextValue(game.assistantCoachName) { roles.append("Assistant Coach") }
+        if grade.asksTeamManager, !hasReportTextValue(game.teamManagerName) { roles.append("Team Manager") }
+        if grade.asksRunner, !hasReportTextValue(game.runnerName) { roles.append("Runner") }
+        if grade.asksGoalUmpire, !hasReportTextValue(game.goalUmpireName) { roles.append("Goal Umpire") }
+        if grade.asksTimeKeeper, !hasReportTextValue(game.timeKeeperName) { roles.append("Time Keeper") }
+        if reportRequiresFieldUmpire(for: game, grade: grade), !hasReportTextValue(game.fieldUmpireName) { roles.append("Field Umpire") }
+        if grade.asksBoundaryUmpire1, !hasReportTextValue(game.boundaryUmpire1Name) { roles.append("Boundary Umpire 1") }
+        if grade.asksBoundaryUmpire2, !hasReportTextValue(game.boundaryUmpire2Name) { roles.append("Boundary Umpire 2") }
+        if grade.asksWaterBoy1, !hasReportTextValue(game.waterBoy1Name) { roles.append("Water 1") }
+        if grade.asksWaterBoy2, !hasReportTextValue(game.waterBoy2Name) { roles.append("Water 2") }
+        if grade.asksWaterBoy3, !hasReportTextValue(game.waterBoy3Name) { roles.append("Water 3") }
+        if grade.asksWaterBoy4, !hasReportTextValue(game.waterBoy4Name) { roles.append("Water 4") }
+
+        let requiredTrainers = requiredReportTrainerCount(for: grade)
+        let trainerCount = game.trainers.filter(hasReportTextValue).count
+        if trainerCount < requiredTrainers {
+            roles.append(requiredTrainers == 1 ? "Trainer" : "Trainers (\(requiredTrainers) required)")
+        }
+
+        if grade.asksNotes, !hasReportTextValue(game.notes) { roles.append("Notes") }
+        if !reportHasRequiredGoalKickers(for: game, grade: grade) { roles.append("Goal Kickers") }
+
+        let requiredBestPlayers = requiredReportBestPlayersCount(for: grade)
+        if !reportHasRequiredBestPlayers(for: game, grade: grade) {
+            roles.append("Best Players (\(requiredBestPlayers) required)")
+        }
+
+        let requiredGuestVotes = requiredReportGuestVotesCount(for: grade)
+        if !reportHasRequiredGuestVotes(for: game, grade: grade) {
+            roles.append("Guest Votes (\(requiredGuestVotes) required)")
+        }
+
+        return roles
+    }
+
+    let missingEntryRows: [MissingEntryReportRow] = missingEntryGames.flatMap { game in
+        guard let grade = gradeConfigLookup[game.gradeID],
+              let roundID = missingEntryRoundIDByGameID[game.id] else { return [MissingEntryReportRow]() }
+        let gameLabel = missingEntryGameLabel(for: game, grade: grade)
+        return missingEntryRoles(for: game, grade: grade).map { role in
+            let displayRole = gameLabel.map { "\($0) - \(role)" } ?? role
+            return MissingEntryReportRow(
+                roundID: roundID,
+                gradeName: grade.name,
+                role: displayRole,
+                sortDate: game.date,
+                gradeOrder: missingEntriesGradeOrder[grade.id] ?? Int.max
+            )
+        }
+    }
+    .sorted { lhs, rhs in
+        let lhsRoundNumber = missingEntryRoundLookup[lhs.roundID]?.roundNumber ?? Int.max
+        let rhsRoundNumber = missingEntryRoundLookup[rhs.roundID]?.roundNumber ?? Int.max
+        if lhsRoundNumber != rhsRoundNumber { return lhsRoundNumber < rhsRoundNumber }
+        if lhs.gradeOrder != rhs.gradeOrder { return lhs.gradeOrder < rhs.gradeOrder }
+        let gradeCompare = lhs.gradeName.localizedStandardCompare(rhs.gradeName)
+        if gradeCompare != .orderedSame { return gradeCompare == .orderedAscending }
+        let roleCompare = lhs.role.localizedStandardCompare(rhs.role)
+        if roleCompare != .orderedSame { return roleCompare == .orderedAscending }
+        return lhs.sortDate < rhs.sortDate
+    }
+
     let data = renderer.pdfData { context in
         let horizontalInset: CGFloat = 30
         let verticalInset: CGFloat = 28
@@ -4722,7 +5416,7 @@ func makeTemplatePreviewPDF(
             attributes: [.font: titleFont, .foregroundColor: UIColor.black]
         ).draw(in: titleRect)
 
-        let subtitle = "\(dateSummary) • \(gradeSummary)"
+        let subtitle = "\(reportDateSummary) • \(reportGradeSummary)"
         let subtitleRect = CGRect(x: titleX, y: titleRect.maxY + 2, width: contentRect.width - 68, height: 22)
         NSAttributedString(
             string: subtitle,
@@ -4853,6 +5547,7 @@ func makeTemplatePreviewPDF(
             title: String,
             columns: [String],
             rows: [[String]],
+            highlightedNameRowIndexes: Set<Int>,
             xOrigin: CGFloat,
             width: CGFloat
         ) -> CGFloat {
@@ -4923,16 +5618,27 @@ func makeTemplatePreviewPDF(
             localY += headerHeight
 
             let safeRows = rows.isEmpty ? [["No data"]] : rows
-            for row in safeRows {
+            let nameColumnIndexes = Set(columns.enumerated().compactMap { index, column -> Int? in
+                let normalizedColumn = column.lowercased()
+                return normalizedColumn == "player" || normalizedColumn == "name" ? index : nil
+            })
+            for (rowIndex, row) in safeRows.enumerated() {
                 x = xOrigin
                 for (index, colWidth) in colWidths.enumerated() {
                     let value = index < row.count ? row[index] : ""
                     let rect = CGRect(x: x, y: localY, width: colWidth, height: rowHeight)
+                    let shouldHighlightName = highlightedNameRowIndexes.contains(rowIndex) && nameColumnIndexes.contains(index)
+                    if shouldHighlightName {
+                        UIColor.systemYellow.withAlphaComponent(0.24).setFill()
+                        UIBezierPath(rect: rect).fill()
+                    }
                     UIColor.separator.setStroke()
                     UIBezierPath(rect: rect).stroke()
+                    let foregroundColor: UIColor = shouldHighlightName ? .systemOrange : .black
+                    let textFont: UIFont = shouldHighlightName ? (UIFont(name: "AvenirNext-DemiBold", size: 11) ?? UIFont.systemFont(ofSize: 11, weight: .semibold)) : bodyFont
                     NSAttributedString(
                         string: value,
-                        attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+                        attributes: [.font: textFont, .foregroundColor: foregroundColor]
                     ).draw(in: rect.insetBy(dx: 4, dy: 5))
                     x += colWidth
                 }
@@ -4941,7 +5647,97 @@ func makeTemplatePreviewPDF(
             return localY - startY
         }
 
-        if relevantGames.isEmpty {
+        func drawMissingEntriesTable(rows: [MissingEntryReportRow]) {
+            drawSectionHeader("Missing Entries")
+
+            guard !missingEntryGames.isEmpty else {
+                beginNewPageIfNeeded(requiredHeight: 28)
+                NSAttributedString(
+                    string: "No previous saved games were found.",
+                    attributes: [.font: bodyFont, .foregroundColor: UIColor.darkGray]
+                ).draw(in: CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: 22))
+                cursorY += 28
+                return
+            }
+
+            guard !rows.isEmpty else {
+                beginNewPageIfNeeded(requiredHeight: 28)
+                NSAttributedString(
+                    string: "No missing entries. All required fields are complete.",
+                    attributes: [.font: bodyFont, .foregroundColor: UIColor.darkGray]
+                ).draw(in: CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: 22))
+                cursorY += 28
+                return
+            }
+
+            let columns = ["Grade", "Role", "Fill In"]
+            let widths = [contentRect.width * 0.24, contentRect.width * 0.42, contentRect.width * 0.34]
+            let roundTitleHeight: CGFloat = 28
+            let headerHeight: CGFloat = 26
+            let rowHeight: CGFloat = 32
+            let rowsByRoundID = Dictionary(grouping: rows, by: \.roundID)
+
+            func drawRoundTableHeader() {
+                var x = contentRect.minX
+                for (index, column) in columns.enumerated() {
+                    let rect = CGRect(x: x, y: cursorY, width: widths[index], height: headerHeight)
+                    UIColor(red: 0.93, green: 0.95, blue: 0.99, alpha: 1).setFill()
+                    UIBezierPath(rect: rect).fill()
+                    UIColor.separator.setStroke()
+                    UIBezierPath(rect: rect).stroke()
+                    NSAttributedString(
+                        string: column,
+                        attributes: [.font: headerFont, .foregroundColor: UIColor.black]
+                    ).draw(in: rect.insetBy(dx: 5, dy: 7))
+                    x += widths[index]
+                }
+                cursorY += headerHeight
+            }
+
+            for round in missingEntryRounds {
+                guard let roundRows = rowsByRoundID[round.id], !roundRows.isEmpty else { continue }
+                beginNewPageIfNeeded(requiredHeight: roundTitleHeight + headerHeight + rowHeight)
+
+                NSAttributedString(
+                    string: "Round \(round.roundNumber) v \(round.opponent)",
+                    attributes: [.font: headerFont, .foregroundColor: UIColor.black]
+                ).draw(in: CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: 22))
+                cursorY += roundTitleHeight
+
+                drawRoundTableHeader()
+
+                for (rowIndex, row) in roundRows.enumerated() {
+                    beginNewPageIfNeeded(requiredHeight: rowHeight)
+                    if rowIndex.isMultiple(of: 2) {
+                        UIColor(white: 0.985, alpha: 1).setFill()
+                        UIBezierPath(rect: CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: rowHeight)).fill()
+                    }
+
+                    let values = [row.gradeName, row.role, ""]
+                    var x = contentRect.minX
+                    for (index, value) in values.enumerated() {
+                        let rect = CGRect(x: x, y: cursorY, width: widths[index], height: rowHeight)
+                        UIColor.separator.setStroke()
+                        UIBezierPath(rect: rect).stroke()
+                        NSAttributedString(
+                            string: value,
+                            attributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+                        ).draw(in: rect.insetBy(dx: 5, dy: 8))
+                        x += widths[index]
+                    }
+                    cursorY += rowHeight
+                }
+
+                cursorY += 12
+            }
+        }
+
+        if isMissingEntriesReport {
+            drawMissingEntriesTable(rows: missingEntryRows)
+            return
+        }
+
+        if relevantGames.isEmpty && !isRosterReport {
             drawSectionHeader("No completed games matched this template.")
             return
         }
@@ -4949,37 +5745,134 @@ func makeTemplatePreviewPDF(
         let primaryGame = relevantGames.first
         let configuration = ClubConfigurationStore.load()
 
+        func shouldShowScore(for game: Game) -> Bool {
+            guard template.includeScores else { return false }
+            guard let grade = grades.first(where: { $0.id == game.gradeID }) else { return true }
+            return grade.asksScore
+        }
+
         func drawScorePills(for game: Game, title: String) {
             drawSectionHeader(title)
-            beginNewPageIfNeeded(requiredHeight: 100)
+
+            let shouldShowScore = shouldShowScore(for: game)
+            beginNewPageIfNeeded(requiredHeight: shouldShowScore ? 126 : 94)
+
+            let pairedGames = relevantGames
+                .filter {
+                    $0.gradeID == game.gradeID &&
+                    Calendar.current.isDate($0.date, inSameDayAs: game.date) &&
+                    $0.opponent == game.opponent
+                }
+                .sorted { $0.id.uuidString < $1.id.uuidString }
+
+            if pairedGames.count == 2,
+               let gameIndex = pairedGames.firstIndex(where: { $0.id == game.id }) {
+                NSAttributedString(
+                    string: "Game \(gameIndex + 1)",
+                    attributes: [.font: scoreDetailFont, .foregroundColor: UIColor.darkGray]
+                ).draw(in: CGRect(x: contentRect.minX + 2, y: cursorY, width: 120, height: 16))
+                cursorY += 18
+            }
+
             let ourScoreText = "\(game.ourGoals).\(game.ourBehinds) (\(game.ourScore))"
             let oppScoreText = "\(game.theirGoals).\(game.theirBehinds) (\(game.theirScore))"
             let ourStyle = ClubStyle.style(for: configuration.clubTeam.name, configuration: configuration)
             let oppStyle = ClubStyle.style(for: game.opponent, configuration: configuration)
-            let pills: [(String, UIColor, UIColor)] = [
-                (ourScoreText, UIColor(ourStyle.background), UIColor(ourStyle.text)),
-                (oppScoreText, UIColor(oppStyle.background), UIColor(oppStyle.text))
-            ]
+
             let gap: CGFloat = 10
             let pillWidth = (contentRect.width - gap) / 2
-            var x = contentRect.minX
-            for (index, pill) in pills.enumerated() {
-                let rect = CGRect(x: x, y: cursorY, width: pillWidth, height: 74)
+            let pillHeight: CGFloat = shouldShowScore ? 74 : 42
+
+            let leftRect = CGRect(x: contentRect.minX, y: cursorY, width: pillWidth, height: pillHeight)
+            let rightRect = CGRect(x: contentRect.minX + pillWidth + gap, y: cursorY, width: pillWidth, height: pillHeight)
+
+            for (rect, bgColor, textColor, teamName, scoreText) in [
+                (leftRect, UIColor(ourStyle.background), UIColor(ourStyle.text), configuration.clubTeam.name, ourScoreText),
+                (rightRect, UIColor(oppStyle.background), UIColor(oppStyle.text), game.opponent, oppScoreText)
+            ] {
                 let path = UIBezierPath(roundedRect: rect, cornerRadius: 18)
-                pill.1.setFill()
+                bgColor.setFill()
                 path.fill()
-                let teamName = index == 0 ? configuration.clubTeam.name : game.opponent
-                NSAttributedString(
-                    string: teamName.uppercased(),
-                    attributes: [.font: scoreDetailFont, .foregroundColor: pill.2]
-                ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 10, width: rect.width - 24, height: 16))
-                NSAttributedString(
-                    string: pill.0,
-                    attributes: [.font: scoreBannerFont, .foregroundColor: pill.2]
-                ).draw(in: CGRect(x: rect.minX + 12, y: rect.minY + 28, width: rect.width - 24, height: 36))
-                x += pillWidth + gap
+
+                let teamAttrs: [NSAttributedString.Key: Any] = [
+                    .font: scoreDetailFont,
+                    .foregroundColor: textColor
+                ]
+                let scoreAttrs: [NSAttributedString.Key: Any] = [
+                    .font: scoreBannerFont,
+                    .foregroundColor: textColor
+                ]
+
+                let teamText = teamName.uppercased()
+                let teamSize = (teamText as NSString).size(withAttributes: teamAttrs)
+                let teamX = rect.midX - (teamSize.width / 2)
+                let teamY = shouldShowScore ? (rect.minY + 10) : (rect.midY - (teamSize.height / 2))
+                NSString(string: teamText).draw(
+                    at: CGPoint(x: teamX, y: teamY),
+                    withAttributes: teamAttrs
+                )
+
+                if shouldShowScore {
+                    let scoreSize = (scoreText as NSString).size(withAttributes: scoreAttrs)
+                    let scoreX = rect.midX - (scoreSize.width / 2)
+                    NSString(string: scoreText).draw(
+                        at: CGPoint(x: scoreX, y: rect.minY + 28),
+                        withAttributes: scoreAttrs
+                    )
+                }
             }
-            cursorY += 86
+
+            let badgeMode: String = {
+                guard shouldShowScore else { return "V" }
+                if game.ourScore > game.theirScore { return "W" }
+                if game.ourScore < game.theirScore { return "L" }
+                return "D"
+            }()
+
+            let badgeColor: UIColor = {
+                switch badgeMode {
+                case "W": return .systemGreen
+                case "L": return .systemRed
+                case "D": return .systemOrange
+                default: return .white
+                }
+            }()
+
+            let badgeSize: CGFloat = 42
+            let badgeRect = CGRect(
+                x: contentRect.midX - (badgeSize / 2),
+                y: cursorY + (pillHeight / 2) - (badgeSize / 2),
+                width: badgeSize,
+                height: badgeSize
+            )
+            let badgePath = UIBezierPath(ovalIn: badgeRect)
+            badgeColor.setFill()
+            badgePath.fill()
+            if badgeMode == "V" {
+                UIColor.black.withAlphaComponent(0.2).setStroke()
+                badgePath.lineWidth = 1.2
+                badgePath.stroke()
+            } else {
+                UIColor.white.withAlphaComponent(0.25).setStroke()
+                badgePath.lineWidth = 1.2
+                badgePath.stroke()
+            }
+
+            let badgeTextColor: UIColor = badgeMode == "V" ? .black : .white
+            let badgeAttrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 22, weight: .black),
+                .foregroundColor: badgeTextColor
+            ]
+            let badgeTextSize = (badgeMode as NSString).size(withAttributes: badgeAttrs)
+            NSString(string: badgeMode).draw(
+                at: CGPoint(
+                    x: badgeRect.midX - (badgeTextSize.width / 2),
+                    y: badgeRect.midY - (badgeTextSize.height / 2)
+                ),
+                withAttributes: badgeAttrs
+            )
+
+            cursorY += pillHeight + 12
         }
 
         let minimumGamesThreshold = max(template.minimumGamesPlayed, 1)
@@ -4988,8 +5881,68 @@ func makeTemplatePreviewPDF(
         let goalKickersLimit = max(0, min(template.goalKickersLimit, 10))
         let bestAndFairestLimit = max(0, min(template.bestAndFairestLimit, 10))
 
-        func reportRows(for games: [Game]) -> (bestPlayers: [[String]], guestVotes: [[String]], goalKickers: [[String]], bestAndFairest: [[String]]) {
+        struct RosterRows {
+            let rows: [[String]]
+            let highlightedNameRowIndexes: Set<Int>
+        }
+
+        func reportRows(for games: [Game], gradeIDsOverride: Set<UUID>? = nil) -> (bestPlayers: RosterRows, guestVotes: RosterRows, goalKickers: RosterRows, bestAndFairest: RosterRows) {
+            let sectionGradeIDs = gradeIDsOverride ?? Set(games.map(\.gradeID))
+            let rosterPlayers: [Player] = {
+                guard isRosterReport else { return [] }
+                return players
+                    .filter { player in
+                        guard player.isActive, includePlayerID(player.id) else { return false }
+                        guard !sectionGradeIDs.isEmpty else { return selectedGradeIDs.isEmpty || !Set(player.gradeIDs).isDisjoint(with: selectedGradeIDs) }
+                        return !Set(player.gradeIDs).isDisjoint(with: sectionGradeIDs)
+                    }
+                    .sorted {
+                        let lhsNumber = $0.number ?? Int.max
+                        let rhsNumber = $1.number ?? Int.max
+                        if lhsNumber != rhsNumber { return lhsNumber < rhsNumber }
+                        return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
+            }()
+            let rosterPlayerIDs = Set(rosterPlayers.map(\.id))
+
+            func rosterRows<Value>(
+                from totals: [UUID: Value],
+                numericValue: (Value) -> Int,
+                makeRow: (Player, Value) -> [String],
+                zeroValue: Value
+            ) -> RosterRows {
+                let hasAnyData = totals.contains { playerID, value in
+                    rosterPlayerIDs.contains(playerID) && numericValue(value) > 0
+                }
+                guard isRosterReport else {
+                    return RosterRows(rows: [], highlightedNameRowIndexes: [])
+                }
+                guard hasAnyData else {
+                    return RosterRows(rows: [], highlightedNameRowIndexes: [])
+                }
+                let rows = rosterPlayers.map { player in
+                    makeRow(player, totals[player.id] ?? zeroValue)
+                }
+                let highlighted = Set(rows.indices.filter { index in
+                    numericValue(totals[rosterPlayers[index].id] ?? zeroValue) == 0
+                })
+                return RosterRows(rows: rows, highlightedNameRowIndexes: highlighted)
+            }
+
             let allBestPlayersRows: [[String]] = {
+                let bestPlayersByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
+                    for (index, playerID) in game.bestPlayersRanked.enumerated() {
+                        partialResult[playerID, default: 0] += bestPlayerPoints(for: game, index: index)
+                    }
+                }
+                if isRosterReport {
+                    return rosterRows(
+                        from: bestPlayersByPlayer,
+                        numericValue: { $0 },
+                        makeRow: { player, totalPoints in [String(totalPoints), player.name] },
+                        zeroValue: 0
+                    ).rows
+                }
                 if games.count == 1, let game = games.first {
                     return game.bestPlayersRanked.enumerated().compactMap { index, playerID in
                         guard includePlayerID(playerID), gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
@@ -4998,11 +5951,6 @@ func makeTemplatePreviewPDF(
                     }
                 }
 
-                let bestPlayersByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
-                    for (index, playerID) in game.bestPlayersRanked.enumerated() {
-                        partialResult[playerID, default: 0] += bestPlayerPoints(for: game, index: index)
-                    }
-                }
                 return bestPlayersByPlayer
                     .sorted { left, right in
                         if left.value != right.value { return left.value > right.value }
@@ -5013,14 +5961,22 @@ func makeTemplatePreviewPDF(
                         return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
                     }
             }()
-            let bestPlayersRows = bestPlayersLimit == 0 ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
+            let bestPlayersHighlight = isRosterReport ? Set(allBestPlayersRows.indices.filter { allBestPlayersRows[$0].first == "0" }) : []
+            let bestPlayersRows = bestPlayersLimit == 0 || isRosterReport ? allBestPlayersRows : Array(allBestPlayersRows.prefix(bestPlayersLimit))
             let guestVotePointsByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
                 guard canViewVoteDetails else { return }
                 for vote in game.guestVotesRanked {
                     partialResult[vote.playerID, default: 0] += guestVotePoints(for: game, rank: vote.rank)
                 }
             }
-            let allGuestVoteRows = guestVotePointsByPlayer
+            let allGuestVoteRows: [[String]] = isRosterReport
+                ? rosterRows(
+                    from: guestVotePointsByPlayer,
+                    numericValue: { $0 },
+                    makeRow: { player, totalPoints in [String(totalPoints), player.name] },
+                    zeroValue: 0
+                ).rows
+                : guestVotePointsByPlayer
                 .sorted { left, right in
                     if left.value != right.value { return left.value > right.value }
                     return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
@@ -5029,23 +5985,40 @@ func makeTemplatePreviewPDF(
                     guard includePlayerID(playerID), totalPoints > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                     return [String(totalPoints), playerLookup[playerID]?.name ?? "Unknown Player"]
                 }
-            let guestVoteRows = guestVotesLimit == 0 ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
-            let goalsByPlayer = games.reduce(into: [UUID: Int]()) { partialResult, game in
+            let guestVoteHighlight = isRosterReport ? Set(allGuestVoteRows.indices.filter { allGuestVoteRows[$0].first == "0" }) : []
+            let guestVoteRows = guestVotesLimit == 0 || isRosterReport ? allGuestVoteRows : Array(allGuestVoteRows.prefix(guestVotesLimit))
+            let goalsByPlayer = games.reduce(into: [UUID: (goals: Int, oppositionGoals: Int)]()) { partialResult, game in
                 for entry in game.goalKickers {
                     guard let playerID = entry.playerID else { continue }
-                    partialResult[playerID, default: 0] += entry.goals
+                    partialResult[playerID, default: (goals: 0, oppositionGoals: 0)].goals += entry.goals
+                    partialResult[playerID, default: (goals: 0, oppositionGoals: 0)].oppositionGoals += entry.oppositionGoals
                 }
                 }
-            let allGoalKickerRows = goalsByPlayer
+            let allGoalKickerRows: [[String]] = isRosterReport
+                ? rosterRows(
+                    from: goalsByPlayer,
+                    numericValue: { $0.goals },
+                    makeRow: { player, totals in
+                        let goalsText = GameGoalKickerEntry(playerID: player.id, goals: totals.goals, oppositionGoals: totals.oppositionGoals).goalsDisplayText
+                        return [player.name, goalsText]
+                    },
+                    zeroValue: (goals: 0, oppositionGoals: 0)
+                ).rows
+                : goalsByPlayer
                 .sorted { left, right in
-                    if left.value != right.value { return left.value > right.value }
-                    return (playerLookup[left.key]?.name ?? "") < (playerLookup[right.key]?.name ?? "")
+                    if left.value.goals != right.value.goals { return left.value.goals > right.value.goals }
+                    return playerDisplayName(for: left.key) < playerDisplayName(for: right.key)
                 }
-                .compactMap { (playerID, totalGoals) -> [String]? in
-                    guard includePlayerID(playerID), totalGoals > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
-                    return [playerLookup[playerID]?.name ?? "Unknown Player", String(totalGoals)]
+                .compactMap { (playerID, totals) -> [String]? in
+                    guard includePlayerID(playerID), totals.goals > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
+                    let goalsText = GameGoalKickerEntry(playerID: playerID, goals: totals.goals, oppositionGoals: totals.oppositionGoals).goalsDisplayText
+                    return [playerDisplayName(for: playerID), goalsText]
                 }
-            let goalKickerRows = goalKickersLimit == 0 ? allGoalKickerRows : Array(allGoalKickerRows.prefix(goalKickersLimit))
+            let goalKickerHighlight = isRosterReport ? Set(allGoalKickerRows.indices.filter { row in
+                guard allGoalKickerRows[row].count > 1 else { return false }
+                return allGoalKickerRows[row][1] == "0"
+            }) : []
+            let goalKickerRows = goalKickersLimit == 0 || isRosterReport ? allGoalKickerRows : Array(allGoalKickerRows.prefix(goalKickersLimit))
             var bestAndFairestPoints: [UUID: Int] = [:]
             for game in games {
                 for (index, playerID) in game.bestPlayersRanked.enumerated() {
@@ -5057,20 +6030,230 @@ func makeTemplatePreviewPDF(
                     }
                 }
             }
-            let allBestAndFairestRows = bestAndFairestPoints
+            let allBestAndFairestRows: [[String]] = isRosterReport
+                ? rosterRows(
+                    from: bestAndFairestPoints,
+                    numericValue: { $0 },
+                    makeRow: { player, pointTotal in [player.name, "\(pointTotal)"] },
+                    zeroValue: 0
+                ).rows
+                : bestAndFairestPoints
                 .sorted { $0.value > $1.value }
                 .compactMap { (playerID, pointTotal) -> [String]? in
                     guard includePlayerID(playerID), pointTotal > 0, gamesByPlayer[playerID, default: 0] >= minimumGamesThreshold else { return nil }
                     return [playerLookup[playerID]?.name ?? "Unknown Player", "\(pointTotal)"]
                 }
-            let bestAndFairestRows = bestAndFairestLimit == 0 ? allBestAndFairestRows : Array(allBestAndFairestRows.prefix(bestAndFairestLimit))
-            return (bestPlayersRows, guestVoteRows, goalKickerRows, bestAndFairestRows)
+            let bestAndFairestHighlight = isRosterReport ? Set(allBestAndFairestRows.indices.filter { row in
+                guard allBestAndFairestRows[row].count > 1 else { return false }
+                return allBestAndFairestRows[row][1] == "0"
+            }) : []
+            let bestAndFairestRows = bestAndFairestLimit == 0 || isRosterReport ? allBestAndFairestRows : Array(allBestAndFairestRows.prefix(bestAndFairestLimit))
+            return (
+                RosterRows(rows: bestPlayersRows, highlightedNameRowIndexes: bestPlayersHighlight),
+                RosterRows(rows: guestVoteRows, highlightedNameRowIndexes: guestVoteHighlight),
+                RosterRows(rows: goalKickerRows, highlightedNameRowIndexes: goalKickerHighlight),
+                RosterRows(rows: bestAndFairestRows, highlightedNameRowIndexes: bestAndFairestHighlight)
+            )
         }
 
         struct CompactReportTable {
             let title: String
             let columns: [String]
             let rows: [[String]]
+            var highlightedNameRowIndexes: Set<Int> = []
+        }
+
+        struct RosterReportRow {
+            let player: Player
+            let dutyCounts: [String: Int]
+
+            var total: Int { dutyCounts.values.reduce(0, +) }
+        }
+
+        struct RosterReportDuty {
+            let key: String
+            let title: String
+            let names: (Game) -> [String]
+        }
+
+        struct RosterReportColumn {
+            let title: String
+            let weight: CGFloat
+            let value: (RosterReportRow) -> String
+            let numericValue: ((RosterReportRow) -> Int)?
+        }
+
+        func buildRosterReportRows(for games: [Game], gradeIDs: Set<UUID>) -> [RosterReportRow] {
+            let rosterGradeIDs = playersOnlyGradeFilterIDs.isEmpty ? selectedGradeIDs : playersOnlyGradeFilterIDs
+            let effectiveGradeIDs = gradeIDs.isEmpty ? rosterGradeIDs : gradeIDs
+            let rosterPlayers = players
+                .filter { player in
+                    guard player.isActive, includePlayerID(player.id) else { return false }
+                    guard !effectiveGradeIDs.isEmpty else { return true }
+                    return !Set(player.gradeIDs).isDisjoint(with: effectiveGradeIDs)
+                }
+            let rosterPlayerIDs = Set(rosterPlayers.map(\.id))
+            let playersByNormalizedName = Dictionary(grouping: rosterPlayers) { player in
+                player.name
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    .lowercased()
+            }
+            let duties = rosterReportDuties()
+            var countsByPlayer: [UUID: [String: Int]] = [:]
+
+            for game in games {
+                for duty in duties {
+                    for rawName in duty.names(game) {
+                        let normalizedName = rawName
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                            .lowercased()
+                        guard !normalizedName.isEmpty,
+                              let playerID = playersByNormalizedName[normalizedName]?.first?.id,
+                              rosterPlayerIDs.contains(playerID) else { continue }
+                        countsByPlayer[playerID, default: [:]][duty.key, default: 0] += 1
+                    }
+                }
+            }
+
+            return rosterPlayers
+                .map { player in
+                    RosterReportRow(player: player, dutyCounts: countsByPlayer[player.id] ?? [:])
+                }
+                .sorted { lhs, rhs in
+                    if lhs.total != rhs.total { return lhs.total > rhs.total }
+                    return lhs.player.name.localizedCaseInsensitiveCompare(rhs.player.name) == .orderedAscending
+                }
+        }
+
+        func rosterReportDuties() -> [RosterReportDuty] {
+            var duties: [RosterReportDuty] = []
+
+            if template.includeStaffRoles {
+                duties.append(RosterReportDuty(key: "headCoach", title: "Head Coach", names: { [$0.headCoachName] }))
+                duties.append(RosterReportDuty(key: "assistantCoach", title: "Assistant", names: { [$0.assistantCoachName] }))
+                duties.append(RosterReportDuty(key: "teamManager", title: "Manager", names: { [$0.teamManagerName] }))
+                duties.append(RosterReportDuty(key: "runner", title: "Runner", names: { [$0.runnerName] }))
+            }
+            if template.includeOfficials {
+                duties.append(RosterReportDuty(key: "goalUmpire", title: "Goal Ump", names: { [$0.goalUmpireName] }))
+                duties.append(RosterReportDuty(key: "timeKeeper", title: "Time Keep", names: { [$0.timeKeeperName] }))
+                duties.append(RosterReportDuty(key: "fieldUmpire", title: "Field Ump", names: { [$0.fieldUmpireName] }))
+            }
+            if template.includeUmpires {
+                duties.append(RosterReportDuty(key: "boundaryUmpire", title: "Boundary", names: { [$0.boundaryUmpire1Name, $0.boundaryUmpire2Name] }))
+                duties.append(RosterReportDuty(key: "water", title: "Water", names: { [$0.waterBoy1Name, $0.waterBoy2Name, $0.waterBoy3Name, $0.waterBoy4Name] }))
+            }
+            if template.includeTrainers {
+                duties.append(RosterReportDuty(key: "trainer", title: "Trainer", names: { $0.trainers }))
+            }
+
+            return duties
+        }
+
+        func rosterReportColumns(for rows: [RosterReportRow]) -> [RosterReportColumn] {
+            var columns: [RosterReportColumn] = [
+                RosterReportColumn(title: "Player", weight: 0.42, value: { $0.player.name }, numericValue: nil)
+            ]
+
+            for duty in rosterReportDuties() {
+                if rows.contains(where: { $0.dutyCounts[duty.key, default: 0] > 0 }) {
+                    columns.append(RosterReportColumn(
+                        title: duty.title,
+                        weight: 0.12,
+                        value: { String($0.dutyCounts[duty.key, default: 0]) },
+                        numericValue: { $0.dutyCounts[duty.key, default: 0] }
+                    ))
+                }
+            }
+
+            columns.append(RosterReportColumn(title: "Total", weight: 0.10, value: { String($0.total) }, numericValue: { $0.total }))
+            return columns
+        }
+
+        func estimatedRosterReportHeight(for games: [Game], gradeIDs: Set<UUID>) -> CGFloat {
+            let rowCount = max(buildRosterReportRows(for: games, gradeIDs: gradeIDs).count, 1)
+            return 24 + 24 + (CGFloat(rowCount) * 24) + 10
+        }
+
+        func drawRosterReportTable(for games: [Game], gradeIDs: Set<UUID>) {
+            let rows = buildRosterReportRows(for: games, gradeIDs: gradeIDs)
+            let columns = rosterReportColumns(for: rows)
+            let totalWeight = columns.map(\.weight).reduce(CGFloat(0), +)
+            let columnWidths = columns.map { ($0.weight / max(totalWeight, 1)) * contentRect.width }
+            let headerHeight: CGFloat = 24
+            let rowHeight: CGFloat = 24
+            let metricColumns = columns.compactMap(\.numericValue)
+
+            drawSectionHeader("Roster")
+            beginNewPageIfNeeded(requiredHeight: headerHeight + rowHeight)
+
+            func drawHeader() {
+                var x = contentRect.minX
+                for (index, column) in columns.enumerated() {
+                    let rect = CGRect(x: x, y: cursorY, width: columnWidths[index], height: headerHeight)
+                    UIColor(white: 0.92, alpha: 1).setFill()
+                    UIBezierPath(rect: rect).fill()
+                    UIColor.separator.setStroke()
+                    UIBezierPath(rect: rect).stroke()
+                    NSAttributedString(
+                        string: column.title,
+                        attributes: [.font: headerFont, .foregroundColor: UIColor.black]
+                    ).draw(in: rect.insetBy(dx: 4, dy: 6))
+                    x += columnWidths[index]
+                }
+                cursorY += headerHeight
+            }
+
+            drawHeader()
+
+            guard !rows.isEmpty else {
+                let rect = CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: rowHeight)
+                UIColor.separator.setStroke()
+                UIBezierPath(rect: rect).stroke()
+                NSAttributedString(
+                    string: "No active players matched this roster.",
+                    attributes: [.font: bodyFont, .foregroundColor: UIColor.darkGray]
+                ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                cursorY += rowHeight + 10
+                return
+            }
+
+            for (rowIndex, row) in rows.enumerated() {
+                if cursorY + rowHeight > bottomLimit {
+                    beginNewPage()
+                    drawHeader()
+                }
+                if rowIndex.isMultiple(of: 2) {
+                    UIColor(white: 0.985, alpha: 1).setFill()
+                    UIBezierPath(rect: CGRect(x: contentRect.minX, y: cursorY, width: contentRect.width, height: rowHeight)).fill()
+                }
+
+                let shouldHighlightName = metricColumns.isEmpty || metricColumns.allSatisfy { $0(row) == 0 }
+                var x = contentRect.minX
+                for (index, column) in columns.enumerated() {
+                    let rect = CGRect(x: x, y: cursorY, width: columnWidths[index], height: rowHeight)
+                    let isNameColumn = column.title == "Player"
+                    if shouldHighlightName, isNameColumn {
+                        UIColor.systemYellow.withAlphaComponent(0.24).setFill()
+                        UIBezierPath(rect: rect).fill()
+                    }
+                    UIColor.separator.setStroke()
+                    UIBezierPath(rect: rect).stroke()
+                    let foregroundColor: UIColor = shouldHighlightName && isNameColumn ? .systemOrange : .black
+                    let textFont: UIFont = shouldHighlightName && isNameColumn
+                        ? (UIFont(name: "AvenirNext-DemiBold", size: 11) ?? UIFont.systemFont(ofSize: 11, weight: .semibold))
+                        : bodyFont
+                    NSAttributedString(
+                        string: column.value(row),
+                        attributes: [.font: textFont, .foregroundColor: foregroundColor]
+                    ).draw(in: rect.insetBy(dx: 4, dy: 5))
+                    x += columnWidths[index]
+                }
+                cursorY += rowHeight
+            }
+            cursorY += 10
         }
 
         func buildStaffTables(for games: [Game]) -> [String: CompactReportTable] {
@@ -5256,6 +6439,7 @@ func makeTemplatePreviewPDF(
                             title: table.title,
                             columns: table.columns,
                             rows: table.rows,
+                            highlightedNameRowIndexes: table.highlightedNameRowIndexes,
                             xOrigin: contentRect.minX + CGFloat(column) * (columnWidth + gap),
                             width: columnWidth
                         )
@@ -5280,7 +6464,7 @@ func makeTemplatePreviewPDF(
         }
 
         let groupingMode = ReportGroupingMode(rawValue: template.groupingModeRawValue) ?? .combinedTotals
-        let gradeOrderLookup = Dictionary(uniqueKeysWithValues: selectedGrades.enumerated().map { ($0.element.id, $0.offset) })
+        let gradeOrderLookup = Dictionary(selectedGrades.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
         let orderedGradeGroups = Dictionary(grouping: relevantGames, by: \.gradeID)
             .sorted { left, right in
                 let leftOrder = gradeOrderLookup[left.key] ?? Int.max
@@ -5292,6 +6476,7 @@ func makeTemplatePreviewPDF(
         struct RenderedSection {
             let title: String
             let games: [Game]
+            let gradeIDs: Set<UUID>
         }
 
         let renderedSections: [RenderedSection] = {
@@ -5302,25 +6487,33 @@ func makeTemplatePreviewPDF(
                         .map { game in
                             let gradeName = gradeLookup[gradeID] ?? "Unknown Grade"
                             let title = "\(gradeName) • \(formattedDate(game.date)) vs \(game.opponent)"
-                            return RenderedSection(title: title, games: [game])
+                            return RenderedSection(title: title, games: [game], gradeIDs: [gradeID])
                         }
                 }
             }
             if groupingMode.splitByGradeEnabled {
-                return orderedGradeGroups.map { (gradeID, games) in
-                    RenderedSection(title: gradeLookup[gradeID] ?? "Unknown Grade", games: games.sorted { $0.date > $1.date })
+                let gamesByGradeID = Dictionary(orderedGradeGroups.map { ($0.0, $0.1) }, uniquingKeysWith: { first, _ in first })
+                let gradeIDsToRender = isRosterReport ? selectedGrades.map(\.id) : orderedGradeGroups.map(\.0)
+                return gradeIDsToRender.map { gradeID in
+                    let games = gamesByGradeID[gradeID] ?? []
+                    return RenderedSection(title: gradeLookup[gradeID] ?? "Unknown Grade", games: games.sorted { $0.date > $1.date }, gradeIDs: [gradeID])
                 }
             }
             if groupingMode.splitByGameEnabled {
                 return relevantGames.map { game in
-                    RenderedSection(title: "\(formattedDate(game.date)) vs \(game.opponent)", games: [game])
+                    RenderedSection(title: "\(formattedDate(game.date)) vs \(game.opponent)", games: [game], gradeIDs: [game.gradeID])
                 }
             }
-            return [RenderedSection(title: "Report", games: relevantGames)]
+            return [RenderedSection(title: "Report", games: relevantGames, gradeIDs: selectedGradeIDs)]
         }()
 
-        func drawOrderedSections(for games: [Game], scoreGame: Game?) {
-            let rows = reportRows(for: games)
+        func drawOrderedSections(for games: [Game], gradeIDs: Set<UUID>, scoreGame: Game?) {
+            if isRosterReport {
+                drawRosterReportTable(for: games, gradeIDs: gradeIDs)
+                return
+            }
+
+            let rows = reportRows(for: games, gradeIDsOverride: gradeIDs)
             let staffTables = buildStaffTables(for: games)
             let metadataGame = games.first
             var pendingCompactTables: [(key: String, table: CompactReportTable)] = []
@@ -5338,25 +6531,25 @@ func makeTemplatePreviewPDF(
                         drawScorePills(for: scoreGame, title: "Score")
                     }
                 case "bestPlayers":
-                    if template.includeBestPlayers {
+                    if template.includeBestPlayers, !isRosterReport || !rows.bestPlayers.rows.isEmpty {
                         let bestPlayersLabel = games.count == 1 ? "Rank" : "Points"
-                        pendingCompactTables.append((key: "bestPlayers", table: CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers)))
+                        pendingCompactTables.append((key: "bestPlayers", table: CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers.rows, highlightedNameRowIndexes: rows.bestPlayers.highlightedNameRowIndexes)))
                     }
                 case "guestVotes":
-                    if template.includePlayerGrades, canViewVoteDetails {
-                        pendingCompactTables.append((key: "guestVotes", table: CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes)))
+                    if template.includePlayerGrades, canViewVoteDetails, !isRosterReport || !rows.guestVotes.rows.isEmpty {
+                        pendingCompactTables.append((key: "guestVotes", table: CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes.rows, highlightedNameRowIndexes: rows.guestVotes.highlightedNameRowIndexes)))
                     }
                 case "goalKickers":
-                    if template.includeGoalKickers {
-                        let goalKickerRows = rows.goalKickers.map { row -> [String] in
+                    if template.includeGoalKickers, !isRosterReport || !rows.goalKickers.rows.isEmpty {
+                        let goalKickerRows = rows.goalKickers.rows.map { row -> [String] in
                             guard row.count >= 2 else { return row }
                             return [row[1], row[0]]
                         }
-                        pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Goals", "Player"], rows: goalKickerRows)))
+                        pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Goals", "Player"], rows: goalKickerRows, highlightedNameRowIndexes: rows.goalKickers.highlightedNameRowIndexes)))
                     }
                 case "bestAndFairest":
-                    if template.includeBestAndFairestVotes, canViewVoteDetails {
-                        pendingCompactTables.append((key: "bestAndFairest", table: CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest)))
+                    if template.includeBestAndFairestVotes, canViewVoteDetails, !isRosterReport || !rows.bestAndFairest.rows.isEmpty {
+                        pendingCompactTables.append((key: "bestAndFairest", table: CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest.rows, highlightedNameRowIndexes: rows.bestAndFairest.highlightedNameRowIndexes)))
                     }
                 case "coachingStaff", "officials", "trainers":
                     if let table = staffTables[key], !table.rows.isEmpty {
@@ -5395,8 +6588,12 @@ func makeTemplatePreviewPDF(
             return columnHeights.max() ?? 0
         }
 
-        func estimatedOrderedSectionHeight(for games: [Game], scoreGame: Game?) -> CGFloat {
-            let rows = reportRows(for: games)
+        func estimatedOrderedSectionHeight(for games: [Game], gradeIDs: Set<UUID>, scoreGame: Game?) -> CGFloat {
+            if isRosterReport {
+                return estimatedRosterReportHeight(for: games, gradeIDs: gradeIDs)
+            }
+
+            let rows = reportRows(for: games, gradeIDsOverride: gradeIDs)
             let staffTables = buildStaffTables(for: games)
             var pendingCompactTables: [(key: String, table: CompactReportTable)] = []
             var estimatedHeight: CGFloat = 0
@@ -5409,30 +6606,31 @@ func makeTemplatePreviewPDF(
             for key in template.includeSectionOrder {
                 switch key {
                 case "scores":
-                    if template.includeScores, scoreGame != nil {
+                    if template.includeScores, let scoreGame {
                         flushPendingEstimate()
-                        estimatedHeight += 24 + 86 // drawSectionHeader + score pills block
+                        let scoreBlockHeight: CGFloat = shouldShowScore(for: scoreGame) ? 110 : 78
+                        estimatedHeight += 24 + scoreBlockHeight // drawSectionHeader + score pills block
                     }
                 case "bestPlayers":
-                    if template.includeBestPlayers {
+                    if template.includeBestPlayers, !isRosterReport || !rows.bestPlayers.rows.isEmpty {
                         let bestPlayersLabel = games.count == 1 ? "Rank" : "Points"
-                        pendingCompactTables.append((key: "bestPlayers", table: CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers)))
+                        pendingCompactTables.append((key: "bestPlayers", table: CompactReportTable(title: "Best Players", columns: [bestPlayersLabel, "Player"], rows: rows.bestPlayers.rows, highlightedNameRowIndexes: rows.bestPlayers.highlightedNameRowIndexes)))
                     }
                 case "guestVotes":
-                    if template.includePlayerGrades, canViewVoteDetails {
-                        pendingCompactTables.append((key: "guestVotes", table: CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes)))
+                    if template.includePlayerGrades, canViewVoteDetails, !isRosterReport || !rows.guestVotes.rows.isEmpty {
+                        pendingCompactTables.append((key: "guestVotes", table: CompactReportTable(title: "Guest Votes", columns: ["Points", "Player"], rows: rows.guestVotes.rows, highlightedNameRowIndexes: rows.guestVotes.highlightedNameRowIndexes)))
                     }
                 case "goalKickers":
-                    if template.includeGoalKickers {
-                        let goalKickerRows = rows.goalKickers.map { row -> [String] in
+                    if template.includeGoalKickers, !isRosterReport || !rows.goalKickers.rows.isEmpty {
+                        let goalKickerRows = rows.goalKickers.rows.map { row -> [String] in
                             guard row.count >= 2 else { return row }
                             return [row[1], row[0]]
                         }
-                        pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Goals", "Player"], rows: goalKickerRows)))
+                        pendingCompactTables.append((key: "goalKickers", table: CompactReportTable(title: "Goal Kickers", columns: ["Goals", "Player"], rows: goalKickerRows, highlightedNameRowIndexes: rows.goalKickers.highlightedNameRowIndexes)))
                     }
                 case "bestAndFairest":
-                    if template.includeBestAndFairestVotes, canViewVoteDetails {
-                        pendingCompactTables.append((key: "bestAndFairest", table: CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest)))
+                    if template.includeBestAndFairestVotes, canViewVoteDetails, !isRosterReport || !rows.bestAndFairest.rows.isEmpty {
+                        pendingCompactTables.append((key: "bestAndFairest", table: CompactReportTable(title: "Best and Fairest", columns: ["Player", "Points"], rows: rows.bestAndFairest.rows, highlightedNameRowIndexes: rows.bestAndFairest.highlightedNameRowIndexes)))
                     }
                 case "coachingStaff", "officials", "trainers":
                     if let table = staffTables[key], !table.rows.isEmpty {
@@ -5454,17 +6652,19 @@ func makeTemplatePreviewPDF(
 
         if groupingMode.splitByGradeEnabled || groupingMode.splitByGameEnabled {
             for section in renderedSections {
-                guard let sectionGame = section.games.first else { continue }
-                let gradeName = gradeLookup[sectionGame.gradeID] ?? "Unknown Grade"
+                if section.games.isEmpty, !isRosterReport { continue }
+                let sectionGame = section.games.first
+                let sectionGradeID = sectionGame?.gradeID ?? section.gradeIDs.first
+                let gradeName = sectionGradeID.flatMap { gradeLookup[$0] } ?? "Unknown Grade"
                 let titleParts: [String] = [
                     groupingMode.splitByGradeEnabled ? gradeName : nil,
-                    groupingMode.splitByGameEnabled ? "\(formattedDate(sectionGame.date)) vs \(sectionGame.opponent)" : nil
+                    groupingMode.splitByGameEnabled ? sectionGame.map { "\(formattedDate($0.date)) vs \($0.opponent)" } : nil
                 ].compactMap { $0 }
                 let sectionTitle = titleParts.isEmpty ? section.title : titleParts.joined(separator: " • ")
 
                 if groupingMode.splitByGradeEnabled {
                     let sectionHeaderHeight: CGFloat = 24
-                    let estimatedSectionHeight = sectionHeaderHeight + estimatedOrderedSectionHeight(for: section.games, scoreGame: sectionGame)
+                    let estimatedSectionHeight = sectionHeaderHeight + estimatedOrderedSectionHeight(for: section.games, gradeIDs: section.gradeIDs, scoreGame: sectionGame)
                     let pageContentHeight = bottomLimit - contentRect.minY
                     if estimatedSectionHeight <= pageContentHeight,
                        cursorY + estimatedSectionHeight > bottomLimit {
@@ -5473,10 +6673,10 @@ func makeTemplatePreviewPDF(
                 }
 
                 drawSectionHeader(sectionTitle)
-                drawOrderedSections(for: section.games, scoreGame: sectionGame)
+                drawOrderedSections(for: section.games, gradeIDs: section.gradeIDs, scoreGame: sectionGame)
             }
         } else {
-            drawOrderedSections(for: relevantGames, scoreGame: primaryGame)
+            drawOrderedSections(for: relevantGames, gradeIDs: selectedGradeIDs, scoreGame: primaryGame)
         }
     }
 
@@ -5912,7 +7112,11 @@ private struct CustomReportEditView: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.secondary.opacity(0.12))
+                .fill(ClubTheme.subCardFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(ClubTheme.subCardStroke, lineWidth: 1)
         )
     }
 
@@ -6048,7 +7252,7 @@ private struct CustomReportEditView: View {
                                     .padding(.horizontal, 10)
                                     .background(
                                         Capsule()
-                                            .fill(isSelected ? Color.blue : Color.secondary.opacity(0.2))
+                                            .fill(isSelected ? Color(uiColor: .systemGray) : ClubTheme.subCardFill)
                                     )
                             }
                             .buttonStyle(.plain)
@@ -6147,7 +7351,11 @@ private struct CustomReportEditView: View {
                             .padding(10)
                             .background(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color.secondary.opacity(0.08))
+                                    .fill(ClubTheme.cardFill)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(ClubTheme.cardStroke, lineWidth: 1)
                             )
                             .frame(maxWidth: .infinity, alignment: .top)
                             .contentShape(Rectangle())
@@ -6168,7 +7376,10 @@ private struct CustomReportEditView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         LazyVGrid(
-                            columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4),
+                            columns: Array(
+                                repeating: GridItem(.flexible(), spacing: 8),
+                                count: UIDevice.current.userInterfaceIdiom == .phone ? 2 : 4
+                            ),
                             spacing: 8
                         ) {
                             ForEach(recipientSections, id: \.id) { section in
@@ -6193,7 +7404,7 @@ private struct CustomReportEditView: View {
                                     .padding(.horizontal, 6)
                                     .background(
                                         Capsule()
-                                            .fill(isSelected ? Color.blue : Color.secondary.opacity(0.2))
+                                            .fill(isSelected ? Color(uiColor: .systemGray) : ClubTheme.subCardFill)
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -6284,7 +7495,7 @@ private struct CustomReportEditView: View {
                                         .padding(.horizontal, 10)
                                         .background(
                                             Capsule()
-                                                .fill(isSelected ? Color.blue : Color.secondary.opacity(0.2))
+                                                .fill(isSelected ? Color(uiColor: .systemGray) : ClubTheme.subCardFill)
                                         )
                                 }
                                 .buttonStyle(.plain)
@@ -6553,11 +7764,11 @@ private struct ReportRecipientsSettingsView: View {
     }
 
     private var groupLookup: [UUID: ContactGroup] {
-        Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
+        Dictionary(groups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     private var contactLookup: [UUID: Contact] {
-        Dictionary(uniqueKeysWithValues: contacts.map { ($0.id, $0) })
+        Dictionary(contacts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     private var membershipCountByGroup: [UUID: Int] {

@@ -29,6 +29,7 @@ struct GradeBackup: Codable {
     let asksGoalKickers: Bool
     let tracksPlayersPerTeam: Bool
     let playersPerTeam: Int
+    let playerSwapsEnabled: Bool
     let bestPlayersCount: Int
     let asksGuestBestFairestVotesScan: Bool
     let guestBestPlayersCount: Int
@@ -67,6 +68,7 @@ struct GradeBackup: Codable {
         asksGoalKickers: Bool = true,
         tracksPlayersPerTeam: Bool? = nil,
         playersPerTeam: Int? = nil,
+        playerSwapsEnabled: Bool? = nil,
         bestPlayersCount: Int = 6,
         asksGuestBestFairestVotesScan: Bool = true,
         guestBestPlayersCount: Int = 3,
@@ -105,6 +107,7 @@ struct GradeBackup: Codable {
         self.tracksPlayersPerTeam = tracksPlayersPerTeam ?? Grade.defaultTracksPlayersPerTeam(for: name)
         let resolvedPlayersPerTeam = playersPerTeam ?? Grade.defaultPlayersPerTeam(for: name)
         self.playersPerTeam = min(max(resolvedPlayersPerTeam, 1), 60)
+        self.playerSwapsEnabled = playerSwapsEnabled ?? Grade.defaultPlayerSwapsEnabled(for: name)
         let normalizedBestPlayersCount = min(max(bestPlayersCount, 0), 10)
         let normalizedGuestBestPlayersCount = min(max(guestBestPlayersCount, 1), 10)
         self.bestPlayersCount = normalizedBestPlayersCount
@@ -126,7 +129,7 @@ struct GradeBackup: Codable {
         case asksTrainers, asksTrainer1, asksTrainer2, asksTrainer3, asksTrainer4
         case asksNotes, asksScore, asksLiveGameView, asksGoalKickers
         case tracksPlayersPerTeam
-        case playersPerTeam, bestPlayersCount, asksBestPlayers
+        case playersPerTeam, playerSwapsEnabled, bestPlayersCount, asksBestPlayers
         case bestPlayersVotes, guestBestPlayersVotes
         case asksGuestBestFairestVotesScan, guestBestPlayersCount, allowsLiveGameView, quarterLengthMinutes, timeOnEnabled
     }
@@ -163,6 +166,7 @@ struct GradeBackup: Codable {
         asksGoalKickers = try c.decodeIfPresent(Bool.self, forKey: .asksGoalKickers) ?? true
         tracksPlayersPerTeam = try c.decodeIfPresent(Bool.self, forKey: .tracksPlayersPerTeam) ?? Grade.defaultTracksPlayersPerTeam(for: name)
         playersPerTeam = min(max(try c.decodeIfPresent(Int.self, forKey: .playersPerTeam) ?? Grade.defaultPlayersPerTeam(for: name), 1), 60)
+        playerSwapsEnabled = try c.decodeIfPresent(Bool.self, forKey: .playerSwapsEnabled) ?? Grade.defaultPlayerSwapsEnabled(for: name)
         if let decodedCount = try c.decodeIfPresent(Int.self, forKey: .bestPlayersCount) {
             bestPlayersCount = min(max(decodedCount, 0), 10)
         } else {
@@ -208,6 +212,7 @@ struct GradeBackup: Codable {
         try c.encode(asksGoalKickers, forKey: .asksGoalKickers)
         try c.encode(tracksPlayersPerTeam, forKey: .tracksPlayersPerTeam)
         try c.encode(playersPerTeam, forKey: .playersPerTeam)
+        try c.encode(playerSwapsEnabled, forKey: .playerSwapsEnabled)
         try c.encode(bestPlayersCount, forKey: .bestPlayersCount)
         try c.encode(asksGuestBestFairestVotesScan, forKey: .asksGuestBestFairestVotesScan)
         try c.encode(guestBestPlayersCount, forKey: .guestBestPlayersCount)
@@ -272,6 +277,7 @@ enum SettingsBackupStore {
                 asksGoalKickers: $0.asksGoalKickers,
                 tracksPlayersPerTeam: $0.tracksPlayersPerTeam,
                 playersPerTeam: $0.playersPerTeam,
+                playerSwapsEnabled: $0.playerSwapsEnabled,
                 bestPlayersCount: $0.bestPlayersCount,
                 asksGuestBestFairestVotesScan: $0.asksGuestBestFairestVotesScan,
                 guestBestPlayersCount: $0.guestBestPlayersCount,
@@ -284,10 +290,11 @@ enum SettingsBackupStore {
         }
         guard let data = try? JSONEncoder().encode(payload) else { return }
         UserDefaults.standard.set(data, forKey: gradesKey)
+        persistSynced(data, forKey: gradesKey)
     }
 
     static func loadGrades() -> [GradeBackup] {
-        guard let data = UserDefaults.standard.data(forKey: gradesKey),
+        guard let data = loadSyncedData(forKey: gradesKey),
               let decoded = try? JSONDecoder().decode([GradeBackup].self, from: data) else {
             return []
         }
@@ -298,10 +305,11 @@ enum SettingsBackupStore {
         let payload = contacts.map { ContactBackup(id: $0.id, name: $0.name, mobile: $0.mobile, email: $0.email) }
         guard let data = try? JSONEncoder().encode(payload) else { return }
         UserDefaults.standard.set(data, forKey: contactsKey)
+        persistSynced(data, forKey: contactsKey)
     }
 
     static func loadContacts() -> [ContactBackup] {
-        guard let data = UserDefaults.standard.data(forKey: contactsKey),
+        guard let data = loadSyncedData(forKey: contactsKey),
               let decoded = try? JSONDecoder().decode([ContactBackup].self, from: data) else {
             return []
         }
@@ -314,23 +322,42 @@ enum SettingsBackupStore {
         }
         guard let data = try? JSONEncoder().encode(payload) else { return }
         UserDefaults.standard.set(data, forKey: boundaryUmpireMappingsKey)
+        persistSynced(data, forKey: boundaryUmpireMappingsKey)
     }
 
     static func loadBoundaryUmpireGradeMappings() -> [UUID: [UUID]] {
-        guard let data = UserDefaults.standard.data(forKey: boundaryUmpireMappingsKey) else {
+        guard let data = loadSyncedData(forKey: boundaryUmpireMappingsKey) else {
             return [:]
         }
 
         if let decoded = try? JSONDecoder().decode([BoundaryUmpireGradeLinks].self, from: data) {
-            return Dictionary(uniqueKeysWithValues: decoded.map { ($0.gameGradeID, $0.boundaryGradeIDs) })
+            return Dictionary(decoded.map { ($0.gameGradeID, $0.boundaryGradeIDs) }, uniquingKeysWith: { first, _ in first })
         }
 
         // Backwards compatibility with single-grade mappings.
         if let decodedLegacy = try? JSONDecoder().decode([BoundaryUmpireGradeLink].self, from: data) {
-            return Dictionary(uniqueKeysWithValues: decodedLegacy.map { ($0.gameGradeID, [$0.boundaryGradeID]) })
+            return Dictionary(decodedLegacy.map { ($0.gameGradeID, [$0.boundaryGradeID]) }, uniquingKeysWith: { first, _ in first })
         }
 
         return [:]
+    }
+
+    private static func loadSyncedData(forKey key: String) -> Data? {
+        if Thread.isMainThread {
+            return CloudSyncedPreferencesStore.syncedData(forKey: key)
+                ?? UserDefaults.standard.data(forKey: key)
+        }
+        return UserDefaults.standard.data(forKey: key)
+    }
+
+    private static func persistSynced(_ data: Data, forKey key: String) {
+        if Thread.isMainThread {
+            CloudSyncedPreferencesStore.persist(data, forKey: key)
+        } else {
+            DispatchQueue.main.async {
+                CloudSyncedPreferencesStore.persist(data, forKey: key)
+            }
+        }
     }
 }
 
@@ -394,6 +421,7 @@ func resolvedConfiguredGrades(from persistedGrades: [Grade]) -> [Grade] {
                 asksGoalKickers: backup.asksGoalKickers,
                 tracksPlayersPerTeam: backup.tracksPlayersPerTeam,
                 playersPerTeam: backup.playersPerTeam,
+                playerSwapsEnabled: backup.playerSwapsEnabled,
                 bestPlayersCount: backup.bestPlayersCount,
                 asksGuestBestFairestVotesScan: backup.asksGuestBestFairestVotesScan,
                 guestBestPlayersCount: backup.guestBestPlayersCount,

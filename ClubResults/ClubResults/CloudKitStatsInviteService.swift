@@ -194,6 +194,14 @@ actor CloudKitStatsInviteService {
         container.publicCloudDatabase
     }
 
+    func accountStatus() async -> CKAccountStatus {
+        await withCheckedContinuation { continuation in
+            container.accountStatus { status, _ in
+                continuation.resume(returning: status)
+            }
+        }
+    }
+
     nonisolated static func recordName(sessionID: UUID, inviteeEmail: String) -> String {
         let normalizedEmail = inviteeEmail
             .trimmingCharacters(in: .whitespacesAndNewlines)
